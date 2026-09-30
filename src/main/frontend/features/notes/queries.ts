@@ -18,6 +18,14 @@ export function fetchProjectNotes(projectId: number): Promise<Note[]> {
   return getJson<Note[]>(`/api/projects/${projectId}/notes`);
 }
 
+/** An invoice's notes, nested beneath ['invoices'] so invalidating invoices refreshes them too. */
+export const invoiceNotesKey = (invoiceId: number) =>
+  ['invoices', invoiceId, 'notes'] as const;
+
+export function fetchInvoiceNotes(invoiceId: number): Promise<Note[]> {
+  return getJson<Note[]>(`/api/invoices/${invoiceId}/notes`);
+}
+
 /** Write a note on a project; the server stamps its id and written-at instant. */
 export function createNote(input: {
   targetType: string;
