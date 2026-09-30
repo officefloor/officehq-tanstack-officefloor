@@ -14,6 +14,9 @@ export type Invoice = {
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
 
+/** URL key owned by the sort control; readers (the list) sort by the same key (CLAUDE.md rule 4). */
+export const INVOICE_SORT_PARAM = 'invoiceSort';
+
 export function fetchInvoices(projectId: number): Promise<Invoice[]> {
   return getJson<Invoice[]>(`/api/invoices/${projectId}`);
 }
