@@ -9,17 +9,19 @@ import { lineItemsKey, createLineItem } from './queries';
 export function LineItemForm({ invoiceId }: { invoiceId: number }) {
   const [description, setDescription] = useState('');
   const [qty, setQty] = useState('');
+  const [unit, setUnit] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (input: { description: string; qty: number; unitPrice: number }) =>
+    mutationFn: (input: { description: string; qty: number; unit: string; unitPrice: number }) =>
       createLineItem(invoiceId, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: lineItemsKey(invoiceId) });
       setDescription('');
       setQty('');
+      setUnit('');
       setUnitPrice('');
     },
   });
@@ -35,14 +37,20 @@ export function LineItemForm({ invoiceId }: { invoiceId: number }) {
           description.trim() === '' ||
           !Number.isInteger(quantity) ||
           quantity <= 0 ||
+          unit.trim() === '' ||
           Number.isNaN(price) ||
           price <= 0
         ) {
-          setError('Enter a description, a whole quantity and a price above zero.');
+          setError('Enter a description, a whole quantity, a unit and a price above zero.');
           return;
         }
         setError('');
-        mutation.mutate({ description: description.trim(), qty: quantity, unitPrice: price });
+        mutation.mutate({
+          description: description.trim(),
+          qty: quantity,
+          unit: unit.trim(),
+          unitPrice: price,
+        });
       }}
     >
       <input
@@ -56,6 +64,12 @@ export function LineItemForm({ invoiceId }: { invoiceId: number }) {
         placeholder="Qty"
         value={qty}
         onChange={(event) => setQty(event.target.value)}
+      />
+      <input
+        data-testid="lineitem-form-unit"
+        placeholder="Unit"
+        value={unit}
+        onChange={(event) => setUnit(event.target.value)}
       />
       <input
         data-testid="lineitem-form-unitprice"

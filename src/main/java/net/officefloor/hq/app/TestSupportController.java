@@ -136,9 +136,11 @@ public class TestSupportController {
             if (lineItems != null) {
                 for (Map<String, Object> line : lineItems) {
                     jdbc.update("INSERT INTO invoice_line_items"
-                            + " (id, invoice_id, description, qty, unit_price) VALUES (?, ?, ?, ?, ?)",
+                            + " (id, invoice_id, description, qty, unit, unit_price)"
+                            + " VALUES (?, ?, ?, ?, ?, ?)",
                             id(line, "id"), invoiceId, line.get("description"),
                             ((Number) line.get("qty")).intValue(),
+                            line.getOrDefault("unit", ""),
                             ((Number) line.get("unitPrice")).doubleValue());
                 }
             }

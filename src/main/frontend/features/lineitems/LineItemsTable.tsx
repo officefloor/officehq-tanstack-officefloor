@@ -29,6 +29,7 @@ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
           <tr>
             <th>Description</th>
             <th>Qty</th>
+            <th>Unit</th>
             <th>Unit price</th>
             <th>Amount</th>
             <th />
@@ -39,6 +40,7 @@ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
             <tr key={line.id} data-testid={`lineitem-row-${line.id}`}>
               <td data-testid="lineitem-description">{line.description}</td>
               <td data-testid="lineitem-qty">{line.qty}</td>
+              <td data-testid="lineitem-unit">{line.unit}</td>
               <td data-testid="lineitem-unitprice">{formatMoney(line.unitPrice)}</td>
               <td data-testid="lineitem-amount">
                 {formatMoney(Number(line.qty) * Number(line.unitPrice))}

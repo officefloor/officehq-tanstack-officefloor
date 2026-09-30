@@ -25,15 +25,17 @@ public class InvoiceLineItemsPost {
                 .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
         String description = body.getDescription();
         Integer qty = body.getQty();
+        String unit = body.getUnit();
         BigDecimal unitPrice = body.getUnitPrice();
         if (description == null || description.isBlank() || qty == null || qty <= 0
-                || unitPrice == null || unitPrice.signum() <= 0) {
+                || unit == null || unit.isBlank() || unitPrice == null || unitPrice.signum() <= 0) {
             throw new HttpException(HttpStatus.BAD_REQUEST);
         }
         LineItem item = new LineItem();
         item.setInvoiceId(invoiceId);
         item.setDescription(description.trim());
         item.setQty(qty);
+        item.setUnit(unit.trim());
         item.setUnitPrice(unitPrice);
         LineItem saved = lineItems.save(item);
 

@@ -40,6 +40,11 @@ public class InvoiceLineItemUpdate {
         }
         line.setDescription(description.trim());
         line.setQty(qty);
+        // Unit is optional on an edit: when the body supplies one, update it; otherwise keep the
+        // line's existing unit rather than blanking a value the editor did not touch.
+        if (body.getUnit() != null && !body.getUnit().isBlank()) {
+            line.setUnit(body.getUnit().trim());
+        }
         line.setUnitPrice(unitPrice);
         LineItem saved = lineItems.save(line);
 
