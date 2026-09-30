@@ -7,25 +7,24 @@ import net.officefloor.web.HttpPathParameter;
 import net.officefloor.web.ObjectResponse;
 
 /**
- * POST /api/invoices/{id}/pay — mark an invoice paid and return the updated row. Wired by
- * {@code officefloor/rest/api/invoices/{id}/pay.POST.yml}. Flipping the status is an audited
- * side-effect: one {@code INVOICE_PAID id=<id> amount=<amount>} record is appended per payment so
- * it can be checked back later (CLAUDE.md — audited behaviour goes through {@link Audit}). Payment
- * is only allowed once the invoice has been SENT — paying a DRAFT (or already-paid) invoice is
- * rejected with 400. An unknown invoice id is rejected with 404.
+ * POST /api/invoices/{id}/send — move a DRAFT invoice to SENT and return the updated row. Wired by
+ * {@code officefloor/rest/api/invoices/{id}/send.POST.yml}. Sending is an audited side-effect: one
+ * {@code INVOICE_SENT id=<id> amount=<amount>} record is appended per send so it can be checked
+ * back later (CLAUDE.md — audited behaviour goes through {@link Audit}). Only a DRAFT invoice can be
+ * sent; an unknown id is rejected with 404 and a non-draft invoice with 400.
  */
-public class InvoicePay {
+public class InvoiceSend {
 
     public void service(@HttpPathParameter("id") String id, InvoiceRepository invoices, Audit audit,
             ObjectResponse<Invoice> response) {
         Invoice invoice = invoices.findById(Long.valueOf(id))
                 .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
-        if (!"SENT".equals(invoice.getStatus())) {
+        if (!"DRAFT".equals(invoice.getStatus())) {
             throw new HttpException(HttpStatus.BAD_REQUEST);
         }
-        invoice.setStatus("PAID");
+        invoice.setStatus("SENT");
         Invoice saved = invoices.save(invoice);
-        audit.record("INVOICE_PAID id=" + saved.getId() + " amount="
+        audit.record("INVOICE_SENT id=" + saved.getId() + " amount="
                 + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
         response.send(saved);
     }

@@ -25,6 +25,11 @@ export function createInvoice(input: { projectId: number; amount: number }): Pro
   return postJson<Invoice>('/api/invoices', input);
 }
 
+/** Send a draft invoice; the server moves it to SENT and records the audited side-effect. */
+export function sendInvoice(invoiceId: number): Promise<Invoice> {
+  return postJson<Invoice>(`/api/invoices/${invoiceId}/send`, {});
+}
+
 /** Mark an invoice paid; the server flips its status and records the audited side-effect. */
 export function payInvoice(invoiceId: number): Promise<Invoice> {
   return postJson<Invoice>(`/api/invoices/${invoiceId}/pay`, {});

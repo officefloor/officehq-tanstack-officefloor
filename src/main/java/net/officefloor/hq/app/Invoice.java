@@ -25,8 +25,8 @@ public class Invoice {
 
     private BigDecimal amount;
 
-    /** Payment status: 'UNPAID' (the default for a new invoice) or 'PAID'. */
-    private String status = "UNPAID";
+    /** Lifecycle stage: 'DRAFT' (the default for a new invoice), then 'SENT', then 'PAID'. */
+    private String status = "DRAFT";
 
     /** The date the invoice went out, as an ISO date string (YYYY-MM-DD). */
     @Column(name = "issued_date")

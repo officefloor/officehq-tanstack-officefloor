@@ -70,7 +70,7 @@ public class TestSupportController {
                         ((Number) i.get("id")).longValue(),
                         ((Number) i.get("projectId")).longValue(),
                         ((Number) i.get("amount")).doubleValue(),
-                        i.getOrDefault("status", "UNPAID"),
+                        i.getOrDefault("status", "DRAFT"),
                         i.get("issuedDate"),
                         i.get("dueDate"));
             }
