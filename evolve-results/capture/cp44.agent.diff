@@ -1,0 +1,47 @@
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+index c960455..e8fbac1 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -16,4 +16,7 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
+      * a tucked-away client drops off the list (and its search, which filters this same list).
+      */
+     List<Client> findAllByArchivedFalseOrderByIdAsc();
++
++    /** Whether a client already uses this email — no two clients may share one. */
++    boolean existsByEmail(String email);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ClientsPost.java b/src/main/java/net/officefloor/hq/app/ClientsPost.java
+index 35baea5..110926c 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ClientsPost.java
+@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * <p>Every client must have a proper email address: an empty or malformed address is rejected with
+  * 400 so the row is never persisted (the front-end enforces the same rule, and the DB carries a
+  * CHECK constraint as the last line of defence).
++ *
++ * <p>No two clients may share an email: an address already in use is rejected with 400 so the
++ * duplicate row is never persisted (the DB carries a UNIQUE constraint as the last line of defence).
+  */
+ public class ClientsPost {
+ 
+@@ -25,6 +28,9 @@ public class ClientsPost {
+         if (email == null || !EMAIL.matcher(email.trim()).matches()) {
+             throw new HttpException(HttpStatus.BAD_REQUEST);
+         }
++        if (clients.existsByEmail(email.trim())) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
+         Client client = new Client();
+         client.setName(body.getName());
+         client.setEmail(email.trim());
+diff --git a/src/main/resources/db/migration/V21__clients_email_unique.sql b/src/main/resources/db/migration/V21__clients_email_unique.sql
+new file mode 100644
+index 0000000..5e3ef61
+--- /dev/null
++++ b/src/main/resources/db/migration/V21__clients_email_unique.sql
+@@ -0,0 +1,5 @@
++-- No two clients may share an email address. Adds a UNIQUE constraint as the last line of defence
++-- behind the front-end and server validation: a duplicate insert is rejected by the DB even if the
++-- checks above are bypassed. Applied to a fresh schema, so no existing rows conflict.
++ALTER TABLE clients
++    ADD CONSTRAINT clients_email_unique UNIQUE (email);
