@@ -28,6 +28,6 @@ public class ProjectsPost {
         audit.record("PROJECT_CREATED id=" + saved.getId() + " name=" + saved.getName()
                 + " client=" + client.getName());
         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(),
-                client.getName()));
+                client.getName(), saved.isArchived()));
     }
 }

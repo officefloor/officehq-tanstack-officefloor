@@ -25,6 +25,10 @@ public class Project {
     @Column(name = "client_id")
     private Long clientId;
 
+    /** Archived projects are kept but hidden from the default lists (V16__project_archived.sql). */
+    @Column(nullable = false)
+    private boolean archived;
+
     public Long getId() {
         return id;
     }
@@ -47,5 +51,13 @@ public class Project {
 
     public void setClientId(Long clientId) {
         this.clientId = clientId;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 }

@@ -13,7 +13,8 @@ export function ClientProjectsPanel({ clientId }: { clientId: number }) {
     queryFn: () => getJson<Project[]>('/api/projects'),
   });
 
-  const rows = (projects.data ?? []).filter((p) => p.clientId === clientId);
+  // Archived projects are tucked away everywhere: kept on the server but off this panel too.
+  const rows = (projects.data ?? []).filter((p) => p.clientId === clientId && !p.archived);
 
   return (
     <section data-testid="client-projects">

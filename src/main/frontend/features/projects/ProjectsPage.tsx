@@ -1,12 +1,21 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
+import { asFlag, useSearchParam } from '../../url/useSearchParam';
 import type { Client } from '../clients/ClientsPage';
 import { ProjectRowActions } from '../../slots/defs/projectRowActions';
+import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
 
 // A project as the server returns it: it carries the client's NAME so the list shows the name, not
-// the id. project.clientId is the id the form's select submits.
-export type Project = { id: number; name: string; clientId: number; clientName: string };
+// the id. project.clientId is the id the form's select submits. `archived` projects are kept but
+// hidden from the default list.
+export type Project = {
+  id: number;
+  name: string;
+  clientId: number;
+  clientName: string;
+  archived: boolean;
+};
 
 // The projects page: the whole list of projects plus the form to add one and pick its client.
 // Server data is read with useQuery (['projects'] for the list, ['clients'] — the SAME key the
@@ -23,6 +32,11 @@ export function ProjectsPage() {
     queryFn: () => getJson<Client[]>('/api/clients'),
   });
 
+  // Whether archived projects are revealed lives in the URL, owned by
+  // features/projects/showArchived.slot.tsx. The page reads the same key: by default archived
+  // projects drop off the list; the toggle brings them back — no server data copied into state.
+  const [showArchived] = useSearchParam('showArchived', asFlag);
+
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
 
@@ -35,7 +49,7 @@ export function ProjectsPage() {
     },
   });
 
-  const rows = projects.data ?? [];
+  const rows = (projects.data ?? []).filter((p) => showArchived || !p.archived);
   const clientOptions = clients.data ?? [];
 
   return (
@@ -72,6 +86,10 @@ export function ProjectsPage() {
           Add project
         </button>
       </form>
+
+      <div data-testid="projects-toolbar">
+        <ProjectsToolbar.Slot />
+      </div>
 
       {rows.length === 0 ? (
         <p data-testid="projects-empty">No projects yet.</p>

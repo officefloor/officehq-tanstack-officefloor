@@ -11,12 +11,14 @@ public class ProjectView {
     private final String name;
     private final Long clientId;
     private final String clientName;
+    private final boolean archived;
 
-    public ProjectView(Long id, String name, Long clientId, String clientName) {
+    public ProjectView(Long id, String name, Long clientId, String clientName, boolean archived) {
         this.id = id;
         this.name = name;
         this.clientId = clientId;
         this.clientName = clientName;
+        this.archived = archived;
     }
 
     public Long getId() {
@@ -33,5 +35,9 @@ public class ProjectView {
 
     public String getClientName() {
         return clientName;
+    }
+
+    public boolean isArchived() {
+        return archived;
     }
 }
