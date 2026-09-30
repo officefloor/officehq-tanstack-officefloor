@@ -33,15 +33,21 @@ export function ClientsPage() {
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState(false);
+  // The email error message, or null when the field is fine. It covers both a locally-caught bad
+  // format and a server rejection (a duplicate email — the server is the source of truth for
+  // uniqueness, since another session may have taken the address).
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: () => postJson<Client>('/api/clients', { name, email }),
     onSuccess: () => {
       setName('');
       setEmail('');
-      setEmailError(false);
+      setEmailError(null);
       void queryClient.invalidateQueries({ queryKey: ['clients'] });
+    },
+    onError: () => {
+      setEmailError('That email is already in use.');
     },
   });
 
@@ -54,10 +60,10 @@ export function ClientsPage() {
         onSubmit={(e) => {
           e.preventDefault();
           if (!isValidEmail(email)) {
-            setEmailError(true);
+            setEmailError('Enter a valid email address.');
             return;
           }
-          setEmailError(false);
+          setEmailError(null);
           create.mutate();
         }}
       >
@@ -75,7 +81,7 @@ export function ClientsPage() {
         />
         {emailError && (
           <p data-testid="client-form-email-error" role="alert">
-            Enter a valid email address.
+            {emailError}
           </p>
         )}
         <button data-testid="client-form-submit" type="submit">

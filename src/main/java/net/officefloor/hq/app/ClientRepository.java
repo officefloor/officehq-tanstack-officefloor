@@ -29,4 +29,10 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      * name search, which likewise excludes archived clients.
      */
     List<Client> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
+
+    /**
+     * Whether a client already holds this email. Backs the uniqueness check in {@link ClientsPost}
+     * so a duplicate email is rejected before any row or audit record is written.
+     */
+    boolean existsByEmail(String email);
 }

@@ -20,9 +20,14 @@ public class ClientsPost {
         if (!EMAIL.matcher(email).matches()) {
             throw new IllegalArgumentException("a client requires a valid email address");
         }
+        // Two clients may not share an email. Reject the duplicate before saving, so no row and no
+        // audit record is written. The UNIQUE constraint (V26__client_email_unique.sql) backs this.
+        if (repository.existsByEmail(email)) {
+            throw new IllegalArgumentException("a client with that email already exists");
+        }
         Client client = new Client();
         client.setName(body.getName());
-        client.setEmail(body.getEmail());
+        client.setEmail(email);
         Client saved = repository.save(client);
         audit.record("CLIENT_CREATED id=" + saved.getId() + " name=" + saved.getName());
         response.send(saved);
