@@ -1,0 +1,141 @@
+diff --git a/src/main/frontend/features/clients/ClientsPage.tsx b/src/main/frontend/features/clients/ClientsPage.tsx
+index 243e66e..f4409e1 100644
+--- a/src/main/frontend/features/clients/ClientsPage.tsx
++++ b/src/main/frontend/features/clients/ClientsPage.tsx
+@@ -1,6 +1,8 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson, postJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
+ 
+ // A client as the server returns it.
+ export type Client = { id: number; name: string; email: string };
+@@ -17,9 +19,15 @@ export function isValidEmail(email: string): boolean {
+ // currently typing into (rule 4).
+ export function ClientsPage() {
+   const queryClient = useQueryClient();
++  // The name filter lives in the URL (owned by features/clients/search.slot.tsx). The list reads
++  // the same key and asks the server for the narrowed list, so it stays a single source of truth —
++  // no server data copied into state. The key still starts with 'clients', so writes that
++  // invalidateQueries({ queryKey: ['clients'] }) still refresh it.
++  const [q] = useSearchParam('clientSearch', asString);
+   const clients = useQuery({
+-    queryKey: ['clients'],
+-    queryFn: () => getJson<Client[]>('/api/clients'),
++    queryKey: ['clients', q],
++    queryFn: () =>
++      getJson<Client[]>(q ? `/api/clients?q=${encodeURIComponent(q)}` : '/api/clients'),
+   });
+ 
+   const [name, setName] = useState('');
+@@ -74,6 +82,10 @@ export function ClientsPage() {
+         </button>
+       </form>
+ 
++      <div data-testid="clients-toolbar">
++        <ClientsToolbar.Slot />
++      </div>
++
+       {rows.length === 0 ? (
+         <p data-testid="clients-empty">No clients yet.</p>
+       ) : (
+diff --git a/src/main/frontend/features/clients/search.slot.tsx b/src/main/frontend/features/clients/search.slot.tsx
+new file mode 100644
+index 0000000..804d5cf
+--- /dev/null
++++ b/src/main/frontend/features/clients/search.slot.tsx
+@@ -0,0 +1,21 @@
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The clients name search box — its own file, filling the clients toolbar slot. It OWNS the
++// `clientSearch` URL key (rule 4: a filter outlives a click, so it lives in the URL, not useState).
++// The clients list reads the same key to fetch a narrowed list; nothing is passed between them.
++// Carries data-testid="client-search" (the test contract).
++function ClientSearch() {
++  const [q, setQ] = useSearchParam('clientSearch', asString);
++  return (
++    <input
++      data-testid="client-search"
++      type="search"
++      placeholder="Search clients by name"
++      value={q}
++      onChange={(e) => setQ(e.target.value)}
++    />
++  );
++}
++
++export const contribution = ClientsToolbar.fill({ order: 10, Component: ClientSearch });
+diff --git a/src/main/frontend/slots/defs/clientsToolbar.ts b/src/main/frontend/slots/defs/clientsToolbar.ts
+new file mode 100644
+index 0000000..6eb2679
+--- /dev/null
++++ b/src/main/frontend/slots/defs/clientsToolbar.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The clients page toolbar: the strip above the clients table. The page renders it once; features
++ * (the name search box, and anything added later) fill it with `ClientsToolbar.fill(...)`. Adding a
++ * control here is a new file, never an edit to the page.
++ */
++export const ClientsToolbar = defineSlot('clients.toolbar');
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+index 79f51e7..e0921d8 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -11,4 +11,10 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
+ 
+     /** All clients, oldest first, so the list order is stable for the UI and tests. */
+     List<Client> findAllByOrderByIdAsc();
++
++    /**
++     * Clients whose name contains {@code term} (case-insensitive), oldest first. Backs the
++     * name search box on the clients page ({@code GET /api/clients?q=...}).
++     */
++    List<Client> findByNameContainingIgnoreCaseOrderByIdAsc(String term);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ClientsGet.java b/src/main/java/net/officefloor/hq/app/ClientsGet.java
+index f28884d..e799469 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientsGet.java
++++ b/src/main/java/net/officefloor/hq/app/ClientsGet.java
+@@ -1,15 +1,26 @@
+ package net.officefloor.hq.app;
+ 
+ import java.util.List;
++import net.officefloor.web.HttpQueryParameter;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+- * {@code GET /api/clients} — list every client, oldest first. Wired by
++ * {@code GET /api/clients} — list clients, oldest first. Wired by
+  * {@code officefloor/rest/api/clients.GET.yml}.
++ *
++ * <p>An optional {@code q} query parameter narrows the list to clients whose name contains it
++ * (case-insensitive) — this backs the name search box on the clients page. When {@code q} is
++ * absent or blank, every client is returned.
+  */
+ public class ClientsGet {
+ 
+-    public void service(ClientRepository repository, ObjectResponse<List<Client>> response) {
+-        response.send(repository.findAllByOrderByIdAsc());
++    public void service(@HttpQueryParameter("q") String q, ClientRepository repository,
++            ObjectResponse<List<Client>> response) {
++        String term = q == null ? "" : q.trim();
++        if (term.isEmpty()) {
++            response.send(repository.findAllByOrderByIdAsc());
++        } else {
++            response.send(repository.findByNameContainingIgnoreCaseOrderByIdAsc(term));
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V6__client_name_index.sql b/src/main/resources/db/migration/V6__client_name_index.sql
+new file mode 100644
+index 0000000..95f9e6e
+--- /dev/null
++++ b/src/main/resources/db/migration/V6__client_name_index.sql
+@@ -0,0 +1,3 @@
++-- Searching clients by name: an index on client.name keeps the name lookup fast as the list grows.
++-- Additive index, no data change; existing rows and the create path are unaffected.
++CREATE INDEX idx_client_name ON client (name);
