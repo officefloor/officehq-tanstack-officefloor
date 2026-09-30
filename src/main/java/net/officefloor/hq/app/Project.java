@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 
 /**
  * A project the user does for a client: a name and the id of the {@link Client} it is for. Mapped to
@@ -32,6 +33,11 @@ public class Project {
     /** ACTIVE, ON_HOLD or FINISHED — the project's state (V21__project_status.sql). */
     @Column(nullable = false)
     private String status = "ACTIVE";
+
+    /** The money planned for this project (V22__project_budget.sql); invoiced amounts are measured
+     * against it. Defaults to 0 so a project with no budget set reads as nothing planned yet. */
+    @Column(nullable = false)
+    private BigDecimal budget = BigDecimal.ZERO;
 
     public Long getId() {
         return id;
@@ -71,5 +77,13 @@ public class Project {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public BigDecimal getBudget() {
+        return budget;
+    }
+
+    public void setBudget(BigDecimal budget) {
+        this.budget = budget;
     }
 }

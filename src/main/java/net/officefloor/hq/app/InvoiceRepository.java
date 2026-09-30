@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Data access for {@link Invoice}. A Spring Data bean, injected into the OfficeFloor logic classes
@@ -35,4 +36,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
      */
     @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
     BigDecimal sumSentAmount();
+
+    /**
+     * The total invoiced against one project: the sum of every invoice's amount raised against it, or
+     * 0 when it has none. Backs the project budget panel's "invoiced" figure ({@code
+     * GET /api/projects/budget}).
+     */
+    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.projectId = :projectId")
+    BigDecimal sumAmountByProjectId(@Param("projectId") Long projectId);
 }
