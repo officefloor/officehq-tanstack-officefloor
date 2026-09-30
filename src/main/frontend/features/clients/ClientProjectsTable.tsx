@@ -27,7 +27,7 @@ export function ClientProjectsTable({ clientId }: { clientId: number }) {
   }
 
   if (projects.length === 0) {
-    return <p data-testid="client-projects-empty">No projects yet.</p>;
+    return <p data-testid="client-projects-empty">No jobs yet.</p>;
   }
 
   const visible = projects.filter((project) => showAll || isActiveProject(project));

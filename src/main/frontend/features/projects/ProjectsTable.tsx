@@ -33,7 +33,7 @@ export function ProjectsTable() {
     return (
       <>
         <ProjectsToolbar.Slot />
-        <p data-testid="projects-empty">No projects yet.</p>
+        <p data-testid="projects-empty">No jobs yet.</p>
       </>
     );
   }

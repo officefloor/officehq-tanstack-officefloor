@@ -22,8 +22,8 @@ function GlobalSearch() {
       <input
         data-testid="global-search"
         type="search"
-        aria-label="Search clients and projects"
-        placeholder="Search clients and projects"
+        aria-label="Search clients and jobs"
+        placeholder="Search clients and jobs"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />

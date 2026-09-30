@@ -17,7 +17,7 @@ function ShowAllProjectsToggle() {
         checked={showAll}
         onChange={(event) => setShowAll(event.target.checked ? true : undefined)}
       />
-      Show finished and hidden projects
+      Show finished and hidden jobs
     </label>
   );
 }

@@ -7,7 +7,7 @@ export const contribution = AppNav.fill({
   order: 20,
   Component: () => (
     <Link to="/projects" data-testid="nav-projects">
-      Projects
+      Jobs
     </Link>
   ),
 });

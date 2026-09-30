@@ -19,7 +19,7 @@ export function DashboardSummary() {
         <dd data-testid="dashboard-clients-count">{String(data.clients)}</dd>
       </div>
       <div>
-        <dt>Projects</dt>
+        <dt>Jobs</dt>
         <dd data-testid="dashboard-projects-count">{String(data.projects)}</dd>
       </div>
       <div>
