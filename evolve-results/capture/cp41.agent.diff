@@ -1,0 +1,119 @@
+diff --git a/src/main/frontend/features/invoices/cancel.slot.tsx b/src/main/frontend/features/invoices/cancel.slot.tsx
+new file mode 100644
+index 0000000..8622910
+--- /dev/null
++++ b/src/main/frontend/features/invoices/cancel.slot.tsx
+@@ -0,0 +1,42 @@
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson, postJson } from '../../api/http';
++import { InvoiceRowCells } from '../../slots/defs/invoiceRowCells';
++import type { Invoice } from './InvoicesPanel';
++
++// Cancel (void) an invoice sent by mistake — its own file, filling the invoice-row-cells slot so the
++// panel is never edited to grow a new action. The cell queries for itself (['invoices'], the SAME
++// key the panel owns) to read this invoice's status, and only offers the control while it is SENT
++// (a DRAFT has not gone out; a PAID one is settled). Cancelling POSTs to /api/invoices/cancel and
++// invalidates ['invoices'] so every view showing this invoice re-renders with VOID — never
++// hand-maintained. The server flips it to VOID (so it stops counting toward what is owed) and writes
++// the audit record. Carries data-testid="invoice-cancel-<id>" (the test contract).
++export const contribution = InvoiceRowCells.fill({
++  order: 40,
++  Component: ({ invoiceId }: { invoiceId: number }) => {
++    const queryClient = useQueryClient();
++    const invoices = useQuery({
++      queryKey: ['invoices'],
++      queryFn: () => getJson<Invoice[]>('/api/invoices'),
++    });
++    const invoice = (invoices.data ?? []).find((i) => i.id === invoiceId);
++    const cancel = useMutation({
++      mutationFn: (id: number) => postJson<Invoice>('/api/invoices/cancel', { id }),
++      onSuccess: () => {
++        void queryClient.invalidateQueries({ queryKey: ['invoices'] });
++      },
++    });
++    return (
++      <td>
++        {invoice?.status === 'SENT' && (
++          <button
++            type="button"
++            data-testid={`invoice-cancel-${invoiceId}`}
++            onClick={() => cancel.mutate(invoiceId)}
++          >
++            Cancel
++          </button>
++        )}
++      </td>
++    );
++  },
++});
+diff --git a/src/main/java/net/officefloor/hq/app/CancelInvoice.java b/src/main/java/net/officefloor/hq/app/CancelInvoice.java
+new file mode 100644
+index 0000000..431c1a1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CancelInvoice.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app;
++
++/**
++ * Request body for {@code POST /api/invoices/cancel}: the id of the invoice to cancel (void). Bound
++ * from the JSON payload by the Spring MVC {@code @RequestBody} argument resolver.
++ */
++public class CancelInvoice {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceCancel.java b/src/main/java/net/officefloor/hq/app/InvoiceCancel.java
+new file mode 100644
+index 0000000..b439d90
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceCancel.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/invoices/cancel} — cancel (void) an invoice that was sent by mistake, moving it
++ * from SENT to VOID, and return the updated row. Wired by
++ * {@code officefloor/rest/api/invoices/cancel.POST.yml}. The invoice must exist and still be SENT
++ * (only a sent invoice can be cancelled — a DRAFT has not gone out and a PAID one is settled). Once
++ * VOID it stops counting toward what is owed ({@link InvoiceRepository#sumSentAmount()} only sums
++ * SENT). Voiding is recorded through {@link Audit} so the cancellation can be checked back later
++ * (the UI can't show it).
++ */
++public class InvoiceCancel {
++
++    public void service(@RequestBody CancelInvoice body, InvoiceRepository invoices, Audit audit,
++            ObjectResponse<Invoice> response) {
++        Long id = body.getId();
++        Invoice invoice = id == null ? null : invoices.findById(id).orElse(null);
++        if (invoice == null) {
++            throw new IllegalArgumentException("no such invoice");
++        }
++        if (!"SENT".equals(invoice.getStatus())) {
++            throw new IllegalArgumentException("only a sent invoice can be cancelled");
++        }
++        invoice.setStatus("VOID");
++        Invoice saved = invoices.save(invoice);
++        audit.record("INVOICE_VOIDED id=" + saved.getId() + " amount="
++                + saved.getAmount().toPlainString());
++        response.send(saved);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/invoices/cancel.POST.yml b/src/main/resources/officefloor/rest/api/invoices/cancel.POST.yml
+new file mode 100644
+index 0000000..f5496d9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/cancel.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.InvoiceCancel
