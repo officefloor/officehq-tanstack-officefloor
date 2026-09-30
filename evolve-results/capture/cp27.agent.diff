@@ -1,0 +1,210 @@
+diff --git a/src/main/frontend/features/projects/ProjectsTable.tsx b/src/main/frontend/features/projects/ProjectsTable.tsx
+index 59175eb..aba3dbe 100644
+--- a/src/main/frontend/features/projects/ProjectsTable.tsx
++++ b/src/main/frontend/features/projects/ProjectsTable.tsx
+@@ -1,8 +1,13 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { projectsKey, fetchProjects, PROJECTS_SHOW_ARCHIVED_PARAM } from './queries';
++import {
++  projectsKey,
++  fetchProjects,
++  PROJECTS_SHOW_ARCHIVED_PARAM,
++  PROJECTS_TAG_FILTER_PARAM,
++} from './queries';
+ import { ProjectRow } from '../../slots/defs/projectRow';
+ import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+-import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { useSearchParam, asFlag, asNumber } from '../../url/useSearchParam';
+ 
+ // The list. Queries for itself under ['projects'] — never handed its data by a parent (CLAUDE.md
+ // rule 5). Each row shows the project's name and the client's NAME (from the server-side join).
+@@ -11,12 +16,15 @@ import { useSearchParam, asFlag } from '../../url/useSearchParam';
+ export function ProjectsTable() {
+   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: fetchProjects });
+   const [showArchived] = useSearchParam(PROJECTS_SHOW_ARCHIVED_PARAM, asFlag);
++  const [tagFilter] = useSearchParam(PROJECTS_TAG_FILTER_PARAM, asNumber);
+ 
+   if (!projects) {
+     return null;
+   }
+ 
+-  const visible = showArchived ? projects : projects.filter((project) => !project.archived);
++  const visible = projects
++    .filter((project) => showArchived || !project.archived)
++    .filter((project) => tagFilter === undefined || project.tagIds.includes(tagFilter));
+ 
+   if (projects.length === 0) {
+     return (
+diff --git a/src/main/frontend/features/projects/queries.ts b/src/main/frontend/features/projects/queries.ts
+index 4474fc2..5167c84 100644
+--- a/src/main/frontend/features/projects/queries.ts
++++ b/src/main/frontend/features/projects/queries.ts
+@@ -3,7 +3,13 @@ import { getJson, postJson } from '../../api/http';
+ // Server data under ONE shared key: anything showing projects reads ['projects'], and a write
+ // invalidates the same key to refresh them all (CLAUDE.md rule 5). A project's row carries its
+ // client's NAME (the cross-entity join is done server-side, in ProjectView).
+-export type ProjectView = { id: number; name: string; clientName: string; archived: boolean };
++export type ProjectView = {
++  id: number;
++  name: string;
++  clientName: string;
++  archived: boolean;
++  tagIds: number[];
++};
+ 
+ export const projectsKey = ['projects'] as const;
+ 
+@@ -11,6 +17,21 @@ export const projectsKey = ['projects'] as const;
+ // Shared as a constant so the two files agree on the one key without importing each other.
+ export const PROJECTS_SHOW_ARCHIVED_PARAM = 'showArchived';
+ 
++// The URL search-param key the label filter owns and the list reads (CLAUDE.md rule 4): the chosen
++// tag id, or absent for "all". Shared as a constant so the two files agree on the one key.
++export const PROJECTS_TAG_FILTER_PARAM = 'tag';
++
++// The shared pool of labels, read under the SHARED ['tags'] key (CLAUDE.md rule 5) — the projects
++// filter and the project-detail label picker stay in step through the key, without importing each
++// other: attaching a label elsewhere invalidates ['tags'] and this select updates itself.
++export type TagOption = { id: number; name: string };
++
++export const tagsKey = ['tags'] as const;
++
++export function fetchTagOptions(): Promise<TagOption[]> {
++  return getJson<TagOption[]>('/api/tags');
++}
++
+ export function fetchProjects(): Promise<ProjectView[]> {
+   return getJson<ProjectView[]>('/api/projects');
+ }
+diff --git a/src/main/frontend/features/projects/tag-filter.slot.tsx b/src/main/frontend/features/projects/tag-filter.slot.tsx
+new file mode 100644
+index 0000000..ec165d7
+--- /dev/null
++++ b/src/main/frontend/features/projects/tag-filter.slot.tsx
+@@ -0,0 +1,33 @@
++import { useQuery } from '@tanstack/react-query';
++import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
++import { useSearchParam, asNumber } from '../../url/useSearchParam';
++import { PROJECTS_TAG_FILTER_PARAM, tagsKey, fetchTagOptions, type TagOption } from './queries';
++
++// The "filter projects by label" select — its own file filling the projects toolbar region
++// (CLAUDE.md rule 3). It owns the `tag` URL key (rule 4): the choice outlives a click, so it lives
++// in the URL, and the list (ProjectsTable) reads the very same key to decide which rows show. No
++// callback, no shared state — just the key. Its options come from the shared ['tags'] pool (rule 5).
++function TagFilter() {
++  const { data: tags } = useQuery({ queryKey: tagsKey, queryFn: fetchTagOptions });
++  const [selected, setSelected] = useSearchParam(PROJECTS_TAG_FILTER_PARAM, asNumber);
++
++  return (
++    <label>
++      Label
++      <select
++        data-testid="project-tag-filter"
++        value={selected ?? ''}
++        onChange={(event) => setSelected(event.target.value ? Number(event.target.value) : undefined)}
++      >
++        <option value="">All labels</option>
++        {(tags ?? []).map((tag: TagOption) => (
++          <option key={tag.id} value={tag.id}>
++            {tag.name}
++          </option>
++        ))}
++      </select>
++    </label>
++  );
++}
++
++export const contribution = ProjectsToolbar.fill({ order: 20, Component: TagFilter });
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index 64f4bc0..aed4087 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -1,9 +1,13 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.List;
++
+ /**
+  * A project as the list shows it: its own id and name plus the belonging client's NAME (not id), so
+  * the front-end renders the cross-entity join without a second request. Built by the JPQL
+- * constructor expression in {@link ProjectRepository#findAllViews()}.
++ * constructor expression in {@link ProjectRepository#findAllViews()}, which supplies no labels;
++ * {@link ProjectsGet} then attaches the project's {@code tagIds} so the list can filter by label
++ * without a second request per row.
+  */
+ public class ProjectView {
+ 
+@@ -11,12 +15,25 @@ public class ProjectView {
+     private final String name;
+     private final String clientName;
+     private final boolean archived;
++    private final List<Long> tagIds;
+ 
++    /** The shape the JPQL constructor expression builds — no labels yet, so tagIds starts empty. */
+     public ProjectView(Long id, String name, String clientName, boolean archived) {
++        this(id, name, clientName, archived, List.of());
++    }
++
++    public ProjectView(Long id, String name, String clientName, boolean archived,
++            List<Long> tagIds) {
+         this.id = id;
+         this.name = name;
+         this.clientName = clientName;
+         this.archived = archived;
++        this.tagIds = tagIds;
++    }
++
++    /** A copy carrying the ids of the labels attached to this project (for the label filter). */
++    public ProjectView withTagIds(List<Long> tagIds) {
++        return new ProjectView(id, name, clientName, archived, tagIds);
+     }
+ 
+     public Long getId() {
+@@ -35,4 +52,9 @@ public class ProjectView {
+     public boolean isArchived() {
+         return archived;
+     }
++
++    /** The ids of the labels attached to this project — the list filters by label on these. */
++    public List<Long> getTagIds() {
++        return tagIds;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsGet.java b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+index a711cce..74ee8d3 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsGet.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+@@ -1,15 +1,29 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+- * GET /api/projects — every project with its client's name, oldest id first. Wired by
+- * {@code officefloor/rest/api/projects.GET.yml}.
++ * GET /api/projects — every project with its client's name and the ids of its labels, oldest id
++ * first. Wired by {@code officefloor/rest/api/projects.GET.yml}. The label ids ride along so the
++ * list can filter by label without a request per row.
+  */
+ public class ProjectsGet {
+ 
+-    public void service(ProjectRepository projects, ObjectResponse<List<ProjectView>> response) {
+-        response.send(projects.findAllViews());
++    public void service(ProjectRepository projects, ProjectTagRepository projectTags,
++            ObjectResponse<List<ProjectView>> response) {
++        Map<Long, List<Long>> tagIdsByProject = new HashMap<>();
++        for (ProjectTag pairing : projectTags.findAll()) {
++            tagIdsByProject.computeIfAbsent(pairing.getProjectId(), key -> new ArrayList<>())
++                    .add(pairing.getTagId());
++        }
++        List<ProjectView> views = new ArrayList<>();
++        for (ProjectView view : projects.findAllViews()) {
++            views.add(view.withTagIds(tagIdsByProject.getOrDefault(view.getId(), List.of())));
++        }
++        response.send(views);
+     }
+ }
