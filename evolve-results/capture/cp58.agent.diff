@@ -1,0 +1,291 @@
+diff --git a/src/main/frontend/features/clients/ClientsTable.tsx b/src/main/frontend/features/clients/ClientsTable.tsx
+index c38b086..2d8bc86 100644
+--- a/src/main/frontend/features/clients/ClientsTable.tsx
++++ b/src/main/frontend/features/clients/ClientsTable.tsx
+@@ -1,11 +1,15 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { ClientRow } from '../../slots/defs/clientRow';
++import { asFlag } from '../../url/useSearchParam';
+ import {
+   CLIENT_SEARCH_PARAM,
+   CLIENT_SORT_PARAM,
++  CLIENTS_SHOW_ARCHIVED_PARAM,
++  archivedClientsKey,
+   clientsKey,
+   clientsOutstandingKey,
++  fetchArchivedClients,
+   fetchClients,
+   fetchClientsOutstanding,
+   matchesClientSearch,
+@@ -22,6 +26,16 @@ export function ClientsTable() {
+     queryKey: clientsOutstandingKey,
+     queryFn: fetchClientsOutstanding,
+   });
++  const [showArchived] = useSearchParam(CLIENTS_SHOW_ARCHIVED_PARAM, asFlag);
++  // The tucked-away clients — fetched only for the "show archived" view (kept off otherwise so a
++  // default page never asks for them). The list shows the active clients plus these when the toggle
++  // is on. Both queries live under ['clients'], so a restore that invalidates ['clients'] refreshes
++  // them together (CLAUDE.md rule 5).
++  const { data: archived } = useQuery({
++    queryKey: archivedClientsKey,
++    queryFn: fetchArchivedClients,
++    enabled: showArchived,
++  });
+   const [query] = useSearchParam(CLIENT_SEARCH_PARAM, asString);
+   const [sort] = useSearchParam(CLIENT_SORT_PARAM, asString);
+ 
+@@ -29,7 +43,9 @@ export function ClientsTable() {
+     return null;
+   }
+ 
+-  if (clients.length === 0) {
++  const all = showArchived ? [...clients, ...(archived ?? [])] : clients;
++
++  if (all.length === 0) {
+     return <p data-testid="clients-empty">No clients yet.</p>;
+   }
+ 
+@@ -37,7 +53,7 @@ export function ClientsTable() {
+   const owedById = new Map((outstanding ?? []).map((o) => [o.clientId, Number(o.outstanding)]));
+   const owed = (clientId: number) => owedById.get(clientId) ?? 0;
+ 
+-  const visible = clients
++  const visible = all
+     .filter((client) => matchesClientSearch(client, query))
+     .sort((a, b) =>
+       sort === 'outstanding'
+diff --git a/src/main/frontend/features/clients/queries.ts b/src/main/frontend/features/clients/queries.ts
+index 05ed9e1..c9f7732 100644
+--- a/src/main/frontend/features/clients/queries.ts
++++ b/src/main/frontend/features/clients/queries.ts
+@@ -2,7 +2,7 @@ import { getJson, postJson } from '../../api/http';
+ 
+ // Server data under ONE shared key: anything showing clients reads ['clients'], and a write
+ // invalidates the same key to refresh them all (CLAUDE.md rule 5).
+-export type Client = { id: number; name: string; email: string };
++export type Client = { id: number; name: string; email: string; archived: boolean };
+ 
+ export const clientsKey = ['clients'] as const;
+ 
+@@ -28,6 +28,22 @@ export function fetchClients(): Promise<Client[]> {
+   return getJson<Client[]>('/api/clients');
+ }
+ 
++// The tucked-away (archived) clients, under a key nested beneath ['clients'] so invalidating clients
++// refreshes them too (CLAUDE.md rule 5). Read alongside ['clients'] so the list's "show archived"
++// view can reveal them and offer to bring one back, while the default list keeps showing only the
++// active ones.
++export const archivedClientsKey = ['clients', 'archived'] as const;
++
++export function fetchArchivedClients(): Promise<Client[]> {
++  return getJson<Client[]>('/api/clients/archived');
++}
++
++// The URL search-param key the "show archived" toggle owns and the clients list reads (CLAUDE.md
++// rule 4). Off by default → only active clients show; on → the tucked-away ones show too, each with a
++// control to bring it back. Shared as a constant so the two files agree on the one key without
++// importing each other's components.
++export const CLIENTS_SHOW_ARCHIVED_PARAM = 'clientsArchived';
++
+ // How much each client still owes, keyed by client id — read alongside the clients list so the list
+ // can be ordered by outstanding amount. Nested under ['clients'] so invalidating clients refreshes
+ // it too (CLAUDE.md rule 5). The server sums the dues across every invoice raised for the client,
+@@ -124,6 +140,12 @@ export function archiveClient(clientId: number): Promise<void> {
+   return postJson<void>(`/api/clients/${clientId}/archive`, {});
+ }
+ 
++/** Bring a tucked-away client back so it returns to the main list and search; id is in the path, no
++ * body needed. The mirror of {@link archiveClient}. */
++export function restoreClient(clientId: number): Promise<void> {
++  return postJson<void>(`/api/clients/${clientId}/restore`, {});
++}
++
+ // The URL search-param key the "edit this client" control owns: which client's row is currently
+ // being edited (CLAUDE.md rule 4). One key shared by every row's edit control, so opening one row's
+ // form is a URL change, not per-row component state.
+diff --git a/src/main/frontend/features/clients/restore.slot.tsx b/src/main/frontend/features/clients/restore.slot.tsx
+new file mode 100644
+index 0000000..c57e2c1
+--- /dev/null
++++ b/src/main/frontend/features/clients/restore.slot.tsx
+@@ -0,0 +1,40 @@
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { ClientRow } from '../../slots/defs/clientRow';
++import { archivedClientsKey, clientsKey, fetchArchivedClients, restoreClient } from './queries';
++
++// The "bring this client back" action — its own file (CLAUDE.md rule 3), the mirror of the archive
++// action. It only appears on a tucked-away row: it reads the SAME ['clients','archived'] key the list
++// uses (rule 5) and renders nothing unless this client is archived, so an active row shows no restore
++// control. The write is a mutation that invalidates ['clients'] (rule 5), so the client returns to
++// the main list and search for free. The server records the audited CLIENT_RESTORED entry. Carries
++// data-testid="client-restore-<id>" (the test contract).
++function ClientRestore({ clientId }: { clientId: number }) {
++  const queryClient = useQueryClient();
++  const { data: archived } = useQuery({
++    queryKey: archivedClientsKey,
++    queryFn: fetchArchivedClients,
++  });
++
++  const restore = useMutation({
++    mutationFn: () => restoreClient(clientId),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: clientsKey });
++    },
++  });
++
++  if (!archived?.some((client) => client.id === clientId)) {
++    return null;
++  }
++
++  return (
++    <button
++      type="button"
++      data-testid={`client-restore-${clientId}`}
++      onClick={() => restore.mutate()}
++    >
++      Restore
++    </button>
++  );
++}
++
++export const contribution = ClientRow.fill({ order: 6, Component: ClientRestore });
+diff --git a/src/main/frontend/features/clients/show-archived.slot.tsx b/src/main/frontend/features/clients/show-archived.slot.tsx
+new file mode 100644
+index 0000000..95d6140
+--- /dev/null
++++ b/src/main/frontend/features/clients/show-archived.slot.tsx
+@@ -0,0 +1,25 @@
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { CLIENTS_SHOW_ARCHIVED_PARAM } from './queries';
++
++// The "reveal tucked-away clients" toggle — its own file filling the clients toolbar region
++// (CLAUDE.md rule 3), so the page and the list are never edited to add it. It owns the
++// `clientsArchived` URL key (rule 4): the choice outlives a click, so it lives in the URL, and the
++// list (ClientsTable) reads the very same key to decide whether archived rows show. No callback, no
++// shared state — just the key. Carries data-testid="clients-show-archived" (the test contract).
++function ShowArchivedToggle() {
++  const [show, setShow] = useSearchParam(CLIENTS_SHOW_ARCHIVED_PARAM, asFlag);
++  return (
++    <label>
++      <input
++        type="checkbox"
++        data-testid="clients-show-archived"
++        checked={show}
++        onChange={(event) => setShow(event.target.checked ? true : undefined)}
++      />
++      Show archived
++    </label>
++  );
++}
++
++export const contribution = ClientsToolbar.fill({ order: 10, Component: ShowArchivedToggle });
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+index 0e667c1..91cdbbb 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -17,6 +17,12 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
+      */
+     List<Client> findAllByArchivedFalseOrderByIdAsc();
+ 
++    /**
++     * Every client that has been tucked away, oldest id first — the archived clients, so a "show
++     * archived" view can list them and bring one back.
++     */
++    List<Client> findAllByArchivedTrueOrderByIdAsc();
++
+     /** Whether a client already uses this email — no two clients may share one. */
+     boolean existsByEmail(String email);
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRestore.java b/src/main/java/net/officefloor/hq/app/ClientRestore.java
+new file mode 100644
+index 0000000..d5a0c7f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientRestore.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * POST /api/clients/{clientId}/restore — bring a tucked-away client back: clear its archived flag so
++ * it returns to the main list and search, and return the updated row. The mirror of
++ * {@link ClientArchive}. Wired by {@code officefloor/rest/api/clients/{clientId}/restore.POST.yml}.
++ * Restoring is an audited side-effect: one {@code CLIENT_RESTORED id=<id>} record is appended per
++ * restore so it can be checked back later (CLAUDE.md — audited behaviour goes through {@link Audit}).
++ * An unknown client id is rejected with 404.
++ */
++public class ClientRestore {
++
++    public void service(@HttpPathParameter("clientId") String clientId,
++            ClientRepository clients, Audit audit, ObjectResponse<Client> response) {
++        Client client = clients.findById(Long.valueOf(clientId))
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        client.setArchived(false);
++        clients.save(client);
++        audit.record("CLIENT_RESTORED id=" + client.getId());
++        response.send(client);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientsArchivedGet.java b/src/main/java/net/officefloor/hq/app/ClientsArchivedGet.java
+new file mode 100644
+index 0000000..6250b67
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientsArchivedGet.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/clients/archived — every client that has been tucked away, oldest id first. The clients
++ * list reads this alongside {@code /api/clients} so its "show archived" view can reveal the
++ * tucked-away clients and offer to bring one back. Wired by
++ * {@code officefloor/rest/api/clients/archived.GET.yml}.
++ */
++public class ClientsArchivedGet {
++
++    public void service(ClientRepository clients, ObjectResponse<List<Client>> response) {
++        response.send(clients.findAllByArchivedTrueOrderByIdAsc());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 9a99c31..30d1056 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -52,8 +52,10 @@ public class TestSupportController {
+     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
+     @PostMapping("/seed")
+     public void seed(@RequestBody Map<String, Object> fixture) {
+-        seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
+-                c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
++        seedTable(fixture, "clients",
++                "INSERT INTO clients (id, name, email, archived) VALUES (?, ?, ?, ?)",
++                c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"),
++                        Boolean.TRUE.equals(c.get("archived"))});
+         seedTable(fixture, "projects",
+                 "INSERT INTO projects (id, name, client_id, status, archived, budget, code)"
+                         + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+diff --git a/src/main/resources/officefloor/rest/api/clients/archived.GET.yml b/src/main/resources/officefloor/rest/api/clients/archived.GET.yml
+new file mode 100644
+index 0000000..fe039bb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/archived.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/clients/archived -> list every tucked-away client (ClientsArchivedGet.service).
++service:
++  class: net.officefloor.hq.app.ClientsArchivedGet
+diff --git a/src/main/resources/officefloor/rest/api/clients/{clientId}/restore.POST.yml b/src/main/resources/officefloor/rest/api/clients/{clientId}/restore.POST.yml
+new file mode 100644
+index 0000000..fa8e105
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/{clientId}/restore.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/clients/{clientId}/restore -> bring a tucked-away client back (ClientRestore.service).
++service:
++  class: net.officefloor.hq.app.ClientRestore
