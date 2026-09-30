@@ -1,0 +1,118 @@
+diff --git a/src/main/frontend/features/invoices/AllInvoicesTable.tsx b/src/main/frontend/features/invoices/AllInvoicesTable.tsx
+index 309464d..0eafa32 100644
+--- a/src/main/frontend/features/invoices/AllInvoicesTable.tsx
++++ b/src/main/frontend/features/invoices/AllInvoicesTable.tsx
+@@ -1,12 +1,16 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { allInvoicesKey, fetchAllInvoices, type AllInvoice } from './queries';
++import { allInvoicesKey, fetchAllInvoices, INVOICE_STATUS_PARAM, type AllInvoice } from './queries';
+ import { formatMoney } from '../../ui/money';
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
+ 
+ // The one place listing every invoice from every project. Queries for itself under ['invoices',
+ // 'all'] — never handed its data by a parent (CLAUDE.md rule 5). Each row shows the invoice's
+-// project NAME (from the server-side join) and its lifecycle stage.
++// project NAME (from the server-side join) and its lifecycle stage. The stage filter lives in the
++// URL (rule 4): the list reads `invoiceStatus` and, when set, drops rows at any other stage.
+ export function AllInvoicesTable() {
+   const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: fetchAllInvoices });
++  const [status] = useSearchParam(INVOICE_STATUS_PARAM, asString);
+ 
+   if (!invoices) {
+     return null;
+@@ -16,8 +20,12 @@ export function AllInvoicesTable() {
+     return <p data-testid="all-invoices-empty">No invoices yet.</p>;
+   }
+ 
++  const shown = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
++
+   return (
+-    <table data-testid="all-invoices-table">
++    <>
++      <AllInvoicesToolbar.Slot />
++      <table data-testid="all-invoices-table">
+       <thead>
+         <tr>
+           <th>Project</th>
+@@ -26,7 +34,7 @@ export function AllInvoicesTable() {
+         </tr>
+       </thead>
+       <tbody>
+-        {invoices.map((invoice: AllInvoice) => (
++        {shown.map((invoice: AllInvoice) => (
+           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+             <td data-testid="invoice-project">{invoice.projectName}</td>
+             <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+@@ -35,5 +43,6 @@ export function AllInvoicesTable() {
+         ))}
+       </tbody>
+     </table>
++    </>
+   );
+ }
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index 6657401..a7ce2f1 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -33,6 +33,12 @@ export function fetchAllInvoices(): Promise<AllInvoice[]> {
+ /** URL key owned by the sort control; readers (the list) sort by the same key (CLAUDE.md rule 4). */
+ export const INVOICE_SORT_PARAM = 'invoiceSort';
+ 
++/** URL key owned by the stage filter; the all-invoices list narrows to this stage (CLAUDE.md rule 4). */
++export const INVOICE_STATUS_PARAM = 'invoiceStatus';
++
++/** The lifecycle stages an invoice can sit at — the options the stage filter offers. */
++export const INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID'] as const;
++
+ export function fetchInvoices(projectId: number): Promise<Invoice[]> {
+   return getJson<Invoice[]>(`/api/invoices/${projectId}`);
+ }
+diff --git a/src/main/frontend/features/invoices/status-filter.slot.tsx b/src/main/frontend/features/invoices/status-filter.slot.tsx
+new file mode 100644
+index 0000000..3023284
+--- /dev/null
++++ b/src/main/frontend/features/invoices/status-filter.slot.tsx
+@@ -0,0 +1,27 @@
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { INVOICE_STATUS_PARAM, INVOICE_STATUSES } from './queries';
++
++// The "narrow to one stage" control — its own file filling the all-invoices toolbar region
++// (CLAUDE.md rule 3). It owns the `invoiceStatus` URL key (rule 4): the chosen stage outlives a
++// click, so it lives in the URL, and the list (AllInvoicesTable) reads the very same key to drop
++// rows at other stages. No callback, no shared state — just the key.
++function InvoiceStatusFilter() {
++  const [status, setStatus] = useSearchParam(INVOICE_STATUS_PARAM, asString);
++  return (
++    <select
++      data-testid="invoice-status-filter"
++      value={status}
++      onChange={(e) => setStatus(e.target.value)}
++    >
++      <option value="">All stages</option>
++      {INVOICE_STATUSES.map((s) => (
++        <option key={s} value={s}>
++          {s}
++        </option>
++      ))}
++    </select>
++  );
++}
++
++export const contribution = AllInvoicesToolbar.fill({ order: 10, Component: InvoiceStatusFilter });
+diff --git a/src/main/frontend/slots/defs/allInvoicesToolbar.ts b/src/main/frontend/slots/defs/allInvoicesToolbar.ts
+new file mode 100644
+index 0000000..75d9e34
+--- /dev/null
++++ b/src/main/frontend/slots/defs/allInvoicesToolbar.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The all-invoices toolbar — a region above the cross-project invoices list for controls that act on
++ * it (filtering by stage, and whatever comes later). AllInvoicesTable renders the region; features
++ * fill it (CLAUDE.md rule 3), so a new control is a new `*.slot.tsx` file and the table is not
++ * edited again to add one.
++ */
++export const AllInvoicesToolbar = defineSlot('invoices.all.toolbar');
