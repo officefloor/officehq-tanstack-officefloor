@@ -1,0 +1,147 @@
+diff --git a/src/main/frontend/features/invoices/InvoicesPanel.tsx b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+index 0ca24b6..21003f9 100644
+--- a/src/main/frontend/features/invoices/InvoicesPanel.tsx
++++ b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+@@ -1,6 +1,8 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson, postJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
+ import { money } from '../../ui/money';
+ 
+ // An invoice as the server returns it: which project it belongs to, its amount, and its payment
+@@ -20,9 +22,17 @@ export type Invoice = {
+ // useState is the amount the user is currently typing (rule 4).
+ export function InvoicesPanel({ projectId }: { projectId: number }) {
+   const queryClient = useQueryClient();
++  // The sort lives in the URL (owned by features/invoices/sortByDue.slot.tsx). The panel reads the
++  // same key and asks the server for the ordered list, so it stays a single source of truth — no
++  // server data copied into state or re-sorted by hand. The key still starts with 'invoices', so
++  // writes that invalidateQueries({ queryKey: ['invoices'] }) still refresh it.
++  const [sort] = useSearchParam('invoiceSort', asString);
+   const invoices = useQuery({
+-    queryKey: ['invoices'],
+-    queryFn: () => getJson<Invoice[]>('/api/invoices'),
++    queryKey: ['invoices', sort],
++    queryFn: () =>
++      getJson<Invoice[]>(
++        sort ? `/api/invoices?sort=${encodeURIComponent(sort)}` : '/api/invoices',
++      ),
+   });
+ 
+   const [amount, setAmount] = useState('');
+@@ -85,6 +95,10 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+         )}
+       </form>
+ 
++      <div data-testid="project-invoices-toolbar">
++        <InvoicesToolbar.Slot />
++      </div>
++
+       <table data-testid="project-invoices-table">
+         <thead>
+           <tr>
+diff --git a/src/main/frontend/features/invoices/sortByDue.slot.tsx b/src/main/frontend/features/invoices/sortByDue.slot.tsx
+new file mode 100644
+index 0000000..3b8e572
+--- /dev/null
++++ b/src/main/frontend/features/invoices/sortByDue.slot.tsx
+@@ -0,0 +1,23 @@
++import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The sort-by-due-date control — its own file, filling the project invoices toolbar slot. It OWNS
++// the `invoiceSort` URL key (rule 4: a sort outlives a click, so it lives in the URL, not useState).
++// The invoices panel reads the same key and asks the server for the ordered list; nothing is passed
++// between them. Carries data-testid="invoice-sort-due" (the test contract).
++function SortByDue() {
++  const [sort, setSort] = useSearchParam('invoiceSort', asString);
++  const active = sort === 'due';
++  return (
++    <button
++      type="button"
++      data-testid="invoice-sort-due"
++      aria-pressed={active}
++      onClick={() => setSort(active ? undefined : 'due')}
++    >
++      Sort by due date
++    </button>
++  );
++}
++
++export const contribution = InvoicesToolbar.fill({ order: 10, Component: SortByDue });
+diff --git a/src/main/frontend/slots/defs/invoicesToolbar.ts b/src/main/frontend/slots/defs/invoicesToolbar.ts
+new file mode 100644
+index 0000000..0360dbe
+--- /dev/null
++++ b/src/main/frontend/slots/defs/invoicesToolbar.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The project invoices toolbar: the strip above the invoices table. The invoices panel renders it
++ * once; features (the sort-by-due-date control, and anything added later) fill it with
++ * `InvoicesToolbar.fill(...)`. Adding a control here is a new file, never an edit to the panel.
++ */
++export const InvoicesToolbar = defineSlot('project.invoices.toolbar');
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index a53c2f3..4da517a 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -14,6 +14,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+     /** All invoices, oldest first, so the list order is stable for the UI and tests. */
+     List<Invoice> findAllByOrderByIdAsc();
+ 
++    /**
++     * All invoices, earliest due date first (id as a stable tiebreaker), backing the project
++     * invoices' sort-by-due-date control.
++     */
++    List<Invoice> findAllByOrderByDueDateAscIdAsc();
++
+     /**
+      * The money still owed: the sum of every UNPAID invoice's amount, or 0 when none are unpaid.
+      * Backs the dashboard's outstanding total ({@code GET /api/dashboard}).
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicesGet.java b/src/main/java/net/officefloor/hq/app/InvoicesGet.java
+index 604a5e7..8f380fb 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoicesGet.java
++++ b/src/main/java/net/officefloor/hq/app/InvoicesGet.java
+@@ -1,16 +1,26 @@
+ package net.officefloor.hq.app;
+ 
+ import java.util.List;
++import net.officefloor.web.HttpQueryParameter;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+  * {@code GET /api/invoices} — list every invoice, oldest first, each carrying the id of the project
+  * it belongs to so the project-detail view can show just its own. Wired by
+  * {@code officefloor/rest/api/invoices.GET.yml}.
++ *
++ * <p>An optional {@code sort=due} query parameter orders the list by due date (earliest first) —
++ * this backs the sort-by-due-date control on the project invoices list. Any other value (or none)
++ * keeps the stable oldest-first order.
+  */
+ public class InvoicesGet {
+ 
+-    public void service(InvoiceRepository repository, ObjectResponse<List<Invoice>> response) {
+-        response.send(repository.findAllByOrderByIdAsc());
++    public void service(@HttpQueryParameter("sort") String sort, InvoiceRepository repository,
++            ObjectResponse<List<Invoice>> response) {
++        if ("due".equals(sort == null ? null : sort.trim())) {
++            response.send(repository.findAllByOrderByDueDateAscIdAsc());
++        } else {
++            response.send(repository.findAllByOrderByIdAsc());
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V10__invoice_due_date_index.sql b/src/main/resources/db/migration/V10__invoice_due_date_index.sql
+new file mode 100644
+index 0000000..b58be69
+--- /dev/null
++++ b/src/main/resources/db/migration/V10__invoice_due_date_index.sql
+@@ -0,0 +1,4 @@
++-- Sorting a project's invoices by due date orders on invoice.due_date. An index keeps that ordering
++-- fast as the invoice list grows. Additive index, no data change; existing rows and the create/pay
++-- paths are unaffected.
++CREATE INDEX idx_invoice_due_date ON invoice (due_date);
