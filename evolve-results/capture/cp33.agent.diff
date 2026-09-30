@@ -1,0 +1,207 @@
+diff --git a/src/main/frontend/features/clients/ClientStatementTable.tsx b/src/main/frontend/features/clients/ClientStatementTable.tsx
+new file mode 100644
+index 0000000..cd12a9a
+--- /dev/null
++++ b/src/main/frontend/features/clients/ClientStatementTable.tsx
+@@ -0,0 +1,42 @@
++import { useQuery } from '@tanstack/react-query';
++import { clientStatementKey, fetchClientStatement, type StatementInvoice } from './queries';
++import { formatMoney } from '../../ui/money';
++
++// A client's statement: all their invoices in one place with the total still owed. Queries for
++// itself under ['clients', clientId, 'statement'] — never handed its data by a parent (CLAUDE.md
++// rule 5). The per-invoice due and the total owed are derived server-side, so the headline figure
++// always matches the rows.
++export function ClientStatementTable({ clientId }: { clientId: number }) {
++  const { data: statement } = useQuery({
++    queryKey: clientStatementKey(clientId),
++    queryFn: () => fetchClientStatement(clientId),
++  });
++
++  if (!statement) {
++    return null;
++  }
++
++  return (
++    <>
++      <table data-testid="client-statement-table">
++        <thead>
++          <tr>
++            <th>Amount</th>
++            <th>Status</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {statement.invoices.map((invoice: StatementInvoice) => (
++            <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
++              <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
++              <td data-testid="statement-invoice-status">{invoice.status}</td>
++              <td data-testid="statement-invoice-due">{formatMoney(invoice.due)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p data-testid="client-outstanding-total">{formatMoney(statement.totalOwed)}</p>
++    </>
++  );
++}
+diff --git a/src/main/frontend/features/clients/queries.ts b/src/main/frontend/features/clients/queries.ts
+index 91c32ff..384b6a5 100644
+--- a/src/main/frontend/features/clients/queries.ts
++++ b/src/main/frontend/features/clients/queries.ts
+@@ -40,6 +40,23 @@ export function fetchClientProjects(clientId: number): Promise<ClientProject[]>
+   return getJson<ClientProject[]>(`/api/clients/${clientId}/projects`);
+ }
+ 
++// A client's statement: every invoice raised for the client (across their projects) plus the total
++// still owed, under a key nested beneath ['clients'] so invalidating clients refreshes it too
++// (CLAUDE.md rule 5). Each invoice carries the money still due (amount - payments), derived
++// server-side; the total is the sum of those dues.
++export type StatementInvoice = { id: number; amount: number; status: string; due: number };
++export type ClientStatement = { invoices: StatementInvoice[]; totalOwed: number };
++
++export const clientStatementKey = (clientId: number) =>
++  ['clients', clientId, 'statement'] as const;
++
++export function fetchClientStatement(clientId: number): Promise<ClientStatement> {
++  return getJson<ClientStatement>(`/api/clients/${clientId}/statement`);
++}
++
++// The URL search-param key the "open statement" control owns and the panel reads (CLAUDE.md rule 4).
++export const CLIENT_STATEMENT_PARAM = 'clientStatement';
++
+ export function createClient(input: { name: string; email: string }): Promise<Client> {
+   return postJson<Client>('/api/clients', input);
+ }
+diff --git a/src/main/frontend/features/clients/statement.slot.tsx b/src/main/frontend/features/clients/statement.slot.tsx
+new file mode 100644
+index 0000000..09f5a4c
+--- /dev/null
++++ b/src/main/frontend/features/clients/statement.slot.tsx
+@@ -0,0 +1,26 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { CLIENT_STATEMENT_PARAM } from './queries';
++import { ClientStatementTable } from './ClientStatementTable';
++
++// The statement panel on a client's detail page — one new *.slot.tsx file filling the ClientDetail
++// region (CLAUDE.md rule 3). Nothing existing is edited to add it. The "open statement" control owns
++// the `clientStatement` URL key (rule 4): whether the statement is open outlives a click, so it
++// lives in the URL, and the panel reads the same key to decide whether to render the table.
++function ClientStatementPanel({ clientId }: { clientId: number }) {
++  const [open, setOpen] = useSearchParam(CLIENT_STATEMENT_PARAM, asFlag);
++  return (
++    <section data-testid="client-statement">
++      <button
++        type="button"
++        data-testid="client-statement-open"
++        onClick={() => setOpen(open ? undefined : true)}
++      >
++        Statement
++      </button>
++      {open ? <ClientStatementTable clientId={clientId} /> : null}
++    </section>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 20, Component: ClientStatementPanel });
+diff --git a/src/main/java/net/officefloor/hq/app/ClientStatement.java b/src/main/java/net/officefloor/hq/app/ClientStatement.java
+new file mode 100644
+index 0000000..fb211df
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientStatement.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.List;
++
++/**
++ * A client's statement: every invoice raised for the client (across all their projects), each
++ * carrying how much is still due (amount - payments, via {@link ProjectInvoice}), plus the single
++ * headline figure the client still owes — {@code totalOwed}, the sum of those dues. Derived per
++ * request in {@link ClientStatementGet} so it always reflects the current invoices and payments.
++ */
++public class ClientStatement {
++
++    private final List<ProjectInvoice> invoices;
++    private final BigDecimal totalOwed;
++
++    public ClientStatement(List<ProjectInvoice> invoices, BigDecimal totalOwed) {
++        this.invoices = invoices;
++        this.totalOwed = totalOwed;
++    }
++
++    public List<ProjectInvoice> getInvoices() {
++        return invoices;
++    }
++
++    public BigDecimal getTotalOwed() {
++        return totalOwed;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientStatementGet.java b/src/main/java/net/officefloor/hq/app/ClientStatementGet.java
+new file mode 100644
+index 0000000..40f462a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientStatementGet.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/clients/{clientId}/statement — one client's statement: every invoice raised for the
++ * client (across all their projects), oldest id first, each with how much is still due, plus the
++ * total the client still owes (the sum of those dues). Wired by
++ * {@code officefloor/rest/api/clients/{clientId}/statement.GET.yml}.
++ */
++public class ClientStatementGet {
++
++    public void service(@HttpPathParameter("clientId") String clientId,
++            InvoiceRepository invoices, PaymentRepository payments,
++            ObjectResponse<ClientStatement> response) {
++        List<ProjectInvoice> rows = new ArrayList<>();
++        BigDecimal totalOwed = BigDecimal.ZERO;
++        for (Invoice invoice : invoices.findByClientId(Long.valueOf(clientId))) {
++            ProjectInvoice row = new ProjectInvoice(invoice, payments.sumByInvoiceId(invoice.getId()));
++            rows.add(row);
++            totalOwed = totalOwed.add(row.getDue());
++        }
++        response.send(new ClientStatement(rows, totalOwed));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index a7e8ac8..5efc2ca 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -14,6 +14,15 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+     /** Every invoice for one project, oldest id first — the shape a project's list renders. */
+     List<Invoice> findByProjectIdOrderByIdAsc(Long projectId);
+ 
++    /**
++     * Every invoice raised for one client, across all of that client's projects, oldest id first —
++     * the shape a client's statement renders. Joins each invoice to its project to filter by the
++     * project's client.
++     */
++    @Query("SELECT i FROM Invoice i, Project p WHERE i.projectId = p.id AND p.clientId = ?1 "
++            + "ORDER BY i.id ASC")
++    List<Invoice> findByClientId(Long clientId);
++
+     /**
+      * Every invoice across all projects with the NAME of the project it belongs to, oldest id
+      * first — the shape the one all-invoices list renders.
+diff --git a/src/main/resources/officefloor/rest/api/clients/{clientId}/statement.GET.yml b/src/main/resources/officefloor/rest/api/clients/{clientId}/statement.GET.yml
+new file mode 100644
+index 0000000..b5c54bd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/{clientId}/statement.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/clients/{clientId}/statement -> one client's invoices and the total still owed (ClientStatementGet.service).
++service:
++  class: net.officefloor.hq.app.ClientStatementGet
