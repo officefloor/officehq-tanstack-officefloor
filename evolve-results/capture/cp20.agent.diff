@@ -1,0 +1,430 @@
+diff --git a/src/main/frontend/features/projects/ProjectTasksPanel.tsx b/src/main/frontend/features/projects/ProjectTasksPanel.tsx
+new file mode 100644
+index 0000000..687fb45
+--- /dev/null
++++ b/src/main/frontend/features/projects/ProjectTasksPanel.tsx
+@@ -0,0 +1,100 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson, postJson } from '../../api/http';
++
++// A task as the server returns it: a title and a done flag that can be ticked off, plus the id of
++// the project it belongs to. done=false shows as OPEN, done=true as DONE.
++export type Task = {
++  id: number;
++  projectId: number;
++  title: string;
++  done: boolean;
++};
++
++// A project's tasks, rendered in the project-detail context: the list of that project's tasks plus a
++// form to add one and a per-row toggle to tick it off. Server data is read with useQuery under the
++// ['tasks'] key and filtered to the project this panel is handed — never copied into state, never
++// hand-maintained (rule 5). Adding and toggling are useMutations that invalidate ['tasks'], so the
++// list refetches itself. The only useState here is the title the user is currently typing (rule 4).
++export function ProjectTasksPanel({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const tasks = useQuery({
++    queryKey: ['tasks'],
++    queryFn: () => getJson<Task[]>('/api/tasks'),
++  });
++
++  const [title, setTitle] = useState('');
++
++  const create = useMutation({
++    mutationFn: () => postJson<Task>('/api/tasks', { projectId, title }),
++    onSuccess: () => {
++      setTitle('');
++      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
++    },
++  });
++
++  const toggle = useMutation({
++    mutationFn: (id: number) => postJson<Task>('/api/tasks/toggle', { id }),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
++    },
++  });
++
++  const rows = (tasks.data ?? []).filter((t) => t.projectId === projectId);
++
++  return (
++    <section data-testid="project-tasks">
++      <form
++        data-testid="task-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          if (!title.trim()) {
++            return;
++          }
++          create.mutate();
++        }}
++      >
++        <input
++          data-testid="task-form-title"
++          placeholder="Task title"
++          value={title}
++          onChange={(e) => setTitle(e.target.value)}
++        />
++        <button data-testid="task-form-submit" type="submit">
++          Add task
++        </button>
++      </form>
++
++      {rows.length === 0 ? (
++        <p data-testid="project-tasks-empty">No tasks yet.</p>
++      ) : (
++        <table data-testid="project-tasks-table">
++          <thead>
++            <tr>
++              <th>Task</th>
++              <th>Status</th>
++              <th />
++            </tr>
++          </thead>
++          <tbody>
++            {rows.map((t) => (
++              <tr key={t.id} data-testid={`task-row-${t.id}`}>
++                <td data-testid="task-title">{t.title}</td>
++                <td data-testid="task-status">{t.done ? 'DONE' : 'OPEN'}</td>
++                <td>
++                  <button
++                    type="button"
++                    data-testid={`task-toggle-${t.id}`}
++                    onClick={() => toggle.mutate(t.id)}
++                  >
++                    {t.done ? 'Reopen' : 'Tick off'}
++                  </button>
++                </td>
++              </tr>
++            ))}
++          </tbody>
++        </table>
++      )}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/projects/tasks.slot.tsx b/src/main/frontend/features/projects/tasks.slot.tsx
+new file mode 100644
+index 0000000..7ecd04d
+--- /dev/null
++++ b/src/main/frontend/features/projects/tasks.slot.tsx
+@@ -0,0 +1,10 @@
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { ProjectTasksPanel } from './ProjectTasksPanel';
++
++// The tasks' presence on a project's detail page — its own file, filling the project-detail slot.
++// The detail route was written once and is not touched to add this; the panel queries for its own
++// data (['tasks']) scoped to the project it is handed.
++export const contribution = ProjectDetail.fill({
++  order: 20,
++  Component: ProjectTasksPanel,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/NewTask.java b/src/main/java/net/officefloor/hq/app/NewTask.java
+new file mode 100644
+index 0000000..bba5bd0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NewTask.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app;
++
++/**
++ * Request body for {@code POST /api/tasks}: the fields the user supplies when adding a task — the id
++ * of the project it belongs to plus its title. Bound from the JSON payload by the Spring MVC
++ * {@code @RequestBody} argument resolver.
++ */
++public class NewTask {
++
++    private Long projectId;
++
++    private String title;
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public void setProjectId(Long projectId) {
++        this.projectId = projectId;
++    }
++
++    public String getTitle() {
++        return title;
++    }
++
++    public void setTitle(String title) {
++        this.title = title;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Task.java b/src/main/java/net/officefloor/hq/app/Task.java
+new file mode 100644
+index 0000000..3ed2ff7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Task.java
+@@ -0,0 +1,62 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A task the user keeps on a project: a title and a {@code done} flag that can be ticked off, plus
++ * the id of the {@link Project} it belongs to. Mapped to the {@code task} table created by
++ * {@code V14__tasks.sql}. IDENTITY id so the DB assigns it on insert (seed inserts explicit ids via
++ * JdbcTemplate; GENERATED BY DEFAULT allows both).
++ */
++@Entity
++@Table(name = "task")
++public class Task {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "project_id")
++    private Long projectId;
++
++    private String title;
++
++    private boolean done;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public void setProjectId(Long projectId) {
++        this.projectId = projectId;
++    }
++
++    public String getTitle() {
++        return title;
++    }
++
++    public void setTitle(String title) {
++        this.title = title;
++    }
++
++    public boolean isDone() {
++        return done;
++    }
++
++    public void setDone(boolean done) {
++        this.done = done;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TaskRepository.java b/src/main/java/net/officefloor/hq/app/TaskRepository.java
+new file mode 100644
+index 0000000..30a5551
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TaskRepository.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/**
++ * Data access for {@link Task}. A Spring Data bean, injected into the OfficeFloor logic classes that
++ * back the /api/tasks routes.
++ */
++public interface TaskRepository extends JpaRepository<Task, Long> {
++
++    /** All tasks, oldest first, so the list order is stable for the UI and tests. */
++    List<Task> findAllByOrderByIdAsc();
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TaskToggle.java b/src/main/java/net/officefloor/hq/app/TaskToggle.java
+new file mode 100644
+index 0000000..791bf21
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TaskToggle.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/tasks/toggle} — tick a task off or back on (flip its {@code done} flag) and return
++ * the updated row. Wired by {@code officefloor/rest/api/tasks/toggle.POST.yml}. The task must exist;
++ * the change is recorded through {@link Audit} so the tick can be checked back later (the UI shows
++ * only the current state).
++ */
++public class TaskToggle {
++
++    public void service(@RequestBody ToggleTask body, TaskRepository tasks, Audit audit,
++            ObjectResponse<Task> response) {
++        Long id = body.getId();
++        Task task = id == null ? null : tasks.findById(id).orElse(null);
++        if (task == null) {
++            throw new IllegalArgumentException("no such task");
++        }
++        task.setDone(!task.isDone());
++        Task saved = tasks.save(task);
++        audit.record("TASK_TOGGLED id=" + saved.getId() + " done=" + saved.isDone());
++        response.send(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TasksGet.java b/src/main/java/net/officefloor/hq/app/TasksGet.java
+new file mode 100644
+index 0000000..f055fa7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TasksGet.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * {@code GET /api/tasks} — list every task, oldest first. The UI scopes them to one project. Wired
++ * by {@code officefloor/rest/api/tasks.GET.yml}.
++ */
++public class TasksGet {
++
++    public void service(TaskRepository tasks, ObjectResponse<List<Task>> response) {
++        response.send(tasks.findAllByOrderByIdAsc());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TasksPost.java b/src/main/java/net/officefloor/hq/app/TasksPost.java
+new file mode 100644
+index 0000000..35b95a2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TasksPost.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/tasks} — add a task (title) to a project and return the created row, OPEN by
++ * default. Wired by {@code officefloor/rest/api/tasks.POST.yml}. The project must exist; the create
++ * is audited through {@link Audit}.
++ */
++public class TasksPost {
++
++    public void service(@RequestBody NewTask body, TaskRepository tasks, ProjectRepository projects,
++            Audit audit, ObjectResponse<Task> response) {
++        String title = body.getTitle() == null ? "" : body.getTitle().trim();
++        if (title.isEmpty()) {
++            throw new IllegalArgumentException("a task requires a title");
++        }
++        Long projectId = body.getProjectId();
++        Project project = projectId == null ? null : projects.findById(projectId).orElse(null);
++        if (project == null) {
++            throw new IllegalArgumentException("a task requires an existing project");
++        }
++        Task task = new Task();
++        task.setProjectId(projectId);
++        task.setTitle(title);
++        task.setDone(false);
++        Task saved = tasks.save(task);
++        audit.record("TASK_CREATED id=" + saved.getId() + " title=" + saved.getTitle()
++                + " project=" + project.getName());
++        response.send(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 1e01d57..786f39f 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -37,6 +37,7 @@ public class TestSupportController {
+         // FK-referenced table.
+         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+         jdbc.execute("TRUNCATE TABLE invoice RESTART IDENTITY");
++        jdbc.execute("TRUNCATE TABLE task RESTART IDENTITY");
+         jdbc.execute("TRUNCATE TABLE contact RESTART IDENTITY");
+         jdbc.execute("TRUNCATE TABLE project RESTART IDENTITY");
+         jdbc.execute("TRUNCATE TABLE client RESTART IDENTITY");
+@@ -62,6 +63,16 @@ public class TestSupportController {
+                         ((Number) p.get("clientId")).longValue());
+             }
+         }
++        List<Map<String, Object>> tasks = (List<Map<String, Object>>) fixture.get("tasks");
++        if (tasks != null) {
++            for (Map<String, Object> t : tasks) {
++                jdbc.update("INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",
++                        ((Number) t.get("id")).longValue(),
++                        ((Number) t.get("projectId")).longValue(),
++                        t.get("title"),
++                        Boolean.TRUE.equals(t.get("done")));
++            }
++        }
+         List<Map<String, Object>> contacts = (List<Map<String, Object>>) fixture.get("contacts");
+         if (contacts != null) {
+             for (Map<String, Object> c : contacts) {
+diff --git a/src/main/java/net/officefloor/hq/app/ToggleTask.java b/src/main/java/net/officefloor/hq/app/ToggleTask.java
+new file mode 100644
+index 0000000..85280d3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ToggleTask.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app;
++
++/**
++ * Request body for {@code POST /api/tasks/toggle}: the id of the task to tick off (or un-tick). Bound
++ * from the JSON payload by the Spring MVC {@code @RequestBody} argument resolver.
++ */
++public class ToggleTask {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/resources/db/migration/V14__tasks.sql b/src/main/resources/db/migration/V14__tasks.sql
+new file mode 100644
+index 0000000..bb8f7b5
+--- /dev/null
++++ b/src/main/resources/db/migration/V14__tasks.sql
+@@ -0,0 +1,10 @@
++-- Tasks a user keeps on a project: a title and a done flag, so a to-do can be ticked off. Each task
++-- belongs to exactly one project (project_id FK). IDENTITY id like client, project and contact, so
++-- the DB assigns it on insert while the seed path can still supply explicit ids (GENERATED BY
++-- DEFAULT). done defaults to FALSE — a freshly added task is OPEN until it is ticked off.
++CREATE TABLE task (
++    id         BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    project_id BIGINT NOT NULL REFERENCES project(id),
++    title      VARCHAR(255) NOT NULL,
++    done       BOOLEAN NOT NULL DEFAULT FALSE
++);
+diff --git a/src/main/resources/officefloor/rest/api/tasks.GET.yml b/src/main/resources/officefloor/rest/api/tasks.GET.yml
+new file mode 100644
+index 0000000..d39b0c5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/tasks.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.TasksGet
+diff --git a/src/main/resources/officefloor/rest/api/tasks.POST.yml b/src/main/resources/officefloor/rest/api/tasks.POST.yml
+new file mode 100644
+index 0000000..f909f5d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/tasks.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.TasksPost
+diff --git a/src/main/resources/officefloor/rest/api/tasks/toggle.POST.yml b/src/main/resources/officefloor/rest/api/tasks/toggle.POST.yml
+new file mode 100644
+index 0000000..5ae83aa
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/tasks/toggle.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.TaskToggle
