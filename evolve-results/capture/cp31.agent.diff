@@ -1,0 +1,176 @@
+diff --git a/src/main/frontend/features/invoices/due-amount.slot.tsx b/src/main/frontend/features/invoices/due-amount.slot.tsx
+new file mode 100644
+index 0000000..aa708a4
+--- /dev/null
++++ b/src/main/frontend/features/invoices/due-amount.slot.tsx
+@@ -0,0 +1,25 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { invoicesKey, fetchInvoices, type Invoice } from './queries';
++import { formatMoney } from '../../ui/money';
++
++// The "still due after payments" cell on every invoice row — its own file filling the invoice.row
++// region (CLAUDE.md rule 3). The amount due (invoice amount minus its payments) is derived
++// server-side and carried on each invoice, so this cell reads the SAME ['invoices', projectId]
++// query the table already loaded (rule 5) and finds its own invoice — no parent hands it the value,
++// and a payment write that invalidates the key refreshes this cell for free. Renders under
++// data-testid="invoice-due-amount" (the test contract).
++export const contribution = InvoiceRow.fill({
++  order: 15,
++  Component: ({ invoiceId, projectId }: { invoiceId: number; projectId: number; status: string }) => {
++    const { data: invoices } = useQuery({
++      queryKey: invoicesKey(projectId),
++      queryFn: () => fetchInvoices(projectId),
++    });
++    const invoice = invoices?.find((row: Invoice) => row.id === invoiceId);
++    if (!invoice) {
++      return null;
++    }
++    return <td data-testid="invoice-due-amount">{formatMoney(invoice.due)}</td>;
++  },
++});
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index a7ce2f1..657506e 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -10,6 +10,10 @@ export type Invoice = {
+   status: string;
+   issuedDate: string;
+   dueDate: string;
++  /** How much has been settled against this invoice so far (sum of its payments). */
++  paid: number;
++  /** How much is still owed after payments: amount - paid. Derived server-side. */
++  due: number;
+ };
+ 
+ export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicesGet.java b/src/main/java/net/officefloor/hq/app/InvoicesGet.java
+index 2398196..dac0573 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoicesGet.java
++++ b/src/main/java/net/officefloor/hq/app/InvoicesGet.java
+@@ -1,17 +1,24 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.web.HttpPathParameter;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+- * GET /api/invoices/{projectId} — every invoice for one project, oldest id first. Wired by
++ * GET /api/invoices/{projectId} — every invoice for one project, oldest id first, each carrying how
++ * much has been paid and how much is still due (amount - payments). Wired by
+  * {@code officefloor/rest/api/invoices/{projectId}.GET.yml}.
+  */
+ public class InvoicesGet {
+ 
+     public void service(@HttpPathParameter("projectId") String projectId,
+-            InvoiceRepository invoices, ObjectResponse<List<Invoice>> response) {
+-        response.send(invoices.findByProjectIdOrderByIdAsc(Long.valueOf(projectId)));
++            InvoiceRepository invoices, PaymentRepository payments,
++            ObjectResponse<List<ProjectInvoice>> response) {
++        List<ProjectInvoice> result = new ArrayList<>();
++        for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(Long.valueOf(projectId))) {
++            result.add(new ProjectInvoice(invoice, payments.sumByInvoiceId(invoice.getId())));
++        }
++        response.send(result);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/PaymentRepository.java b/src/main/java/net/officefloor/hq/app/PaymentRepository.java
+index 95a54f8..2f63e14 100644
+--- a/src/main/java/net/officefloor/hq/app/PaymentRepository.java
++++ b/src/main/java/net/officefloor/hq/app/PaymentRepository.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import java.util.List;
+ import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.data.jpa.repository.Query;
+ 
+ /**
+  * Data access for {@link Payment}. A Spring Data bean, injected into the OfficeFloor logic classes
+@@ -11,4 +13,12 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
+ 
+     /** Every payment on one invoice, oldest id first — the shape an invoice's payment list renders. */
+     List<Payment> findByInvoiceIdOrderByIdAsc(Long invoiceId);
++
++    /**
++     * Total already settled against one invoice: the sum of its payments. COALESCE keeps it 0 (never
++     * null) when the invoice has no payments yet, so the amount-due calculation stays purely
++     * arithmetic (amount - paid).
++     */
++    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.invoiceId = ?1")
++    BigDecimal sumByInvoiceId(Long invoiceId);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectInvoice.java b/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
+new file mode 100644
+index 0000000..1879c90
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
+@@ -0,0 +1,65 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * An invoice as a project's list shows it: every stored {@link Invoice} field plus the money already
++ * settled against it ({@code paid}, the sum of its {@link Payment}s) and how much is still owed
++ * ({@code due} = amount - paid). The paid/due split is derived per request in {@link InvoicesGet}
++ * rather than stored, so it always reflects the current payments. Additive over the raw invoice
++ * shape — existing readers keep using {@code amount}; the new ones read {@code due}.
++ */
++public class ProjectInvoice {
++
++    private final Long id;
++    private final Long projectId;
++    private final BigDecimal amount;
++    private final String status;
++    private final String issuedDate;
++    private final String dueDate;
++    private final BigDecimal paid;
++    private final BigDecimal due;
++
++    public ProjectInvoice(Invoice invoice, BigDecimal paid) {
++        this.id = invoice.getId();
++        this.projectId = invoice.getProjectId();
++        this.amount = invoice.getAmount();
++        this.status = invoice.getStatus();
++        this.issuedDate = invoice.getIssuedDate();
++        this.dueDate = invoice.getDueDate();
++        this.paid = paid;
++        this.due = invoice.getAmount().subtract(paid);
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public BigDecimal getAmount() {
++        return amount;
++    }
++
++    public String getStatus() {
++        return status;
++    }
++
++    public String getIssuedDate() {
++        return issuedDate;
++    }
++
++    public String getDueDate() {
++        return dueDate;
++    }
++
++    public BigDecimal getPaid() {
++        return paid;
++    }
++
++    public BigDecimal getDue() {
++        return due;
++    }
++}
