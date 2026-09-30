@@ -1,6 +1,5 @@
 package net.officefloor.hq.app;
 
-import java.math.BigDecimal;
 import net.officefloor.server.http.HttpException;
 import net.officefloor.server.http.HttpStatus;
 import net.officefloor.web.HttpPathParameter;
@@ -31,12 +30,8 @@ public class InvoiceLineItemRemove {
         lineItems.delete(line);
 
         // Keep the invoice's stored amount in step with its lines: amount = sum(qty * unitPrice).
-        BigDecimal total = BigDecimal.ZERO;
-        for (LineItem remaining : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
-            total = total.add(
-                    remaining.getUnitPrice().multiply(BigDecimal.valueOf(remaining.getQty())));
-        }
-        invoice.setAmount(total);
+        invoice.setAmount(
+                InvoiceDiscount.subtotalOf(lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)));
         invoices.save(invoice);
 
         response.send(invoice);

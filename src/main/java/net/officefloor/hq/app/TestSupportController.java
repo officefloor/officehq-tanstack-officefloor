@@ -113,40 +113,56 @@ public class TestSupportController {
             return;
         }
         for (Map<String, Object> invoice : invoices) {
-            long invoiceId = id(invoice, "id");
-            List<Map<String, Object>> lineItems =
-                    (List<Map<String, Object>>) invoice.get("lineItems");
-            double amount;
-            if (invoice.get("amount") != null) {
-                amount = ((Number) invoice.get("amount")).doubleValue();
-            } else {
-                amount = 0.0;
-                if (lineItems != null) {
-                    for (Map<String, Object> line : lineItems) {
-                        amount += ((Number) line.get("qty")).doubleValue()
-                                * ((Number) line.get("unitPrice")).doubleValue();
-                    }
-                }
+            seedInvoice(invoice);
+        }
+    }
+
+    /** Insert one invoice row and, under it, its line items. */
+    @SuppressWarnings("unchecked")
+    private void seedInvoice(Map<String, Object> invoice) {
+        long invoiceId = id(invoice, "id");
+        List<Map<String, Object>> lineItems = (List<Map<String, Object>>) invoice.get("lineItems");
+        jdbc.update("INSERT INTO invoices"
+                + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                invoiceId, id(invoice, "projectId"), invoiceAmount(invoice, lineItems),
+                invoice.getOrDefault("status", "DRAFT"), invoice.get("issuedDate"),
+                invoice.get("dueDate"), pct(invoice, "discountPct"));
+        seedLineItems(invoiceId, lineItems);
+    }
+
+    /**
+     * An invoice's stored amount: an explicit {@code amount} when the fixture gives one (an invoice
+     * with no lines), otherwise the sum of its line items' qty * unitPrice.
+     */
+    private static double invoiceAmount(Map<String, Object> invoice,
+            List<Map<String, Object>> lineItems) {
+        if (invoice.get("amount") != null) {
+            return ((Number) invoice.get("amount")).doubleValue();
+        }
+        double amount = 0.0;
+        if (lineItems != null) {
+            for (Map<String, Object> line : lineItems) {
+                amount += ((Number) line.get("qty")).doubleValue()
+                        * ((Number) line.get("unitPrice")).doubleValue();
             }
-            double discountPct = invoice.get("discountPct") == null ? 0.0
-                    : ((Number) invoice.get("discountPct")).doubleValue();
-            jdbc.update("INSERT INTO invoices"
-                    + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    invoiceId, id(invoice, "projectId"), amount,
-                    invoice.getOrDefault("status", "DRAFT"), invoice.get("issuedDate"),
-                    invoice.get("dueDate"), discountPct);
-            if (lineItems != null) {
-                for (Map<String, Object> line : lineItems) {
-                    jdbc.update("INSERT INTO invoice_line_items"
-                            + " (id, invoice_id, description, qty, unit, unit_price)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)",
-                            id(line, "id"), invoiceId, line.get("description"),
-                            ((Number) line.get("qty")).intValue(),
-                            line.getOrDefault("unit", ""),
-                            ((Number) line.get("unitPrice")).doubleValue());
-                }
-            }
+        }
+        return amount;
+    }
+
+    /** Insert an invoice's line items (absent list = none). */
+    private void seedLineItems(long invoiceId, List<Map<String, Object>> lineItems) {
+        if (lineItems == null) {
+            return;
+        }
+        for (Map<String, Object> line : lineItems) {
+            jdbc.update("INSERT INTO invoice_line_items"
+                    + " (id, invoice_id, description, qty, unit, unit_price)"
+                    + " VALUES (?, ?, ?, ?, ?, ?)",
+                    id(line, "id"), invoiceId, line.get("description"),
+                    ((Number) line.get("qty")).intValue(),
+                    line.getOrDefault("unit", ""),
+                    ((Number) line.get("unitPrice")).doubleValue());
         }
     }
 
@@ -181,5 +197,10 @@ public class TestSupportController {
     /** Read a fixture field as a table id (JSON numbers arrive as {@link Number}). */
     private static long id(Map<String, Object> row, String key) {
         return ((Number) row.get(key)).longValue();
+    }
+
+    /** Read an optional fixture percentage field (absent = 0). */
+    private static double pct(Map<String, Object> row, String key) {
+        return row.get(key) == null ? 0.0 : ((Number) row.get(key)).doubleValue();
     }
 }

@@ -49,11 +49,8 @@ public class InvoiceLineItemUpdate {
         LineItem saved = lineItems.save(line);
 
         // Keep the invoice's stored amount in step with its lines: amount = sum(qty * unitPrice).
-        BigDecimal total = BigDecimal.ZERO;
-        for (LineItem l : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
-            total = total.add(l.getUnitPrice().multiply(BigDecimal.valueOf(l.getQty())));
-        }
-        invoice.setAmount(total);
+        invoice.setAmount(
+                InvoiceDiscount.subtotalOf(lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)));
         invoices.save(invoice);
 
         response.send(saved);
