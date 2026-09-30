@@ -6,6 +6,14 @@ export type Client = { id: number; name: string; email: string };
 
 export const clientsKey = ['clients'] as const;
 
+// A "proper email address": one @, non-empty local and domain parts, and a dotted domain. Shared by
+// the form and mirrored by the server so a malformed address can never be saved.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(email: string): boolean {
+  return EMAIL_PATTERN.test(email.trim());
+}
+
 export function fetchClients(): Promise<Client[]> {
   return getJson<Client[]>('/api/clients');
 }
