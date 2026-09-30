@@ -25,6 +25,7 @@ public class InvoicesPost {
         Invoice invoice = new Invoice();
         invoice.setProjectId(projectId);
         invoice.setAmount(amount);
+        invoice.setStatus("UNPAID");
         Invoice saved = invoices.save(invoice);
         audit.record("INVOICE_CREATED id=" + saved.getId() + " project=" + project.getName()
                 + " amount=" + saved.getAmount().toPlainString());

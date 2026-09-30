@@ -27,6 +27,9 @@ public class Invoice {
 
     private BigDecimal amount;
 
+    /** Payment status: UNPAID by default, PAID once marked paid (see V5__invoice_status.sql). */
+    private String status;
+
     public Long getId() {
         return id;
     }
@@ -49,5 +52,13 @@ public class Invoice {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }
