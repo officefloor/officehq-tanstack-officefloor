@@ -27,7 +27,10 @@ public class Invoice {
 
     private BigDecimal amount;
 
-    /** Payment status: UNPAID by default, PAID once marked paid (see V5__invoice_status.sql). */
+    /**
+     * Lifecycle status: DRAFT by default, SENT once sent, PAID once paid (see V5__invoice_status.sql
+     * and V11__invoice_draft_default.sql).
+     */
     private String status;
 
     /** The day the invoice went out, an ISO date literal (see V9__invoice_dates.sql). */

@@ -5,8 +5,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
 import { money } from '../../ui/money';
 
-// An invoice as the server returns it: which project it belongs to, its amount, and its payment
-// status (UNPAID until marked paid).
+// An invoice as the server returns it: which project it belongs to, its amount, and its lifecycle
+// status (DRAFT until sent, SENT until paid, then PAID).
 export type Invoice = {
   id: number;
   projectId: number;
@@ -47,8 +47,19 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
     },
   });
 
+  // Sending a draft invoice is a write: POST then invalidate ['invoices'] so the row re-renders with
+  // its new status (DRAFT -> SENT) — never hand-maintained. The server also records the send to the
+  // audit file.
+  const send = useMutation({
+    mutationFn: (id: number) => postJson<Invoice>('/api/invoices/send', { id }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+
   // Marking an invoice paid is a write: POST then invalidate ['invoices'] so the row re-renders with
   // its new status — never hand-maintained. The server also records the payment to the audit file.
+  // Payment is only offered once the invoice has been sent (SENT -> PAID).
   const pay = useMutation({
     mutationFn: (id: number) => postJson<Invoice>('/api/invoices/pay', { id }),
     onSuccess: () => {
@@ -117,7 +128,16 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
               <td data-testid="invoice-due">{i.dueDate}</td>
               <td data-testid="invoice-status">{i.status}</td>
               <td>
-                {i.status !== 'PAID' && (
+                {i.status === 'DRAFT' && (
+                  <button
+                    type="button"
+                    data-testid={`invoice-send-${i.id}`}
+                    onClick={() => send.mutate(i.id)}
+                  >
+                    Send
+                  </button>
+                )}
+                {i.status === 'SENT' && (
                   <button
                     type="button"
                     data-testid={`invoice-pay-${i.id}`}
