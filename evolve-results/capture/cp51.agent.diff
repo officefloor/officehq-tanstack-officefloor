@@ -1,0 +1,192 @@
+diff --git a/src/main/frontend/features/clients/ClientsTable.tsx b/src/main/frontend/features/clients/ClientsTable.tsx
+index c879a15..c38b086 100644
+--- a/src/main/frontend/features/clients/ClientsTable.tsx
++++ b/src/main/frontend/features/clients/ClientsTable.tsx
+@@ -3,17 +3,27 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { ClientRow } from '../../slots/defs/clientRow';
+ import {
+   CLIENT_SEARCH_PARAM,
++  CLIENT_SORT_PARAM,
+   clientsKey,
++  clientsOutstandingKey,
+   fetchClients,
++  fetchClientsOutstanding,
+   matchesClientSearch,
+ } from './queries';
+ 
+ // The list. Queries for itself under ['clients'] — never handed its data by a parent (CLAUDE.md
+ // rule 5). The search box owns the filter text in the URL; the list reads the same key (rule 4) and
+-// filters the already-loaded rows. Empty state and table carry the stable data-testid contract.
++// filters the already-loaded rows. The sort control owns the `clientSort` key; the list reads it and
++// the outstanding amounts (its own query) to order the rows. Empty state and table carry the stable
++// data-testid contract.
+ export function ClientsTable() {
+   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClients });
++  const { data: outstanding } = useQuery({
++    queryKey: clientsOutstandingKey,
++    queryFn: fetchClientsOutstanding,
++  });
+   const [query] = useSearchParam(CLIENT_SEARCH_PARAM, asString);
++  const [sort] = useSearchParam(CLIENT_SORT_PARAM, asString);
+ 
+   if (!clients) {
+     return null;
+@@ -23,7 +33,17 @@ export function ClientsTable() {
+     return <p data-testid="clients-empty">No clients yet.</p>;
+   }
+ 
+-  const visible = clients.filter((client) => matchesClientSearch(client, query));
++  // Owed per client, keyed by id, for the 'outstanding' order (0 when not yet loaded or unknown).
++  const owedById = new Map((outstanding ?? []).map((o) => [o.clientId, Number(o.outstanding)]));
++  const owed = (clientId: number) => owedById.get(clientId) ?? 0;
++
++  const visible = clients
++    .filter((client) => matchesClientSearch(client, query))
++    .sort((a, b) =>
++      sort === 'outstanding'
++        ? owed(b.id) - owed(a.id)
++        : a.name.localeCompare(b.name),
++    );
+ 
+   return (
+     <table data-testid="clients-table">
+diff --git a/src/main/frontend/features/clients/queries.ts b/src/main/frontend/features/clients/queries.ts
+index 3478f60..745bf92 100644
+--- a/src/main/frontend/features/clients/queries.ts
++++ b/src/main/frontend/features/clients/queries.ts
+@@ -28,6 +28,23 @@ export function fetchClients(): Promise<Client[]> {
+   return getJson<Client[]>('/api/clients');
+ }
+ 
++// How much each client still owes, keyed by client id — read alongside the clients list so the list
++// can be ordered by outstanding amount. Nested under ['clients'] so invalidating clients refreshes
++// it too (CLAUDE.md rule 5). The server sums the dues across every invoice raised for the client,
++// the same figure the client statement shows.
++export type ClientOutstanding = { clientId: number; outstanding: number };
++
++export const clientsOutstandingKey = ['clients', 'outstanding'] as const;
++
++export function fetchClientsOutstanding(): Promise<ClientOutstanding[]> {
++  return getJson<ClientOutstanding[]>('/api/clients/outstanding');
++}
++
++// The URL search-param key the sort control owns and the list reads (CLAUDE.md rule 4): order the
++// clients by 'name' (the default) or by 'outstanding' (how much each owes). Shared as a constant so
++// the two files agree on the one key without importing each other's components.
++export const CLIENT_SORT_PARAM = 'clientSort';
++
+ // A client's own projects, under a key nested beneath ['clients'] so invalidating clients refreshes
+ // them too (CLAUDE.md rule 5). The row carries the project's lifecycle `status` and `archived` flag
+ // too, so the client's page can show just the active ones by default and reveal the rest on its
+diff --git a/src/main/frontend/features/clients/sort.slot.tsx b/src/main/frontend/features/clients/sort.slot.tsx
+new file mode 100644
+index 0000000..485ef44
+--- /dev/null
++++ b/src/main/frontend/features/clients/sort.slot.tsx
+@@ -0,0 +1,24 @@
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { CLIENT_SORT_PARAM } from './queries';
++
++// The "sort clients" control — its own file filling the clients.toolbar region (CLAUDE.md rule 3).
++// It owns the `clientSort` URL key (rule 4): the chosen order outlives a click, so it lives in the
++// URL, and the list (ClientsTable) reads the very same key to order its rows. No callback, no shared
++// state — just the key. Empty key means the default, 'name'.
++function ClientSort() {
++  const [sort, setSort] = useSearchParam(CLIENT_SORT_PARAM, asString);
++  return (
++    <select
++      data-testid="client-sort"
++      aria-label="Sort clients"
++      value={sort === 'outstanding' ? 'outstanding' : 'name'}
++      onChange={(event) => setSort(event.target.value)}
++    >
++      <option value="name">By name</option>
++      <option value="outstanding">By outstanding</option>
++    </select>
++  );
++}
++
++export const contribution = ClientsToolbar.fill({ order: 20, Component: ClientSort });
+diff --git a/src/main/java/net/officefloor/hq/app/ClientOutstanding.java b/src/main/java/net/officefloor/hq/app/ClientOutstanding.java
+new file mode 100644
+index 0000000..a7e659b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientOutstanding.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * How much one client still owes, keyed by the client's id — the shape the clients list reads to
++ * offer "sort by how much each client owes". The {@code outstanding} figure is the sum of the dues
++ * across every invoice raised for the client (across all their projects), the same per-invoice due
++ * the client statement uses ({@link ProjectInvoice#getDue}), so the two always agree. Derived per
++ * request in {@link ClientsOutstandingGet}; nothing new is stored.
++ */
++public class ClientOutstanding {
++
++    private final Long clientId;
++    private final BigDecimal outstanding;
++
++    public ClientOutstanding(Long clientId, BigDecimal outstanding) {
++        this.clientId = clientId;
++        this.outstanding = outstanding;
++    }
++
++    public Long getClientId() {
++        return clientId;
++    }
++
++    public BigDecimal getOutstanding() {
++        return outstanding;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientsOutstandingGet.java b/src/main/java/net/officefloor/hq/app/ClientsOutstandingGet.java
+new file mode 100644
+index 0000000..2566057
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientsOutstandingGet.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/clients/outstanding — for every client that has not been tucked away, how much they still
++ * owe (oldest id first). The outstanding figure is the sum of the dues across all of the client's
++ * invoices, computed the same way the client statement does it ({@link ProjectInvoice}), so the list
++ * and the statement agree. The clients list reads this alongside {@code /api/clients} so it can be
++ * sorted by how much each client owes. Wired by
++ * {@code officefloor/rest/api/clients/outstanding.GET.yml}.
++ */
++public class ClientsOutstandingGet {
++
++    public void service(ClientRepository clients, InvoiceRepository invoices,
++            PaymentRepository payments, ObjectResponse<List<ClientOutstanding>> response) {
++        List<ClientOutstanding> owed = new ArrayList<>();
++        for (Client client : clients.findAllByArchivedFalseOrderByIdAsc()) {
++            BigDecimal total = BigDecimal.ZERO;
++            for (Invoice invoice : invoices.findByClientId(client.getId())) {
++                ProjectInvoice row =
++                        new ProjectInvoice(invoice, payments.sumByInvoiceId(invoice.getId()));
++                total = total.add(row.getDue());
++            }
++            owed.add(new ClientOutstanding(client.getId(), total));
++        }
++        response.send(owed);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/clients/outstanding.GET.yml b/src/main/resources/officefloor/rest/api/clients/outstanding.GET.yml
+new file mode 100644
+index 0000000..74a8324
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/outstanding.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/clients/outstanding -> how much each non-archived client still owes (ClientsOutstandingGet.service).
++service:
++  class: net.officefloor.hq.app.ClientsOutstandingGet
