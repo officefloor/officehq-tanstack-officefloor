@@ -27,7 +27,7 @@ export function ClientProjectsPanel({ clientId }: { clientId: number }) {
   return (
     <section data-testid="client-projects">
       {rows.length === 0 ? (
-        <p data-testid="client-projects-empty">No projects yet.</p>
+        <p data-testid="client-projects-empty">No jobs yet.</p>
       ) : (
         <table data-testid="client-projects-table">
           <thead>

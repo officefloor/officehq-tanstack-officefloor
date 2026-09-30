@@ -15,7 +15,7 @@ function ClientProjectsShowAll() {
       aria-pressed={showAll}
       onClick={() => setShowAll(showAll ? undefined : true)}
     >
-      {showAll ? 'Show active only' : 'Show all projects'}
+      {showAll ? 'Show active only' : 'Show all jobs'}
     </button>
   );
 }

@@ -99,7 +99,7 @@ export function ProjectsPage() {
       >
         <input
           data-testid="project-form-name"
-          placeholder="Project name"
+          placeholder="Job name"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
@@ -127,7 +127,7 @@ export function ProjectsPage() {
           ))}
         </select>
         <button data-testid="project-form-submit" type="submit">
-          Add project
+          Add job
         </button>
       </form>
 
@@ -136,7 +136,7 @@ export function ProjectsPage() {
       </div>
 
       {rows.length === 0 ? (
-        <p data-testid="projects-empty">No projects yet.</p>
+        <p data-testid="projects-empty">No jobs yet.</p>
       ) : (
         <table data-testid="projects-table">
           <thead>

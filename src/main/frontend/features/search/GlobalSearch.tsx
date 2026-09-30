@@ -30,7 +30,7 @@ export function GlobalSearch() {
       <input
         data-testid="global-search"
         type="search"
-        placeholder="Search clients and projects"
+        placeholder="Search clients and jobs"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />

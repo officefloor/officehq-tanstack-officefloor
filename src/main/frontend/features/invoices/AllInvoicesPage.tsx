@@ -53,7 +53,7 @@ export function AllInvoicesPage() {
         <table data-testid="all-invoices-table">
           <thead>
             <tr>
-              <th>Project</th>
+              <th>Job</th>
               <th>Amount</th>
               <th>Status</th>
             </tr>

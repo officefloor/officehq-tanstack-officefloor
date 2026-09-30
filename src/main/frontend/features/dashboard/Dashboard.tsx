@@ -28,7 +28,7 @@ export function Dashboard() {
       <dl>
         <dt>Clients</dt>
         <dd data-testid="dashboard-clients-count">{data?.clientsCount ?? 0}</dd>
-        <dt>Projects</dt>
+        <dt>Jobs</dt>
         <dd data-testid="dashboard-projects-count">{data?.projectsCount ?? 0}</dd>
         <dt>Outstanding</dt>
         <dd data-testid="dashboard-outstanding-total">

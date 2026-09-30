@@ -25,7 +25,7 @@ export function ClientCounts({ clientId }: { clientId: number }) {
   return (
     <dl data-testid="client-counts">
       <div>
-        <dt>Projects</dt>
+        <dt>Jobs</dt>
         <dd data-testid="client-projects-count">{projectCount}</dd>
       </div>
       <div>
