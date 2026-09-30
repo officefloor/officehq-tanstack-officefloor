@@ -1,0 +1,75 @@
+diff --git a/src/main/frontend/features/projects/ClientProjectsPanel.tsx b/src/main/frontend/features/projects/ClientProjectsPanel.tsx
+index c6a472c..7231234 100644
+--- a/src/main/frontend/features/projects/ClientProjectsPanel.tsx
++++ b/src/main/frontend/features/projects/ClientProjectsPanel.tsx
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { asFlag, useSearchParam } from '../../url/useSearchParam';
+ import type { Project } from './ProjectsPage';
+ 
+ // A client's projects: the projects listing scoped to one client, rendered in the client-detail
+@@ -13,8 +14,15 @@ export function ClientProjectsPanel({ clientId }: { clientId: number }) {
+     queryFn: () => getJson<Project[]>('/api/projects'),
+   });
+ 
+-  // Archived projects are tucked away everywhere: kept on the server but off this panel too.
+-  const rows = (projects.data ?? []).filter((p) => p.clientId === clientId && !p.archived);
++  // Whether the finished and hidden (archived) projects are revealed lives in the URL, owned by
++  // features/projects/clientProjectsShowAll.slot.tsx. This panel reads the same key: by default it
++  // shows only the client's live work (ACTIVE and not archived); flip the key and every project
++  // for the client shows. Nothing is passed between the toggle and the panel (rule 4).
++  const [showAll] = useSearchParam('clientProjectsShowAll', asFlag);
++
++  const rows = (projects.data ?? []).filter(
++    (p) => p.clientId === clientId && (showAll || (p.status === 'ACTIVE' && !p.archived)),
++  );
+ 
+   return (
+     <section data-testid="client-projects">
+diff --git a/src/main/frontend/features/projects/clientProjectsShowAll.slot.tsx b/src/main/frontend/features/projects/clientProjectsShowAll.slot.tsx
+new file mode 100644
+index 0000000..db9fbe6
+--- /dev/null
++++ b/src/main/frontend/features/projects/clientProjectsShowAll.slot.tsx
+@@ -0,0 +1,23 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { asFlag, useSearchParam } from '../../url/useSearchParam';
++
++// The show-all toggle for a client's projects — its own file, filling the client-detail slot above
++// the projects panel (order 5, before the panel at 10). It OWNS the `clientProjectsShowAll` URL key
++// (rule 4: a show/hide toggle outlives a click, so it lives in the URL, not useState). The projects
++// panel reads the same key to decide whether the finished and archived projects are listed; nothing
++// is passed between them. Carries data-testid="client-projects-show-all" (the test contract).
++function ClientProjectsShowAll() {
++  const [showAll, setShowAll] = useSearchParam('clientProjectsShowAll', asFlag);
++  return (
++    <button
++      type="button"
++      data-testid="client-projects-show-all"
++      aria-pressed={showAll}
++      onClick={() => setShowAll(showAll ? undefined : true)}
++    >
++      {showAll ? 'Show active only' : 'Show all projects'}
++    </button>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 5, Component: ClientProjectsShowAll });
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 5066df4..5276439 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -63,9 +63,10 @@ public class TestSupportController {
+                 asLong(c, "id"), c.get("name"), c.get("email")));
+ 
+         seedRows(fixture, "projects", p -> jdbc.update(
+-                "INSERT INTO project (id, name, client_id, status) VALUES (?, ?, ?, ?)",
++                "INSERT INTO project (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
+                 asLong(p, "id"), p.get("name"), asLong(p, "clientId"),
+-                p.get("status") == null ? "ACTIVE" : p.get("status")));
++                p.get("status") == null ? "ACTIVE" : p.get("status"),
++                Boolean.TRUE.equals(p.get("archived"))));
+ 
+         seedRows(fixture, "tasks", t -> jdbc.update(
+                 "INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",
