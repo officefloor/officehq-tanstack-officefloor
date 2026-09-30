@@ -1,0 +1,105 @@
+diff --git a/src/main/frontend/features/contacts/ClientContactsPanel.tsx b/src/main/frontend/features/contacts/ClientContactsPanel.tsx
+index 94ae83f..0c55541 100644
+--- a/src/main/frontend/features/contacts/ClientContactsPanel.tsx
++++ b/src/main/frontend/features/contacts/ClientContactsPanel.tsx
+@@ -11,6 +11,12 @@ export type Contact = {
+   role: string;
+ };
+ 
++// A contact must carry a proper email address. Same shape the server enforces (ContactsPost) so the
++// UI never asks the server to save what the server will reject.
++export function isValidEmail(email: string): boolean {
++  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
++}
++
+ // A client's contacts, rendered in the client-detail context: the list of that client's contacts
+ // plus a form to add one. Server data is read with useQuery under the ['contacts'] key and filtered
+ // to the client this panel is handed — never copied into state, never hand-maintained (rule 5). A
+@@ -26,6 +32,7 @@ export function ClientContactsPanel({ clientId }: { clientId: number }) {
+   const [name, setName] = useState('');
+   const [email, setEmail] = useState('');
+   const [role, setRole] = useState('');
++  const [emailError, setEmailError] = useState(false);
+ 
+   const create = useMutation({
+     mutationFn: () =>
+@@ -34,6 +41,7 @@ export function ClientContactsPanel({ clientId }: { clientId: number }) {
+       setName('');
+       setEmail('');
+       setRole('');
++      setEmailError(false);
+       void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+     },
+   });
+@@ -46,9 +54,14 @@ export function ClientContactsPanel({ clientId }: { clientId: number }) {
+         data-testid="contact-form"
+         onSubmit={(e) => {
+           e.preventDefault();
+-          if (!name.trim() || !email.trim() || !role.trim()) {
++          if (!name.trim() || !role.trim()) {
++            return;
++          }
++          if (!isValidEmail(email)) {
++            setEmailError(true);
+             return;
+           }
++          setEmailError(false);
+           create.mutate();
+         }}
+       >
+@@ -64,6 +77,11 @@ export function ClientContactsPanel({ clientId }: { clientId: number }) {
+           value={email}
+           onChange={(e) => setEmail(e.target.value)}
+         />
++        {emailError && (
++          <p data-testid="contact-form-email-error" role="alert">
++            Enter a valid email address.
++          </p>
++        )}
+         <input
+           data-testid="contact-form-role"
+           placeholder="Role"
+diff --git a/src/main/java/net/officefloor/hq/app/ContactsPost.java b/src/main/java/net/officefloor/hq/app/ContactsPost.java
+index 590a717..709a715 100644
+--- a/src/main/java/net/officefloor/hq/app/ContactsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ContactsPost.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.regex.Pattern;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+@@ -10,6 +11,11 @@ import org.springframework.web.bind.annotation.RequestBody;
+  */
+ public class ContactsPost {
+ 
++    // Every contact must carry a proper email. Mirror of the UI check
++    // (ClientContactsPanel.isValidEmail) so a request that bypasses the form is still rejected
++    // before any row or audit record is written.
++    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
++
+     public void service(@RequestBody NewContact body, ContactRepository contacts,
+             ClientRepository clients, Audit audit, ObjectResponse<Contact> response) {
+         String name = body.getName() == null ? "" : body.getName().trim();
+@@ -17,8 +23,8 @@ public class ContactsPost {
+             throw new IllegalArgumentException("a contact requires a name");
+         }
+         String email = body.getEmail() == null ? "" : body.getEmail().trim();
+-        if (email.isEmpty()) {
+-            throw new IllegalArgumentException("a contact requires an email");
++        if (!EMAIL.matcher(email).matches()) {
++            throw new IllegalArgumentException("a contact requires a valid email address");
+         }
+         String role = body.getRole() == null ? "" : body.getRole().trim();
+         if (role.isEmpty()) {
+diff --git a/src/main/resources/db/migration/V13__contact_email_valid.sql b/src/main/resources/db/migration/V13__contact_email_valid.sql
+new file mode 100644
+index 0000000..07c3cc4
+--- /dev/null
++++ b/src/main/resources/db/migration/V13__contact_email_valid.sql
+@@ -0,0 +1,4 @@
++-- Enforce at the schema level that every contact carries a proper (non-blank, structurally valid)
++-- email address, matching the server (ContactsPost) and UI (ClientContactsPanel.isValidEmail) checks.
++-- The LIKE pattern requires at least one char before '@', one between '@' and '.', and one after '.'.
++ALTER TABLE contact ADD CONSTRAINT contact_email_valid CHECK (email LIKE '%_@_%._%');
