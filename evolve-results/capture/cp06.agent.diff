@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/clients/ClientsTable.tsx b/src/main/frontend/features/clients/ClientsTable.tsx
+index ab4f974..1fe6d74 100644
+--- a/src/main/frontend/features/clients/ClientsTable.tsx
++++ b/src/main/frontend/features/clients/ClientsTable.tsx
+@@ -1,10 +1,18 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { clientsKey, fetchClients } from './queries';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import {
++  CLIENT_SEARCH_PARAM,
++  clientsKey,
++  fetchClients,
++  matchesClientSearch,
++} from './queries';
+ 
+ // The list. Queries for itself under ['clients'] — never handed its data by a parent (CLAUDE.md
+-// rule 5). Empty state and table carry the stable data-testid contract.
++// rule 5). The search box owns the filter text in the URL; the list reads the same key (rule 4) and
++// filters the already-loaded rows. Empty state and table carry the stable data-testid contract.
+ export function ClientsTable() {
+   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClients });
++  const [query] = useSearchParam(CLIENT_SEARCH_PARAM, asString);
+ 
+   if (!clients) {
+     return null;
+@@ -14,6 +22,8 @@ export function ClientsTable() {
+     return <p data-testid="clients-empty">No clients yet.</p>;
+   }
+ 
++  const visible = clients.filter((client) => matchesClientSearch(client, query));
++
+   return (
+     <table data-testid="clients-table">
+       <thead>
+@@ -23,7 +33,7 @@ export function ClientsTable() {
+         </tr>
+       </thead>
+       <tbody>
+-        {clients.map((client) => (
++        {visible.map((client) => (
+           <tr key={client.id} data-testid={`client-row-${client.id}`}>
+             <td data-testid="client-name">{client.name}</td>
+             <td data-testid="client-email">{client.email}</td>
+diff --git a/src/main/frontend/features/clients/queries.ts b/src/main/frontend/features/clients/queries.ts
+index cedb1f2..7f46467 100644
+--- a/src/main/frontend/features/clients/queries.ts
++++ b/src/main/frontend/features/clients/queries.ts
+@@ -6,6 +6,16 @@ export type Client = { id: number; name: string; email: string };
+ 
+ export const clientsKey = ['clients'] as const;
+ 
++// The URL search-param key the search box owns and the list reads (CLAUDE.md rule 4). Shared as a
++// constant so the two files agree on the one key without importing each other's components.
++export const CLIENT_SEARCH_PARAM = 'clientSearch';
++
++// Case-insensitive match of a client's name against the current search text. An empty box matches
++// every client, so the unfiltered list shows.
++export function matchesClientSearch(client: Client, query: string): boolean {
++  return client.name.toLowerCase().includes(query.trim().toLowerCase());
++}
++
+ // A "proper email address": one @, non-empty local and domain parts, and a dotted domain. Shared by
+ // the form and mirrored by the server so a malformed address can never be saved.
+ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+diff --git a/src/main/frontend/features/clients/search.slot.tsx b/src/main/frontend/features/clients/search.slot.tsx
+new file mode 100644
+index 0000000..81a311e
+--- /dev/null
++++ b/src/main/frontend/features/clients/search.slot.tsx
+@@ -0,0 +1,22 @@
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { CLIENT_SEARCH_PARAM } from './queries';
++
++// The search box — its own file filling the clients.toolbar region (CLAUDE.md rule 3). It owns the
++// `clientSearch` URL key (rule 4): the filter outlives a click, so it lives in the URL, and the list
++// (ClientsTable) reads the very same key. No callback, no shared state — just the key.
++function ClientSearch() {
++  const [query, setQuery] = useSearchParam(CLIENT_SEARCH_PARAM, asString);
++  return (
++    <input
++      data-testid="client-search"
++      type="search"
++      aria-label="Search clients by name"
++      placeholder="Search clients by name"
++      value={query}
++      onChange={(event) => setQuery(event.target.value)}
++    />
++  );
++}
++
++export const contribution = ClientsToolbar.fill({ order: 10, Component: ClientSearch });
+diff --git a/src/main/frontend/routes/clients.index.tsx b/src/main/frontend/routes/clients.index.tsx
+index 1375fde..bb6f62e 100644
+--- a/src/main/frontend/routes/clients.index.tsx
++++ b/src/main/frontend/routes/clients.index.tsx
+@@ -1,6 +1,7 @@
+ import { createFileRoute } from '@tanstack/react-router';
+ import { ClientForm } from '../features/clients/ClientForm';
+ import { ClientsTable } from '../features/clients/ClientsTable';
++import { ClientsToolbar } from '../slots/defs/clientsToolbar';
+ 
+ // The Clients page: one new file under routes/ (CLAUDE.md rule 1). The route tree is generated from
+ // this directory. The page composes the feature's form + list; each queries/mutates for itself.
+@@ -12,6 +13,7 @@ function ClientsPage() {
+   return (
+     <section data-testid="clients-page">
+       <ClientForm />
++      <ClientsToolbar.Slot />
+       <ClientsTable />
+     </section>
+   );
+diff --git a/src/main/frontend/slots/defs/clientsToolbar.ts b/src/main/frontend/slots/defs/clientsToolbar.ts
+new file mode 100644
+index 0000000..9882f9b
+--- /dev/null
++++ b/src/main/frontend/slots/defs/clientsToolbar.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The Clients page toolbar — a region above the list for controls that act on it (search, and
++ * whatever comes later). The page renders the region; features fill it (CLAUDE.md rule 3), so a new
++ * control is a new `*.slot.tsx` file and the page is never edited again.
++ */
++export const ClientsToolbar = defineSlot('clients.toolbar');
