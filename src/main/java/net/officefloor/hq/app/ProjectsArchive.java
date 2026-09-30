@@ -22,6 +22,6 @@ public class ProjectsArchive {
         Project saved = projects.save(project);
         audit.record("PROJECT_ARCHIVED id=" + id);
         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(), null,
-                saved.isArchived()));
+                saved.isArchived(), saved.getStatus()));
     }
 }

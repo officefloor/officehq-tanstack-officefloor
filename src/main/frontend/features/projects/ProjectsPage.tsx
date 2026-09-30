@@ -10,12 +10,18 @@ import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
 // A project as the server returns it: it carries the client's NAME so the list shows the name, not
 // the id. project.clientId is the id the form's select submits. `archived` projects are kept but
 // hidden from the default list.
+// A project's state: ACTIVE while worked on, ON_HOLD when paused, FINISHED when done. Stored on the
+// row and pickable when creating a project (V21__project_status.sql).
+export const PROJECT_STATUSES = ['ACTIVE', 'ON_HOLD', 'FINISHED'] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
 export type Project = {
   id: number;
   name: string;
   clientId: number;
   clientName: string;
   archived: boolean;
+  status: ProjectStatus;
 };
 
 // The projects page: the whole list of projects plus the form to add one and pick its client.
@@ -50,12 +56,15 @@ export function ProjectsPage() {
 
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
+  const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
 
   const create = useMutation({
-    mutationFn: () => postJson<Project>('/api/projects', { name, clientId: Number(clientId) }),
+    mutationFn: () =>
+      postJson<Project>('/api/projects', { name, clientId: Number(clientId), status }),
     onSuccess: () => {
       setName('');
       setClientId('');
+      setStatus('ACTIVE');
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
@@ -100,6 +109,17 @@ export function ProjectsPage() {
             </option>
           ))}
         </select>
+        <select
+          data-testid="project-form-status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+        >
+          {PROJECT_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
         <button data-testid="project-form-submit" type="submit">
           Add project
         </button>
@@ -117,6 +137,7 @@ export function ProjectsPage() {
             <tr>
               <th>Name</th>
               <th>Client</th>
+              <th>Status</th>
               <th />
             </tr>
           </thead>
@@ -125,6 +146,7 @@ export function ProjectsPage() {
               <tr key={p.id} data-testid={`project-row-${p.id}`}>
                 <td data-testid="project-name">{p.name}</td>
                 <td data-testid="project-client">{p.clientName}</td>
+                <td data-testid="project-status">{p.status}</td>
                 <td>
                   <ProjectRowActions.Slot projectId={p.id} />
                 </td>

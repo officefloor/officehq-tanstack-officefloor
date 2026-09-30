@@ -21,13 +21,18 @@ public class ProjectsPost {
         if (client == null) {
             throw new IllegalArgumentException("a project requires an existing client");
         }
+        String status = body.getStatus() == null ? "ACTIVE" : body.getStatus().trim();
+        if (!status.equals("ACTIVE") && !status.equals("ON_HOLD") && !status.equals("FINISHED")) {
+            throw new IllegalArgumentException("a project status must be ACTIVE, ON_HOLD or FINISHED");
+        }
         Project project = new Project();
         project.setName(name);
         project.setClientId(clientId);
+        project.setStatus(status);
         Project saved = projects.save(project);
         audit.record("PROJECT_CREATED id=" + saved.getId() + " name=" + saved.getName()
                 + " client=" + client.getName());
         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(),
-                client.getName(), saved.isArchived()));
+                client.getName(), saved.isArchived(), saved.getStatus()));
     }
 }

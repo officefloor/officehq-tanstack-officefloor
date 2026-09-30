@@ -19,7 +19,7 @@ public class ProjectsRemove {
             throw new IllegalArgumentException("no such project");
         }
         ProjectView removed = new ProjectView(project.getId(), project.getName(),
-                project.getClientId(), null, project.isArchived());
+                project.getClientId(), null, project.isArchived(), project.getStatus());
         projects.delete(project);
         audit.record("PROJECT_DELETED id=" + id);
         response.send(removed);

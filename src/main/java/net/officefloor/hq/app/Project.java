@@ -29,6 +29,10 @@ public class Project {
     @Column(nullable = false)
     private boolean archived;
 
+    /** ACTIVE, ON_HOLD or FINISHED — the project's state (V21__project_status.sql). */
+    @Column(nullable = false)
+    private String status = "ACTIVE";
+
     public Long getId() {
         return id;
     }
@@ -59,5 +63,13 @@ public class Project {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }
