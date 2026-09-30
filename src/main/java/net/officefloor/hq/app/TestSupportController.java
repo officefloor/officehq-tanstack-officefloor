@@ -120,14 +120,19 @@ public class TestSupportController {
             // An optional percentage discount off the invoice's subtotal (0 when the fixture omits it).
             // The discount amount and the final total are derived from it (see InvoiceSummaryGet).
             Object discountPct = i.get("discountPct");
+            // An optional sales-tax percentage added on top after the discount (0 when the fixture
+            // omits it). The tax amount and the final taxed total are derived from it (see
+            // InvoiceSummaryGet).
+            Object taxPct = i.get("taxPct");
             jdbc.update(
                     "INSERT INTO invoice "
-                            + "(id, project_id, amount, status, issued_date, due_date, discount_pct) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            + "(id, project_id, amount, status, issued_date, due_date, discount_pct, tax_pct) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     asLong(i, "id"), asLong(i, "projectId"), amount,
                     i.get("status") == null ? "UNPAID" : i.get("status"),
                     i.get("issuedDate"), i.get("dueDate"),
-                    discountPct == null ? 0 : discountPct);
+                    discountPct == null ? 0 : discountPct,
+                    taxPct == null ? 0 : taxPct);
             for (Map<String, Object> li : lines) {
                 jdbc.update(
                         "INSERT INTO line_item (id, invoice_id, description, qty, unit, unit_price) "

@@ -14,13 +14,17 @@ public class InvoiceSummaryView {
     private final BigDecimal subtotal;
     private final BigDecimal discountPct;
     private final BigDecimal discount;
+    private final BigDecimal taxPct;
+    private final BigDecimal tax;
     private final BigDecimal total;
 
     public InvoiceSummaryView(BigDecimal subtotal, BigDecimal discountPct, BigDecimal discount,
-            BigDecimal total) {
+            BigDecimal taxPct, BigDecimal tax, BigDecimal total) {
         this.subtotal = subtotal;
         this.discountPct = discountPct;
         this.discount = discount;
+        this.taxPct = taxPct;
+        this.tax = tax;
         this.total = total;
     }
 
@@ -34,6 +38,14 @@ public class InvoiceSummaryView {
 
     public BigDecimal getDiscount() {
         return discount;
+    }
+
+    public BigDecimal getTaxPct() {
+        return taxPct;
+    }
+
+    public BigDecimal getTax() {
+        return tax;
     }
 
     public BigDecimal getTotal() {

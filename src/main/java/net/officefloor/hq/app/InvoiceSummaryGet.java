@@ -33,12 +33,22 @@ public class InvoiceSummaryGet {
         BigDecimal pct = invoice == null || invoice.getDiscountPct() == null
                 ? BigDecimal.ZERO
                 : invoice.getDiscountPct();
+        BigDecimal taxPct = invoice == null || invoice.getTaxPct() == null
+                ? BigDecimal.ZERO
+                : invoice.getTaxPct();
 
-        // Discount amount = subtotal * pct / 100, rounded to cents; the final total is what is left.
+        // Discount amount = subtotal * pct / 100, rounded to cents; what is left is the discounted
+        // figure the tax is then worked out on.
         BigDecimal discount = subtotal.multiply(pct)
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal total = subtotal.subtract(discount);
+        BigDecimal discounted = subtotal.subtract(discount);
 
-        response.send(new InvoiceSummaryView(subtotal, pct, discount, total));
+        // Sales tax is added ON TOP, AFTER the discount: tax = discounted * taxPct / 100, rounded to
+        // cents; the final total is the discounted figure plus that tax.
+        BigDecimal tax = discounted.multiply(taxPct)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal total = discounted.add(tax);
+
+        response.send(new InvoiceSummaryView(subtotal, pct, discount, taxPct, tax, total));
     }
 }

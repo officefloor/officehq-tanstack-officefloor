@@ -52,6 +52,15 @@ public class Invoice {
     private BigDecimal discountPct;
 
     /**
+     * A sales-tax percentage added on top of this invoice AFTER the discount, 0 when none. The tax
+     * amount and the final taxed total ((subtotal minus discount) times (1 plus this rate)) are
+     * derived from this percentage — see {@link InvoiceSummaryGet}. Stored by
+     * {@code V29__invoice_tax_pct.sql}.
+     */
+    @Column(name = "tax_pct")
+    private BigDecimal taxPct;
+
+    /**
      * How much is still owed on this invoice: its {@link #amount} minus every payment recorded
      * against it. Derived, not stored — {@code @Transient} keeps it out of the {@code invoice}
      * table; {@link InvoicesGet} fills it from the payments before sending the list so the project
@@ -124,18 +133,32 @@ public class Invoice {
         this.discountPct = discountPct;
     }
 
+    public BigDecimal getTaxPct() {
+        return taxPct;
+    }
+
+    public void setTaxPct(BigDecimal taxPct) {
+        this.taxPct = taxPct;
+    }
+
     /**
      * What is actually owed on this invoice before payments: its {@link #amount} (the subtotal)
-     * minus the discount its {@link #discountPct} takes off, the discount rounded to cents HALF_UP —
-     * the same derivation {@link InvoiceSummaryGet} makes for the invoice-detail total. Derived, not
-     * stored (Hibernate uses field access, so this getter is not a mapped property), so every place
-     * that shows money owed — the invoice, the statement and the dashboard — applies one discount.
+     * minus the discount its {@link #discountPct} takes off, then the sales tax its {@link #taxPct}
+     * adds on top of that discounted figure — the same derivation {@link InvoiceSummaryGet} makes for
+     * the invoice-detail final amount ((subtotal minus discount) times (1 plus the tax rate)), each
+     * step rounded to cents HALF_UP. Derived, not stored (Hibernate uses field access, so this getter
+     * is not a mapped property), so every place that shows the invoice amount — the invoice, the
+     * statement and the dashboard — applies one discount and one tax.
      */
     public BigDecimal getDiscountedAmount() {
         BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
         BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
         BigDecimal discount = amt.multiply(pct)
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        return amt.subtract(discount);
+        BigDecimal discounted = amt.subtract(discount);
+        BigDecimal taxRate = taxPct == null ? BigDecimal.ZERO : taxPct;
+        BigDecimal tax = discounted.multiply(taxRate)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        return discounted.add(tax);
     }
 }
