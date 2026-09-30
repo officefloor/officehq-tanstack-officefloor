@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import type { Client } from '../clients/ClientsPage';
+import { ProjectRowActions } from '../../slots/defs/projectRowActions';
 
 // A project as the server returns it: it carries the client's NAME so the list shows the name, not
 // the id. project.clientId is the id the form's select submits.
@@ -80,6 +81,7 @@ export function ProjectsPage() {
             <tr>
               <th>Name</th>
               <th>Client</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -87,6 +89,9 @@ export function ProjectsPage() {
               <tr key={p.id} data-testid={`project-row-${p.id}`}>
                 <td data-testid="project-name">{p.name}</td>
                 <td data-testid="project-client">{p.clientName}</td>
+                <td>
+                  <ProjectRowActions.Slot projectId={p.id} />
+                </td>
               </tr>
             ))}
           </tbody>
