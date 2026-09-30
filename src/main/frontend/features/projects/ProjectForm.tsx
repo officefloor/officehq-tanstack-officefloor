@@ -17,6 +17,8 @@ export function ProjectForm() {
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
   const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClientOptions });
@@ -28,6 +30,11 @@ export function ProjectForm() {
       setName('');
       setClientId('');
       setStatus('ACTIVE');
+      setCode('');
+    },
+    onError: () => {
+      // Server rejected the code (missing or already in use) — surface the error anchor.
+      setCodeError(true);
     },
   });
 
@@ -36,10 +43,11 @@ export function ProjectForm() {
       data-testid="project-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (name.trim() === '' || clientId === '') {
+        if (name.trim() === '' || clientId === '' || code.trim() === '') {
           return;
         }
-        mutation.mutate({ name, clientId: Number(clientId), status });
+        setCodeError(false);
+        mutation.mutate({ name, clientId: Number(clientId), status, code: code.trim() });
       }}
     >
       <input
@@ -71,6 +79,22 @@ export function ProjectForm() {
           </option>
         ))}
       </select>
+      <input
+        data-testid="project-form-code"
+        placeholder="Code"
+        value={code}
+        onChange={(event) => {
+          setCode(event.target.value);
+          if (codeError) {
+            setCodeError(false);
+          }
+        }}
+      />
+      {codeError && (
+        <p data-testid="project-form-code-error" role="alert">
+          Enter a unique reference code.
+        </p>
+      )}
       <button data-testid="project-form-submit" type="submit">
         Add job
       </button>

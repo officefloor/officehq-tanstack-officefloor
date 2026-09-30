@@ -45,6 +45,7 @@ export function ProjectsTable() {
       <thead>
         <tr>
           <th>Name</th>
+          <th>Code</th>
           <th>Client</th>
           <th />
         </tr>
@@ -53,6 +54,7 @@ export function ProjectsTable() {
         {visible.map((project) => (
           <tr key={project.id} data-testid={`project-row-${project.id}`}>
             <td data-testid="project-name">{project.name}</td>
+            <td data-testid="project-code">{project.code}</td>
             <td data-testid="project-client">{project.clientName}</td>
             <td>
               <ProjectRow.Slot projectId={project.id} />

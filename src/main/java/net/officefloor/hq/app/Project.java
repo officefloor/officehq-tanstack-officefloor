@@ -29,6 +29,9 @@ public class Project {
 
     private String status;
 
+    /** The project's short reference code, set at creation and kept unique across projects. */
+    private String code;
+
     /** The money planned for this project, against which invoices are tracked. Null if unset. */
     private BigDecimal budget;
 
@@ -71,6 +74,15 @@ public class Project {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    /** The project's short reference code, set at creation and kept unique across projects. */
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
     }
 
     /** The money planned for this project, against which invoices are tracked. Null if unset. */

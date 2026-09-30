@@ -9,6 +9,7 @@ export type ProjectView = {
   clientName: string;
   archived: boolean;
   status: ProjectStatus;
+  code: string;
   tagIds: number[];
 };
 
@@ -49,7 +50,7 @@ export function fetchProjects(): Promise<ProjectView[]> {
 }
 
 export function createProject(
-  input: { name: string; clientId: number; status: ProjectStatus },
+  input: { name: string; clientId: number; status: ProjectStatus; code: string },
 ): Promise<ProjectView> {
   return postJson<ProjectView>('/api/projects', input);
 }

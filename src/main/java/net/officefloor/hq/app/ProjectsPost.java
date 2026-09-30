@@ -30,10 +30,19 @@ public class ProjectsPost {
         if (!STATUSES.contains(status)) {
             throw new HttpException(HttpStatus.BAD_REQUEST);
         }
+        // Every project carries a short reference code, unique across projects: a missing code, or
+        // one already in use, is rejected with 400 so the row is never persisted (the front-end
+        // enforces the same rule, and the DB carries a UNIQUE constraint as the last line of
+        // defence).
+        String code = body.getCode();
+        if (code == null || code.trim().isEmpty() || projects.existsByCode(code.trim())) {
+            throw new HttpException(HttpStatus.BAD_REQUEST);
+        }
         Project project = new Project();
         project.setName(name.trim());
         project.setClientId(clientId);
         project.setStatus(status);
+        project.setCode(code.trim());
         response.send(projects.save(project));
     }
 }

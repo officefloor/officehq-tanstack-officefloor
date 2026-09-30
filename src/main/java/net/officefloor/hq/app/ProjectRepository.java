@@ -16,9 +16,12 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
      * The main list carries the flag so it can hide archived rows by default and reveal them on the
      * show-archived toggle without a second request.
      */
-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
+    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status, p.code) "
             + "FROM Project p, Client c WHERE p.clientId = c.id ORDER BY p.id ASC")
     List<ProjectView> findAllViews();
+
+    /** Whether a project already uses this reference code — no two projects may share one. */
+    boolean existsByCode(String code);
 
     /**
      * A client's own project list, oldest id first — every project (finished and archived included),
@@ -26,7 +29,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
      * ACTIVE, non-archived ones by default and reveals the finished and hidden ones on its toggle,
      * so the list carries the flags and does the filtering without a second request.
      */
-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
+    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status, p.code) "
             + "FROM Project p, Client c WHERE p.clientId = c.id AND p.clientId = :clientId "
             + "ORDER BY p.id ASC")
     List<ProjectView> findViewsByClientId(@Param("clientId") Long clientId);
