@@ -28,6 +28,23 @@ export function fetchClients(): Promise<Client[]> {
   return getJson<Client[]>('/api/clients');
 }
 
+// How much each client still owes, keyed by client id — read alongside the clients list so the list
+// can be ordered by outstanding amount. Nested under ['clients'] so invalidating clients refreshes
+// it too (CLAUDE.md rule 5). The server sums the dues across every invoice raised for the client,
+// the same figure the client statement shows.
+export type ClientOutstanding = { clientId: number; outstanding: number };
+
+export const clientsOutstandingKey = ['clients', 'outstanding'] as const;
+
+export function fetchClientsOutstanding(): Promise<ClientOutstanding[]> {
+  return getJson<ClientOutstanding[]>('/api/clients/outstanding');
+}
+
+// The URL search-param key the sort control owns and the list reads (CLAUDE.md rule 4): order the
+// clients by 'name' (the default) or by 'outstanding' (how much each owes). Shared as a constant so
+// the two files agree on the one key without importing each other's components.
+export const CLIENT_SORT_PARAM = 'clientSort';
+
 // A client's own projects, under a key nested beneath ['clients'] so invalidating clients refreshes
 // them too (CLAUDE.md rule 5). The row carries the project's lifecycle `status` and `archived` flag
 // too, so the client's page can show just the active ones by default and reveal the rest on its
