@@ -97,9 +97,12 @@ public class TestSupportController {
         syncIdentity("note");
 
         seedRows(fixture, "contacts", c -> jdbc.update(
-                "INSERT INTO contact (id, client_id, name, email, role) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO contact (id, client_id, name, email, role, is_primary) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
                 asLong(c, "id"), asLong(c, "clientId"),
-                c.get("name"), c.get("email"), c.get("role")));
+                c.get("name"), c.get("email"), c.get("role"),
+                Boolean.TRUE.equals(c.get("primary"))));
+        syncIdentity("contact");
 
         // An invoice is now itemised: its amount is the sum of qty * unit price across its lines
         // (nested under the invoice in the fixture). The stored amount is the derived total — the

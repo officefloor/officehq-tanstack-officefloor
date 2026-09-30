@@ -11,4 +11,7 @@ public interface ContactRepository extends JpaRepository<Contact, Long> {
 
     /** All contacts, oldest first, so the list order is stable for the UI and tests. */
     List<Contact> findAllByOrderByIdAsc();
+
+    /** Every contact belonging to one client — used to move the primary flag between them. */
+    List<Contact> findByClientId(Long clientId);
 }
