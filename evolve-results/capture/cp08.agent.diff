@@ -1,0 +1,189 @@
+diff --git a/src/main/frontend/features/dashboard/Dashboard.tsx b/src/main/frontend/features/dashboard/Dashboard.tsx
+new file mode 100644
+index 0000000..98ec70a
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/Dashboard.tsx
+@@ -0,0 +1,44 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++// The whole-app summary the server returns: how many clients and projects exist, and the money
++// still owed (the sum of every UNPAID invoice's amount).
++export type DashboardSummary = {
++  clientsCount: number;
++  projectsCount: number;
++  outstandingTotal: number;
++};
++
++// The outstanding total renders with 2 decimals (the test contract), matching how invoice amounts
++// format elsewhere.
++function money(amount: number): string {
++  return amount.toFixed(2);
++}
++
++// The home screen: a read-only dashboard of the counts and the outstanding total. Server data is
++// read with useQuery under the ['dashboard'] key — never copied into state. A write elsewhere that
++// invalidates ['clients'], ['projects'] or ['invoices'] does not touch this key, so the dashboard
++// simply refetches on its own next mount; it stays a single source of truth for the summary.
++export function Dashboard() {
++  const summary = useQuery({
++    queryKey: ['dashboard'],
++    queryFn: () => getJson<DashboardSummary>('/api/dashboard'),
++  });
++
++  const data = summary.data;
++
++  return (
++    <section data-testid="dashboard">
++      <dl>
++        <dt>Clients</dt>
++        <dd data-testid="dashboard-clients-count">{data?.clientsCount ?? 0}</dd>
++        <dt>Projects</dt>
++        <dd data-testid="dashboard-projects-count">{data?.projectsCount ?? 0}</dd>
++        <dt>Outstanding</dt>
++        <dd data-testid="dashboard-outstanding-total">
++          {money(Number(data?.outstandingTotal ?? 0))}
++        </dd>
++      </dl>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/dashboard/nav.slot.tsx b/src/main/frontend/features/dashboard/nav.slot.tsx
+new file mode 100644
+index 0000000..e8c6490
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/nav.slot.tsx
+@@ -0,0 +1,13 @@
++import { Link } from '@tanstack/react-router';
++import { AppNav } from '../../slots/defs/appNav';
++
++// The dashboard's presence in the shell nav bar — its own file, filling the app.nav slot. Ordered
++// first so the home screen leads the nav; nothing existing is edited to add it.
++export const contribution = AppNav.fill({
++  order: 5,
++  Component: () => (
++    <Link to="/dashboard" data-testid="nav-dashboard">
++      Dashboard
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/routes/dashboard.tsx b/src/main/frontend/routes/dashboard.tsx
+new file mode 100644
+index 0000000..98e2d1a
+--- /dev/null
++++ b/src/main/frontend/routes/dashboard.tsx
+@@ -0,0 +1,8 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { Dashboard } from '../features/dashboard/Dashboard';
++
++// The /dashboard home screen — one new file under routes/; the route tree is generated from this
++// directory. Its nav link is its own file (features/dashboard/nav.slot.tsx).
++export const Route = createFileRoute('/dashboard')({
++  component: Dashboard,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardGet.java b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+new file mode 100644
+index 0000000..378b855
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * {@code GET /api/dashboard} — the home-screen summary across all three entities: the count of
++ * clients, the count of projects, and the outstanding total (the sum of every UNPAID invoice's
++ * amount, i.e. the money still owed). Wired by {@code officefloor/rest/api/dashboard.GET.yml}.
++ */
++public class DashboardGet {
++
++    public void service(ClientRepository clients, ProjectRepository projects,
++            InvoiceRepository invoices, ObjectResponse<DashboardView> response) {
++        response.send(new DashboardView(clients.count(), projects.count(),
++                invoices.sumUnpaidAmount()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardView.java b/src/main/java/net/officefloor/hq/app/DashboardView.java
+new file mode 100644
+index 0000000..4a793ca
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DashboardView.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * What {@code GET /api/dashboard} returns: the whole-app summary the home screen shows — how many
++ * clients and projects exist, and how much money is still owed (the sum of every UNPAID invoice's
++ * amount). A read-only aggregate joined in {@link DashboardGet}; no entity of its own.
++ */
++public class DashboardView {
++
++    private final long clientsCount;
++    private final long projectsCount;
++    private final BigDecimal outstandingTotal;
++
++    public DashboardView(long clientsCount, long projectsCount, BigDecimal outstandingTotal) {
++        this.clientsCount = clientsCount;
++        this.projectsCount = projectsCount;
++        this.outstandingTotal = outstandingTotal;
++    }
++
++    public long getClientsCount() {
++        return clientsCount;
++    }
++
++    public long getProjectsCount() {
++        return projectsCount;
++    }
++
++    public BigDecimal getOutstandingTotal() {
++        return outstandingTotal;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index e1930b9..a53c2f3 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import java.util.List;
+ import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.data.jpa.repository.Query;
+ 
+ /**
+  * Data access for {@link Invoice}. A Spring Data bean, injected into the OfficeFloor logic classes
+@@ -11,4 +13,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+ 
+     /** All invoices, oldest first, so the list order is stable for the UI and tests. */
+     List<Invoice> findAllByOrderByIdAsc();
++
++    /**
++     * The money still owed: the sum of every UNPAID invoice's amount, or 0 when none are unpaid.
++     * Backs the dashboard's outstanding total ({@code GET /api/dashboard}).
++     */
++    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'UNPAID'")
++    BigDecimal sumUnpaidAmount();
+ }
+diff --git a/src/main/resources/db/migration/V7__invoice_status_index.sql b/src/main/resources/db/migration/V7__invoice_status_index.sql
+new file mode 100644
+index 0000000..82615cf
+--- /dev/null
++++ b/src/main/resources/db/migration/V7__invoice_status_index.sql
+@@ -0,0 +1,4 @@
++-- The dashboard's outstanding total sums invoice amounts filtered by status ('UNPAID'). An index on
++-- invoice.status keeps that aggregate fast as the invoice list grows. Additive index, no data
++-- change; existing rows and the create/pay paths are unaffected.
++CREATE INDEX idx_invoice_status ON invoice (status);
+diff --git a/src/main/resources/officefloor/rest/api/dashboard.GET.yml b/src/main/resources/officefloor/rest/api/dashboard.GET.yml
+new file mode 100644
+index 0000000..e15472a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/dashboard.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.DashboardGet
