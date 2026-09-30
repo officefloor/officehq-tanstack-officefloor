@@ -1,0 +1,72 @@
+diff --git a/src/main/frontend/features/dashboard/Dashboard.tsx b/src/main/frontend/features/dashboard/Dashboard.tsx
+index c5a9f29..2961b16 100644
+--- a/src/main/frontend/features/dashboard/Dashboard.tsx
++++ b/src/main/frontend/features/dashboard/Dashboard.tsx
+@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
+ import { money } from '../../ui/money';
+ 
+ // The whole-app summary the server returns: how many clients and projects exist, and the money
+-// still owed (the sum of every UNPAID invoice's amount).
++// still owed (the sum of every SENT invoice's amount — drafts and paid invoices are excluded).
+ export type DashboardSummary = {
+   clientsCount: number;
+   projectsCount: number;
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardGet.java b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+index 378b855..0d41862 100644
+--- a/src/main/java/net/officefloor/hq/app/DashboardGet.java
++++ b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+@@ -4,14 +4,15 @@ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+  * {@code GET /api/dashboard} — the home-screen summary across all three entities: the count of
+- * clients, the count of projects, and the outstanding total (the sum of every UNPAID invoice's
+- * amount, i.e. the money still owed). Wired by {@code officefloor/rest/api/dashboard.GET.yml}.
++ * clients, the count of projects, and the outstanding total (the sum of every SENT invoice's
++ * amount, i.e. the money actually owed — drafts and paid invoices are excluded). Wired by
++ * {@code officefloor/rest/api/dashboard.GET.yml}.
+  */
+ public class DashboardGet {
+ 
+     public void service(ClientRepository clients, ProjectRepository projects,
+             InvoiceRepository invoices, ObjectResponse<DashboardView> response) {
+         response.send(new DashboardView(clients.count(), projects.count(),
+-                invoices.sumUnpaidAmount()));
++                invoices.sumSentAmount()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardView.java b/src/main/java/net/officefloor/hq/app/DashboardView.java
+index 4a793ca..7f33224 100644
+--- a/src/main/java/net/officefloor/hq/app/DashboardView.java
++++ b/src/main/java/net/officefloor/hq/app/DashboardView.java
+@@ -4,8 +4,9 @@ import java.math.BigDecimal;
+ 
+ /**
+  * What {@code GET /api/dashboard} returns: the whole-app summary the home screen shows — how many
+- * clients and projects exist, and how much money is still owed (the sum of every UNPAID invoice's
+- * amount). A read-only aggregate joined in {@link DashboardGet}; no entity of its own.
++ * clients and projects exist, and how much money is still owed (the sum of every SENT invoice's
++ * amount — drafts and paid invoices excluded). A read-only aggregate joined in {@link DashboardGet};
++ * no entity of its own.
+  */
+ public class DashboardView {
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index a7373e9..8610835 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -28,9 +28,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+     List<Invoice> findAllByOrderByDueDateAscIdAsc();
+ 
+     /**
+-     * The money still owed: the sum of every UNPAID invoice's amount, or 0 when none are unpaid.
+-     * Backs the dashboard's outstanding total ({@code GET /api/dashboard}).
++     * The money still owed: the sum of every SENT invoice's amount, or 0 when none are sent. Only
++     * invoices that have actually been sent count — a DRAFT has not gone out yet, and a PAID one has
++     * already been settled — so both are excluded. Backs the dashboard's outstanding total
++     * ({@code GET /api/dashboard}).
+      */
+-    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'UNPAID'")
+-    BigDecimal sumUnpaidAmount();
++    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
++    BigDecimal sumSentAmount();
+ }
