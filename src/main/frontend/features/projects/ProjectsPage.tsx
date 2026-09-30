@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
-import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
+import { asFlag, asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import type { Client } from '../clients/ClientsPage';
 import type { ProjectTag } from './ProjectTagsPanel';
 import { ProjectRowActions } from '../../slots/defs/projectRowActions';
@@ -49,6 +49,11 @@ export function ProjectsPage() {
   // from useQuery under ['projectTags'] — the SAME key the tags panel owns (rule 5) — so nothing is
   // passed between the control and the list. Undefined means no filter: every project shows.
   const [tagFilter] = useSearchParam('projectTag', asNumber);
+
+  // Which status the list is filtered to lives in the URL, owned by
+  // features/projects/statusFilter.slot.tsx. The page reads the same key and narrows its rows to
+  // projects at that status; empty means no filter, so every project shows.
+  const [statusFilter] = useSearchParam('projectStatus', asString);
   const projectTags = useQuery({
     queryKey: ['projectTags'],
     queryFn: () => getJson<ProjectTag[]>('/api/project-tags'),
@@ -76,7 +81,8 @@ export function ProjectsPage() {
   );
   const rows = (projects.data ?? [])
     .filter((p) => showArchived || !p.archived)
-    .filter((p) => tagFilter === undefined || taggedIds.has(p.id));
+    .filter((p) => tagFilter === undefined || taggedIds.has(p.id))
+    .filter((p) => statusFilter === '' || p.status === statusFilter);
   const clientOptions = clients.data ?? [];
 
   return (
