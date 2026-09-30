@@ -55,9 +55,11 @@ public class TestSupportController {
         seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
         seedTable(fixture, "projects",
-                "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO projects (id, name, client_id, status, archived, budget)"
+                        + " VALUES (?, ?, ?, ?, ?, ?)",
                 p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId"),
-                        p.getOrDefault("status", "ACTIVE"), Boolean.TRUE.equals(p.get("archived"))});
+                        p.getOrDefault("status", "ACTIVE"), Boolean.TRUE.equals(p.get("archived")),
+                        p.get("budget") == null ? null : ((Number) p.get("budget")).doubleValue()});
         seedTable(fixture, "contacts",
                 "INSERT INTO contacts (id, name, email, role, client_id) VALUES (?, ?, ?, ?, ?)",
                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"), c.get("role"),

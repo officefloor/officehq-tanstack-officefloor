@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.math.BigDecimal;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -27,6 +28,9 @@ public class Project {
     private boolean archived;
 
     private String status;
+
+    /** The money planned for this project, against which invoices are tracked. Null if unset. */
+    private BigDecimal budget;
 
     public Long getId() {
         return id;
@@ -67,5 +71,14 @@ public class Project {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    /** The money planned for this project, against which invoices are tracked. Null if unset. */
+    public BigDecimal getBudget() {
+        return budget;
+    }
+
+    public void setBudget(BigDecimal budget) {
+        this.budget = budget;
     }
 }
