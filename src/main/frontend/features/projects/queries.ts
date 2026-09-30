@@ -3,13 +3,34 @@ import { getJson, postJson } from '../../api/http';
 // Server data under ONE shared key: anything showing projects reads ['projects'], and a write
 // invalidates the same key to refresh them all (CLAUDE.md rule 5). A project's row carries its
 // client's NAME (the cross-entity join is done server-side, in ProjectView).
-export type ProjectView = { id: number; name: string; clientName: string; archived: boolean };
+export type ProjectView = {
+  id: number;
+  name: string;
+  clientName: string;
+  archived: boolean;
+  tagIds: number[];
+};
 
 export const projectsKey = ['projects'] as const;
 
 // The URL search-param key the show-archived toggle owns and the list reads (CLAUDE.md rule 4).
 // Shared as a constant so the two files agree on the one key without importing each other.
 export const PROJECTS_SHOW_ARCHIVED_PARAM = 'showArchived';
+
+// The URL search-param key the label filter owns and the list reads (CLAUDE.md rule 4): the chosen
+// tag id, or absent for "all". Shared as a constant so the two files agree on the one key.
+export const PROJECTS_TAG_FILTER_PARAM = 'tag';
+
+// The shared pool of labels, read under the SHARED ['tags'] key (CLAUDE.md rule 5) — the projects
+// filter and the project-detail label picker stay in step through the key, without importing each
+// other: attaching a label elsewhere invalidates ['tags'] and this select updates itself.
+export type TagOption = { id: number; name: string };
+
+export const tagsKey = ['tags'] as const;
+
+export function fetchTagOptions(): Promise<TagOption[]> {
+  return getJson<TagOption[]>('/api/tags');
+}
 
 export function fetchProjects(): Promise<ProjectView[]> {
   return getJson<ProjectView[]>('/api/projects');

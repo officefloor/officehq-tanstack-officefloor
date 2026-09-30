@@ -1,8 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { projectsKey, fetchProjects, PROJECTS_SHOW_ARCHIVED_PARAM } from './queries';
+import {
+  projectsKey,
+  fetchProjects,
+  PROJECTS_SHOW_ARCHIVED_PARAM,
+  PROJECTS_TAG_FILTER_PARAM,
+} from './queries';
 import { ProjectRow } from '../../slots/defs/projectRow';
 import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
-import { useSearchParam, asFlag } from '../../url/useSearchParam';
+import { useSearchParam, asFlag, asNumber } from '../../url/useSearchParam';
 
 // The list. Queries for itself under ['projects'] — never handed its data by a parent (CLAUDE.md
 // rule 5). Each row shows the project's name and the client's NAME (from the server-side join).
@@ -11,12 +16,15 @@ import { useSearchParam, asFlag } from '../../url/useSearchParam';
 export function ProjectsTable() {
   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: fetchProjects });
   const [showArchived] = useSearchParam(PROJECTS_SHOW_ARCHIVED_PARAM, asFlag);
+  const [tagFilter] = useSearchParam(PROJECTS_TAG_FILTER_PARAM, asNumber);
 
   if (!projects) {
     return null;
   }
 
-  const visible = showArchived ? projects : projects.filter((project) => !project.archived);
+  const visible = projects
+    .filter((project) => showArchived || !project.archived)
+    .filter((project) => tagFilter === undefined || project.tagIds.includes(tagFilter));
 
   if (projects.length === 0) {
     return (
