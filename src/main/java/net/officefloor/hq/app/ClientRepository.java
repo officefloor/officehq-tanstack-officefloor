@@ -35,4 +35,11 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      * so a duplicate email is rejected before any row or audit record is written.
      */
     boolean existsByEmail(String email);
+
+    /**
+     * Whether a client OTHER than {@code id} already holds this email. Backs the uniqueness check in
+     * {@link ClientsUpdate}, which must let a client keep its own email while still rejecting a
+     * collision with a different client.
+     */
+    boolean existsByEmailAndIdNot(String email, Long id);
 }
