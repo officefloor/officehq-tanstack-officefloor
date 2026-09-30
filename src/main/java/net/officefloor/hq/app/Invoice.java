@@ -44,6 +44,15 @@ public class Invoice {
     @Column(name = "discount_pct")
     private BigDecimal discountPct = BigDecimal.ZERO;
 
+    /**
+     * The percentage sales tax added on top of the invoice (0 = none). Worked out AFTER the discount:
+     * applied to the discounted subtotal (subtotal - discount) to work out the invoice's final total.
+     * The line-item amounts and the discount are unchanged. Stored in the {@code tax_pct} column
+     * (Flyway V24).
+     */
+    @Column(name = "tax_pct")
+    private BigDecimal taxPct = BigDecimal.ZERO;
+
     public Long getId() {
         return id;
     }
@@ -98,5 +107,13 @@ public class Invoice {
 
     public void setDiscountPct(BigDecimal discountPct) {
         this.discountPct = discountPct;
+    }
+
+    public BigDecimal getTaxPct() {
+        return taxPct;
+    }
+
+    public void setTaxPct(BigDecimal taxPct) {
+        this.taxPct = taxPct;
     }
 }

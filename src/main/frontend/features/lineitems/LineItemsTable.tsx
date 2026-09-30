@@ -6,10 +6,11 @@ import { formatMoney } from '../../ui/money';
 
 // An invoice's line items plus the derived total. Queries for itself under ['lineitems', invoiceId]
 // — never handed its data by a parent (CLAUDE.md rule 5). Each line's amount is qty * unitPrice; the
-// invoice total is the sum of the same rows LESS the invoice's percentage discount, worked out
-// server-side under the shared ['lineitems', invoiceId] key so it always tracks both the lines and
-// the discount. With no discount the total equals the plain line sum. Carries the stable
-// data-testid contract the test reads.
+// invoice total is the sum of the same rows LESS the invoice's percentage discount PLUS the sales tax
+// added on top of that discounted subtotal, worked out server-side under the shared
+// ['lineitems', invoiceId] key so it always tracks the lines, the discount and the tax. With no
+// discount or tax the total equals the plain line sum. Carries the stable data-testid contract the
+// test reads.
 export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
   const { data: lineItems } = useQuery({
     queryKey: lineItemsKey(invoiceId),

@@ -123,11 +123,11 @@ public class TestSupportController {
         long invoiceId = id(invoice, "id");
         List<Map<String, Object>> lineItems = (List<Map<String, Object>>) invoice.get("lineItems");
         jdbc.update("INSERT INTO invoices"
-                + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                + " (id, project_id, amount, status, issued_date, due_date, discount_pct, tax_pct)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 invoiceId, id(invoice, "projectId"), invoiceAmount(invoice, lineItems),
                 invoice.getOrDefault("status", "DRAFT"), invoice.get("issuedDate"),
-                invoice.get("dueDate"), pct(invoice, "discountPct"));
+                invoice.get("dueDate"), pct(invoice, "discountPct"), pct(invoice, "taxPct"));
         seedLineItems(invoiceId, lineItems);
     }
 

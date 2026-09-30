@@ -22,6 +22,7 @@ public class InvoiceDiscountGet {
         Invoice invoice = invoices.findById(invoiceId)
                 .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
         List<LineItem> lines = lineItems.findByInvoiceIdOrderByIdAsc(invoiceId);
-        response.send(InvoiceDiscount.forLines(lines, invoice.getDiscountPct()));
+        response.send(InvoiceDiscount.forLines(lines, invoice.getDiscountPct(),
+                invoice.getTaxPct()));
     }
 }

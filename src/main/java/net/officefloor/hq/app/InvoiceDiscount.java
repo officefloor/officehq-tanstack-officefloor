@@ -5,9 +5,10 @@ import java.math.RoundingMode;
 
 /**
  * One invoice's money breakdown, derived per request from its line items and its stored
- * {@code discountPct} so the figures always agree and nothing is stored twice: the {@code subtotal}
- * (the sum of its line items, before any discount), the percentage-based {@code discount} taken off
- * it, and the {@code total} the client actually owes ({@code subtotal - discount}).
+ * {@code discountPct} and {@code taxPct} so the figures always agree and nothing is stored twice: the
+ * {@code subtotal} (the sum of its line items, before any discount), the percentage-based
+ * {@code discount} taken off it, the sales {@code tax} added on top of the discounted subtotal, and
+ * the {@code total} the client actually owes ({@code subtotal - discount + tax}).
  *
  * <p>This is the single home for an invoice's money arithmetic. {@link #forLines} builds the whole
  * breakdown from an invoice's lines; {@link #subtotalOf} exposes just the line-item sum for callers
@@ -18,17 +19,24 @@ public class InvoiceDiscount {
 
     private final BigDecimal subtotal;
     private final BigDecimal discount;
+    private final BigDecimal tax;
     private final BigDecimal total;
 
-    public InvoiceDiscount(BigDecimal subtotal, BigDecimal discountPct) {
+    public InvoiceDiscount(BigDecimal subtotal, BigDecimal discountPct, BigDecimal taxPct) {
         this.subtotal = orZero(subtotal);
         this.discount = pctOf(this.subtotal, discountPct);
-        this.total = this.subtotal.subtract(this.discount);
+        BigDecimal discounted = this.subtotal.subtract(this.discount);
+        this.tax = pctOf(discounted, taxPct);
+        this.total = discounted.add(this.tax);
     }
 
-    /** The full breakdown for an invoice's lines: subtotal summed from them, then the discount. */
-    public static InvoiceDiscount forLines(Iterable<LineItem> lines, BigDecimal discountPct) {
-        return new InvoiceDiscount(subtotalOf(lines), discountPct);
+    /**
+     * The full breakdown for an invoice's lines: subtotal summed from them, then the discount, then
+     * the sales tax added on top of the discounted subtotal.
+     */
+    public static InvoiceDiscount forLines(Iterable<LineItem> lines, BigDecimal discountPct,
+            BigDecimal taxPct) {
+        return new InvoiceDiscount(subtotalOf(lines), discountPct, taxPct);
     }
 
     /** The subtotal an invoice's lines add up to: the sum of each line's qty * unitPrice. */
@@ -63,7 +71,12 @@ public class InvoiceDiscount {
         return discount;
     }
 
-    /** What the client owes after the discount: subtotal - discount. */
+    /** The sales tax added on top of the discounted subtotal: (subtotal - discount) * pct / 100. */
+    public BigDecimal getTax() {
+        return tax;
+    }
+
+    /** What the client owes after the discount and tax: subtotal - discount + tax. */
     public BigDecimal getTotal() {
         return total;
     }
