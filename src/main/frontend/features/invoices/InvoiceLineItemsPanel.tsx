@@ -14,6 +14,9 @@ export type LineItem = {
   qty: number;
   unit: string;
   unitPrice: number;
+  // The currency this line's money is shown in — its invoice's client's billing currency (USD or
+  // EUR), derived and sent by the server so the line amounts match the rest of the invoice.
+  currency: string;
 };
 
 // The fields the user is currently typing into a line they are editing (rule 4): held in state only
@@ -185,7 +188,7 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
                   />
                 </td>
                 <td data-testid="lineitem-amount">
-                  {money(Number(draft.qty || 0) * Number(draft.unitPrice || 0))}
+                  {money(Number(draft.qty || 0) * Number(draft.unitPrice || 0), li.currency)}
                 </td>
                 <td>
                   <button
@@ -219,9 +222,9 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
                 <td data-testid="lineitem-description">{li.description}</td>
                 <td data-testid="lineitem-qty">{li.qty}</td>
                 <td data-testid="lineitem-unit">{li.unit}</td>
-                <td data-testid="lineitem-unitprice">{money(Number(li.unitPrice))}</td>
+                <td data-testid="lineitem-unitprice">{money(Number(li.unitPrice), li.currency)}</td>
                 <td data-testid="lineitem-amount">
-                  {money(Number(li.qty) * Number(li.unitPrice))}
+                  {money(Number(li.qty) * Number(li.unitPrice), li.currency)}
                 </td>
                 <td>
                   <button

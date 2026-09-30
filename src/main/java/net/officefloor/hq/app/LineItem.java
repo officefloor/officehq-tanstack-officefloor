@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 
 /**
@@ -34,6 +35,16 @@ public class LineItem {
 
     @Column(name = "unit_price")
     private BigDecimal unitPrice;
+
+    /**
+     * The currency this line's money is shown in — the billing currency of the client the line's
+     * invoice belongs to (an ISO code, {@code USD} or {@code EUR}). Derived, not stored
+     * ({@code @Transient} keeps it out of the {@code line_item} table); {@link LineItemsGet} fills it
+     * by joining the line's invoice back to its project's client, so the invoice-detail line amounts
+     * read in the same currency as the rest of the invoice.
+     */
+    @Transient
+    private String currency;
 
     public Long getId() {
         return id;
@@ -81,5 +92,13 @@ public class LineItem {
 
     public void setUnitPrice(BigDecimal unitPrice) {
         this.unitPrice = unitPrice;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 }

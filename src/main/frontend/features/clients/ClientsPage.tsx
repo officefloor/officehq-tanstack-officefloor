@@ -5,8 +5,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
 import { ClientRowActions } from '../../slots/defs/clientRowActions';
 
-// A client as the server returns it.
-export type Client = { id: number; name: string; email: string };
+// A client as the server returns it, including the currency they are billed in (USD or EUR).
+export type Client = { id: number; name: string; email: string; currency: string };
 
 // A client must carry a proper email address. Same shape the server enforces (ClientsPost) so the
 // UI never asks the server to save what the server will reject.

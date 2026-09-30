@@ -28,6 +28,15 @@ public class Client {
     @Column(nullable = false)
     private boolean archived;
 
+    /**
+     * The currency this client is billed in (an ISO code, {@code USD} or {@code EUR}). Their money is
+     * shown in this currency everywhere it appears — invoice rows, the project total, the statement,
+     * the dashboard totals and the top-clients list — and currencies are never added together. Stored
+     * by {@code V33__client_currency.sql}, defaulting to USD for clients created before it existed.
+     */
+    @Column(nullable = false)
+    private String currency;
+
     public Long getId() {
         return id;
     }
@@ -58,5 +67,13 @@ public class Client {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 }

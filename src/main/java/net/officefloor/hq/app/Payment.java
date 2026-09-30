@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 
 /**
@@ -39,6 +40,16 @@ public class Payment {
      */
     @Column(name = "batch_ref")
     private String batchRef;
+
+    /**
+     * The currency this payment's amount is shown in — the billing currency of the client the
+     * payment's invoice belongs to (an ISO code, {@code USD} or {@code EUR}). Derived, not stored
+     * ({@code @Transient} keeps it out of the {@code payment} table); {@link PaymentsGet} fills it by
+     * joining the payment's invoice back to its project's client, so the invoice-detail payments read
+     * in the same currency as the invoice.
+     */
+    @Transient
+    private String currency;
 
     public Long getId() {
         return id;
@@ -78,5 +89,13 @@ public class Payment {
 
     public void setBatchRef(String batchRef) {
         this.batchRef = batchRef;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 }

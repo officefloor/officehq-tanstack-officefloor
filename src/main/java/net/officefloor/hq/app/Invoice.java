@@ -69,6 +69,17 @@ public class Invoice {
     @Transient
     private BigDecimal amountDue;
 
+    /**
+     * The currency the invoice is shown in — the billing currency of the client this invoice's
+     * project belongs to (an ISO code, {@code USD} or {@code EUR}). Derived, not stored
+     * ({@code @Transient} keeps it out of the {@code invoice} table); the endpoints that list
+     * invoices ({@link InvoicesGet}, {@link ClientStatementGet}) fill it by joining the invoice's
+     * project back to its client, so every place that shows the invoice amount renders it in the
+     * client's own currency.
+     */
+    @Transient
+    private String currency;
+
     public Long getId() {
         return id;
     }
@@ -123,6 +134,14 @@ public class Invoice {
 
     public void setAmountDue(BigDecimal amountDue) {
         this.amountDue = amountDue;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     public BigDecimal getDiscountPct() {

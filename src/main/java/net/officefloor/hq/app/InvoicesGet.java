@@ -23,7 +23,8 @@ import net.officefloor.web.ObjectResponse;
 public class InvoicesGet {
 
     public void service(@HttpQueryParameter("sort") String sort, InvoiceRepository repository,
-            PaymentRepository payments, ObjectResponse<List<Invoice>> response) {
+            PaymentRepository payments, ProjectRepository projects, ClientRepository clients,
+            ObjectResponse<List<Invoice>> response) {
         List<Invoice> invoices = "due".equals(sort == null ? null : sort.trim())
                 ? repository.findAllByOrderByDueDateAscIdAsc()
                 : repository.findAllByOrderByIdAsc();
@@ -34,9 +35,13 @@ public class InvoicesGet {
         for (Payment payment : payments.findAllByOrderByIdAsc()) {
             paidByInvoice.merge(payment.getInvoiceId(), payment.getAmount(), BigDecimal::add);
         }
+        // Each invoice is shown in its client's currency: an invoice belongs to a project, and a
+        // project to a client, so map the invoice's project back to that client's currency.
+        Map<Long, String> currencyByProject = Currencies.byProject(projects, clients);
         for (Invoice invoice : invoices) {
             BigDecimal paid = paidByInvoice.getOrDefault(invoice.getId(), BigDecimal.ZERO);
             invoice.setAmountDue(invoice.getAmount().subtract(paid));
+            invoice.setCurrency(currencyByProject.get(invoice.getProjectId()));
         }
 
         response.send(invoices);

@@ -20,6 +20,9 @@ export type Invoice = {
   // How much is still owed after payments (amount minus every payment recorded against it), derived
   // and sent by the server. The amount-due cell (features/invoices/dueAmount.slot.tsx) reads this.
   amountDue: number;
+  // The currency this invoice's money is shown in — the billing currency of its project's client,
+  // derived and sent by the server (USD or EUR). Every amount on the row renders in it.
+  currency: string;
 };
 
 // A project's invoices: the list scoped to this project, their derived total, and the form to add a
@@ -65,6 +68,8 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
 
   const rows = (invoices.data ?? []).filter((i) => i.projectId === projectId);
   const total = rows.reduce((sum, i) => sum + Number(i.amount), 0);
+  // A project belongs to one client, so all its invoices share one currency — show the total in it.
+  const currency = rows[0]?.currency ?? 'USD';
 
   return (
     <section data-testid="project-invoices">
@@ -120,7 +125,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
         <tbody>
           {rows.map((i) => (
             <tr key={i.id} data-testid={`invoice-row-${i.id}`}>
-              <td data-testid="invoice-amount">{money(Number(i.amount))}</td>
+              <td data-testid="invoice-amount">{money(Number(i.amount), i.currency)}</td>
               <InvoiceRowCells.Slot invoiceId={i.id} />
               <td data-testid="invoice-issued">{i.issuedDate}</td>
               <td data-testid="invoice-due">{i.dueDate}</td>
@@ -148,7 +153,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
         </tbody>
         <tfoot>
           <tr>
-            <td data-testid="project-invoices-total">{money(total)}</td>
+            <td data-testid="project-invoices-total">{money(total, currency)}</td>
           </tr>
         </tfoot>
       </table>

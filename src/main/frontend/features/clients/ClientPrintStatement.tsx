@@ -19,6 +19,8 @@ type StatementInvoice = {
 type Statement = {
   invoices: StatementInvoice[];
   outstanding: number;
+  // The currency this client's statement is shown in (their billing currency, USD or EUR).
+  currency: string;
 };
 
 // The printable summary in the client-detail context — its own file, filling the client-detail slot
@@ -43,6 +45,7 @@ export function ClientPrintStatement({ clientId }: { clientId: number }) {
   const data = query.data;
   const invoices = data?.invoices ?? [];
   const grandTotal = data ? Number(data.outstanding) : 0;
+  const currency = data?.currency ?? 'USD';
 
   return (
     <section data-testid="statement-print-view" aria-label="Printable statement summary">
@@ -62,14 +65,14 @@ export function ClientPrintStatement({ clientId }: { clientId: number }) {
               <td>{i.id}</td>
               <td>{i.issuedDate}</td>
               <td>{i.dueDate}</td>
-              <td data-testid={`statement-print-amount-${i.id}`}>{money(Number(i.amountDue))}</td>
+              <td data-testid={`statement-print-amount-${i.id}`}>{money(Number(i.amountDue), currency)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
             <td colSpan={3}>Grand total owed</td>
-            <td data-testid="statement-grand-total">{money(grandTotal)}</td>
+            <td data-testid="statement-grand-total">{money(grandTotal, currency)}</td>
           </tr>
         </tfoot>
       </table>

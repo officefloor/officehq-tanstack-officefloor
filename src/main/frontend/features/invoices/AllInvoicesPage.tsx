@@ -14,6 +14,9 @@ export type InvoiceView = {
   status: string;
   issuedDate: string;
   dueDate: string;
+  // The currency this invoice is shown in — its project's client's billing currency (USD or EUR),
+  // derived and sent by the server, so a list spanning clients shows each in its own currency.
+  currency: string;
 };
 
 // One place listing every invoice across all projects, each row showing the project it is for and
@@ -62,7 +65,7 @@ export function AllInvoicesPage() {
             {rows.map((i) => (
               <tr key={i.id} data-testid={`invoice-row-${i.id}`}>
                 <td data-testid="invoice-project">{i.projectName}</td>
-                <td data-testid="invoice-amount">{money(Number(i.amount))}</td>
+                <td data-testid="invoice-amount">{money(Number(i.amount), i.currency)}</td>
                 <td data-testid="invoice-status">{i.status}</td>
               </tr>
             ))}

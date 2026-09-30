@@ -13,11 +13,13 @@ public class TopClientView {
     private final long clientId;
     private final String name;
     private final BigDecimal amount;
+    private final String currency;
 
-    public TopClientView(long clientId, String name, BigDecimal amount) {
+    public TopClientView(long clientId, String name, BigDecimal amount, String currency) {
         this.clientId = clientId;
         this.name = name;
         this.amount = amount;
+        this.currency = currency;
     }
 
     public long getClientId() {
@@ -31,5 +33,10 @@ public class TopClientView {
     /** How much this client still owes — its outstanding total across all its invoices. */
     public BigDecimal getAmount() {
         return amount;
+    }
+
+    /** The currency this client's figure is shown in (their billing currency). */
+    public String getCurrency() {
+        return currency;
     }
 }

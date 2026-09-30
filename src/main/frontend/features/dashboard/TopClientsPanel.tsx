@@ -4,7 +4,7 @@ import { money } from '../../ui/money';
 
 // The home screen's top clients as the server ranks them: each client with the amount it still owes
 // (its outstanding total), most owed first, capped at five.
-type TopClient = { clientId: number; name: string; amount: number };
+type TopClient = { clientId: number; name: string; amount: number; currency: string };
 
 // The top-clients panel, rendered in the dashboard-panels context: the five clients who owe the most,
 // ranked by how much. Server data is read with useQuery under a key that starts with ['dashboard'],
@@ -33,7 +33,7 @@ export function TopClientsPanel() {
           {rows.map((c) => (
             <tr key={c.clientId} data-testid={`top-client-row-${c.clientId}`}>
               <td data-testid="top-client-name">{c.name}</td>
-              <td data-testid="top-client-amount">{money(Number(c.amount))}</td>
+              <td data-testid="top-client-amount">{money(Number(c.amount), c.currency)}</td>
             </tr>
           ))}
         </tbody>

@@ -19,7 +19,8 @@ import net.officefloor.web.ObjectResponse;
 public class InvoiceSummaryGet {
 
     public void service(@HttpQueryParameter("invoiceId") String invoiceId, InvoiceRepository invoices,
-            LineItemRepository lineItems, ObjectResponse<InvoiceSummaryView> response) {
+            LineItemRepository lineItems, ProjectRepository projects, ClientRepository clients,
+            ObjectResponse<InvoiceSummaryView> response) {
         Long id = Long.valueOf(invoiceId.trim());
 
         // Subtotal: sum qty * unit price across the invoice's lines, mirroring how the line items
@@ -49,6 +50,12 @@ public class InvoiceSummaryGet {
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         BigDecimal total = discounted.add(tax);
 
-        response.send(new InvoiceSummaryView(subtotal, pct, discount, taxPct, tax, total));
+        // The invoice's money is shown in its client's currency (its project's client), so the detail
+        // summary reads in the same currency as everywhere else the invoice appears.
+        String currency = invoice == null ? Currencies.DEFAULT
+                : Currencies.byProject(projects, clients)
+                        .getOrDefault(invoice.getProjectId(), Currencies.DEFAULT);
+
+        response.send(new InvoiceSummaryView(subtotal, pct, discount, taxPct, tax, total, currency));
     }
 }

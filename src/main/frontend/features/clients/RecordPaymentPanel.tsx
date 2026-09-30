@@ -15,7 +15,7 @@ type StatementInvoice = {
   dueDate: string;
   amountDue: number;
 };
-type Statement = { invoices: StatementInvoice[]; outstanding: number };
+type Statement = { invoices: StatementInvoice[]; outstanding: number; currency: string };
 
 // Record one lump payment split across several of a client's open invoices, rendered in the
 // client-detail context. It only shows once the form is opened — the `payment` URL key, owned by
@@ -70,6 +70,8 @@ export function RecordPaymentPanel({ clientId }: { clientId: number }) {
 
   // Only invoices with a balance left can take a share of the payment.
   const invoices = (query.data?.invoices ?? []).filter((i) => Number(i.amountDue) > 0);
+  // The whole client is billed in one currency, so the amounts due show in it.
+  const currency = query.data?.currency ?? 'USD';
 
   return (
     <section data-testid="client-record-payment-form">
@@ -110,7 +112,7 @@ export function RecordPaymentPanel({ clientId }: { clientId: number }) {
             {invoices.map((i) => (
               <tr key={i.id} data-testid={`payment-alloc-row-${i.id}`}>
                 <td data-testid="payment-alloc-invoice">{i.id}</td>
-                <td data-testid="payment-alloc-due">{money(Number(i.amountDue))}</td>
+                <td data-testid="payment-alloc-due">{money(Number(i.amountDue), currency)}</td>
                 <td>
                   <input
                     data-testid={`payment-alloc-${i.id}`}

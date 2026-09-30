@@ -14,10 +14,12 @@ public class StatementView {
 
     private final List<Invoice> invoices;
     private final BigDecimal outstanding;
+    private final String currency;
 
-    public StatementView(List<Invoice> invoices, BigDecimal outstanding) {
+    public StatementView(List<Invoice> invoices, BigDecimal outstanding, String currency) {
         this.invoices = invoices;
         this.outstanding = outstanding;
+        this.currency = currency;
     }
 
     public List<Invoice> getInvoices() {
@@ -26,5 +28,10 @@ public class StatementView {
 
     public BigDecimal getOutstanding() {
         return outstanding;
+    }
+
+    /** The currency this client's statement is shown in (their billing currency). */
+    public String getCurrency() {
+        return currency;
     }
 }

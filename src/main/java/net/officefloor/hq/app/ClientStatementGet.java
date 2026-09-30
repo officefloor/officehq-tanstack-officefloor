@@ -24,9 +24,13 @@ import net.officefloor.web.ObjectResponse;
 public class ClientStatementGet {
 
     public void service(@HttpQueryParameter("clientId") String clientId, ProjectRepository projects,
-            InvoiceRepository invoices, PaymentRepository payments,
+            InvoiceRepository invoices, PaymentRepository payments, ClientRepository clients,
             ObjectResponse<StatementView> response) {
         Long id = Long.valueOf(clientId.trim());
+
+        // The whole statement is one client's, so it is shown in that client's currency.
+        String currency = clients.findById(id).map(c -> Currencies.of(c.getCurrency()))
+                .orElse(Currencies.DEFAULT);
 
         // The client's projects: their ids are what ties an invoice back to this client.
         Set<Long> projectIds = projects.findAllByOrderByIdAsc().stream()
@@ -53,9 +57,10 @@ public class ClientStatementGet {
             // the statement's amount due and outstanding total too.
             BigDecimal due = invoice.getDiscountedAmount().subtract(paid);
             invoice.setAmountDue(due);
+            invoice.setCurrency(currency);
             outstanding = outstanding.add(due);
         }
 
-        response.send(new StatementView(clientInvoices, outstanding));
+        response.send(new StatementView(clientInvoices, outstanding, currency));
     }
 }

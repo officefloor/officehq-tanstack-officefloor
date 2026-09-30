@@ -10,6 +10,9 @@ export type Payment = {
   invoiceId: number;
   amount: number;
   date: string;
+  // The currency this payment is shown in — its invoice's client's billing currency (USD or EUR),
+  // derived and sent by the server so the payments read in the same currency as the invoice.
+  currency: string;
 };
 
 // The payments a client has recorded against an invoice, rendered in the invoice-detail context: the
@@ -88,7 +91,7 @@ export function InvoicePaymentsPanel({ invoiceId }: { invoiceId: number }) {
         <tbody>
           {rows.map((p) => (
             <tr key={p.id} data-testid={`payment-row-${p.id}`}>
-              <td data-testid="payment-amount">{money(Number(p.amount))}</td>
+              <td data-testid="payment-amount">{money(Number(p.amount), p.currency)}</td>
               <td data-testid="payment-date">{p.date}</td>
             </tr>
           ))}

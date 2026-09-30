@@ -14,6 +14,8 @@ type InvoiceSummary = {
   taxPct: number;
   tax: number;
   total: number;
+  // The currency the invoice's money is shown in — its client's billing currency (USD or EUR).
+  currency: string;
 };
 
 // The invoice's money summary on its detail page — its own file, filling the invoice-detail slot
@@ -32,24 +34,25 @@ function InvoiceSummaryPanel({ invoiceId }: { invoiceId: number }) {
   const discount = Number(summary.data?.discount ?? 0);
   const tax = Number(summary.data?.tax ?? 0);
   const total = Number(summary.data?.total ?? 0);
+  const currency = summary.data?.currency ?? 'USD';
 
   return (
     <section data-testid="invoice-summary">
       <p>
         <span>Subtotal</span>
-        <span data-testid="invoice-subtotal">{money(subtotal)}</span>
+        <span data-testid="invoice-subtotal">{money(subtotal, currency)}</span>
       </p>
       <p>
         <span>Discount</span>
-        <span data-testid="invoice-discount">{money(discount)}</span>
+        <span data-testid="invoice-discount">{money(discount, currency)}</span>
       </p>
       <p>
         <span>Tax</span>
-        <span data-testid="invoice-tax">{money(tax)}</span>
+        <span data-testid="invoice-tax">{money(tax, currency)}</span>
       </p>
       <p>
         <span>Total</span>
-        <span data-testid="invoice-amount">{money(total)}</span>
+        <span data-testid="invoice-amount">{money(total, currency)}</span>
       </p>
     </section>
   );

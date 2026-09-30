@@ -18,6 +18,6 @@ export const contribution = InvoiceRowCells.fill({
     });
     const invoice = (invoices.data ?? []).find((i) => i.id === invoiceId);
     const due = invoice ? Number(invoice.amountDue) : 0;
-    return <td data-testid="invoice-due-amount">{money(due)}</td>;
+    return <td data-testid="invoice-due-amount">{money(due, invoice?.currency)}</td>;
   },
 });

@@ -20,6 +20,8 @@ type StatementInvoice = {
 type Statement = {
   invoices: StatementInvoice[];
   outstanding: number;
+  // The currency the whole statement is shown in — this client's billing currency (USD or EUR).
+  currency: string;
 };
 
 // A client's statement, rendered in the client-detail context: all of the client's invoices in one
@@ -45,6 +47,7 @@ export function ClientStatementPanel({ clientId }: { clientId: number }) {
   const data = query.data;
   const invoices = data?.invoices ?? [];
   const outstanding = data ? Number(data.outstanding) : 0;
+  const currency = data?.currency ?? 'USD';
 
   // Group the client's invoices by the job (project) they were raised against, preserving the
   // server's oldest-first order both across jobs (first job to appear stays first) and within each
@@ -79,8 +82,8 @@ export function ClientStatementPanel({ clientId }: { clientId: number }) {
           <tbody key={group.projectId} data-testid={`statement-project-${group.projectId}`}>
             {group.invoices.map((i) => (
               <tr key={i.id} data-testid={`statement-invoice-row-${i.id}`}>
-                <td data-testid="statement-invoice-amount">{money(Number(i.amount))}</td>
-                <td data-testid="statement-invoice-due">{money(Number(i.amountDue))}</td>
+                <td data-testid="statement-invoice-amount">{money(Number(i.amount), currency)}</td>
+                <td data-testid="statement-invoice-due">{money(Number(i.amountDue), currency)}</td>
                 <td data-testid="statement-invoice-issued">{i.issuedDate}</td>
                 <td data-testid="statement-invoice-dueDate">{i.dueDate}</td>
                 <td data-testid="statement-invoice-status">{invoiceStatus(i)}</td>
@@ -88,14 +91,14 @@ export function ClientStatementPanel({ clientId }: { clientId: number }) {
             ))}
             <tr>
               <td>Job subtotal</td>
-              <td data-testid="statement-project-subtotal">{money(group.subtotal)}</td>
+              <td data-testid="statement-project-subtotal">{money(group.subtotal, currency)}</td>
             </tr>
           </tbody>
         ))}
         <tfoot>
           <tr>
             <td>Total still owed</td>
-            <td data-testid="client-outstanding-total">{money(outstanding)}</td>
+            <td data-testid="client-outstanding-total">{money(outstanding, currency)}</td>
           </tr>
         </tfoot>
       </table>

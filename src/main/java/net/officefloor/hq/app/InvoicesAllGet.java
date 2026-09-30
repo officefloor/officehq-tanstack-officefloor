@@ -28,10 +28,13 @@ public class InvoicesAllGet {
 
     public void service(@HttpQueryParameter("status") String status,
             @HttpQueryParameter("page") String page, @HttpQueryParameter("size") String size,
-            InvoiceRepository invoices, ProjectRepository projects,
+            InvoiceRepository invoices, ProjectRepository projects, ClientRepository clients,
             ObjectResponse<List<InvoiceView>> response) {
         Map<Long, String> nameById = projects.findAllByOrderByIdAsc().stream()
                 .collect(Collectors.toMap(Project::getId, Project::getName));
+        // Each row shows its amount in the billing currency of the client the invoice's project
+        // belongs to, so a list spanning clients never renders one client's money in another's symbol.
+        Map<Long, String> currencyByProject = Currencies.byProject(projects, clients);
         String wanted = status == null ? null : status.trim();
         int pageNo = positiveOr(page, 1);
         int pageSize = positiveOr(size, DEFAULT_PAGE_SIZE);
@@ -42,7 +45,8 @@ public class InvoicesAllGet {
         List<InvoiceView> views = filtered.stream()
                 .map(i -> new InvoiceView(i.getId(), i.getProjectId(),
                         nameById.get(i.getProjectId()), i.getAmount(), i.getStatus(),
-                        i.getIssuedDate(), i.getDueDate()))
+                        i.getIssuedDate(), i.getDueDate(),
+                        currencyByProject.getOrDefault(i.getProjectId(), Currencies.DEFAULT)))
                 .collect(Collectors.toList());
         response.send(views);
     }

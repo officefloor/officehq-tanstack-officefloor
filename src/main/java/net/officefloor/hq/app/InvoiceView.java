@@ -17,9 +17,10 @@ public class InvoiceView {
     private final String status;
     private final String issuedDate;
     private final String dueDate;
+    private final String currency;
 
     public InvoiceView(Long id, Long projectId, String projectName, BigDecimal amount,
-            String status, String issuedDate, String dueDate) {
+            String status, String issuedDate, String dueDate, String currency) {
         this.id = id;
         this.projectId = projectId;
         this.projectName = projectName;
@@ -27,6 +28,7 @@ public class InvoiceView {
         this.status = status;
         this.issuedDate = issuedDate;
         this.dueDate = dueDate;
+        this.currency = currency;
     }
 
     public Long getId() {
@@ -55,5 +57,10 @@ public class InvoiceView {
 
     public String getDueDate() {
         return dueDate;
+    }
+
+    /** The currency this invoice is shown in (the billing currency of its project's client). */
+    public String getCurrency() {
+        return currency;
     }
 }

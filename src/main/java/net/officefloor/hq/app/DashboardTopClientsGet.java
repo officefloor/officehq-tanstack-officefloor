@@ -30,6 +30,9 @@ public class DashboardTopClientsGet {
         Map<Long, BigDecimal> owed = outstandingByClient(projects, invoices, payments);
         Map<Long, String> nameById = clients.findAllByOrderByIdAsc().stream()
                 .collect(Collectors.toMap(Client::getId, Client::getName));
+        // Each client's figure is shown in their own currency — they are never added together, so the
+        // amounts stay comparable for ranking but each renders in its client's currency.
+        Map<Long, String> currencyById = Currencies.byClient(clients);
 
         List<TopClientView> top = owed.entrySet().stream()
                 // Only clients that actually owe something rank — a zero (or fully paid) balance is
@@ -40,7 +43,8 @@ public class DashboardTopClientsGet {
                         .reversed()
                         .thenComparing(Map.Entry::getKey))
                 .limit(TOP_N)
-                .map(e -> new TopClientView(e.getKey(), nameById.get(e.getKey()), e.getValue()))
+                .map(e -> new TopClientView(e.getKey(), nameById.get(e.getKey()), e.getValue(),
+                        currencyById.getOrDefault(e.getKey(), Currencies.DEFAULT)))
                 .collect(Collectors.toList());
 
         response.send(top);
