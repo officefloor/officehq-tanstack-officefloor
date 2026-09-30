@@ -28,9 +28,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findAllByOrderByDueDateAscIdAsc();
 
     /**
-     * The money still owed: the sum of every UNPAID invoice's amount, or 0 when none are unpaid.
-     * Backs the dashboard's outstanding total ({@code GET /api/dashboard}).
+     * The money still owed: the sum of every SENT invoice's amount, or 0 when none are sent. Only
+     * invoices that have actually been sent count — a DRAFT has not gone out yet, and a PAID one has
+     * already been settled — so both are excluded. Backs the dashboard's outstanding total
+     * ({@code GET /api/dashboard}).
      */
-    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'UNPAID'")
-    BigDecimal sumUnpaidAmount();
+    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
+    BigDecimal sumSentAmount();
 }

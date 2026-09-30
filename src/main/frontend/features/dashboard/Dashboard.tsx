@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import { money } from '../../ui/money';
 
 // The whole-app summary the server returns: how many clients and projects exist, and the money
-// still owed (the sum of every UNPAID invoice's amount).
+// still owed (the sum of every SENT invoice's amount — drafts and paid invoices are excluded).
 export type DashboardSummary = {
   clientsCount: number;
   projectsCount: number;

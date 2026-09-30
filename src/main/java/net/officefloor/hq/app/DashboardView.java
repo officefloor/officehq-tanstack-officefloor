@@ -4,8 +4,9 @@ import java.math.BigDecimal;
 
 /**
  * What {@code GET /api/dashboard} returns: the whole-app summary the home screen shows — how many
- * clients and projects exist, and how much money is still owed (the sum of every UNPAID invoice's
- * amount). A read-only aggregate joined in {@link DashboardGet}; no entity of its own.
+ * clients and projects exist, and how much money is still owed (the sum of every SENT invoice's
+ * amount — drafts and paid invoices excluded). A read-only aggregate joined in {@link DashboardGet};
+ * no entity of its own.
  */
 public class DashboardView {
 
