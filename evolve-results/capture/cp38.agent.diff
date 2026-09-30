@@ -1,0 +1,201 @@
+diff --git a/src/main/frontend/features/dashboard/Dashboard.tsx b/src/main/frontend/features/dashboard/Dashboard.tsx
+index 2961b16..19fbb8f 100644
+--- a/src/main/frontend/features/dashboard/Dashboard.tsx
++++ b/src/main/frontend/features/dashboard/Dashboard.tsx
+@@ -8,6 +8,7 @@ export type DashboardSummary = {
+   clientsCount: number;
+   projectsCount: number;
+   outstandingTotal: number;
++  overdueCount: number;
+ };
+ 
+ // The home screen: a read-only dashboard of the counts and the outstanding total. Server data is
+@@ -33,6 +34,8 @@ export function Dashboard() {
+         <dd data-testid="dashboard-outstanding-total">
+           {money(Number(data?.outstandingTotal ?? 0))}
+         </dd>
++        <dt>Overdue invoices</dt>
++        <dd data-testid="dashboard-overdue-count">{data?.overdueCount ?? 0}</dd>
+       </dl>
+     </section>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/AppSetting.java b/src/main/java/net/officefloor/hq/app/AppSetting.java
+new file mode 100644
+index 0000000..f4c0b3a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/AppSetting.java
+@@ -0,0 +1,40 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A single whole-app setting: a string key and its string value. Not tied to any domain entity —
++ * the key is the primary key, so there is no generated id. Mapped to the {@code app_setting} table
++ * created by {@code V23__app_setting.sql}. The first use is the dashboard's {@code asOf} reference
++ * date (the fixed day overdue is measured against).
++ */
++@Entity
++@Table(name = "app_setting")
++public class AppSetting {
++
++    @Id
++    @Column(name = "setting_key")
++    private String key;
++
++    @Column(name = "setting_value")
++    private String value;
++
++    public String getKey() {
++        return key;
++    }
++
++    public void setKey(String key) {
++        this.key = key;
++    }
++
++    public String getValue() {
++        return value;
++    }
++
++    public void setValue(String value) {
++        this.value = value;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/AppSettingRepository.java b/src/main/java/net/officefloor/hq/app/AppSettingRepository.java
+new file mode 100644
+index 0000000..4438ad6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/AppSettingRepository.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/**
++ * Data access for {@link AppSetting}. A Spring Data bean, injected into the OfficeFloor logic
++ * classes that need a whole-app setting — currently {@link DashboardGet} reading the {@code asOf}
++ * reference date.
++ */
++public interface AppSettingRepository extends JpaRepository<AppSetting, String> {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardGet.java b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+index 0d41862..7b5fe14 100644
+--- a/src/main/java/net/officefloor/hq/app/DashboardGet.java
++++ b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+@@ -11,8 +11,14 @@ import net.officefloor.web.ObjectResponse;
+ public class DashboardGet {
+ 
+     public void service(ClientRepository clients, ProjectRepository projects,
+-            InvoiceRepository invoices, ObjectResponse<DashboardView> response) {
++            InvoiceRepository invoices, AppSettingRepository settings,
++            ObjectResponse<DashboardView> response) {
++        // Overdue is measured against the seeded "asOf" reference date so the count is deterministic.
++        // With no reference date set nothing is treated as overdue (count 0).
++        long overdueCount = settings.findById("asOf")
++                .map(s -> invoices.countSentOverdue(s.getValue()))
++                .orElse(0L);
+         response.send(new DashboardView(clients.count(), projects.count(),
+-                invoices.sumSentAmount()));
++                invoices.sumSentAmount(), overdueCount));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardView.java b/src/main/java/net/officefloor/hq/app/DashboardView.java
+index 7f33224..8505819 100644
+--- a/src/main/java/net/officefloor/hq/app/DashboardView.java
++++ b/src/main/java/net/officefloor/hq/app/DashboardView.java
+@@ -13,11 +13,14 @@ public class DashboardView {
+     private final long clientsCount;
+     private final long projectsCount;
+     private final BigDecimal outstandingTotal;
++    private final long overdueCount;
+ 
+-    public DashboardView(long clientsCount, long projectsCount, BigDecimal outstandingTotal) {
++    public DashboardView(long clientsCount, long projectsCount, BigDecimal outstandingTotal,
++            long overdueCount) {
+         this.clientsCount = clientsCount;
+         this.projectsCount = projectsCount;
+         this.outstandingTotal = outstandingTotal;
++        this.overdueCount = overdueCount;
+     }
+ 
+     public long getClientsCount() {
+@@ -31,4 +34,9 @@ public class DashboardView {
+     public BigDecimal getOutstandingTotal() {
+         return outstandingTotal;
+     }
++
++    /** How many SENT invoices are overdue against the dashboard's reference date. */
++    public long getOverdueCount() {
++        return overdueCount;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index 43dfbad..1f0495b 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -37,6 +37,18 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+     @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
+     BigDecimal sumSentAmount();
+ 
++    /**
++     * How many SENT invoices are overdue as of {@code asOf}: an invoice whose due date has already
++     * passed and which has actually gone out. Only SENT counts — a DRAFT has not been sent and a PAID
++     * one is settled — and "overdue" means the due date is strictly before the reference day. Due
++     * dates are ISO date literals (YYYY-MM-DD), which sort lexically = chronologically, so a string
++     * comparison is the date comparison. Backs the dashboard's overdue count ({@code
++     * GET /api/dashboard}).
++     */
++    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.status = 'SENT' "
++            + "AND i.dueDate IS NOT NULL AND i.dueDate < :asOf")
++    long countSentOverdue(@Param("asOf") String asOf);
++
+     /**
+      * The total invoiced against one project: the sum of every invoice's amount raised against it, or
+      * 0 when it has none. Backs the project budget panel's "invoiced" figure ({@code
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 4195cde..8e9cce4 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -36,7 +36,7 @@ public class TestSupportController {
+      */
+     private static final List<String> DOMAIN_TABLES =
+             List.of("note", "project_tag", "tag", "payment", "line_item", "invoice", "task",
+-                    "contact", "project", "client");
++                    "contact", "project", "client", "app_setting");
+ 
+     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
+     @PostMapping("/reset")
+@@ -138,6 +138,15 @@ public class TestSupportController {
+                 asLong(p, "id"), asLong(p, "invoiceId"),
+                 ((Number) p.get("amount")).doubleValue(), p.get("date")));
+         syncIdentity("payment");
++
++        // A scalar top-level setting rather than a list of rows: the dashboard's "as of" reference
++        // date, the fixed day overdue is measured against. Stored in the app_setting key/value table
++        // so the dashboard reads a deterministic reference date.
++        Object asOf = fixture.get("asOf");
++        if (asOf != null) {
++            jdbc.update("INSERT INTO app_setting (setting_key, setting_value) VALUES ('asOf', ?)",
++                    asOf.toString());
++        }
+     }
+ 
+     /** A nested optional list of rows (e.g. an invoice's line items), or empty when the key is absent. */
+diff --git a/src/main/resources/db/migration/V23__app_setting.sql b/src/main/resources/db/migration/V23__app_setting.sql
+new file mode 100644
+index 0000000..a075a7a
+--- /dev/null
++++ b/src/main/resources/db/migration/V23__app_setting.sql
+@@ -0,0 +1,8 @@
++-- A tiny key/value store for whole-app settings that are not tied to any domain entity. The first
++-- use is the dashboard's "as of" reference date: the fixed day overdue is measured against, seeded
++-- per spec so the overdue count is deterministic. Key is the primary key; value is an ISO date
++-- literal (or any short string). Additive and standalone — no FK, no existing table touched.
++CREATE TABLE app_setting (
++    setting_key   VARCHAR(64) PRIMARY KEY,
++    setting_value VARCHAR(255) NOT NULL
++);
