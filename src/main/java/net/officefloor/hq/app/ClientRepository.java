@@ -11,4 +11,10 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     /** All clients, oldest first, so the list order is stable for the UI and tests. */
     List<Client> findAllByOrderByIdAsc();
+
+    /**
+     * Clients whose name contains {@code term} (case-insensitive), oldest first. Backs the
+     * name search box on the clients page ({@code GET /api/clients?q=...}).
+     */
+    List<Client> findByNameContainingIgnoreCaseOrderByIdAsc(String term);
 }

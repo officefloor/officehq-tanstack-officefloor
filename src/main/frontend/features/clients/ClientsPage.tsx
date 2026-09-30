@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
+import { asString, useSearchParam } from '../../url/useSearchParam';
+import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
 
 // A client as the server returns it.
 export type Client = { id: number; name: string; email: string };
@@ -17,9 +19,15 @@ export function isValidEmail(email: string): boolean {
 // currently typing into (rule 4).
 export function ClientsPage() {
   const queryClient = useQueryClient();
+  // The name filter lives in the URL (owned by features/clients/search.slot.tsx). The list reads
+  // the same key and asks the server for the narrowed list, so it stays a single source of truth —
+  // no server data copied into state. The key still starts with 'clients', so writes that
+  // invalidateQueries({ queryKey: ['clients'] }) still refresh it.
+  const [q] = useSearchParam('clientSearch', asString);
   const clients = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getJson<Client[]>('/api/clients'),
+    queryKey: ['clients', q],
+    queryFn: () =>
+      getJson<Client[]>(q ? `/api/clients?q=${encodeURIComponent(q)}` : '/api/clients'),
   });
 
   const [name, setName] = useState('');
@@ -73,6 +81,10 @@ export function ClientsPage() {
           Add client
         </button>
       </form>
+
+      <div data-testid="clients-toolbar">
+        <ClientsToolbar.Slot />
+      </div>
 
       {rows.length === 0 ? (
         <p data-testid="clients-empty">No clients yet.</p>
