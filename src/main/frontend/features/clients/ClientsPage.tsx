@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
+import { ClientRowActions } from '../../slots/defs/clientRowActions';
 
 // A client as the server returns it.
 export type Client = { id: number; name: string; email: string };
@@ -94,6 +95,7 @@ export function ClientsPage() {
             <tr>
               <th>Name</th>
               <th>Email</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -101,6 +103,9 @@ export function ClientsPage() {
               <tr key={c.id} data-testid={`client-row-${c.id}`}>
                 <td data-testid="client-name">{c.name}</td>
                 <td data-testid="client-email">{c.email}</td>
+                <td>
+                  <ClientRowActions.Slot clientId={c.id} />
+                </td>
               </tr>
             ))}
           </tbody>
