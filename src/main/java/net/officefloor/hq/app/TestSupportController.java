@@ -125,10 +125,11 @@ public class TestSupportController {
                     i.get("issuedDate"), i.get("dueDate"));
             for (Map<String, Object> li : lines) {
                 jdbc.update(
-                        "INSERT INTO line_item (id, invoice_id, description, qty, unit_price) "
-                                + "VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO line_item (id, invoice_id, description, qty, unit, unit_price) "
+                                + "VALUES (?, ?, ?, ?, ?, ?)",
                         asLong(li, "id"), asLong(i, "id"), li.get("description"),
                         ((Number) li.get("qty")).intValue(),
+                        li.get("unit") == null ? "unit" : li.get("unit"),
                         ((Number) li.get("unitPrice")).doubleValue());
             }
         });

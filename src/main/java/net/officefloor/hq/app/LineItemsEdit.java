@@ -32,8 +32,11 @@ public class LineItemsEdit {
         if (unitPrice == null || unitPrice.signum() < 0) {
             throw new IllegalArgumentException("a line item requires a non-negative unit price");
         }
+        String unit = body.getUnit() == null || body.getUnit().trim().isEmpty()
+                ? "unit" : body.getUnit().trim();
         item.setDescription(description);
         item.setQty(qty);
+        item.setUnit(unit);
         item.setUnitPrice(unitPrice);
         LineItem saved = lineItems.save(item);
 
@@ -51,6 +54,7 @@ public class LineItemsEdit {
 
         audit.record("LINE_ITEM_UPDATED id=" + saved.getId() + " invoice=" + invoiceId
                 + " description=" + saved.getDescription() + " qty=" + saved.getQty()
+                + " unit=" + saved.getUnit()
                 + " unitPrice=" + saved.getUnitPrice().toPlainString());
         response.send(saved);
     }

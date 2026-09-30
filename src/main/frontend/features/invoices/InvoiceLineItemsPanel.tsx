@@ -3,20 +3,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { money } from '../../ui/money';
 
-// A line item as the server returns it: what is being charged for (description), how many (qty) and
-// the price of each (unitPrice), plus the id of the invoice it belongs to. The line's own amount is
-// qty * unitPrice; the invoice's total is the sum across its lines.
+// A line item as the server returns it: what is being charged for (description), how many (qty), the
+// unit that quantity is measured in (unit — "hours", "days", "items"…) and the price of each
+// (unitPrice), plus the id of the invoice it belongs to. The line's own amount is qty * unitPrice;
+// the invoice's total is the sum across its lines.
 export type LineItem = {
   id: number;
   invoiceId: number;
   description: string;
   qty: number;
+  unit: string;
   unitPrice: number;
 };
 
 // The fields the user is currently typing into a line they are editing (rule 4): held in state only
 // while an edit is open, keyed by the line's id so the row's inputs are controlled.
-type Draft = { description: string; qty: string; unitPrice: string };
+type Draft = { description: string; qty: string; unit: string; unitPrice: string };
 
 // An invoice's line items, rendered in the invoice-detail context: the list of that invoice's lines,
 // their derived total, and a form to add one (description, qty, unit price). Each existing line can
@@ -35,11 +37,12 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
 
   const [description, setDescription] = useState('');
   const [qty, setQty] = useState('');
+  const [unit, setUnit] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
 
   // Which line is being edited and its uncommitted field values, or null when nothing is open.
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState<Draft>({ description: '', qty: '', unitPrice: '' });
+  const [draft, setDraft] = useState<Draft>({ description: '', qty: '', unit: '', unitPrice: '' });
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['lineItems'] });
@@ -52,11 +55,13 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
         invoiceId,
         description,
         qty: Number(qty),
+        unit,
         unitPrice: Number(unitPrice),
       }),
     onSuccess: () => {
       setDescription('');
       setQty('');
+      setUnit('');
       setUnitPrice('');
       invalidate();
     },
@@ -68,6 +73,7 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
         id: vars.id,
         description: vars.description,
         qty: Number(vars.qty),
+        unit: vars.unit,
         unitPrice: Number(vars.unitPrice),
       }),
     onSuccess: () => {
@@ -92,7 +98,7 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
         data-testid="lineitem-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!description.trim() || !qty.trim() || !unitPrice.trim()) {
+          if (!description.trim() || !qty.trim() || !unit.trim() || !unitPrice.trim()) {
             return;
           }
           create.mutate();
@@ -112,6 +118,12 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
           onChange={(e) => setQty(e.target.value)}
         />
         <input
+          data-testid="lineitem-form-unit"
+          placeholder="Unit"
+          value={unit}
+          onChange={(e) => setUnit(e.target.value)}
+        />
+        <input
           data-testid="lineitem-form-unitprice"
           type="number"
           step="0.01"
@@ -129,6 +141,7 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
           <tr>
             <th>Description</th>
             <th>Qty</th>
+            <th>Unit</th>
             <th>Unit price</th>
             <th>Amount</th>
             <th />
@@ -155,6 +168,13 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
                 </td>
                 <td>
                   <input
+                    data-testid={`lineitem-edit-unit-${li.id}`}
+                    value={draft.unit}
+                    onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))}
+                  />
+                </td>
+                <td>
+                  <input
                     data-testid={`lineitem-edit-unitprice-${li.id}`}
                     type="number"
                     step="0.01"
@@ -170,7 +190,12 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
                     data-testid={`lineitem-save-${li.id}`}
                     type="button"
                     onClick={() => {
-                      if (!draft.description.trim() || !draft.qty.trim() || !draft.unitPrice.trim()) {
+                      if (
+                        !draft.description.trim() ||
+                        !draft.qty.trim() ||
+                        !draft.unit.trim() ||
+                        !draft.unitPrice.trim()
+                      ) {
                         return;
                       }
                       edit.mutate({ id: li.id, ...draft });
@@ -191,6 +216,7 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
               <tr key={li.id} data-testid={`lineitem-row-${li.id}`}>
                 <td data-testid="lineitem-description">{li.description}</td>
                 <td data-testid="lineitem-qty">{li.qty}</td>
+                <td data-testid="lineitem-unit">{li.unit}</td>
                 <td data-testid="lineitem-unitprice">{money(Number(li.unitPrice))}</td>
                 <td data-testid="lineitem-amount">
                   {money(Number(li.qty) * Number(li.unitPrice))}
@@ -204,6 +230,7 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
                       setDraft({
                         description: li.description,
                         qty: String(li.qty),
+                        unit: li.unit,
                         unitPrice: String(li.unitPrice),
                       });
                     }}
