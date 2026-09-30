@@ -63,6 +63,14 @@ export function sendInvoice(invoiceId: number): Promise<Invoice> {
 }
 
 /**
+ * Cancel a sent invoice raised by mistake; the server moves it to VOID (so it stops counting toward
+ * what is owed) and records the audited side-effect.
+ */
+export function voidInvoice(invoiceId: number): Promise<Invoice> {
+  return postJson<Invoice>(`/api/invoices/${invoiceId}/void`, {});
+}
+
+/**
  * One invoice's status, worked out server-side from the payments recorded against it (PAID once
  * covered, PARTIAL once part paid, otherwise its stored SENT/DRAFT stage) — an invoice is no longer
  * flipped to paid by hand. Keyed UNDER the payments key: recording a payment invalidates
