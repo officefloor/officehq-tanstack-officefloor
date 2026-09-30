@@ -19,6 +19,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
   });
 
   const [amount, setAmount] = useState('');
+  const [error, setError] = useState('');
 
   const create = useMutation({
     mutationFn: () =>
@@ -49,8 +50,10 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
           e.preventDefault();
           const value = Number(amount);
           if (!amount.trim() || Number.isNaN(value) || value <= 0) {
+            setError('Amount must be more than zero.');
             return;
           }
+          setError('');
           create.mutate();
         }}
       >
@@ -60,11 +63,19 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
           step="0.01"
           placeholder="Amount"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={(e) => {
+            setAmount(e.target.value);
+            setError('');
+          }}
         />
         <button data-testid="invoice-form-submit" type="submit">
           Add invoice
         </button>
+        {error && (
+          <p data-testid="invoice-form-amount-error" role="alert">
+            {error}
+          </p>
+        )}
       </form>
 
       <table data-testid="project-invoices-table">
