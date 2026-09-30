@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/invoices/AllInvoicesPage.tsx b/src/main/frontend/features/invoices/AllInvoicesPage.tsx
+index 2f3416d..a9a9696 100644
+--- a/src/main/frontend/features/invoices/AllInvoicesPage.tsx
++++ b/src/main/frontend/features/invoices/AllInvoicesPage.tsx
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { asString, useSearchParam } from '../../url/useSearchParam';
++import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
+ import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
+ import { money } from '../../ui/money';
+ 
+@@ -25,12 +25,19 @@ export function AllInvoicesPage() {
+   // server data copied into state or filtered by hand. The key still starts with 'invoices', so a
+   // write that invalidates ['invoices'] refreshes this list too (rule 5).
+   const [status] = useSearchParam('invoiceStatus', asString);
++  // The huge list is shown a page at a time. The chosen page lives in the URL too (owned by
++  // features/invoices/pagination.slot.tsx, which renders the next/previous controls); the page reads
++  // the same key and asks the server for just that slice — the same single-source-of-truth shape as
++  // the status filter above, no rows sliced or held in state here.
++  const [page] = useSearchParam('invoicePage', asNumber);
++  const currentPage = page ?? 1;
+   const invoices = useQuery({
+-    queryKey: ['invoices', 'all', status],
+-    queryFn: () =>
+-      getJson<InvoiceView[]>(
+-        status ? `/api/invoices/all?status=${encodeURIComponent(status)}` : '/api/invoices/all',
+-      ),
++    queryKey: ['invoices', 'all', status, currentPage],
++    queryFn: () => {
++      const params = new URLSearchParams({ page: String(currentPage) });
++      if (status) params.set('status', status);
++      return getJson<InvoiceView[]>(`/api/invoices/all?${params.toString()}`);
++    },
+   });
+ 
+   const rows = invoices.data ?? [];
+diff --git a/src/main/frontend/features/invoices/pagination.slot.tsx b/src/main/frontend/features/invoices/pagination.slot.tsx
+new file mode 100644
+index 0000000..defada6
+--- /dev/null
++++ b/src/main/frontend/features/invoices/pagination.slot.tsx
+@@ -0,0 +1,35 @@
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { asNumber, useSearchParam } from '../../url/useSearchParam';
++
++// The page-through controls for the all-invoices list — its own file, filling the all-invoices
++// toolbar slot. It OWNS the `invoicePage` URL key (rule 4: which page you are on outlives a click,
++// so it lives in the URL, not useState). The all-invoices page reads the same key and asks the
++// server for just that slice; nothing is passed between them. Carries the test-contract testids:
++// invoice-page-prev, invoice-page-label, invoice-page-next. Page numbers are 1-based; page 1 clears
++// the key so the default list URL stays clean, and Previous is disabled on the first page.
++function InvoicePagination() {
++  const [page, setPage] = useSearchParam('invoicePage', asNumber);
++  const currentPage = page ?? 1;
++  return (
++    <div data-testid="invoice-pagination">
++      <button
++        type="button"
++        data-testid="invoice-page-prev"
++        disabled={currentPage <= 1}
++        onClick={() => setPage(currentPage <= 2 ? undefined : currentPage - 1)}
++      >
++        Previous
++      </button>
++      <span data-testid="invoice-page-label">{currentPage}</span>
++      <button
++        type="button"
++        data-testid="invoice-page-next"
++        onClick={() => setPage(currentPage + 1)}
++      >
++        Next
++      </button>
++    </div>
++  );
++}
++
++export const contribution = AllInvoicesToolbar.fill({ order: 20, Component: InvoicePagination });
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index 1f0495b..da4cf20 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -2,6 +2,8 @@ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
+ import java.util.List;
++import org.springframework.data.domain.Page;
++import org.springframework.data.domain.Pageable;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ import org.springframework.data.jpa.repository.Query;
+ import org.springframework.data.repository.query.Param;
+@@ -22,6 +24,14 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+      */
+     List<Invoice> findByStatusOrderByIdAsc(String status);
+ 
++    /**
++     * One page of invoices at one lifecycle stage, ordered by the supplied {@link Pageable} (the
++     * all-invoices list orders by id ascending). Backs the all-invoices list's next/previous paging
++     * when a status filter is active — only the requested slice is fetched, so a huge list is shown a
++     * page at a time rather than all at once.
++     */
++    Page<Invoice> findByStatus(String status, Pageable pageable);
++
+     /**
+      * All invoices, earliest due date first (id as a stable tiebreaker), backing the project
+      * invoices' sort-by-due-date control.
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicesAllGet.java b/src/main/java/net/officefloor/hq/app/InvoicesAllGet.java
+index 92fae9b..928f900 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoicesAllGet.java
++++ b/src/main/java/net/officefloor/hq/app/InvoicesAllGet.java
+@@ -3,6 +3,9 @@ package net.officefloor.hq.app;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.stream.Collectors;
++import org.springframework.data.domain.PageRequest;
++import org.springframework.data.domain.Pageable;
++import org.springframework.data.domain.Sort;
+ import net.officefloor.web.HttpQueryParameter;
+ import net.officefloor.web.ObjectResponse;
+ 
+@@ -12,17 +15,30 @@ import net.officefloor.web.ObjectResponse;
+  * all-invoices page shows the project (not its id) and the stage it is at. Wired by
+  * {@code officefloor/rest/api/invoices/all.GET.yml}. Joins {@link Invoice} against {@link Project}
+  * server-side, mirroring {@link ProjectsGet} joining the client's name.
++ *
++ * <p>The list can grow huge, so it is served a page at a time: {@code page} (1-based, default 1)
++ * and {@code size} (default 10) query parameters select the slice, and only that slice is fetched
++ * from the database. The front-end's next/previous controls step {@code page}; the ordering stays
++ * oldest-first so paging only windows the list, never reorders it.
+  */
+ public class InvoicesAllGet {
+ 
+-    public void service(@HttpQueryParameter("status") String status, InvoiceRepository invoices,
+-            ProjectRepository projects, ObjectResponse<List<InvoiceView>> response) {
++    /** How many invoices a page shows when the client does not ask for a specific size. */
++    private static final int DEFAULT_PAGE_SIZE = 10;
++
++    public void service(@HttpQueryParameter("status") String status,
++            @HttpQueryParameter("page") String page, @HttpQueryParameter("size") String size,
++            InvoiceRepository invoices, ProjectRepository projects,
++            ObjectResponse<List<InvoiceView>> response) {
+         Map<Long, String> nameById = projects.findAllByOrderByIdAsc().stream()
+                 .collect(Collectors.toMap(Project::getId, Project::getName));
+         String wanted = status == null ? null : status.trim();
++        int pageNo = positiveOr(page, 1);
++        int pageSize = positiveOr(size, DEFAULT_PAGE_SIZE);
++        Pageable pageable = PageRequest.of(pageNo - 1, pageSize, Sort.by(Sort.Direction.ASC, "id"));
+         List<Invoice> filtered = (wanted == null || wanted.isEmpty())
+-                ? invoices.findAllByOrderByIdAsc()
+-                : invoices.findByStatusOrderByIdAsc(wanted);
++                ? invoices.findAll(pageable).getContent()
++                : invoices.findByStatus(wanted, pageable).getContent();
+         List<InvoiceView> views = filtered.stream()
+                 .map(i -> new InvoiceView(i.getId(), i.getProjectId(),
+                         nameById.get(i.getProjectId()), i.getAmount(), i.getStatus(),
+@@ -30,4 +46,17 @@ public class InvoicesAllGet {
+                 .collect(Collectors.toList());
+         response.send(views);
+     }
++
++    /** Parse a 1-or-more query parameter, falling back to {@code fallback} when absent or invalid. */
++    private static int positiveOr(String raw, int fallback) {
++        if (raw == null || raw.isBlank()) {
++            return fallback;
++        }
++        try {
++            int value = Integer.parseInt(raw.trim());
++            return value >= 1 ? value : fallback;
++        } catch (NumberFormatException e) {
++            return fallback;
++        }
++    }
+ }
