@@ -5,6 +5,12 @@ import { getJson, postJson } from '../../api/http';
 // A client as the server returns it.
 export type Client = { id: number; name: string; email: string };
 
+// A client must carry a proper email address. Same shape the server enforces (ClientsPost) so the
+// UI never asks the server to save what the server will reject.
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 // The clients page: the whole list of clients plus the form to add one. Server data is read with
 // useQuery under the ['clients'] key and changed with useMutation + invalidateQueries — never
 // copied into state, never hand-maintained. The only useState here is the two fields the user is
@@ -18,12 +24,14 @@ export function ClientsPage() {
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState(false);
 
   const create = useMutation({
     mutationFn: () => postJson<Client>('/api/clients', { name, email }),
     onSuccess: () => {
       setName('');
       setEmail('');
+      setEmailError(false);
       void queryClient.invalidateQueries({ queryKey: ['clients'] });
     },
   });
@@ -36,6 +44,11 @@ export function ClientsPage() {
         data-testid="client-form"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!isValidEmail(email)) {
+            setEmailError(true);
+            return;
+          }
+          setEmailError(false);
           create.mutate();
         }}
       >
@@ -51,6 +64,11 @@ export function ClientsPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+        {emailError && (
+          <p data-testid="client-form-email-error" role="alert">
+            Enter a valid email address.
+          </p>
+        )}
         <button data-testid="client-form-submit" type="submit">
           Add client
         </button>
