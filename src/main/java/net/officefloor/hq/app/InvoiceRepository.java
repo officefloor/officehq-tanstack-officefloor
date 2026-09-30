@@ -15,6 +15,13 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findAllByOrderByIdAsc();
 
     /**
+     * Every invoice at one lifecycle stage, oldest first, backing the all-invoices status filter.
+     * The stable oldest-first order matches {@link #findAllByOrderByIdAsc()} so filtering only
+     * narrows the list, never reorders it.
+     */
+    List<Invoice> findByStatusOrderByIdAsc(String status);
+
+    /**
      * All invoices, earliest due date first (id as a stable tiebreaker), backing the project
      * invoices' sort-by-due-date control.
      */
