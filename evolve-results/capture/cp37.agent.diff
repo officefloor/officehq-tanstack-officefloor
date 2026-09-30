@@ -1,0 +1,228 @@
+diff --git a/src/main/frontend/features/budget/budget.slot.tsx b/src/main/frontend/features/budget/budget.slot.tsx
+new file mode 100644
+index 0000000..902b2ce
+--- /dev/null
++++ b/src/main/frontend/features/budget/budget.slot.tsx
+@@ -0,0 +1,34 @@
++import { useQuery } from '@tanstack/react-query';
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { formatCurrency } from '../../ui/currency';
++import { projectBudgetKey, fetchProjectBudget } from './queries';
++
++// The budget panel on a project's detail page — one new *.slot.tsx file filling the ProjectDetail
++// region (CLAUDE.md rule 3). Nothing existing is edited to add it. Queries for itself under
++// ['projects', projectId, 'budget'] (rule 5); the budget, the invoiced total and what is left are
++// derived server-side so the three figures always agree. Renders nothing until a budget is set.
++function ProjectBudgetPanel({ projectId }: { projectId: number }) {
++  const { data: budget } = useQuery({
++    queryKey: projectBudgetKey(projectId),
++    queryFn: () => fetchProjectBudget(projectId),
++  });
++
++  if (!budget || budget.budget === null || budget.remaining === null) {
++    return null;
++  }
++
++  return (
++    <section data-testid="project-budget-panel">
++      <dl>
++        <dt>Budget</dt>
++        <dd data-testid="project-budget">{formatCurrency(budget.budget)}</dd>
++        <dt>Invoiced</dt>
++        <dd data-testid="project-invoiced">{formatCurrency(budget.invoiced)}</dd>
++        <dt>Remaining</dt>
++        <dd data-testid="project-remaining">{formatCurrency(budget.remaining)}</dd>
++      </dl>
++    </section>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 5, Component: ProjectBudgetPanel });
+diff --git a/src/main/frontend/features/budget/queries.ts b/src/main/frontend/features/budget/queries.ts
+new file mode 100644
+index 0000000..7e44047
+--- /dev/null
++++ b/src/main/frontend/features/budget/queries.ts
+@@ -0,0 +1,18 @@
++import { getJson } from '../../api/http';
++
++// A project's budget picture, under a key nested beneath ['projects'] so invalidating projects (or a
++// project's invoices) refreshes it too (CLAUDE.md rule 5). The budget, how much has been invoiced
++// against it (the sum of the project's invoices) and what is left (budget - invoiced) are all
++// derived server-side, so the three figures always agree. budget/remaining are null if none is set.
++export type ProjectBudget = {
++  budget: number | null;
++  invoiced: number;
++  remaining: number | null;
++};
++
++export const projectBudgetKey = (projectId: number) =>
++  ['projects', projectId, 'budget'] as const;
++
++export function fetchProjectBudget(projectId: number): Promise<ProjectBudget> {
++  return getJson<ProjectBudget>(`/api/projects/${projectId}/budget`);
++}
+diff --git a/src/main/frontend/ui/currency.ts b/src/main/frontend/ui/currency.ts
+new file mode 100644
+index 0000000..53c8839
+--- /dev/null
++++ b/src/main/frontend/ui/currency.ts
+@@ -0,0 +1,9 @@
++// Shared presentational primitive: a monetary figure with grouped thousands, like "$1,000.00"
++// (CLAUDE.md: ui/ primitives are composed, never branched per feature). Complements ui/money.ts's
++// plain formatMoney — use this where larger figures read better grouped (a budget, a total left).
++export function formatCurrency(amount: number | string): string {
++  return `$${Number(amount).toLocaleString('en-US', {
++    minimumFractionDigits: 2,
++    maximumFractionDigits: 2,
++  })}`;
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index 452b0a2..7c2876c 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import jakarta.persistence.Column;
+ import jakarta.persistence.Entity;
+ import jakarta.persistence.GeneratedValue;
+@@ -28,6 +29,9 @@ public class Project {
+ 
+     private String status;
+ 
++    /** The money planned for this project, against which invoices are tracked. Null if unset. */
++    private BigDecimal budget;
++
+     public Long getId() {
+         return id;
+     }
+@@ -68,4 +72,13 @@ public class Project {
+     public void setStatus(String status) {
+         this.status = status;
+     }
++
++    /** The money planned for this project, against which invoices are tracked. Null if unset. */
++    public BigDecimal getBudget() {
++        return budget;
++    }
++
++    public void setBudget(BigDecimal budget) {
++        this.budget = budget;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectBudget.java b/src/main/java/net/officefloor/hq/app/ProjectBudget.java
+new file mode 100644
+index 0000000..1840e1a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectBudget.java
+@@ -0,0 +1,37 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * A project's budget picture: the {@code budget} planned for it, how much has been {@code invoiced}
++ * against it (the sum of every invoice raised for the project), and what is {@code remaining}
++ * (budget - invoiced). Derived per request in {@link ProjectBudgetGet} so it always reflects the
++ * current budget and invoices. {@code budget} and {@code remaining} are null when no budget is set.
++ */
++public class ProjectBudget {
++
++    private final BigDecimal budget;
++    private final BigDecimal invoiced;
++    private final BigDecimal remaining;
++
++    public ProjectBudget(BigDecimal budget, BigDecimal invoiced) {
++        this.budget = budget;
++        this.invoiced = invoiced;
++        this.remaining = budget == null ? null : budget.subtract(invoiced);
++    }
++
++    /** The money planned for the project; null if none is set. */
++    public BigDecimal getBudget() {
++        return budget;
++    }
++
++    /** How much has been invoiced against the project — the sum of its invoices' amounts. */
++    public BigDecimal getInvoiced() {
++        return invoiced;
++    }
++
++    /** What is left of the budget: budget - invoiced; null if no budget is set. */
++    public BigDecimal getRemaining() {
++        return remaining;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectBudgetGet.java b/src/main/java/net/officefloor/hq/app/ProjectBudgetGet.java
+new file mode 100644
+index 0000000..60958fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectBudgetGet.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/projects/{projectId}/budget — one project's budget picture: the budget planned for it,
++ * how much has been invoiced against it (the sum of every invoice raised for the project), and what
++ * is left (budget - invoiced). Derived per request so it always reflects the current invoices.
++ * Wired by {@code officefloor/rest/api/projects/{projectId}/budget.GET.yml}.
++ */
++public class ProjectBudgetGet {
++
++    public void service(@HttpPathParameter("projectId") String projectId,
++            ProjectRepository projects, InvoiceRepository invoices,
++            ObjectResponse<ProjectBudget> response) {
++        long id = Long.parseLong(projectId);
++        BigDecimal budget = projects.findById(id).map(Project::getBudget).orElse(null);
++        BigDecimal invoiced = BigDecimal.ZERO;
++        for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(id)) {
++            if (invoice.getAmount() != null) {
++                invoiced = invoiced.add(invoice.getAmount());
++            }
++        }
++        response.send(new ProjectBudget(budget, invoiced));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index f9cd000..2f163df 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -55,9 +55,11 @@ public class TestSupportController {
+         seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
+         seedTable(fixture, "projects",
+-                "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
++                "INSERT INTO projects (id, name, client_id, status, archived, budget)"
++                        + " VALUES (?, ?, ?, ?, ?, ?)",
+                 p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId"),
+-                        p.getOrDefault("status", "ACTIVE"), Boolean.TRUE.equals(p.get("archived"))});
++                        p.getOrDefault("status", "ACTIVE"), Boolean.TRUE.equals(p.get("archived")),
++                        p.get("budget") == null ? null : ((Number) p.get("budget")).doubleValue()});
+         seedTable(fixture, "contacts",
+                 "INSERT INTO contacts (id, name, email, role, client_id) VALUES (?, ?, ?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"), c.get("role"),
+diff --git a/src/main/resources/db/migration/V18__projects_budget.sql b/src/main/resources/db/migration/V18__projects_budget.sql
+new file mode 100644
+index 0000000..7f13e68
+--- /dev/null
++++ b/src/main/resources/db/migration/V18__projects_budget.sql
+@@ -0,0 +1,4 @@
++-- A project can carry a budget: the money planned for it, against which invoices are tracked. Its
++-- detail page shows the budget, how much has been invoiced so far, and what is left. Nullable — a
++-- project without a set budget has none; existing projects start with no budget until one is set.
++ALTER TABLE projects ADD COLUMN budget NUMERIC(19, 2);
+diff --git a/src/main/resources/officefloor/rest/api/projects/{projectId}/budget.GET.yml b/src/main/resources/officefloor/rest/api/projects/{projectId}/budget.GET.yml
+new file mode 100644
+index 0000000..c47817d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/{projectId}/budget.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/projects/{projectId}/budget -> the project's budget, invoiced total and remaining (ProjectBudgetGet.service).
++service:
++  class: net.officefloor.hq.app.ProjectBudgetGet
