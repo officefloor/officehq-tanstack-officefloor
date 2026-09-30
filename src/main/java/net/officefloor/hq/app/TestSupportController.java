@@ -32,9 +32,10 @@ public class TestSupportController {
     @PostMapping("/reset")
     public void reset() {
         audit.clear();
-        // projects references clients (FK) — drop referential integrity so both parent and child
+        // invoices -> projects -> clients (FK chain) — drop referential integrity so every table
         // can be TRUNCATE ... RESTART IDENTITY regardless of order, then restore it.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+        jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -58,6 +59,15 @@ public class TestSupportController {
                 jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
                         ((Number) p.get("id")).longValue(), p.get("name"),
                         ((Number) p.get("clientId")).longValue());
+            }
+        }
+        List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
+        if (invoices != null) {
+            for (Map<String, Object> i : invoices) {
+                jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
+                        ((Number) i.get("id")).longValue(),
+                        ((Number) i.get("projectId")).longValue(),
+                        ((Number) i.get("amount")).doubleValue());
             }
         }
     }
