@@ -28,6 +28,18 @@ export function fetchClients(): Promise<Client[]> {
   return getJson<Client[]>('/api/clients');
 }
 
+// A client's own projects, under a key nested beneath ['clients'] so invalidating clients refreshes
+// them too (CLAUDE.md rule 5). The row only needs the project's id and name; the server-side join
+// still supplies a client name we simply don't render here.
+export type ClientProject = { id: number; name: string };
+
+export const clientProjectsKey = (clientId: number) =>
+  ['clients', clientId, 'projects'] as const;
+
+export function fetchClientProjects(clientId: number): Promise<ClientProject[]> {
+  return getJson<ClientProject[]>(`/api/clients/${clientId}/projects`);
+}
+
 export function createClient(input: { name: string; email: string }): Promise<Client> {
   return postJson<Client>('/api/clients', input);
 }

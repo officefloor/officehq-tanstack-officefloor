@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { ClientRow } from '../../slots/defs/clientRow';
 import {
   CLIENT_SEARCH_PARAM,
   clientsKey,
@@ -30,6 +31,7 @@ export function ClientsTable() {
         <tr>
           <th>Name</th>
           <th>Email</th>
+          <th />
         </tr>
       </thead>
       <tbody>
@@ -37,6 +39,9 @@ export function ClientsTable() {
           <tr key={client.id} data-testid={`client-row-${client.id}`}>
             <td data-testid="client-name">{client.name}</td>
             <td data-testid="client-email">{client.email}</td>
+            <td>
+              <ClientRow.Slot clientId={client.id} />
+            </td>
           </tr>
         ))}
       </tbody>
