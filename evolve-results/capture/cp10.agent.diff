@@ -1,0 +1,57 @@
+diff --git a/src/main/frontend/features/invoices/InvoiceForm.tsx b/src/main/frontend/features/invoices/InvoiceForm.tsx
+index b009eb3..34f9843 100644
+--- a/src/main/frontend/features/invoices/InvoiceForm.tsx
++++ b/src/main/frontend/features/invoices/InvoiceForm.tsx
+@@ -7,6 +7,7 @@ import { invoicesKey, createInvoice } from './queries';
+ // total refresh themselves.
+ export function InvoiceForm({ projectId }: { projectId: number }) {
+   const [amount, setAmount] = useState('');
++  const [error, setError] = useState('');
+   const queryClient = useQueryClient();
+ 
+   const mutation = useMutation({
+@@ -23,9 +24,11 @@ export function InvoiceForm({ projectId }: { projectId: number }) {
+       onSubmit={(event) => {
+         event.preventDefault();
+         const value = Number(amount);
+-        if (amount.trim() === '' || Number.isNaN(value)) {
++        if (amount.trim() === '' || Number.isNaN(value) || value <= 0) {
++          setError('Amount must be more than zero.');
+           return;
+         }
++        setError('');
+         mutation.mutate({ projectId, amount: value });
+       }}
+     >
+@@ -38,6 +41,7 @@ export function InvoiceForm({ projectId }: { projectId: number }) {
+       <button data-testid="invoice-form-submit" type="submit">
+         Add invoice
+       </button>
++      {error !== '' && <p data-testid="invoice-form-amount-error">{error}</p>}
+     </form>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicesPost.java b/src/main/java/net/officefloor/hq/app/InvoicesPost.java
+index af6af63..1be5295 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoicesPost.java
++++ b/src/main/java/net/officefloor/hq/app/InvoicesPost.java
+@@ -9,8 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ /**
+  * POST /api/invoices — create an invoice from {projectId, amount} and return the saved row (with
+  * its id). Wired by {@code officefloor/rest/api/invoices.POST.yml}. An invoice must have a
+- * non-negative amount and belong to an existing project; a missing/invalid amount or project id is
+- * rejected with 400.
++ * positive amount (more than zero) and belong to an existing project; a missing/invalid amount or
++ * project id is rejected with 400.
+  */
+ public class InvoicesPost {
+ 
+@@ -19,7 +19,7 @@ public class InvoicesPost {
+         Long projectId = body.getProjectId();
+         BigDecimal amount = body.getAmount();
+         if (projectId == null || !projects.existsById(projectId) || amount == null
+-                || amount.signum() < 0) {
++                || amount.signum() <= 0) {
+             throw new HttpException(HttpStatus.BAD_REQUEST);
+         }
+         Invoice invoice = new Invoice();
