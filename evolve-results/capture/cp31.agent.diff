@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/invoices/InvoicesPanel.tsx b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+index aed1847..3adcfe6 100644
+--- a/src/main/frontend/features/invoices/InvoicesPanel.tsx
++++ b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson, postJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
++import { InvoiceRowCells } from '../../slots/defs/invoiceRowCells';
+ import { money } from '../../ui/money';
+ 
+ // An invoice as the server returns it: which project it belongs to, its amount, and its lifecycle
+@@ -15,6 +16,9 @@ export type Invoice = {
+   status: string;
+   issuedDate: string;
+   dueDate: string;
++  // How much is still owed after payments (amount minus every payment recorded against it), derived
++  // and sent by the server. The amount-due cell (features/invoices/dueAmount.slot.tsx) reads this.
++  amountDue: number;
+ };
+ 
+ // A project's invoices: the list scoped to this project, their derived total, and the form to add a
+@@ -115,6 +119,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+         <thead>
+           <tr>
+             <th>Amount</th>
++            <th>Amount due</th>
+             <th>Issued</th>
+             <th>Due</th>
+             <th>Status</th>
+@@ -125,6 +130,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+           {rows.map((i) => (
+             <tr key={i.id} data-testid={`invoice-row-${i.id}`}>
+               <td data-testid="invoice-amount">{money(Number(i.amount))}</td>
++              <InvoiceRowCells.Slot invoiceId={i.id} />
+               <td data-testid="invoice-issued">{i.issuedDate}</td>
+               <td data-testid="invoice-due">{i.dueDate}</td>
+               <td data-testid="invoice-status">{i.status}</td>
+diff --git a/src/main/frontend/features/invoices/dueAmount.slot.tsx b/src/main/frontend/features/invoices/dueAmount.slot.tsx
+new file mode 100644
+index 0000000..6352280
+--- /dev/null
++++ b/src/main/frontend/features/invoices/dueAmount.slot.tsx
+@@ -0,0 +1,23 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { InvoiceRowCells } from '../../slots/defs/invoiceRowCells';
++import { money } from '../../ui/money';
++import type { Invoice } from './InvoicesPanel';
++
++// The "amount still due" cell of an invoice row — its own file, filling the invoice-row-cells slot.
++// The panel is not edited to know how the due amount is worked out: this cell queries for itself
++// (['invoices'], the SAME key the panel owns) and reads the invoice's server-derived amountDue (its
++// amount minus every payment recorded against it), so it stays in step whenever a payment changes
++// and the list is invalidated. Carries data-testid="invoice-due-amount" (the test contract).
++export const contribution = InvoiceRowCells.fill({
++  order: 10,
++  Component: ({ invoiceId }: { invoiceId: number }) => {
++    const invoices = useQuery({
++      queryKey: ['invoices'],
++      queryFn: () => getJson<Invoice[]>('/api/invoices'),
++    });
++    const invoice = (invoices.data ?? []).find((i) => i.id === invoiceId);
++    const due = invoice ? Number(invoice.amountDue) : 0;
++    return <td data-testid="invoice-due-amount">{money(due)}</td>;
++  },
++});
+diff --git a/src/main/frontend/slots/defs/invoiceRowCells.ts b/src/main/frontend/slots/defs/invoiceRowCells.ts
+new file mode 100644
+index 0000000..2521b85
+--- /dev/null
++++ b/src/main/frontend/slots/defs/invoiceRowCells.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The per-row cell region of the project invoices table. Each invoice row renders this with its own
++ * id; features fill it with extra `<td>` cells (e.g. the amount still due after payments) without the
++ * list ever listing what cells it grows. Mirrors {@link ProjectRowActions}: the context is the
++ * invoice's id, so a contribution can scope its own data to that invoice.
++ */
++export const InvoiceRowCells = defineSlot<{ invoiceId: number }>('invoice.row.cells');
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index 3502cbf..7773477 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
+ import jakarta.persistence.GenerationType;
+ import jakarta.persistence.Id;
+ import jakarta.persistence.Table;
++import jakarta.persistence.Transient;
+ import java.math.BigDecimal;
+ 
+ /**
+@@ -41,6 +42,15 @@ public class Invoice {
+     @Column(name = "due_date")
+     private String dueDate;
+ 
++    /**
++     * How much is still owed on this invoice: its {@link #amount} minus every payment recorded
++     * against it. Derived, not stored — {@code @Transient} keeps it out of the {@code invoice}
++     * table; {@link InvoicesGet} fills it from the payments before sending the list so the project
++     * invoices view can show the amount still due after payments.
++     */
++    @Transient
++    private BigDecimal amountDue;
++
+     public Long getId() {
+         return id;
+     }
+@@ -88,4 +98,12 @@ public class Invoice {
+     public void setDueDate(String dueDate) {
+         this.dueDate = dueDate;
+     }
++
++    public BigDecimal getAmountDue() {
++        return amountDue;
++    }
++
++    public void setAmountDue(BigDecimal amountDue) {
++        this.amountDue = amountDue;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicesGet.java b/src/main/java/net/officefloor/hq/app/InvoicesGet.java
+index 8f380fb..d02321f 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoicesGet.java
++++ b/src/main/java/net/officefloor/hq/app/InvoicesGet.java
+@@ -1,6 +1,9 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.web.HttpQueryParameter;
+ import net.officefloor.web.ObjectResponse;
+ 
+@@ -12,15 +15,30 @@ import net.officefloor.web.ObjectResponse;
+  * <p>An optional {@code sort=due} query parameter orders the list by due date (earliest first) —
+  * this backs the sort-by-due-date control on the project invoices list. Any other value (or none)
+  * keeps the stable oldest-first order.
++ *
++ * <p>Each invoice also carries its {@code amountDue}: the amount still owed after payments (its
++ * amount minus every payment recorded against it). This is derived here from the payments — not
++ * stored — so the project invoices view can show how much is left to pay on each invoice.
+  */
+ public class InvoicesGet {
+ 
+     public void service(@HttpQueryParameter("sort") String sort, InvoiceRepository repository,
+-            ObjectResponse<List<Invoice>> response) {
+-        if ("due".equals(sort == null ? null : sort.trim())) {
+-            response.send(repository.findAllByOrderByDueDateAscIdAsc());
+-        } else {
+-            response.send(repository.findAllByOrderByIdAsc());
++            PaymentRepository payments, ObjectResponse<List<Invoice>> response) {
++        List<Invoice> invoices = "due".equals(sort == null ? null : sort.trim())
++                ? repository.findAllByOrderByDueDateAscIdAsc()
++                : repository.findAllByOrderByIdAsc();
++
++        // Sum the payments per invoice once, then set each invoice's derived amount due (amount less
++        // what has been paid) so the row shows what is still owed.
++        Map<Long, BigDecimal> paidByInvoice = new HashMap<>();
++        for (Payment payment : payments.findAllByOrderByIdAsc()) {
++            paidByInvoice.merge(payment.getInvoiceId(), payment.getAmount(), BigDecimal::add);
+         }
++        for (Invoice invoice : invoices) {
++            BigDecimal paid = paidByInvoice.getOrDefault(invoice.getId(), BigDecimal.ZERO);
++            invoice.setAmountDue(invoice.getAmount().subtract(paid));
++        }
++
++        response.send(invoices);
+     }
+ }
