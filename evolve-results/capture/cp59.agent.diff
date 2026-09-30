@@ -1,0 +1,80 @@
+diff --git a/src/main/frontend/features/clients/StatementPrintView.tsx b/src/main/frontend/features/clients/StatementPrintView.tsx
+new file mode 100644
+index 0000000..58a63b4
+--- /dev/null
++++ b/src/main/frontend/features/clients/StatementPrintView.tsx
+@@ -0,0 +1,52 @@
++import { useQuery } from '@tanstack/react-query';
++import {
++  clientStatementKey,
++  fetchClientStatement,
++  type StatementProject,
++} from './queries';
++import { formatMoney } from '../../ui/money';
++
++// A clean, print-friendly summary of a client's statement: one line per job showing what that job
++// still owes, and the single grand total the client owes across every job. Queries for itself under
++// ['clients', clientId, 'statement'] (CLAUDE.md rule 5) — the same key the detailed statement reads,
++// so the two always agree and a payment invalidating clients refreshes both. Stripped to just the
++// headline figures so it reads as a summary you can print, rather than the full invoice breakdown.
++export function StatementPrintView({ clientId }: { clientId: number }) {
++  const { data: statement } = useQuery({
++    queryKey: clientStatementKey(clientId),
++    queryFn: () => fetchClientStatement(clientId),
++  });
++
++  if (!statement) {
++    return null;
++  }
++
++  return (
++    <section data-testid="statement-print-view">
++      <h2>Statement</h2>
++      <table data-testid="statement-summary-table">
++        <thead>
++          <tr>
++            <th>Job</th>
++            <th>Owed</th>
++          </tr>
++        </thead>
++        <tbody>
++          {statement.projects.map((project: StatementProject) => (
++            <tr
++              key={project.projectId}
++              data-testid={`statement-summary-row-${project.projectId}`}
++            >
++              <td data-testid="statement-summary-job">{project.projectName}</td>
++              <td data-testid="statement-summary-owed">{formatMoney(project.subtotal)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p>
++        <span>Grand total</span>{' '}
++        <span data-testid="statement-grand-total">{formatMoney(statement.totalOwed)}</span>
++      </p>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/clients/statement-print.slot.tsx b/src/main/frontend/features/clients/statement-print.slot.tsx
+new file mode 100644
+index 0000000..e56da85
+--- /dev/null
++++ b/src/main/frontend/features/clients/statement-print.slot.tsx
+@@ -0,0 +1,16 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { CLIENT_STATEMENT_PARAM } from './queries';
++import { StatementPrintView } from './StatementPrintView';
++
++// The clean, printable statement summary on a client's detail page — one new *.slot.tsx file filling
++// the ClientDetail region (CLAUDE.md rule 3); nothing existing is edited to add it. It reads the same
++// `clientStatement` URL key the "Statement" control already owns (rule 4), so revealing the statement
++// also reveals its printable summary, with the two files sharing only that key — no import between
++// them. The grand total the client owes comes straight from the statement endpoint (totalOwed).
++function ClientStatementPrint({ clientId }: { clientId: number }) {
++  const [open] = useSearchParam(CLIENT_STATEMENT_PARAM, asFlag);
++  return open ? <StatementPrintView clientId={clientId} /> : null;
++}
++
++export const contribution = ClientDetail.fill({ order: 25, Component: ClientStatementPrint });
