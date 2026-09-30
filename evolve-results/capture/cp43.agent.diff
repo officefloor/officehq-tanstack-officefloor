@@ -1,0 +1,194 @@
+diff --git a/src/main/frontend/features/search/GlobalSearch.tsx b/src/main/frontend/features/search/GlobalSearch.tsx
+new file mode 100644
+index 0000000..f0421cb
+--- /dev/null
++++ b/src/main/frontend/features/search/GlobalSearch.tsx
+@@ -0,0 +1,59 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import type { Client } from '../clients/ClientsPage';
++import type { Project } from '../projects/ProjectsPage';
++
++// One search box across both clients and projects. The server does the matching (GET /api/search)
++// and hands back the two groups; this component just renders them, grouped by kind.
++type SearchResults = { clients: Client[]; projects: Project[] };
++
++// The global search box and its results. It OWNS the `search` URL key (rule 4: a search term
++// outlives a click, so it lives in the URL, not useState). The results are read with useQuery under
++// ['search', term] — server data, never copied into state (rule 5) — and only fetched once there is
++// something to look for. Carries data-testid="global-search" (the test contract), with the matches
++// grouped under data-testid="search-clients" and data-testid="search-projects".
++export function GlobalSearch() {
++  const [q, setQ] = useSearchParam('search', asString);
++  const term = q.trim();
++  const results = useQuery({
++    queryKey: ['search', term],
++    queryFn: () => getJson<SearchResults>(`/api/search?q=${encodeURIComponent(term)}`),
++    enabled: term.length > 0,
++  });
++
++  const clients = results.data?.clients ?? [];
++  const projects = results.data?.projects ?? [];
++
++  return (
++    <div data-testid="global-search-panel">
++      <input
++        data-testid="global-search"
++        type="search"
++        placeholder="Search clients and projects"
++        value={q}
++        onChange={(e) => setQ(e.target.value)}
++      />
++      {term.length > 0 && (
++        <div data-testid="search-results">
++          <section data-testid="search-clients">
++            {clients.map((c) => (
++              <div key={c.id} data-testid={`client-row-${c.id}`}>
++                <span data-testid="client-name">{c.name}</span>
++                <span data-testid="client-email">{c.email}</span>
++              </div>
++            ))}
++          </section>
++          <section data-testid="search-projects">
++            {projects.map((p) => (
++              <div key={p.id} data-testid={`project-row-${p.id}`}>
++                <span data-testid="project-name">{p.name}</span>
++                <span data-testid="project-client">{p.clientName}</span>
++              </div>
++            ))}
++          </section>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/search/nav.slot.tsx b/src/main/frontend/features/search/nav.slot.tsx
+new file mode 100644
+index 0000000..58597ab
+--- /dev/null
++++ b/src/main/frontend/features/search/nav.slot.tsx
+@@ -0,0 +1,7 @@
++import { AppNav } from '../../slots/defs/appNav';
++import { GlobalSearch } from './GlobalSearch';
++
++// The global search box's presence in the shell — its own file, filling the app.nav slot so the one
++// search box is available on every page (the home page included). The shell was written once and is
++// not touched; adding this is a new file, nothing edited. A high order keeps it after the page links.
++export const contribution = AppNav.fill({ order: 100, Component: GlobalSearch });
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index 0993885..6cff4a6 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -11,4 +11,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+ 
+     /** All projects, oldest first, so the list order is stable for the UI and tests. */
+     List<Project> findAllByOrderByIdAsc();
++
++    /**
++     * Non-archived projects whose name contains {@code term} (case-insensitive), oldest first —
++     * backs the global search ({@code GET /api/search?q=...}). Archived projects are tucked away, so
++     * they drop off the search, mirroring how the clients search excludes archived clients.
++     */
++    List<Project> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/SearchGet.java b/src/main/java/net/officefloor/hq/app/SearchGet.java
+new file mode 100644
+index 0000000..ede58d6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SearchGet.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.web.HttpQueryParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * {@code GET /api/search?q=...} — one search box across both clients and projects. Returns the
++ * clients and the projects whose name contains {@code q} (case-insensitive), grouped by kind in a
++ * {@link SearchView}. Archived rows are tucked away, so they drop off the search on both sides.
++ * Wired by {@code officefloor/rest/api/search.GET.yml}.
++ *
++ * <p>When {@code q} is absent or blank there is nothing to search for, so both groups come back
++ * empty rather than the whole database.
++ */
++public class SearchGet {
++
++    public void service(@HttpQueryParameter("q") String q, ClientRepository clients,
++            ProjectRepository projects, ObjectResponse<SearchView> response) {
++        String term = q == null ? "" : q.trim();
++        if (term.isEmpty()) {
++            response.send(new SearchView(List.of(), List.of()));
++            return;
++        }
++
++        List<Client> matchedClients =
++                clients.findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(term);
++
++        // Projects carry their client's NAME (like /api/projects), so join against the client names.
++        Map<Long, String> nameById = clients.findAll().stream()
++                .collect(Collectors.toMap(Client::getId, Client::getName));
++        List<ProjectView> matchedProjects =
++                projects.findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(term).stream()
++                        .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
++                                nameById.get(p.getClientId()), p.isArchived(), p.getStatus()))
++                        .collect(Collectors.toList());
++
++        response.send(new SearchView(matchedClients, matchedProjects));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/SearchView.java b/src/main/java/net/officefloor/hq/app/SearchView.java
+new file mode 100644
+index 0000000..a63bf52
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SearchView.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++
++/**
++ * What {@code GET /api/search} returns: the matches for one search term, grouped by kind — the
++ * clients whose name matched and the projects whose name matched. One search box looks across both,
++ * so both groups come back in a single response. A read-only aggregate joined in {@link SearchGet};
++ * no entity of its own. Projects carry their client's NAME ({@link ProjectView}) like the /api/projects list.
++ */
++public class SearchView {
++
++    private final List<Client> clients;
++    private final List<ProjectView> projects;
++
++    public SearchView(List<Client> clients, List<ProjectView> projects) {
++        this.clients = clients;
++        this.projects = projects;
++    }
++
++    public List<Client> getClients() {
++        return clients;
++    }
++
++    public List<ProjectView> getProjects() {
++        return projects;
++    }
++}
+diff --git a/src/main/resources/db/migration/V25__project_name_index.sql b/src/main/resources/db/migration/V25__project_name_index.sql
+new file mode 100644
+index 0000000..d78e9cf
+--- /dev/null
++++ b/src/main/resources/db/migration/V25__project_name_index.sql
+@@ -0,0 +1,4 @@
++-- Global search looks across projects by name (GET /api/search): an index on project.name keeps
++-- that name lookup fast as the list grows, mirroring idx_client_name (V6) on the client side.
++-- Additive index, no data change; existing rows and the create path are unaffected.
++CREATE INDEX idx_project_name ON project (name);
+diff --git a/src/main/resources/officefloor/rest/api/search.GET.yml b/src/main/resources/officefloor/rest/api/search.GET.yml
+new file mode 100644
+index 0000000..7992ebf
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/search.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.SearchGet
