@@ -117,12 +117,17 @@ public class TestSupportController {
             }
             Object explicit = i.get("amount");
             double amount = explicit == null ? computed : ((Number) explicit).doubleValue();
+            // An optional percentage discount off the invoice's subtotal (0 when the fixture omits it).
+            // The discount amount and the final total are derived from it (see InvoiceSummaryGet).
+            Object discountPct = i.get("discountPct");
             jdbc.update(
-                    "INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
-                            + "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO invoice "
+                            + "(id, project_id, amount, status, issued_date, due_date, discount_pct) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     asLong(i, "id"), asLong(i, "projectId"), amount,
                     i.get("status") == null ? "UNPAID" : i.get("status"),
-                    i.get("issuedDate"), i.get("dueDate"));
+                    i.get("issuedDate"), i.get("dueDate"),
+                    discountPct == null ? 0 : discountPct);
             for (Map<String, Object> li : lines) {
                 jdbc.update(
                         "INSERT INTO line_item (id, invoice_id, description, qty, unit, unit_price) "

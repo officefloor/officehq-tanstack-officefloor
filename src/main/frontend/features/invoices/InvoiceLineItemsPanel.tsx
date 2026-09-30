@@ -20,14 +20,16 @@ export type LineItem = {
 // while an edit is open, keyed by the line's id so the row's inputs are controlled.
 type Draft = { description: string; qty: string; unit: string; unitPrice: string };
 
-// An invoice's line items, rendered in the invoice-detail context: the list of that invoice's lines,
-// their derived total, and a form to add one (description, qty, unit price). Each existing line can
-// be CHANGED (edit its fields in place) or REMOVED, and the invoice's total recomputes when it is.
-// Server data is read with useQuery under the ['lineItems'] key and filtered to the invoice this
-// panel is handed — never copied into state, never hand-maintained (rule 5). Every write is a
-// useMutation that invalidates ['lineItems'] (so this list refetches) and ['invoices'] (so the
-// invoice's amount elsewhere refreshes too, sharing the key rather than importing). The only useState
-// is the add form and the line the user is currently editing (rule 4).
+// An invoice's line items, rendered in the invoice-detail context: the list of that invoice's lines
+// (each with its own amount) and a form to add one (description, qty, unit price). Each existing line
+// can be CHANGED (edit its fields in place) or REMOVED. The invoice's subtotal, discount and final
+// total are shown by the summary panel (features/invoices/summary.slot.tsx), which re-derives them
+// when a line changes here. Server data is read with useQuery under the ['lineItems'] key and
+// filtered to the invoice this panel is handed — never copied into state, never hand-maintained
+// (rule 5). Every write is a useMutation that invalidates ['lineItems'] (so this list refetches),
+// ['invoices'] (so the invoice's amount elsewhere refreshes) and ['invoiceSummary'] (so the summary
+// re-derives), sharing the keys rather than importing. The only useState is the add form and the line
+// the user is currently editing (rule 4).
 export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
   const queryClient = useQueryClient();
   const lineItems = useQuery({
@@ -47,6 +49,9 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['lineItems'] });
     void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    // The invoice's money summary (subtotal, discount, final total) is derived from these lines, so
+    // refresh it too — the summary panel owns ['invoiceSummary'] and re-derives when a line changes.
+    void queryClient.invalidateQueries({ queryKey: ['invoiceSummary'] });
   };
 
   const create = useMutation({
@@ -88,12 +93,9 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
   });
 
   const rows = (lineItems.data ?? []).filter((li) => li.invoiceId === invoiceId);
-  const total = rows.reduce((sum, li) => sum + Number(li.qty) * Number(li.unitPrice), 0);
 
   return (
     <section data-testid="invoice-lineitems">
-      <p data-testid="invoice-amount">{money(total)}</p>
-
       <form
         data-testid="lineitem-form"
         onSubmit={(e) => {

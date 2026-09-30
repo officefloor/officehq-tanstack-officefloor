@@ -43,6 +43,14 @@ public class Invoice {
     private String dueDate;
 
     /**
+     * A percentage discount taken off this invoice's subtotal (the sum of its line items), 0 when
+     * none. The discount amount and the final total (subtotal minus the discount) are derived from
+     * this percentage — see {@link InvoiceSummaryGet}. Stored by {@code V28__invoice_discount_pct.sql}.
+     */
+    @Column(name = "discount_pct")
+    private BigDecimal discountPct;
+
+    /**
      * How much is still owed on this invoice: its {@link #amount} minus every payment recorded
      * against it. Derived, not stored — {@code @Transient} keeps it out of the {@code invoice}
      * table; {@link InvoicesGet} fills it from the payments before sending the list so the project
@@ -105,5 +113,13 @@ public class Invoice {
 
     public void setAmountDue(BigDecimal amountDue) {
         this.amountDue = amountDue;
+    }
+
+    public BigDecimal getDiscountPct() {
+        return discountPct;
+    }
+
+    public void setDiscountPct(BigDecimal discountPct) {
+        this.discountPct = discountPct;
     }
 }
