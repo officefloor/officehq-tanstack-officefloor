@@ -85,3 +85,17 @@ export function createClient(input: { name: string; email: string }): Promise<Cl
 export function archiveClient(clientId: number): Promise<void> {
   return postJson<void>(`/api/clients/${clientId}/archive`, {});
 }
+
+// The URL search-param key the "edit this client" control owns: which client's row is currently
+// being edited (CLAUDE.md rule 4). One key shared by every row's edit control, so opening one row's
+// form is a URL change, not per-row component state.
+export const CLIENT_EDIT_PARAM = 'editClient';
+
+/** Correct a client's name and email; id is in the path, {name, email} in the body. Returns the
+ * saved row. */
+export function updateClient(
+  clientId: number,
+  input: { name: string; email: string },
+): Promise<Client> {
+  return postJson<Client>(`/api/clients/${clientId}`, input);
+}
