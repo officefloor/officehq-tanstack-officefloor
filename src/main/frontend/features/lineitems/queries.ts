@@ -24,3 +24,17 @@ export function createLineItem(
 ): Promise<LineItem> {
   return postJson<LineItem>(`/api/invoices/${invoiceId}/lineitems`, input);
 }
+
+/** Change a line on an invoice; ids are in the path, the new values are the body. */
+export function updateLineItem(
+  invoiceId: number,
+  lineItemId: number,
+  input: { description: string; qty: number; unitPrice: number },
+): Promise<LineItem> {
+  return postJson<LineItem>(`/api/invoices/${invoiceId}/lineitems/${lineItemId}`, input);
+}
+
+/** Remove a line from an invoice; both ids are in the path, no body needed. */
+export function removeLineItem(invoiceId: number, lineItemId: number): Promise<void> {
+  return postJson<void>(`/api/invoices/${invoiceId}/lineitems/${lineItemId}/remove`, {});
+}

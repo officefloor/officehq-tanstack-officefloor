@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { lineItemsKey, fetchLineItems, type LineItem } from './queries';
+import { LineItemRow } from '../../slots/defs/lineItemRow';
 import { formatMoney } from '../../ui/money';
 
 // An invoice's line items plus the derived total. Queries for itself under ['lineitems', invoiceId]
@@ -30,6 +31,7 @@ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
             <th>Qty</th>
             <th>Unit price</th>
             <th>Amount</th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -41,6 +43,13 @@ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
               <td data-testid="lineitem-amount">
                 {formatMoney(Number(line.qty) * Number(line.unitPrice))}
               </td>
+              <LineItemRow.Slot
+                invoiceId={invoiceId}
+                lineItemId={line.id}
+                description={line.description}
+                qty={Number(line.qty)}
+                unitPrice={Number(line.unitPrice)}
+              />
             </tr>
           ))}
         </tbody>
