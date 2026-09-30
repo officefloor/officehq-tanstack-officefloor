@@ -8,6 +8,11 @@ import java.math.BigDecimal;
  * ({@code due} = amount - paid). The paid/due split is derived per request in {@link InvoicesGet}
  * rather than stored, so it always reflects the current payments. Additive over the raw invoice
  * shape — existing readers keep using {@code amount}; the new ones read {@code due}.
+ *
+ * The {@code status} is likewise DERIVED from the payments rather than flipped by hand: once some
+ * (but not all) of the amount is paid it reads {@code PARTIAL}, once the amount is covered it reads
+ * {@code PAID}; with nothing paid it stays at the invoice's stored lifecycle stage (DRAFT/SENT).
+ * See {@link #deriveStatus}.
  */
 public class ProjectInvoice {
 
@@ -24,11 +29,29 @@ public class ProjectInvoice {
         this.id = invoice.getId();
         this.projectId = invoice.getProjectId();
         this.amount = invoice.getAmount();
-        this.status = invoice.getStatus();
+        this.status = deriveStatus(invoice.getStatus(), invoice.getAmount(), paid);
         this.issuedDate = invoice.getIssuedDate();
         this.dueDate = invoice.getDueDate();
         this.paid = paid;
         this.due = invoice.getAmount().subtract(paid);
+    }
+
+    /**
+     * Work out an invoice's status from what has been paid against it, so it is never flipped by
+     * hand: {@code PAID} once the payments cover the amount, {@code PARTIAL} once some (but not all)
+     * is paid, otherwise the invoice's stored lifecycle stage ({@code DRAFT}/{@code SENT} — a sent,
+     * unpaid invoice reads SENT).
+     */
+    static String deriveStatus(String stored, BigDecimal amount, BigDecimal paid) {
+        BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
+        BigDecimal pd = paid == null ? BigDecimal.ZERO : paid;
+        if (amt.signum() > 0 && pd.compareTo(amt) >= 0) {
+            return "PAID";
+        }
+        if (pd.signum() > 0) {
+            return "PARTIAL";
+        }
+        return stored;
     }
 
     public Long getId() {

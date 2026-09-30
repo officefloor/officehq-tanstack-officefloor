@@ -56,7 +56,16 @@ export function sendInvoice(invoiceId: number): Promise<Invoice> {
   return postJson<Invoice>(`/api/invoices/${invoiceId}/send`, {});
 }
 
-/** Mark an invoice paid; the server flips its status and records the audited side-effect. */
-export function payInvoice(invoiceId: number): Promise<Invoice> {
-  return postJson<Invoice>(`/api/invoices/${invoiceId}/pay`, {});
+/**
+ * One invoice's status, worked out server-side from the payments recorded against it (PAID once
+ * covered, PARTIAL once part paid, otherwise its stored SENT/DRAFT stage) — an invoice is no longer
+ * flipped to paid by hand. Keyed UNDER the payments key: recording a payment invalidates
+ * ['payments', invoiceId], which prefix-matches this key, so the status refreshes itself (CLAUDE.md
+ * rule 5 — two features stay in step by sharing a key).
+ */
+export const invoiceStatusKey = (invoiceId: number) =>
+  ['payments', invoiceId, 'status'] as const;
+
+export function fetchInvoiceStatus(invoiceId: number): Promise<{ status: string }> {
+  return getJson<{ status: string }>(`/api/invoices/${invoiceId}/status`);
 }
