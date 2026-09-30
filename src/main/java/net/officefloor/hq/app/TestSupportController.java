@@ -63,9 +63,10 @@ public class TestSupportController {
                 asLong(c, "id"), c.get("name"), c.get("email")));
 
         seedRows(fixture, "projects", p -> jdbc.update(
-                "INSERT INTO project (id, name, client_id, status) VALUES (?, ?, ?, ?)",
+                "INSERT INTO project (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
                 asLong(p, "id"), p.get("name"), asLong(p, "clientId"),
-                p.get("status") == null ? "ACTIVE" : p.get("status")));
+                p.get("status") == null ? "ACTIVE" : p.get("status"),
+                Boolean.TRUE.equals(p.get("archived"))));
 
         seedRows(fixture, "tasks", t -> jdbc.update(
                 "INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",

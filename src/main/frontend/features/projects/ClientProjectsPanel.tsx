@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { asFlag, useSearchParam } from '../../url/useSearchParam';
 import type { Project } from './ProjectsPage';
 
 // A client's projects: the projects listing scoped to one client, rendered in the client-detail
@@ -13,8 +14,15 @@ export function ClientProjectsPanel({ clientId }: { clientId: number }) {
     queryFn: () => getJson<Project[]>('/api/projects'),
   });
 
-  // Archived projects are tucked away everywhere: kept on the server but off this panel too.
-  const rows = (projects.data ?? []).filter((p) => p.clientId === clientId && !p.archived);
+  // Whether the finished and hidden (archived) projects are revealed lives in the URL, owned by
+  // features/projects/clientProjectsShowAll.slot.tsx. This panel reads the same key: by default it
+  // shows only the client's live work (ACTIVE and not archived); flip the key and every project
+  // for the client shows. Nothing is passed between the toggle and the panel (rule 4).
+  const [showAll] = useSearchParam('clientProjectsShowAll', asFlag);
+
+  const rows = (projects.data ?? []).filter(
+    (p) => p.clientId === clientId && (showAll || (p.status === 'ACTIVE' && !p.archived)),
+  );
 
   return (
     <section data-testid="client-projects">
