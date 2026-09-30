@@ -31,6 +31,15 @@ public class Payment {
     @Column(name = "paid_date")
     private String date;
 
+    /**
+     * When this payment is one share of a lump payment split across several invoices, the reference
+     * of that lump payment (the same value on every allocation of the one payment); null for a
+     * standalone single-invoice payment. Set by {@link PaymentsAllocatePost}; stored by
+     * {@code V32__payment_batch_ref.sql}.
+     */
+    @Column(name = "batch_ref")
+    private String batchRef;
+
     public Long getId() {
         return id;
     }
@@ -61,5 +70,13 @@ public class Payment {
 
     public void setDate(String date) {
         this.date = date;
+    }
+
+    public String getBatchRef() {
+        return batchRef;
+    }
+
+    public void setBatchRef(String batchRef) {
+        this.batchRef = batchRef;
     }
 }
