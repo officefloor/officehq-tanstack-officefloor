@@ -48,7 +48,10 @@ public class ClientStatementGet {
         BigDecimal outstanding = BigDecimal.ZERO;
         for (Invoice invoice : clientInvoices) {
             BigDecimal paid = paidByInvoice.getOrDefault(invoice.getId(), BigDecimal.ZERO);
-            BigDecimal due = invoice.getAmount().subtract(paid);
+            // Owed = the discounted amount (subtotal minus the invoice's discount, the same figure the
+            // invoice detail and dashboard use) less what has been paid, so the discount shows up in
+            // the statement's amount due and outstanding total too.
+            BigDecimal due = invoice.getDiscountedAmount().subtract(paid);
             invoice.setAmountDue(due);
             outstanding = outstanding.add(due);
         }

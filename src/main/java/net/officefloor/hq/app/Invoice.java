@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * An invoice raised against a project: the id of the {@link Project} it belongs to and a money
@@ -121,5 +122,20 @@ public class Invoice {
 
     public void setDiscountPct(BigDecimal discountPct) {
         this.discountPct = discountPct;
+    }
+
+    /**
+     * What is actually owed on this invoice before payments: its {@link #amount} (the subtotal)
+     * minus the discount its {@link #discountPct} takes off, the discount rounded to cents HALF_UP —
+     * the same derivation {@link InvoiceSummaryGet} makes for the invoice-detail total. Derived, not
+     * stored (Hibernate uses field access, so this getter is not a mapped property), so every place
+     * that shows money owed — the invoice, the statement and the dashboard — applies one discount.
+     */
+    public BigDecimal getDiscountedAmount() {
+        BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
+        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
+        BigDecimal discount = amt.multiply(pct)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        return amt.subtract(discount);
     }
 }
