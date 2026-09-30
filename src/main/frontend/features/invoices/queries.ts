@@ -3,7 +3,14 @@ import { getJson, postJson } from '../../api/http';
 // A project's invoices under a per-project key: anything showing project 1's invoices reads
 // ['invoices', 1], and a write invalidates the same key to refresh them (CLAUDE.md rule 5). An
 // invoice carries its own id, its project's id and a monetary amount.
-export type Invoice = { id: number; projectId: number; amount: number; status: string };
+export type Invoice = {
+  id: number;
+  projectId: number;
+  amount: number;
+  status: string;
+  issuedDate: string;
+  dueDate: string;
+};
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
 
