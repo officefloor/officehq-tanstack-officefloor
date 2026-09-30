@@ -1,6 +1,5 @@
 package net.officefloor.hq.app;
 
-import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -32,13 +31,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<InvoiceView> findAllViews();
 
     /**
-     * Total amount still owed: the sum of every SENT-but-not-yet-paid invoice's amount across all
-     * projects. Only invoices actually sent to the client count — DRAFT invoices are excluded
-     * (they have not been billed yet) and PAID invoices are settled. COALESCE keeps it 0 (never
-     * null) when nothing is outstanding — the dashboard's headline figure.
+     * Every SENT invoice across all projects — the invoices that count toward what is owed (a DRAFT
+     * has not been billed and a PAID one is settled). The dashboard sums each one's DISCOUNTED amount
+     * ({@link ProjectInvoice#owedAmount}) so its outstanding headline reflects the discount, the same
+     * way the invoice row and the client statement do.
      */
-    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
-    BigDecimal sumOutstanding();
+    List<Invoice> findByStatus(String status);
 
     /**
      * How many SENT invoices are overdue as of the given reference date: sent-but-not-paid invoices

@@ -1,13 +1,19 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * An invoice as a project's list shows it: every stored {@link Invoice} field plus the money already
  * settled against it ({@code paid}, the sum of its {@link Payment}s) and how much is still owed
- * ({@code due} = amount - paid). The paid/due split is derived per request in {@link InvoicesGet}
- * rather than stored, so it always reflects the current payments. Additive over the raw invoice
- * shape — existing readers keep using {@code amount}; the new ones read {@code due}.
+ * ({@code due} = discounted amount - paid). The paid/due split is derived per request in
+ * {@link InvoicesGet} rather than stored, so it always reflects the current payments. Additive over
+ * the raw invoice shape — existing readers keep using {@code amount}; the new ones read {@code due}.
+ *
+ * What is OWED is the invoice's percentage discount applied on top of the stored {@code amount} (the
+ * subtotal), the same figure the invoice's discount breakdown shows — so the discount flows through
+ * everywhere money owed is surfaced (the invoice row's due, the client statement, the dashboard
+ * outstanding total). The stored {@code amount} itself is left as the face (pre-discount) figure.
  *
  * The {@code status} is likewise DERIVED from the payments rather than flipped by hand: once some
  * (but not all) of the amount is paid it reads {@code PARTIAL}, once the amount is covered it reads
@@ -26,14 +32,30 @@ public class ProjectInvoice {
     private final BigDecimal due;
 
     public ProjectInvoice(Invoice invoice, BigDecimal paid) {
+        BigDecimal owed = owedAmount(invoice.getAmount(), invoice.getDiscountPct());
         this.id = invoice.getId();
         this.projectId = invoice.getProjectId();
         this.amount = invoice.getAmount();
-        this.status = deriveStatus(invoice.getStatus(), invoice.getAmount(), paid);
+        this.status = deriveStatus(invoice.getStatus(), owed, paid);
         this.issuedDate = invoice.getIssuedDate();
         this.dueDate = invoice.getDueDate();
         this.paid = paid;
-        this.due = invoice.getAmount().subtract(paid);
+        this.due = owed.subtract(paid);
+    }
+
+    /**
+     * What a client actually owes for an invoice: the stored {@code amount} (the subtotal, before any
+     * discount) less the percentage discount taken off it. The discount is {@code amount * pct / 100}
+     * rounded to the cent, matching {@link InvoiceDiscount}, so the invoice's due, the statement and
+     * the dashboard all agree with the invoice's discount breakdown. A null amount or percentage is
+     * treated as zero.
+     */
+    static BigDecimal owedAmount(BigDecimal amount, BigDecimal discountPct) {
+        BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
+        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
+        BigDecimal discount = amt.multiply(pct)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        return amt.subtract(discount);
     }
 
     /**

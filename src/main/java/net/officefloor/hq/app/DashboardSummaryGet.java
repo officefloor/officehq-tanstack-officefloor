@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 
@@ -22,7 +23,12 @@ public class DashboardSummaryGet {
             ObjectResponse<DashboardSummary> response) {
         String asOf = settings.findById(AS_OF_KEY).map(AppSetting::getValue)
                 .orElseGet(() -> LocalDate.now(ZoneOffset.UTC).toString());
+        BigDecimal outstanding = BigDecimal.ZERO;
+        for (Invoice invoice : invoices.findByStatus("SENT")) {
+            outstanding = outstanding.add(
+                    ProjectInvoice.owedAmount(invoice.getAmount(), invoice.getDiscountPct()));
+        }
         response.send(new DashboardSummary(clients.count(), projects.count(),
-                invoices.sumOutstanding(), invoices.countOverdue(asOf)));
+                outstanding, invoices.countOverdue(asOf)));
     }
 }
