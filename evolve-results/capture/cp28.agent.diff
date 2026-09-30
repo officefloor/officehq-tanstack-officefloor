@@ -1,0 +1,433 @@
+diff --git a/src/main/frontend/features/notes/NoteForm.tsx b/src/main/frontend/features/notes/NoteForm.tsx
+new file mode 100644
+index 0000000..0663610
+--- /dev/null
++++ b/src/main/frontend/features/notes/NoteForm.tsx
+@@ -0,0 +1,43 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { projectNotesKey, createNote } from './queries';
++
++// Write a note on a project. useState holds only what the user is currently typing (CLAUDE.md rule
++// 4); the write is a mutation that invalidates ['projects', projectId, 'notes'] so the list
++// refreshes itself with the new note on top — no hand-maintained list. Blank text is not submitted
++// (the server enforces the same rule).
++export function NoteForm({ projectId }: { projectId: number }) {
++  const [text, setText] = useState('');
++  const queryClient = useQueryClient();
++
++  const mutation = useMutation({
++    mutationFn: createNote,
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: projectNotesKey(projectId) });
++      setText('');
++    },
++  });
++
++  return (
++    <form
++      data-testid="note-form"
++      onSubmit={(event) => {
++        event.preventDefault();
++        if (text.trim().length === 0) {
++          return;
++        }
++        mutation.mutate({ targetType: 'project', targetId: projectId, text });
++      }}
++    >
++      <input
++        data-testid="note-form-text"
++        placeholder="Write a note"
++        value={text}
++        onChange={(event) => setText(event.target.value)}
++      />
++      <button data-testid="note-form-submit" type="submit">
++        Add note
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/notes/ProjectNotesTable.tsx b/src/main/frontend/features/notes/ProjectNotesTable.tsx
+new file mode 100644
+index 0000000..7f0de99
+--- /dev/null
++++ b/src/main/frontend/features/notes/ProjectNotesTable.tsx
+@@ -0,0 +1,30 @@
++import { useQuery } from '@tanstack/react-query';
++import { projectNotesKey, fetchProjectNotes, type Note } from './queries';
++
++// The notes written on one project. Queries for itself under ['projects', projectId, 'notes'] —
++// never handed its data by a parent (CLAUDE.md rule 5). The server returns them newest first, so
++// the rows render in that order untouched. Carries the stable data-testid contract: a row per note
++// and the text cell the test reads.
++export function ProjectNotesTable({ projectId }: { projectId: number }) {
++  const { data: notes } = useQuery({
++    queryKey: projectNotesKey(projectId),
++    queryFn: () => fetchProjectNotes(projectId),
++  });
++
++  if (!notes) {
++    return null;
++  }
++
++  return (
++    <ul data-testid="project-notes-list">
++      {notes.map((note: Note) => (
++        <li key={note.id} data-testid={`note-row-${note.id}`}>
++          <span data-testid="note-text">{note.text}</span>
++          <time data-testid="note-at" dateTime={note.at}>
++            {note.at}
++          </time>
++        </li>
++      ))}
++    </ul>
++  );
++}
+diff --git a/src/main/frontend/features/notes/notes.slot.tsx b/src/main/frontend/features/notes/notes.slot.tsx
+new file mode 100644
+index 0000000..211a54d
+--- /dev/null
++++ b/src/main/frontend/features/notes/notes.slot.tsx
+@@ -0,0 +1,17 @@
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { ProjectNotesTable } from './ProjectNotesTable';
++import { NoteForm } from './NoteForm';
++
++// The notes panel on a project's detail page — one new *.slot.tsx file filling the ProjectDetail
++// region (CLAUDE.md rule 3). Nothing existing is edited to add it. Shows the project's notes newest
++// first and the form to add one; each queries/mutates for itself under the shared notes key.
++function ProjectNotesPanel({ projectId }: { projectId: number }) {
++  return (
++    <section data-testid="project-notes">
++      <NoteForm projectId={projectId} />
++      <ProjectNotesTable projectId={projectId} />
++    </section>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 20, Component: ProjectNotesPanel });
+diff --git a/src/main/frontend/features/notes/queries.ts b/src/main/frontend/features/notes/queries.ts
+new file mode 100644
+index 0000000..99b9326
+--- /dev/null
++++ b/src/main/frontend/features/notes/queries.ts
+@@ -0,0 +1,28 @@
++import { getJson, postJson } from '../../api/http';
++
++// A project's notes under a key nested beneath ['projects'] so invalidating projects refreshes them
++// too (CLAUDE.md rule 5). Each note carries its text and the instant it was written; the server
++// returns them newest first.
++export type Note = {
++  id: number;
++  targetType: string;
++  targetId: number;
++  text: string;
++  at: string;
++};
++
++export const projectNotesKey = (projectId: number) =>
++  ['projects', projectId, 'notes'] as const;
++
++export function fetchProjectNotes(projectId: number): Promise<Note[]> {
++  return getJson<Note[]>(`/api/projects/${projectId}/notes`);
++}
++
++/** Write a note on a project; the server stamps its id and written-at instant. */
++export function createNote(input: {
++  targetType: string;
++  targetId: number;
++  text: string;
++}): Promise<Note> {
++  return postJson<Note>('/api/notes', input);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NewNote.java b/src/main/java/net/officefloor/hq/app/NewNote.java
+new file mode 100644
+index 0000000..4369e88
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NewNote.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app;
++
++/**
++ * The request body for writing a note: the target it is on ({@code targetType} + {@code targetId})
++ * and the text (the id and the written-at instant are set server-side). Bound from the POST JSON
++ * body via {@code @RequestBody}.
++ */
++public class NewNote {
++
++    private String targetType;
++
++    private Long targetId;
++
++    private String text;
++
++    public String getTargetType() {
++        return targetType;
++    }
++
++    public void setTargetType(String targetType) {
++        this.targetType = targetType;
++    }
++
++    public Long getTargetId() {
++        return targetId;
++    }
++
++    public void setTargetId(Long targetId) {
++        this.targetId = targetId;
++    }
++
++    public String getText() {
++        return text;
++    }
++
++    public void setText(String text) {
++        this.text = text;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Note.java b/src/main/java/net/officefloor/hq/app/Note.java
+new file mode 100644
+index 0000000..7645170
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Note.java
+@@ -0,0 +1,76 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A free-text note written on a target (a {@link Project}, addressed by {@code targetType} +
++ * {@code targetId}), carrying its text and the instant it was written (an ISO-8601 string so the
++ * newest-first order is a plain descending sort). Persisted to the {@code notes} table (Flyway
++ * V14). Jackson serialises the getters as the JSON the front-end reads.
++ */
++@Entity
++@Table(name = "notes")
++public class Note {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "target_type")
++    private String targetType;
++
++    @Column(name = "target_id")
++    private Long targetId;
++
++    @Column(name = "note_text")
++    private String text;
++
++    /** When the note was written, as an ISO-8601 instant string (e.g. 2026-01-02T09:00:00Z). */
++    @Column(name = "noted_at")
++    private String at;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++
++    public String getTargetType() {
++        return targetType;
++    }
++
++    public void setTargetType(String targetType) {
++        this.targetType = targetType;
++    }
++
++    public Long getTargetId() {
++        return targetId;
++    }
++
++    public void setTargetId(Long targetId) {
++        this.targetId = targetId;
++    }
++
++    public String getText() {
++        return text;
++    }
++
++    public void setText(String text) {
++        this.text = text;
++    }
++
++    public String getAt() {
++        return at;
++    }
++
++    public void setAt(String at) {
++        this.at = at;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NoteRepository.java b/src/main/java/net/officefloor/hq/app/NoteRepository.java
+new file mode 100644
+index 0000000..36304ea
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NoteRepository.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/**
++ * Data access for {@link Note}. A Spring Data bean, injected into the OfficeFloor logic classes
++ * (Spring beans are exposed to OfficeFloor by the rest-spring-boot starter).
++ */
++public interface NoteRepository extends JpaRepository<Note, Long> {
++
++    /** Every note on one target, newest first — the shape a target's notes render. */
++    List<Note> findByTargetTypeAndTargetIdOrderByAtDescIdDesc(String targetType, Long targetId);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NotesPost.java b/src/main/java/net/officefloor/hq/app/NotesPost.java
+new file mode 100644
+index 0000000..3e734e2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NotesPost.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app;
++
++import java.time.Instant;
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/notes — write a note on a target from {targetType, targetId, text} and return the saved
++ * row (with its id and the written-at instant). Wired by {@code officefloor/rest/api/notes.POST.yml}.
++ * A note must have a target and non-blank text; anything missing is rejected with 400. The
++ * written-at instant is stamped server-side (ISO-8601, UTC) so the newest note sorts to the top.
++ */
++public class NotesPost {
++
++    public void service(@RequestBody NewNote body, NoteRepository notes,
++            ObjectResponse<Note> response) {
++        String targetType = body.getTargetType();
++        Long targetId = body.getTargetId();
++        String text = body.getText();
++        if (targetType == null || targetType.trim().isEmpty() || targetId == null
++                || text == null || text.trim().isEmpty()) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
++        Note note = new Note();
++        note.setTargetType(targetType.trim());
++        note.setTargetId(targetId);
++        note.setText(text.trim());
++        note.setAt(Instant.now().toString());
++        response.send(notes.save(note));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectNotesGet.java b/src/main/java/net/officefloor/hq/app/ProjectNotesGet.java
+new file mode 100644
+index 0000000..ee13dc9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectNotesGet.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/projects/{projectId}/notes — every note written on one project, newest first. Wired by
++ * {@code officefloor/rest/api/projects/{projectId}/notes.GET.yml}.
++ */
++public class ProjectNotesGet {
++
++    public void service(@HttpPathParameter("projectId") String projectId,
++            NoteRepository notes, ObjectResponse<List<Note>> response) {
++        response.send(
++                notes.findByTargetTypeAndTargetIdOrderByAtDescIdDesc("project", Long.valueOf(projectId)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index d883ff6..4b29e05 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -35,7 +35,7 @@ public class TestSupportController {
+      * clients). Add a new table here (and a matching {@code seedTable} call) to extend the harness.
+      */
+     private static final List<String> TABLES =
+-            List.of("invoice_line_items", "invoices", "tasks", "contacts", "project_tags",
++            List.of("invoice_line_items", "invoices", "notes", "tasks", "contacts", "project_tags",
+                     "projects", "tags", "clients");
+ 
+     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
+@@ -63,6 +63,14 @@ public class TestSupportController {
+         seedTable(fixture, "tasks", "INSERT INTO tasks (id, title, done, project_id) VALUES (?, ?, ?, ?)",
+                 t -> new Object[] {id(t, "id"), t.get("title"), Boolean.TRUE.equals(t.get("done")),
+                         id(t, "projectId")});
++        seedTable(fixture, "notes",
++                "INSERT INTO notes (id, target_type, target_id, note_text, noted_at) VALUES (?, ?, ?, ?, ?)",
++                n -> new Object[] {id(n, "id"), n.get("targetType"), id(n, "targetId"), n.get("text"),
++                        n.get("at")});
++        // Notes are pre-seeded AND created through the API in the same spec, so the identity has to
++        // continue past the seeded ids (a raw insert of an explicit id does not advance H2's
++        // GENERATED BY DEFAULT sequence — the next app insert would otherwise collide on id=1).
++        restartIdentity("notes");
+         seedTable(fixture, "tags", "INSERT INTO tags (id, name) VALUES (?, ?)",
+                 t -> new Object[] {id(t, "id"), t.get("name")});
+         seedTable(fixture, "projectTags",
+@@ -135,6 +143,16 @@ public class TestSupportController {
+         }
+     }
+ 
++    /**
++     * Continue a table's IDENTITY past the highest seeded id, so an API insert after seeding gets a
++     * fresh id instead of colliding with a fixture row (H2 does not advance the sequence for the
++     * explicit ids a JdbcTemplate seed inserts).
++     */
++    private void restartIdentity(String table) {
++        Long max = jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM " + table, Long.class);
++        jdbc.execute("ALTER TABLE " + table + " ALTER COLUMN id RESTART WITH " + (max + 1));
++    }
++
+     /** Read a fixture field as a table id (JSON numbers arrive as {@link Number}). */
+     private static long id(Map<String, Object> row, String key) {
+         return ((Number) row.get(key)).longValue();
+diff --git a/src/main/resources/db/migration/V14__notes.sql b/src/main/resources/db/migration/V14__notes.sql
+new file mode 100644
+index 0000000..fa2989b
+--- /dev/null
++++ b/src/main/resources/db/migration/V14__notes.sql
+@@ -0,0 +1,12 @@
++-- Notes: free-text notes written on a target (a project for now; target_type/target_id keep it
++-- open to other targets later). Each note carries its text and the instant it was written, stored
++-- as an ISO-8601 string so the value surfaced is exactly what was stored and newest-first is a
++-- simple descending sort. GENERATED BY DEFAULT (not ALWAYS) so the /__test__ seed path can insert
++-- explicit fixture ids.
++CREATE TABLE notes (
++    id          BIGINT        GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    target_type VARCHAR(32)   NOT NULL,
++    target_id   BIGINT        NOT NULL,
++    note_text   VARCHAR(4000) NOT NULL,
++    noted_at    VARCHAR(40)   NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/notes.POST.yml b/src/main/resources/officefloor/rest/api/notes.POST.yml
+new file mode 100644
+index 0000000..2f549b3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/notes.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/notes -> write a note on a target (NotesPost.service).
++service:
++  class: net.officefloor.hq.app.NotesPost
+diff --git a/src/main/resources/officefloor/rest/api/projects/{projectId}/notes.GET.yml b/src/main/resources/officefloor/rest/api/projects/{projectId}/notes.GET.yml
+new file mode 100644
+index 0000000..081af9d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/{projectId}/notes.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/projects/{projectId}/notes -> list every note on one project, newest first (ProjectNotesGet.service).
++service:
++  class: net.officefloor.hq.app.ProjectNotesGet
