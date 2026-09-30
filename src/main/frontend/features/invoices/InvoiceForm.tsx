@@ -7,6 +7,7 @@ import { invoicesKey, createInvoice } from './queries';
 // total refresh themselves.
 export function InvoiceForm({ projectId }: { projectId: number }) {
   const [amount, setAmount] = useState('');
+  const [error, setError] = useState('');
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
@@ -23,9 +24,11 @@ export function InvoiceForm({ projectId }: { projectId: number }) {
       onSubmit={(event) => {
         event.preventDefault();
         const value = Number(amount);
-        if (amount.trim() === '' || Number.isNaN(value)) {
+        if (amount.trim() === '' || Number.isNaN(value) || value <= 0) {
+          setError('Amount must be more than zero.');
           return;
         }
+        setError('');
         mutation.mutate({ projectId, amount: value });
       }}
     >
@@ -38,6 +41,7 @@ export function InvoiceForm({ projectId }: { projectId: number }) {
       <button data-testid="invoice-form-submit" type="submit">
         Add invoice
       </button>
+      {error !== '' && <p data-testid="invoice-form-amount-error">{error}</p>}
     </form>
   );
 }
