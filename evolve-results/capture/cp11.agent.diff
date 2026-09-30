@@ -1,0 +1,110 @@
+diff --git a/src/main/frontend/features/invoices/InvoicesPanel.tsx b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+index be61720..0ca24b6 100644
+--- a/src/main/frontend/features/invoices/InvoicesPanel.tsx
++++ b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+@@ -5,7 +5,14 @@ import { money } from '../../ui/money';
+ 
+ // An invoice as the server returns it: which project it belongs to, its amount, and its payment
+ // status (UNPAID until marked paid).
+-export type Invoice = { id: number; projectId: number; amount: number; status: string };
++export type Invoice = {
++  id: number;
++  projectId: number;
++  amount: number;
++  status: string;
++  issuedDate: string;
++  dueDate: string;
++};
+ 
+ // A project's invoices: the list scoped to this project, their derived total, and the form to add a
+ // new one. Server data is read with useQuery under the ['invoices'] key and changed with
+@@ -82,6 +89,8 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+         <thead>
+           <tr>
+             <th>Amount</th>
++            <th>Issued</th>
++            <th>Due</th>
+             <th>Status</th>
+             <th></th>
+           </tr>
+@@ -90,6 +99,8 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+           {rows.map((i) => (
+             <tr key={i.id} data-testid={`invoice-row-${i.id}`}>
+               <td data-testid="invoice-amount">{money(Number(i.amount))}</td>
++              <td data-testid="invoice-issued">{i.issuedDate}</td>
++              <td data-testid="invoice-due">{i.dueDate}</td>
+               <td data-testid="invoice-status">{i.status}</td>
+               <td>
+                 {i.status !== 'PAID' && (
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index af63887..e55fb9a 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -30,6 +30,14 @@ public class Invoice {
+     /** Payment status: UNPAID by default, PAID once marked paid (see V5__invoice_status.sql). */
+     private String status;
+ 
++    /** The day the invoice went out, an ISO date literal (see V9__invoice_dates.sql). */
++    @Column(name = "issued_date")
++    private String issuedDate;
++
++    /** The day the invoice is due, an ISO date literal (see V9__invoice_dates.sql). */
++    @Column(name = "due_date")
++    private String dueDate;
++
+     public Long getId() {
+         return id;
+     }
+@@ -61,4 +69,20 @@ public class Invoice {
+     public void setStatus(String status) {
+         this.status = status;
+     }
++
++    public String getIssuedDate() {
++        return issuedDate;
++    }
++
++    public void setIssuedDate(String issuedDate) {
++        this.issuedDate = issuedDate;
++    }
++
++    public String getDueDate() {
++        return dueDate;
++    }
++
++    public void setDueDate(String dueDate) {
++        this.dueDate = dueDate;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 2f0a372..3b1b010 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -65,11 +65,14 @@ public class TestSupportController {
+         if (invoices != null) {
+             for (Map<String, Object> i : invoices) {
+                 Object status = i.get("status");
+-                jdbc.update("INSERT INTO invoice (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
++                jdbc.update("INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
++                                + "VALUES (?, ?, ?, ?, ?, ?)",
+                         ((Number) i.get("id")).longValue(),
+                         ((Number) i.get("projectId")).longValue(),
+                         ((Number) i.get("amount")).doubleValue(),
+-                        status == null ? "UNPAID" : status);
++                        status == null ? "UNPAID" : status,
++                        i.get("issuedDate"),
++                        i.get("dueDate"));
+             }
+         }
+     }
+diff --git a/src/main/resources/db/migration/V9__invoice_dates.sql b/src/main/resources/db/migration/V9__invoice_dates.sql
+new file mode 100644
+index 0000000..92f37d3
+--- /dev/null
++++ b/src/main/resources/db/migration/V9__invoice_dates.sql
+@@ -0,0 +1,5 @@
++-- Invoices gain two dates: the day the invoice was issued (went out) and the day it is due. Stored
++-- as ISO date literals (YYYY-MM-DD) so they round-trip to the UI unchanged. Nullable and additive,
++-- so existing rows and the create path (which does not set them) need no change.
++ALTER TABLE invoice ADD COLUMN issued_date VARCHAR(10);
++ALTER TABLE invoice ADD COLUMN due_date VARCHAR(10);
