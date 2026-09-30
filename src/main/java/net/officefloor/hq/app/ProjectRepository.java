@@ -11,14 +11,21 @@ import org.springframework.data.repository.query.Param;
  */
 public interface ProjectRepository extends JpaRepository<Project, Long> {
 
-    /** Every project with its client's name, oldest id first — the shape the list renders. */
-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name) "
+    /**
+     * Every project (archived included) with its client's name and archived flag, oldest id first.
+     * The main list carries the flag so it can hide archived rows by default and reveal them on the
+     * show-archived toggle without a second request.
+     */
+    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived) "
             + "FROM Project p, Client c WHERE p.clientId = c.id ORDER BY p.id ASC")
     List<ProjectView> findAllViews();
 
-    /** Every project belonging to one client, oldest id first — a client's own project list. */
-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name) "
+    /**
+     * A client's own project list, oldest id first — archived projects are excluded so a tucked-away
+     * project drops off the client's page (no toggle there).
+     */
+    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived) "
             + "FROM Project p, Client c WHERE p.clientId = c.id AND p.clientId = :clientId "
-            + "ORDER BY p.id ASC")
+            + "AND p.archived = FALSE ORDER BY p.id ASC")
     List<ProjectView> findViewsByClientId(@Param("clientId") Long clientId);
 }

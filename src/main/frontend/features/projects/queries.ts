@@ -3,9 +3,13 @@ import { getJson, postJson } from '../../api/http';
 // Server data under ONE shared key: anything showing projects reads ['projects'], and a write
 // invalidates the same key to refresh them all (CLAUDE.md rule 5). A project's row carries its
 // client's NAME (the cross-entity join is done server-side, in ProjectView).
-export type ProjectView = { id: number; name: string; clientName: string };
+export type ProjectView = { id: number; name: string; clientName: string; archived: boolean };
 
 export const projectsKey = ['projects'] as const;
+
+// The URL search-param key the show-archived toggle owns and the list reads (CLAUDE.md rule 4).
+// Shared as a constant so the two files agree on the one key without importing each other.
+export const PROJECTS_SHOW_ARCHIVED_PARAM = 'showArchived';
 
 export function fetchProjects(): Promise<ProjectView[]> {
   return getJson<ProjectView[]>('/api/projects');
@@ -18,6 +22,11 @@ export function createProject(input: { name: string; clientId: number }): Promis
 /** Delete a project the user no longer needs; the id is in the path, no body needed. */
 export function deleteProject(projectId: number): Promise<void> {
   return postJson<void>(`/api/projects/${projectId}/delete`, {});
+}
+
+/** Archive (tuck away) a project so it drops off the lists but is retained; id is in the path. */
+export function archiveProject(projectId: number): Promise<void> {
+  return postJson<void>(`/api/projects/${projectId}/archive`, {});
 }
 
 // The client options the form's select needs. Read under the SHARED ['clients'] key (CLAUDE.md

@@ -10,11 +10,13 @@ public class ProjectView {
     private final Long id;
     private final String name;
     private final String clientName;
+    private final boolean archived;
 
-    public ProjectView(Long id, String name, String clientName) {
+    public ProjectView(Long id, String name, String clientName, boolean archived) {
         this.id = id;
         this.name = name;
         this.clientName = clientName;
+        this.archived = archived;
     }
 
     public Long getId() {
@@ -27,5 +29,10 @@ public class ProjectView {
 
     public String getClientName() {
         return clientName;
+    }
+
+    /** Whether the project has been archived (tucked off the lists but retained). */
+    public boolean isArchived() {
+        return archived;
     }
 }

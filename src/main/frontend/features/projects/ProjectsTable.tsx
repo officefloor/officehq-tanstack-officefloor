@@ -1,21 +1,35 @@
 import { useQuery } from '@tanstack/react-query';
-import { projectsKey, fetchProjects } from './queries';
+import { projectsKey, fetchProjects, PROJECTS_SHOW_ARCHIVED_PARAM } from './queries';
 import { ProjectRow } from '../../slots/defs/projectRow';
+import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+import { useSearchParam, asFlag } from '../../url/useSearchParam';
 
 // The list. Queries for itself under ['projects'] — never handed its data by a parent (CLAUDE.md
 // rule 5). Each row shows the project's name and the client's NAME (from the server-side join).
+// Archived projects are tucked away: the toolbar's show-archived toggle owns the `showArchived` URL
+// key and the list reads the same key (rule 4), hiding archived rows unless it is on.
 export function ProjectsTable() {
   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: fetchProjects });
+  const [showArchived] = useSearchParam(PROJECTS_SHOW_ARCHIVED_PARAM, asFlag);
 
   if (!projects) {
     return null;
   }
 
+  const visible = showArchived ? projects : projects.filter((project) => !project.archived);
+
   if (projects.length === 0) {
-    return <p data-testid="projects-empty">No projects yet.</p>;
+    return (
+      <>
+        <ProjectsToolbar.Slot />
+        <p data-testid="projects-empty">No projects yet.</p>
+      </>
+    );
   }
 
   return (
+    <>
+    <ProjectsToolbar.Slot />
     <table data-testid="projects-table">
       <thead>
         <tr>
@@ -25,7 +39,7 @@ export function ProjectsTable() {
         </tr>
       </thead>
       <tbody>
-        {projects.map((project) => (
+        {visible.map((project) => (
           <tr key={project.id} data-testid={`project-row-${project.id}`}>
             <td data-testid="project-name">{project.name}</td>
             <td data-testid="project-client">{project.clientName}</td>
@@ -36,5 +50,6 @@ export function ProjectsTable() {
         ))}
       </tbody>
     </table>
+    </>
   );
 }
