@@ -1,0 +1,125 @@
+diff --git a/src/main/frontend/features/tasks/ProjectTasksTable.tsx b/src/main/frontend/features/tasks/ProjectTasksTable.tsx
+index d5ea531..64e21d8 100644
+--- a/src/main/frontend/features/tasks/ProjectTasksTable.tsx
++++ b/src/main/frontend/features/tasks/ProjectTasksTable.tsx
+@@ -1,5 +1,13 @@
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+-import { projectTasksKey, fetchProjectTasks, toggleTask, type Task } from './queries';
++import {
++  projectTasksKey,
++  fetchProjectTasks,
++  toggleTask,
++  TASK_FILTER_PARAM,
++  type Task,
++} from './queries';
++import { ProjectTasksToolbar } from '../../slots/defs/projectTasksToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
+ 
+ // A project's task checklist. Queries for itself under ['projects', projectId, 'tasks'] — never
+ // handed its data by a parent (CLAUDE.md rule 5). Ticking a task off is a mutation that invalidates
+@@ -19,11 +27,24 @@ export function ProjectTasksTable({ projectId }: { projectId: number }) {
+     },
+   });
+ 
++  const [filter] = useSearchParam(TASK_FILTER_PARAM, asString);
++
+   if (!tasks) {
+     return null;
+   }
+ 
++  // Reads the shared `taskFilter` key (rule 4) to show just the open, just the finished, or all
++  // tasks. The filter control (filter.slot.tsx) writes the same key.
++  const shown =
++    filter === 'OPEN'
++      ? tasks.filter((task: Task) => !task.done)
++      : filter === 'DONE'
++        ? tasks.filter((task: Task) => task.done)
++        : tasks;
++
+   return (
++    <>
++    <ProjectTasksToolbar.Slot />
+     <table data-testid="project-tasks-table">
+       <thead>
+         <tr>
+@@ -33,7 +54,7 @@ export function ProjectTasksTable({ projectId }: { projectId: number }) {
+         </tr>
+       </thead>
+       <tbody>
+-        {tasks.map((task: Task) => (
++        {shown.map((task: Task) => (
+           <tr key={task.id} data-testid={`task-row-${task.id}`}>
+             <td data-testid="task-title">{task.title}</td>
+             <td data-testid="task-status">{task.done ? 'DONE' : 'OPEN'}</td>
+@@ -50,5 +71,6 @@ export function ProjectTasksTable({ projectId }: { projectId: number }) {
+         ))}
+       </tbody>
+     </table>
++    </>
+   );
+ }
+diff --git a/src/main/frontend/features/tasks/filter.slot.tsx b/src/main/frontend/features/tasks/filter.slot.tsx
+new file mode 100644
+index 0000000..723cf12
+--- /dev/null
++++ b/src/main/frontend/features/tasks/filter.slot.tsx
+@@ -0,0 +1,27 @@
++import { ProjectTasksToolbar } from '../../slots/defs/projectTasksToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { TASK_FILTER_PARAM, TASK_FILTERS } from './queries';
++
++// The "show just the open ones, or just the finished ones" control — its own file filling the
++// project-tasks toolbar region (CLAUDE.md rule 3). It owns the `taskFilter` URL key (rule 4): the
++// choice outlives a click, so it lives in the URL, and the checklist (ProjectTasksTable) reads the
++// very same key to drop rows at the other status. No callback, no shared state — just the key.
++function TaskFilter() {
++  const [filter, setFilter] = useSearchParam(TASK_FILTER_PARAM, asString);
++  return (
++    <select
++      data-testid="task-filter"
++      value={filter}
++      onChange={(e) => setFilter(e.target.value)}
++    >
++      <option value="">All tasks</option>
++      {TASK_FILTERS.map((f) => (
++        <option key={f} value={f}>
++          {f}
++        </option>
++      ))}
++    </select>
++  );
++}
++
++export const contribution = ProjectTasksToolbar.fill({ order: 10, Component: TaskFilter });
+diff --git a/src/main/frontend/features/tasks/queries.ts b/src/main/frontend/features/tasks/queries.ts
+index 5a255f4..fa9fdad 100644
+--- a/src/main/frontend/features/tasks/queries.ts
++++ b/src/main/frontend/features/tasks/queries.ts
+@@ -7,6 +7,12 @@ export type Task = { id: number; projectId: number; title: string; done: boolean
+ export const projectTasksKey = (projectId: number) =>
+   ['projects', projectId, 'tasks'] as const;
+ 
++// The URL key the "open vs finished" filter owns (CLAUDE.md rule 4). '' = all tasks, 'OPEN' = only
++// not-done, 'DONE' = only done. The control (filter.slot.tsx) writes it; the table reads the same
++// key to drop rows at the other status — no callback, no shared state, just the key.
++export const TASK_FILTER_PARAM = 'taskFilter';
++export const TASK_FILTERS = ['OPEN', 'DONE'] as const;
++
+ export function fetchProjectTasks(projectId: number): Promise<Task[]> {
+   return getJson<Task[]>(`/api/projects/${projectId}/tasks`);
+ }
+diff --git a/src/main/frontend/slots/defs/projectTasksToolbar.ts b/src/main/frontend/slots/defs/projectTasksToolbar.ts
+new file mode 100644
+index 0000000..1e9ff18
+--- /dev/null
++++ b/src/main/frontend/slots/defs/projectTasksToolbar.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The project-tasks toolbar — a region above a project's task checklist for controls that act on it
++ * (filtering to just the open or just the finished tasks, and whatever comes later). ProjectTasksTable
++ * renders the region; features fill it (CLAUDE.md rule 3), so a new control is a new `*.slot.tsx`
++ * file and the table is not edited again to add one.
++ */
++export const ProjectTasksToolbar = defineSlot('project.tasks.toolbar');
