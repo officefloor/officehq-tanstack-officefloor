@@ -1,0 +1,296 @@
+diff --git a/src/main/frontend/features/projects/ProjectForm.tsx b/src/main/frontend/features/projects/ProjectForm.tsx
+index f87340f..2b1def7 100644
+--- a/src/main/frontend/features/projects/ProjectForm.tsx
++++ b/src/main/frontend/features/projects/ProjectForm.tsx
+@@ -17,6 +17,8 @@ export function ProjectForm() {
+   const [name, setName] = useState('');
+   const [clientId, setClientId] = useState('');
+   const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
++  const [code, setCode] = useState('');
++  const [codeError, setCodeError] = useState(false);
+   const queryClient = useQueryClient();
+ 
+   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClientOptions });
+@@ -28,6 +30,11 @@ export function ProjectForm() {
+       setName('');
+       setClientId('');
+       setStatus('ACTIVE');
++      setCode('');
++    },
++    onError: () => {
++      // Server rejected the code (missing or already in use) — surface the error anchor.
++      setCodeError(true);
+     },
+   });
+ 
+@@ -36,10 +43,11 @@ export function ProjectForm() {
+       data-testid="project-form"
+       onSubmit={(event) => {
+         event.preventDefault();
+-        if (name.trim() === '' || clientId === '') {
++        if (name.trim() === '' || clientId === '' || code.trim() === '') {
+           return;
+         }
+-        mutation.mutate({ name, clientId: Number(clientId), status });
++        setCodeError(false);
++        mutation.mutate({ name, clientId: Number(clientId), status, code: code.trim() });
+       }}
+     >
+       <input
+@@ -71,6 +79,22 @@ export function ProjectForm() {
+           </option>
+         ))}
+       </select>
++      <input
++        data-testid="project-form-code"
++        placeholder="Code"
++        value={code}
++        onChange={(event) => {
++          setCode(event.target.value);
++          if (codeError) {
++            setCodeError(false);
++          }
++        }}
++      />
++      {codeError && (
++        <p data-testid="project-form-code-error" role="alert">
++          Enter a unique reference code.
++        </p>
++      )}
+       <button data-testid="project-form-submit" type="submit">
+         Add job
+       </button>
+diff --git a/src/main/frontend/features/projects/ProjectsTable.tsx b/src/main/frontend/features/projects/ProjectsTable.tsx
+index d80543c..ab46905 100644
+--- a/src/main/frontend/features/projects/ProjectsTable.tsx
++++ b/src/main/frontend/features/projects/ProjectsTable.tsx
+@@ -45,6 +45,7 @@ export function ProjectsTable() {
+       <thead>
+         <tr>
+           <th>Name</th>
++          <th>Code</th>
+           <th>Client</th>
+           <th />
+         </tr>
+@@ -53,6 +54,7 @@ export function ProjectsTable() {
+         {visible.map((project) => (
+           <tr key={project.id} data-testid={`project-row-${project.id}`}>
+             <td data-testid="project-name">{project.name}</td>
++            <td data-testid="project-code">{project.code}</td>
+             <td data-testid="project-client">{project.clientName}</td>
+             <td>
+               <ProjectRow.Slot projectId={project.id} />
+diff --git a/src/main/frontend/features/projects/queries.ts b/src/main/frontend/features/projects/queries.ts
+index baec107..82e7331 100644
+--- a/src/main/frontend/features/projects/queries.ts
++++ b/src/main/frontend/features/projects/queries.ts
+@@ -9,6 +9,7 @@ export type ProjectView = {
+   clientName: string;
+   archived: boolean;
+   status: ProjectStatus;
++  code: string;
+   tagIds: number[];
+ };
+ 
+@@ -49,7 +50,7 @@ export function fetchProjects(): Promise<ProjectView[]> {
+ }
+ 
+ export function createProject(
+-  input: { name: string; clientId: number; status: ProjectStatus },
++  input: { name: string; clientId: number; status: ProjectStatus; code: string },
+ ): Promise<ProjectView> {
+   return postJson<ProjectView>('/api/projects', input);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/NewProject.java b/src/main/java/net/officefloor/hq/app/NewProject.java
+index b5f53c8..19cf39e 100644
+--- a/src/main/java/net/officefloor/hq/app/NewProject.java
++++ b/src/main/java/net/officefloor/hq/app/NewProject.java
+@@ -12,6 +12,8 @@ public class NewProject {
+ 
+     private String status;
+ 
++    private String code;
++
+     public String getName() {
+         return name;
+     }
+@@ -36,4 +38,13 @@ public class NewProject {
+     public void setStatus(String status) {
+         this.status = status;
+     }
++
++    /** The short reference code to give the new project; required and unique across projects. */
++    public String getCode() {
++        return code;
++    }
++
++    public void setCode(String code) {
++        this.code = code;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index 7c2876c..311e9da 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -29,6 +29,9 @@ public class Project {
+ 
+     private String status;
+ 
++    /** The project's short reference code, set at creation and kept unique across projects. */
++    private String code;
++
+     /** The money planned for this project, against which invoices are tracked. Null if unset. */
+     private BigDecimal budget;
+ 
+@@ -73,6 +76,15 @@ public class Project {
+         this.status = status;
+     }
+ 
++    /** The project's short reference code, set at creation and kept unique across projects. */
++    public String getCode() {
++        return code;
++    }
++
++    public void setCode(String code) {
++        this.code = code;
++    }
++
+     /** The money planned for this project, against which invoices are tracked. Null if unset. */
+     public BigDecimal getBudget() {
+         return budget;
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index e68655d..50898d9 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -16,17 +16,20 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+      * The main list carries the flag so it can hide archived rows by default and reveal them on the
+      * show-archived toggle without a second request.
+      */
+-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
++    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status, p.code) "
+             + "FROM Project p, Client c WHERE p.clientId = c.id ORDER BY p.id ASC")
+     List<ProjectView> findAllViews();
+ 
++    /** Whether a project already uses this reference code — no two projects may share one. */
++    boolean existsByCode(String code);
++
+     /**
+      * A client's own project list, oldest id first — every project (finished and archived included),
+      * each carrying its {@code status} and {@code archived} flag. The client's page shows only the
+      * ACTIVE, non-archived ones by default and reveals the finished and hidden ones on its toggle,
+      * so the list carries the flags and does the filtering without a second request.
+      */
+-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
++    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status, p.code) "
+             + "FROM Project p, Client c WHERE p.clientId = c.id AND p.clientId = :clientId "
+             + "ORDER BY p.id ASC")
+     List<ProjectView> findViewsByClientId(@Param("clientId") Long clientId);
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index ff6acc9..79182c1 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -16,26 +16,29 @@ public class ProjectView {
+     private final String clientName;
+     private final boolean archived;
+     private final String status;
++    private final String code;
+     private final List<Long> tagIds;
+ 
+     /** The shape the JPQL constructor expression builds — no labels yet, so tagIds starts empty. */
+-    public ProjectView(Long id, String name, String clientName, boolean archived, String status) {
+-        this(id, name, clientName, archived, status, List.of());
++    public ProjectView(Long id, String name, String clientName, boolean archived, String status,
++            String code) {
++        this(id, name, clientName, archived, status, code, List.of());
+     }
+ 
+     public ProjectView(Long id, String name, String clientName, boolean archived, String status,
+-            List<Long> tagIds) {
++            String code, List<Long> tagIds) {
+         this.id = id;
+         this.name = name;
+         this.clientName = clientName;
+         this.archived = archived;
+         this.status = status;
++        this.code = code;
+         this.tagIds = tagIds;
+     }
+ 
+     /** A copy carrying the ids of the labels attached to this project (for the label filter). */
+     public ProjectView withTagIds(List<Long> tagIds) {
+-        return new ProjectView(id, name, clientName, archived, status, tagIds);
++        return new ProjectView(id, name, clientName, archived, status, code, tagIds);
+     }
+ 
+     public Long getId() {
+@@ -60,6 +63,11 @@ public class ProjectView {
+         return status;
+     }
+ 
++    /** The project's short reference code — shown on the row, unique across projects. */
++    public String getCode() {
++        return code;
++    }
++
+     /** The ids of the labels attached to this project — the list filters by label on these. */
+     public List<Long> getTagIds() {
+         return tagIds;
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsPost.java b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+index d341638..f6731e0 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+@@ -30,10 +30,19 @@ public class ProjectsPost {
+         if (!STATUSES.contains(status)) {
+             throw new HttpException(HttpStatus.BAD_REQUEST);
+         }
++        // Every project carries a short reference code, unique across projects: a missing code, or
++        // one already in use, is rejected with 400 so the row is never persisted (the front-end
++        // enforces the same rule, and the DB carries a UNIQUE constraint as the last line of
++        // defence).
++        String code = body.getCode();
++        if (code == null || code.trim().isEmpty() || projects.existsByCode(code.trim())) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
+         Project project = new Project();
+         project.setName(name.trim());
+         project.setClientId(clientId);
+         project.setStatus(status);
++        project.setCode(code.trim());
+         response.send(projects.save(project));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 47b5bef..9a99c31 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -55,11 +55,12 @@ public class TestSupportController {
+         seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
+         seedTable(fixture, "projects",
+-                "INSERT INTO projects (id, name, client_id, status, archived, budget)"
+-                        + " VALUES (?, ?, ?, ?, ?, ?)",
++                "INSERT INTO projects (id, name, client_id, status, archived, budget, code)"
++                        + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                 p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId"),
+                         p.getOrDefault("status", "ACTIVE"), Boolean.TRUE.equals(p.get("archived")),
+-                        p.get("budget") == null ? null : ((Number) p.get("budget")).doubleValue()});
++                        p.get("budget") == null ? null : ((Number) p.get("budget")).doubleValue(),
++                        p.get("code")});
+         seedTable(fixture, "contacts",
+                 "INSERT INTO contacts (id, name, email, role, client_id, is_primary)"
+                         + " VALUES (?, ?, ?, ?, ?, ?)",
+diff --git a/src/main/resources/db/migration/V25__projects_code.sql b/src/main/resources/db/migration/V25__projects_code.sql
+new file mode 100644
+index 0000000..2f25018
+--- /dev/null
++++ b/src/main/resources/db/migration/V25__projects_code.sql
+@@ -0,0 +1,9 @@
++-- A project's short reference code, set when the project is created and shown on its row. Kept
++-- unique so no two projects share one: the UNIQUE constraint is the last line of defence behind the
++-- front-end and server validation, rejecting a duplicate even if those checks are bypassed. Applied
++-- to a fresh schema, so no existing rows conflict (the column is nullable; H2 treats NULLs as
++-- distinct, so pre-existing code-less rows would not collide).
++ALTER TABLE projects ADD COLUMN code VARCHAR(64);
++
++ALTER TABLE projects
++    ADD CONSTRAINT projects_code_unique UNIQUE (code);
