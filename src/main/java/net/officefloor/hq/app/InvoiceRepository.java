@@ -15,6 +15,15 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findByProjectIdOrderByIdAsc(Long projectId);
 
     /**
+     * Every invoice raised for one client, across all of that client's projects, oldest id first —
+     * the shape a client's statement renders. Joins each invoice to its project to filter by the
+     * project's client.
+     */
+    @Query("SELECT i FROM Invoice i, Project p WHERE i.projectId = p.id AND p.clientId = ?1 "
+            + "ORDER BY i.id ASC")
+    List<Invoice> findByClientId(Long clientId);
+
+    /**
      * Every invoice across all projects with the NAME of the project it belongs to, oldest id
      * first — the shape the one all-invoices list renders.
      */

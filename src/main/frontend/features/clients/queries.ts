@@ -40,6 +40,23 @@ export function fetchClientProjects(clientId: number): Promise<ClientProject[]> 
   return getJson<ClientProject[]>(`/api/clients/${clientId}/projects`);
 }
 
+// A client's statement: every invoice raised for the client (across their projects) plus the total
+// still owed, under a key nested beneath ['clients'] so invalidating clients refreshes it too
+// (CLAUDE.md rule 5). Each invoice carries the money still due (amount - payments), derived
+// server-side; the total is the sum of those dues.
+export type StatementInvoice = { id: number; amount: number; status: string; due: number };
+export type ClientStatement = { invoices: StatementInvoice[]; totalOwed: number };
+
+export const clientStatementKey = (clientId: number) =>
+  ['clients', clientId, 'statement'] as const;
+
+export function fetchClientStatement(clientId: number): Promise<ClientStatement> {
+  return getJson<ClientStatement>(`/api/clients/${clientId}/statement`);
+}
+
+// The URL search-param key the "open statement" control owns and the panel reads (CLAUDE.md rule 4).
+export const CLIENT_STATEMENT_PARAM = 'clientStatement';
+
 export function createClient(input: { name: string; email: string }): Promise<Client> {
   return postJson<Client>('/api/clients', input);
 }
