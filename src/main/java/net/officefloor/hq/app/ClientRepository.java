@@ -31,6 +31,12 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     List<Client> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
 
     /**
+     * Archived clients only, oldest first — the tucked-away clients revealed by the clients-page
+     * "show archived" toggle, each offered for restore back onto the default list.
+     */
+    List<Client> findByArchivedTrueOrderByIdAsc();
+
+    /**
      * Whether a client already holds this email. Backs the uniqueness check in {@link ClientsPost}
      * so a duplicate email is rejected before any row or audit record is written.
      */

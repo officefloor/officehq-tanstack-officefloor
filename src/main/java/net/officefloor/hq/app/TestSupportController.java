@@ -59,8 +59,9 @@ public class TestSupportController {
     @PostMapping("/seed")
     public void seed(@RequestBody Map<String, Object> fixture) {
         seedRows(fixture, "clients", c -> jdbc.update(
-                "INSERT INTO client (id, name, email) VALUES (?, ?, ?)",
-                asLong(c, "id"), c.get("name"), c.get("email")));
+                "INSERT INTO client (id, name, email, archived) VALUES (?, ?, ?, ?)",
+                asLong(c, "id"), c.get("name"), c.get("email"),
+                Boolean.TRUE.equals(c.get("archived"))));
 
         seedRows(fixture, "projects", p -> jdbc.update(
                 "INSERT INTO project (id, name, client_id, status, archived, budget, code) "
