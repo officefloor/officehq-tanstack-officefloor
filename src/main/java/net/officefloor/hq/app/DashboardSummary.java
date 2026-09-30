@@ -12,11 +12,13 @@ public class DashboardSummary {
     private final long clients;
     private final long projects;
     private final BigDecimal outstanding;
+    private final long overdue;
 
-    public DashboardSummary(long clients, long projects, BigDecimal outstanding) {
+    public DashboardSummary(long clients, long projects, BigDecimal outstanding, long overdue) {
         this.clients = clients;
         this.projects = projects;
         this.outstanding = outstanding;
+        this.overdue = overdue;
     }
 
     public long getClients() {
@@ -29,5 +31,10 @@ public class DashboardSummary {
 
     public BigDecimal getOutstanding() {
         return outstanding;
+    }
+
+    /** How many SENT invoices are past their due date as of the dashboard's reference date. */
+    public long getOverdue() {
+        return overdue;
     }
 }

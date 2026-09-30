@@ -39,4 +39,14 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
      */
     @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
     BigDecimal sumOutstanding();
+
+    /**
+     * How many SENT invoices are overdue as of the given reference date: sent-but-not-paid invoices
+     * whose due date has already passed. Only SENT invoices count (a DRAFT has not been billed and a
+     * PAID one is settled), and the due date must be strictly before {@code asOf}. Dates are ISO
+     * strings (YYYY-MM-DD), so a lexical comparison is a date comparison; a null due date is never
+     * overdue. The dashboard's overdue headline figure.
+     */
+    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.status = 'SENT' AND i.dueDate < ?1")
+    long countOverdue(String asOf);
 }

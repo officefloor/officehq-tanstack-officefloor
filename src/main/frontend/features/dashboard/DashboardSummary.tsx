@@ -26,6 +26,10 @@ export function DashboardSummary() {
         <dt>Outstanding</dt>
         <dd data-testid="dashboard-outstanding-total">{formatMoney(data.outstanding)}</dd>
       </div>
+      <div>
+        <dt>Overdue invoices</dt>
+        <dd data-testid="dashboard-overdue-count">{String(data.overdue)}</dd>
+      </div>
     </dl>
   );
 }

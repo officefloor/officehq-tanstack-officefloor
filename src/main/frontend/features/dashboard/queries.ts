@@ -7,6 +7,7 @@ export type DashboardSummary = {
   clients: number;
   projects: number;
   outstanding: number;
+  overdue: number;
 };
 
 export const dashboardKey = ['dashboard'] as const;
