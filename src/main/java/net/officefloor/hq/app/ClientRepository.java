@@ -17,4 +17,16 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      * name search box on the clients page ({@code GET /api/clients?q=...}).
      */
     List<Client> findByNameContainingIgnoreCaseOrderByIdAsc(String term);
+
+    /**
+     * Non-archived clients only, oldest first — the default clients list. Archived clients are kept
+     * but tucked away, so they drop off this list.
+     */
+    List<Client> findByArchivedFalseOrderByIdAsc();
+
+    /**
+     * Non-archived clients whose name contains {@code term} (case-insensitive), oldest first — the
+     * name search, which likewise excludes archived clients.
+     */
+    List<Client> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
 }

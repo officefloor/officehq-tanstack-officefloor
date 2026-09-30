@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -23,6 +24,10 @@ public class Client {
 
     private String email;
 
+    /** Archived clients are kept but hidden from the default list and search (V19__client_archived.sql). */
+    @Column(nullable = false)
+    private boolean archived;
+
     public Long getId() {
         return id;
     }
@@ -45,5 +50,13 @@ public class Client {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 }
