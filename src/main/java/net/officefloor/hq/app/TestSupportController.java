@@ -35,7 +35,7 @@ public class TestSupportController {
      * clients). Add a new table here (and a matching {@code seedTable} call) to extend the harness.
      */
     private static final List<String> TABLES =
-            List.of("invoices", "tasks", "contacts", "projects", "clients");
+            List.of("invoice_line_items", "invoices", "tasks", "contacts", "projects", "clients");
 
     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
     @PostMapping("/reset")
@@ -62,12 +62,53 @@ public class TestSupportController {
         seedTable(fixture, "tasks", "INSERT INTO tasks (id, title, done, project_id) VALUES (?, ?, ?, ?)",
                 t -> new Object[] {id(t, "id"), t.get("title"), Boolean.TRUE.equals(t.get("done")),
                         id(t, "projectId")});
-        seedTable(fixture, "invoices",
-                "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
-                        + " VALUES (?, ?, ?, ?, ?, ?)",
-                i -> new Object[] {id(i, "id"), id(i, "projectId"),
-                        ((Number) i.get("amount")).doubleValue(), i.getOrDefault("status", "DRAFT"),
-                        i.get("issuedDate"), i.get("dueDate")});
+        seedInvoices(fixture);
+    }
+
+    /**
+     * Seed invoices and, nested under each, its line items. An invoice's amount is the sum of its
+     * lines' qty * unitPrice, so when a fixture lists {@code lineItems} the amount is derived from
+     * them (the user no longer types one figure); a fixture may still give an explicit
+     * {@code amount} instead (an invoice with no lines). One method rather than a plain seedTable
+     * call because the line items live inside each invoice, keyed by the invoice's own id.
+     */
+    @SuppressWarnings("unchecked")
+    private void seedInvoices(Map<String, Object> fixture) {
+        List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
+        if (invoices == null) {
+            return;
+        }
+        for (Map<String, Object> invoice : invoices) {
+            long invoiceId = id(invoice, "id");
+            List<Map<String, Object>> lineItems =
+                    (List<Map<String, Object>>) invoice.get("lineItems");
+            double amount;
+            if (invoice.get("amount") != null) {
+                amount = ((Number) invoice.get("amount")).doubleValue();
+            } else {
+                amount = 0.0;
+                if (lineItems != null) {
+                    for (Map<String, Object> line : lineItems) {
+                        amount += ((Number) line.get("qty")).doubleValue()
+                                * ((Number) line.get("unitPrice")).doubleValue();
+                    }
+                }
+            }
+            jdbc.update("INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
+                    + " VALUES (?, ?, ?, ?, ?, ?)",
+                    invoiceId, id(invoice, "projectId"), amount,
+                    invoice.getOrDefault("status", "DRAFT"), invoice.get("issuedDate"),
+                    invoice.get("dueDate"));
+            if (lineItems != null) {
+                for (Map<String, Object> line : lineItems) {
+                    jdbc.update("INSERT INTO invoice_line_items"
+                            + " (id, invoice_id, description, qty, unit_price) VALUES (?, ?, ?, ?, ?)",
+                            id(line, "id"), invoiceId, line.get("description"),
+                            ((Number) line.get("qty")).intValue(),
+                            ((Number) line.get("unitPrice")).doubleValue());
+                }
+            }
+        }
     }
 
     /**
