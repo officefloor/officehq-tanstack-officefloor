@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 
 /**
@@ -40,6 +41,15 @@ public class Invoice {
     /** The day the invoice is due, an ISO date literal (see V9__invoice_dates.sql). */
     @Column(name = "due_date")
     private String dueDate;
+
+    /**
+     * How much is still owed on this invoice: its {@link #amount} minus every payment recorded
+     * against it. Derived, not stored — {@code @Transient} keeps it out of the {@code invoice}
+     * table; {@link InvoicesGet} fills it from the payments before sending the list so the project
+     * invoices view can show the amount still due after payments.
+     */
+    @Transient
+    private BigDecimal amountDue;
 
     public Long getId() {
         return id;
@@ -87,5 +97,13 @@ public class Invoice {
 
     public void setDueDate(String dueDate) {
         this.dueDate = dueDate;
+    }
+
+    public BigDecimal getAmountDue() {
+        return amountDue;
+    }
+
+    public void setAmountDue(BigDecimal amountDue) {
+        this.amountDue = amountDue;
     }
 }

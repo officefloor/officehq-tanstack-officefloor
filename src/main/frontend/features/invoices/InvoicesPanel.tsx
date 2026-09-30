@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
+import { InvoiceRowCells } from '../../slots/defs/invoiceRowCells';
 import { money } from '../../ui/money';
 
 // An invoice as the server returns it: which project it belongs to, its amount, and its lifecycle
@@ -15,6 +16,9 @@ export type Invoice = {
   status: string;
   issuedDate: string;
   dueDate: string;
+  // How much is still owed after payments (amount minus every payment recorded against it), derived
+  // and sent by the server. The amount-due cell (features/invoices/dueAmount.slot.tsx) reads this.
+  amountDue: number;
 };
 
 // A project's invoices: the list scoped to this project, their derived total, and the form to add a
@@ -115,6 +119,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
         <thead>
           <tr>
             <th>Amount</th>
+            <th>Amount due</th>
             <th>Issued</th>
             <th>Due</th>
             <th>Status</th>
@@ -125,6 +130,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
           {rows.map((i) => (
             <tr key={i.id} data-testid={`invoice-row-${i.id}`}>
               <td data-testid="invoice-amount">{money(Number(i.amount))}</td>
+              <InvoiceRowCells.Slot invoiceId={i.id} />
               <td data-testid="invoice-issued">{i.issuedDate}</td>
               <td data-testid="invoice-due">{i.dueDate}</td>
               <td data-testid="invoice-status">{i.status}</td>
