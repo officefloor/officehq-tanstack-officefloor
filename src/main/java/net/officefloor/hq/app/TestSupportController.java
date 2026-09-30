@@ -2,6 +2,7 @@ package net.officefloor.hq.app;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,73 +29,79 @@ public class TestSupportController {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Domain tables in FK-dependency order (child before parent). Referential integrity is dropped
+     * around the truncates so the order is not load-bearing, but keeping it sensible documents the
+     * shape. A new table joins the reset by being added to this list — no new statement to write.
+     */
+    private static final List<String> DOMAIN_TABLES =
+            List.of("invoice", "task", "contact", "project", "client");
+
     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
     @PostMapping("/reset")
     public void reset() {
         audit.clear();
-        // invoice references project references client, so drop referential integrity around the
-        // truncates: RESTART IDENTITY on each, then restore it. Order-independent and clears every
-        // FK-referenced table.
+        // Drop referential integrity around the truncates: RESTART IDENTITY on each, then restore
+        // it. That makes the order above cosmetic and clears every FK-referenced table cleanly.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        jdbc.execute("TRUNCATE TABLE invoice RESTART IDENTITY");
-        jdbc.execute("TRUNCATE TABLE task RESTART IDENTITY");
-        jdbc.execute("TRUNCATE TABLE contact RESTART IDENTITY");
-        jdbc.execute("TRUNCATE TABLE project RESTART IDENTITY");
-        jdbc.execute("TRUNCATE TABLE client RESTART IDENTITY");
+        for (String table : DOMAIN_TABLES) {
+            jdbc.execute("TRUNCATE TABLE " + table + " RESTART IDENTITY");
+        }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     }
 
-    /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
-    @SuppressWarnings("unchecked")
+    /**
+     * Insert the fixture a spec needs; the payload shape evolves with the schema. Each table is one
+     * {@link #seedRows} call: name the fixture key, then map a row to an INSERT. A new table is one
+     * more call here — the null-check and per-row loop are shared, not repeated.
+     */
     @PostMapping("/seed")
     public void seed(@RequestBody Map<String, Object> fixture) {
-        List<Map<String, Object>> clients = (List<Map<String, Object>>) fixture.get("clients");
-        if (clients != null) {
-            for (Map<String, Object> c : clients) {
-                jdbc.update("INSERT INTO client (id, name, email) VALUES (?, ?, ?)",
-                        ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"));
-            }
+        seedRows(fixture, "clients", c -> jdbc.update(
+                "INSERT INTO client (id, name, email) VALUES (?, ?, ?)",
+                asLong(c, "id"), c.get("name"), c.get("email")));
+
+        seedRows(fixture, "projects", p -> jdbc.update(
+                "INSERT INTO project (id, name, client_id) VALUES (?, ?, ?)",
+                asLong(p, "id"), p.get("name"), asLong(p, "clientId")));
+
+        seedRows(fixture, "tasks", t -> jdbc.update(
+                "INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",
+                asLong(t, "id"), asLong(t, "projectId"), t.get("title"),
+                Boolean.TRUE.equals(t.get("done"))));
+
+        seedRows(fixture, "contacts", c -> jdbc.update(
+                "INSERT INTO contact (id, client_id, name, email, role) VALUES (?, ?, ?, ?, ?)",
+                asLong(c, "id"), asLong(c, "clientId"),
+                c.get("name"), c.get("email"), c.get("role")));
+
+        seedRows(fixture, "invoices", i -> jdbc.update(
+                "INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
+                asLong(i, "id"), asLong(i, "projectId"),
+                ((Number) i.get("amount")).doubleValue(),
+                i.get("status") == null ? "UNPAID" : i.get("status"),
+                i.get("issuedDate"), i.get("dueDate")));
+    }
+
+    /**
+     * Run {@code insert} for each row under {@code key}, or do nothing if the fixture omits that key.
+     * This is the shared "optional list of rows" shape every table seed follows.
+     */
+    @SuppressWarnings("unchecked")
+    private void seedRows(Map<String, Object> fixture, String key,
+            Consumer<Map<String, Object>> insert) {
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) fixture.get(key);
+        if (rows == null) {
+            return;
         }
-        List<Map<String, Object>> projects = (List<Map<String, Object>>) fixture.get("projects");
-        if (projects != null) {
-            for (Map<String, Object> p : projects) {
-                jdbc.update("INSERT INTO project (id, name, client_id) VALUES (?, ?, ?)",
-                        ((Number) p.get("id")).longValue(), p.get("name"),
-                        ((Number) p.get("clientId")).longValue());
-            }
+        for (Map<String, Object> row : rows) {
+            insert.accept(row);
         }
-        List<Map<String, Object>> tasks = (List<Map<String, Object>>) fixture.get("tasks");
-        if (tasks != null) {
-            for (Map<String, Object> t : tasks) {
-                jdbc.update("INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",
-                        ((Number) t.get("id")).longValue(),
-                        ((Number) t.get("projectId")).longValue(),
-                        t.get("title"),
-                        Boolean.TRUE.equals(t.get("done")));
-            }
-        }
-        List<Map<String, Object>> contacts = (List<Map<String, Object>>) fixture.get("contacts");
-        if (contacts != null) {
-            for (Map<String, Object> c : contacts) {
-                jdbc.update("INSERT INTO contact (id, client_id, name, email, role) VALUES (?, ?, ?, ?, ?)",
-                        ((Number) c.get("id")).longValue(),
-                        ((Number) c.get("clientId")).longValue(),
-                        c.get("name"), c.get("email"), c.get("role"));
-            }
-        }
-        List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
-        if (invoices != null) {
-            for (Map<String, Object> i : invoices) {
-                Object status = i.get("status");
-                jdbc.update("INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
-                                + "VALUES (?, ?, ?, ?, ?, ?)",
-                        ((Number) i.get("id")).longValue(),
-                        ((Number) i.get("projectId")).longValue(),
-                        ((Number) i.get("amount")).doubleValue(),
-                        status == null ? "UNPAID" : status,
-                        i.get("issuedDate"),
-                        i.get("dueDate"));
-            }
-        }
+    }
+
+    /** Read a JSON number field as a {@code long} (JSON integers arrive as {@link Number}). */
+    private static long asLong(Map<String, Object> row, String key) {
+        return ((Number) row.get(key)).longValue();
     }
 }
