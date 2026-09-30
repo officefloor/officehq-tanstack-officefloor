@@ -1,0 +1,161 @@
+diff --git a/src/main/frontend/features/clients/ClientProjectsTable.tsx b/src/main/frontend/features/clients/ClientProjectsTable.tsx
+index ce53c05..46c5d5b 100644
+--- a/src/main/frontend/features/clients/ClientProjectsTable.tsx
++++ b/src/main/frontend/features/clients/ClientProjectsTable.tsx
+@@ -1,14 +1,26 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { clientProjectsKey, fetchClientProjects, type ClientProject } from './queries';
++import {
++  clientProjectsKey,
++  fetchClientProjects,
++  isActiveProject,
++  CLIENT_PROJECTS_SHOW_ALL_PARAM,
++  type ClientProject,
++} from './queries';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
+ 
+ // The projects the user is doing for one client. Queries for itself under ['clients', clientId,
+ // 'projects'] — never handed its data by a parent (CLAUDE.md rule 5). Reuses the project-row-<id> /
+ // project-name anchors so the same listing reads the same in the client context.
++//
++// By default only the ACTIVE, non-archived projects show. The show-all toggle (its own slot file)
++// owns the `clientProjectsAll` URL key and this table reads the same key (CLAUDE.md rule 4): when it
++// is on, the finished and hidden (archived) projects are revealed too.
+ export function ClientProjectsTable({ clientId }: { clientId: number }) {
+   const { data: projects } = useQuery({
+     queryKey: clientProjectsKey(clientId),
+     queryFn: () => fetchClientProjects(clientId),
+   });
++  const [showAll] = useSearchParam(CLIENT_PROJECTS_SHOW_ALL_PARAM, asFlag);
+ 
+   if (!projects) {
+     return null;
+@@ -18,6 +30,8 @@ export function ClientProjectsTable({ clientId }: { clientId: number }) {
+     return <p data-testid="client-projects-empty">No projects yet.</p>;
+   }
+ 
++  const visible = projects.filter((project) => showAll || isActiveProject(project));
++
+   return (
+     <table data-testid="client-projects-table">
+       <thead>
+@@ -26,7 +40,7 @@ export function ClientProjectsTable({ clientId }: { clientId: number }) {
+         </tr>
+       </thead>
+       <tbody>
+-        {projects.map((project: ClientProject) => (
++        {visible.map((project: ClientProject) => (
+           <tr key={project.id} data-testid={`project-row-${project.id}`}>
+             <td data-testid="project-name">{project.name}</td>
+           </tr>
+diff --git a/src/main/frontend/features/clients/queries.ts b/src/main/frontend/features/clients/queries.ts
+index 384b6a5..b6f9abf 100644
+--- a/src/main/frontend/features/clients/queries.ts
++++ b/src/main/frontend/features/clients/queries.ts
+@@ -29,9 +29,15 @@ export function fetchClients(): Promise<Client[]> {
+ }
+ 
+ // A client's own projects, under a key nested beneath ['clients'] so invalidating clients refreshes
+-// them too (CLAUDE.md rule 5). The row only needs the project's id and name; the server-side join
+-// still supplies a client name we simply don't render here.
+-export type ClientProject = { id: number; name: string };
++// them too (CLAUDE.md rule 5). The row carries the project's lifecycle `status` and `archived` flag
++// too, so the client's page can show just the active ones by default and reveal the rest on its
++// toggle without a second request. The server-side join also supplies a client name we don't render.
++export type ClientProject = {
++  id: number;
++  name: string;
++  status: string;
++  archived: boolean;
++};
+ 
+ export const clientProjectsKey = (clientId: number) =>
+   ['clients', clientId, 'projects'] as const;
+@@ -40,6 +46,19 @@ export function fetchClientProjects(clientId: number): Promise<ClientProject[]>
+   return getJson<ClientProject[]>(`/api/clients/${clientId}/projects`);
+ }
+ 
++// The URL search-param key the "show all projects" toggle owns and the projects table reads
++// (CLAUDE.md rule 4). Off by default → only ACTIVE, non-archived projects show; on → the finished
++// and hidden (archived) ones show too. Shared as a constant so the two files agree on the one key
++// without importing each other's components.
++export const CLIENT_PROJECTS_SHOW_ALL_PARAM = 'clientProjectsAll';
++
++// An "active" project — one the user is currently working on: ACTIVE lifecycle status and not
++// archived (a tucked-away project is hidden even if still ACTIVE). The client's page shows these by
++// default; the toggle reveals the finished and hidden ones.
++export function isActiveProject(project: ClientProject): boolean {
++  return project.status === 'ACTIVE' && !project.archived;
++}
++
+ // A client's statement: every invoice raised for the client (across their projects) plus the total
+ // still owed, under a key nested beneath ['clients'] so invalidating clients refreshes it too
+ // (CLAUDE.md rule 5). Each invoice carries the money still due (amount - payments), derived
+diff --git a/src/main/frontend/features/clients/show-all-projects.slot.tsx b/src/main/frontend/features/clients/show-all-projects.slot.tsx
+new file mode 100644
+index 0000000..ae96446
+--- /dev/null
++++ b/src/main/frontend/features/clients/show-all-projects.slot.tsx
+@@ -0,0 +1,25 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { CLIENT_PROJECTS_SHOW_ALL_PARAM } from './queries';
++
++// The "show all projects" toggle on a client's detail page — one new *.slot.tsx file filling the
++// ClientDetail region (CLAUDE.md rule 3). Nothing existing is edited to add it. It owns the
++// `clientProjectsAll` URL key (rule 4): whether the finished and hidden projects are revealed
++// outlives a click, so it lives in the URL, and the projects table reads the same key to decide
++// which rows show. No callback, no shared state — just the key.
++function ShowAllProjectsToggle() {
++  const [showAll, setShowAll] = useSearchParam(CLIENT_PROJECTS_SHOW_ALL_PARAM, asFlag);
++  return (
++    <label>
++      <input
++        type="checkbox"
++        data-testid="client-projects-show-all"
++        checked={showAll}
++        onChange={(event) => setShowAll(event.target.checked ? true : undefined)}
++      />
++      Show finished and hidden projects
++    </label>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 10, Component: ShowAllProjectsToggle });
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index 1b713ed..e68655d 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -21,11 +21,13 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+     List<ProjectView> findAllViews();
+ 
+     /**
+-     * A client's own project list, oldest id first — archived projects are excluded so a tucked-away
+-     * project drops off the client's page (no toggle there).
++     * A client's own project list, oldest id first — every project (finished and archived included),
++     * each carrying its {@code status} and {@code archived} flag. The client's page shows only the
++     * ACTIVE, non-archived ones by default and reveals the finished and hidden ones on its toggle,
++     * so the list carries the flags and does the filtering without a second request.
+      */
+     @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
+             + "FROM Project p, Client c WHERE p.clientId = c.id AND p.clientId = :clientId "
+-            + "AND p.archived = FALSE ORDER BY p.id ASC")
++            + "ORDER BY p.id ASC")
+     List<ProjectView> findViewsByClientId(@Param("clientId") Long clientId);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 969da6b..f9cd000 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -55,9 +55,9 @@ public class TestSupportController {
+         seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
+         seedTable(fixture, "projects",
+-                "INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
++                "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
+                 p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId"),
+-                        p.getOrDefault("status", "ACTIVE")});
++                        p.getOrDefault("status", "ACTIVE"), Boolean.TRUE.equals(p.get("archived"))});
+         seedTable(fixture, "contacts",
+                 "INSERT INTO contacts (id, name, email, role, client_id) VALUES (?, ?, ?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"), c.get("role"),
