@@ -1,0 +1,339 @@
+diff --git a/src/main/frontend/features/lineitems/LineItemsTable.tsx b/src/main/frontend/features/lineitems/LineItemsTable.tsx
+index 2e71074..195ef20 100644
+--- a/src/main/frontend/features/lineitems/LineItemsTable.tsx
++++ b/src/main/frontend/features/lineitems/LineItemsTable.tsx
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { lineItemsKey, fetchLineItems, type LineItem } from './queries';
++import { LineItemRow } from '../../slots/defs/lineItemRow';
+ import { formatMoney } from '../../ui/money';
+ 
+ // An invoice's line items plus the derived total. Queries for itself under ['lineitems', invoiceId]
+@@ -30,6 +31,7 @@ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
+             <th>Qty</th>
+             <th>Unit price</th>
+             <th>Amount</th>
++            <th />
+           </tr>
+         </thead>
+         <tbody>
+@@ -41,6 +43,13 @@ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
+               <td data-testid="lineitem-amount">
+                 {formatMoney(Number(line.qty) * Number(line.unitPrice))}
+               </td>
++              <LineItemRow.Slot
++                invoiceId={invoiceId}
++                lineItemId={line.id}
++                description={line.description}
++                qty={Number(line.qty)}
++                unitPrice={Number(line.unitPrice)}
++              />
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/lineitems/actions.slot.tsx b/src/main/frontend/features/lineitems/actions.slot.tsx
+new file mode 100644
+index 0000000..e18edd5
+--- /dev/null
++++ b/src/main/frontend/features/lineitems/actions.slot.tsx
+@@ -0,0 +1,127 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { LineItemRow } from '../../slots/defs/lineItemRow';
++import { lineItemsKey, removeLineItem, updateLineItem } from './queries';
++
++// Per-line actions on an invoice — change this line, or remove it — filling the lineitem.row region
++// (CLAUDE.md rule 3), so the line-item table never lists what goes at the end of a row. Both writes
++// are mutations that invalidate ['lineitems', invoiceId] (rule 5): the list AND its derived total
++// re-query themselves, so removing or changing a line updates the total for free. useState holds
++// only the values the user is currently editing (rule 4). Carries the stable data-testid contract.
++function LineItemActions({
++  invoiceId,
++  lineItemId,
++  description,
++  qty,
++  unitPrice,
++}: {
++  invoiceId: number;
++  lineItemId: number;
++  description: string;
++  qty: number;
++  unitPrice: number;
++}) {
++  const queryClient = useQueryClient();
++  const [editing, setEditing] = useState(false);
++  const [draftDescription, setDraftDescription] = useState('');
++  const [draftQty, setDraftQty] = useState('');
++  const [draftUnitPrice, setDraftUnitPrice] = useState('');
++  const [error, setError] = useState('');
++
++  const refresh = () => queryClient.invalidateQueries({ queryKey: lineItemsKey(invoiceId) });
++
++  const remove = useMutation({
++    mutationFn: () => removeLineItem(invoiceId, lineItemId),
++    onSuccess: () => void refresh(),
++  });
++
++  const change = useMutation({
++    mutationFn: (input: { description: string; qty: number; unitPrice: number }) =>
++      updateLineItem(invoiceId, lineItemId, input),
++    onSuccess: () => {
++      void refresh();
++      setEditing(false);
++    },
++  });
++
++  function startEditing() {
++    setDraftDescription(description);
++    setDraftQty(String(qty));
++    setDraftUnitPrice(String(unitPrice));
++    setError('');
++    setEditing(true);
++  }
++
++  if (!editing) {
++    return (
++      <td>
++        <button
++          type="button"
++          data-testid={`lineitem-edit-${lineItemId}`}
++          onClick={startEditing}
++        >
++          Change
++        </button>
++        <button
++          type="button"
++          data-testid={`lineitem-remove-${lineItemId}`}
++          onClick={() => remove.mutate()}
++        >
++          Remove
++        </button>
++      </td>
++    );
++  }
++
++  return (
++    <td>
++      <input
++        data-testid={`lineitem-edit-description-${lineItemId}`}
++        value={draftDescription}
++        onChange={(event) => setDraftDescription(event.target.value)}
++      />
++      <input
++        data-testid={`lineitem-edit-qty-${lineItemId}`}
++        value={draftQty}
++        onChange={(event) => setDraftQty(event.target.value)}
++      />
++      <input
++        data-testid={`lineitem-edit-unitprice-${lineItemId}`}
++        value={draftUnitPrice}
++        onChange={(event) => setDraftUnitPrice(event.target.value)}
++      />
++      <button
++        type="button"
++        data-testid={`lineitem-save-${lineItemId}`}
++        onClick={() => {
++          const quantity = Number(draftQty);
++          const price = Number(draftUnitPrice);
++          if (
++            draftDescription.trim() === '' ||
++            !Number.isInteger(quantity) ||
++            quantity <= 0 ||
++            Number.isNaN(price) ||
++            price <= 0
++          ) {
++            setError('Enter a description, a whole quantity and a price above zero.');
++            return;
++          }
++          setError('');
++          change.mutate({ description: draftDescription.trim(), qty: quantity, unitPrice: price });
++        }}
++      >
++        Save
++      </button>
++      <button
++        type="button"
++        data-testid={`lineitem-cancel-${lineItemId}`}
++        onClick={() => setEditing(false)}
++      >
++        Cancel
++      </button>
++      {error !== '' && <span data-testid={`lineitem-edit-error-${lineItemId}`}>{error}</span>}
++    </td>
++  );
++}
++
++export const contribution = LineItemRow.fill({ order: 0, Component: LineItemActions });
+diff --git a/src/main/frontend/features/lineitems/queries.ts b/src/main/frontend/features/lineitems/queries.ts
+index d2d489c..12ea69c 100644
+--- a/src/main/frontend/features/lineitems/queries.ts
++++ b/src/main/frontend/features/lineitems/queries.ts
+@@ -24,3 +24,17 @@ export function createLineItem(
+ ): Promise<LineItem> {
+   return postJson<LineItem>(`/api/invoices/${invoiceId}/lineitems`, input);
+ }
++
++/** Change a line on an invoice; ids are in the path, the new values are the body. */
++export function updateLineItem(
++  invoiceId: number,
++  lineItemId: number,
++  input: { description: string; qty: number; unitPrice: number },
++): Promise<LineItem> {
++  return postJson<LineItem>(`/api/invoices/${invoiceId}/lineitems/${lineItemId}`, input);
++}
++
++/** Remove a line from an invoice; both ids are in the path, no body needed. */
++export function removeLineItem(invoiceId: number, lineItemId: number): Promise<void> {
++  return postJson<void>(`/api/invoices/${invoiceId}/lineitems/${lineItemId}/remove`, {});
++}
+diff --git a/src/main/frontend/slots/defs/lineItemRow.ts b/src/main/frontend/slots/defs/lineItemRow.ts
+new file mode 100644
+index 0000000..656a486
+--- /dev/null
++++ b/src/main/frontend/slots/defs/lineItemRow.ts
+@@ -0,0 +1,15 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * Cells at the end of every invoice line-item row — the region where per-line actions (change this
++ * line, remove this line) live. Declared once here; features fill it without the line-item table
++ * listing what goes in it (CLAUDE.md rule 3). Its context is the line's id and current values plus
++ * the invoice it belongs to (for cache invalidation on a write).
++ */
++export const LineItemRow = defineSlot<{
++  invoiceId: number;
++  lineItemId: number;
++  description: string;
++  qty: number;
++  unitPrice: number;
++}>('lineitem.row');
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceLineItemRemove.java b/src/main/java/net/officefloor/hq/app/InvoiceLineItemRemove.java
+new file mode 100644
+index 0000000..c740b19
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceLineItemRemove.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * POST /api/invoices/{id}/lineitems/{lineItemId}/remove — remove one line from an invoice and
++ * return the updated invoice. Wired by
++ * {@code officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}/remove.POST.yml}. An unknown
++ * invoice or line is rejected with 404, and a line that does not belong to the named invoice is
++ * likewise 404. The invoice's stored amount is kept in step as the sum of its remaining lines'
++ * qty * unitPrice, so every view that shows the amount stays correct after a removal.
++ */
++public class InvoiceLineItemRemove {
++
++    public void service(@HttpPathParameter("id") String id,
++            @HttpPathParameter("lineItemId") String lineItemId, InvoiceRepository invoices,
++            LineItemRepository lineItems, ObjectResponse<Invoice> response) {
++        Long invoiceId = Long.valueOf(id);
++        Long lineId = Long.valueOf(lineItemId);
++        Invoice invoice = invoices.findById(invoiceId)
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        LineItem line = lineItems.findById(lineId)
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        if (!invoiceId.equals(line.getInvoiceId())) {
++            throw new HttpException(HttpStatus.NOT_FOUND);
++        }
++        lineItems.delete(line);
++
++        // Keep the invoice's stored amount in step with its lines: amount = sum(qty * unitPrice).
++        BigDecimal total = BigDecimal.ZERO;
++        for (LineItem remaining : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
++            total = total.add(
++                    remaining.getUnitPrice().multiply(BigDecimal.valueOf(remaining.getQty())));
++        }
++        invoice.setAmount(total);
++        invoices.save(invoice);
++
++        response.send(invoice);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceLineItemUpdate.java b/src/main/java/net/officefloor/hq/app/InvoiceLineItemUpdate.java
+new file mode 100644
+index 0000000..4d5e95b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceLineItemUpdate.java
+@@ -0,0 +1,56 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/invoices/{id}/lineitems/{lineItemId} — change one line on an invoice from
++ * {description, qty, unitPrice} and return the saved row. Wired by
++ * {@code officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}.POST.yml}. Same validation as
++ * adding a line: a description, a whole quantity above zero and a unit price above zero; anything
++ * missing/invalid is rejected with 400, an unknown invoice or line with 404, and a line that does
++ * not belong to the named invoice likewise with 404. The invoice's stored amount is kept in step as
++ * the sum of its lines' qty * unitPrice, so every view that shows the amount stays correct.
++ */
++public class InvoiceLineItemUpdate {
++
++    public void service(@HttpPathParameter("id") String id,
++            @HttpPathParameter("lineItemId") String lineItemId, @RequestBody NewLineItem body,
++            InvoiceRepository invoices, LineItemRepository lineItems,
++            ObjectResponse<LineItem> response) {
++        Long invoiceId = Long.valueOf(id);
++        Long lineId = Long.valueOf(lineItemId);
++        Invoice invoice = invoices.findById(invoiceId)
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        LineItem line = lineItems.findById(lineId)
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        if (!invoiceId.equals(line.getInvoiceId())) {
++            throw new HttpException(HttpStatus.NOT_FOUND);
++        }
++        String description = body.getDescription();
++        Integer qty = body.getQty();
++        BigDecimal unitPrice = body.getUnitPrice();
++        if (description == null || description.isBlank() || qty == null || qty <= 0
++                || unitPrice == null || unitPrice.signum() <= 0) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
++        line.setDescription(description.trim());
++        line.setQty(qty);
++        line.setUnitPrice(unitPrice);
++        LineItem saved = lineItems.save(line);
++
++        // Keep the invoice's stored amount in step with its lines: amount = sum(qty * unitPrice).
++        BigDecimal total = BigDecimal.ZERO;
++        for (LineItem l : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
++            total = total.add(l.getUnitPrice().multiply(BigDecimal.valueOf(l.getQty())));
++        }
++        invoice.setAmount(total);
++        invoices.save(invoice);
++
++        response.send(saved);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}.POST.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}.POST.yml
+new file mode 100644
+index 0000000..bd184bf
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/invoices/{id}/lineitems/{lineItemId} -> change a line on an invoice (InvoiceLineItemUpdate.service).
++service:
++  class: net.officefloor.hq.app.InvoiceLineItemUpdate
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}/remove.POST.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}/remove.POST.yml
+new file mode 100644
+index 0000000..1d6dee4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/{id}/lineitems/{lineItemId}/remove.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/invoices/{id}/lineitems/{lineItemId}/remove -> remove a line from an invoice (InvoiceLineItemRemove.service).
++service:
++  class: net.officefloor.hq.app.InvoiceLineItemRemove
