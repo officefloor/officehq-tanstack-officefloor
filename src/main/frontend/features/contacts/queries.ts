@@ -2,7 +2,13 @@ import { getJson, postJson } from '../../api/http';
 
 // A client's contacts under a key nested beneath ['clients'] so invalidating clients refreshes them
 // too (CLAUDE.md rule 5). Each contact carries a name, an email and a role.
-export type Contact = { id: number; name: string; email: string; role: string };
+export type Contact = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  primary: boolean;
+};
 
 export const clientContactsKey = (clientId: number) =>
   ['clients', clientId, 'contacts'] as const;
@@ -26,4 +32,10 @@ export function createContact(input: {
   clientId: number;
 }): Promise<Contact> {
   return postJson<Contact>('/api/contacts', input);
+}
+
+// Make one contact the client's MAIN contact. The server marks it primary and clears every sibling,
+// so at most one contact per client is primary; callers invalidate the shared contacts key to refresh.
+export function setPrimaryContact(clientId: number, contactId: number): Promise<Contact> {
+  return postJson<Contact>(`/api/clients/${clientId}/contacts/${contactId}/primary`, {});
 }

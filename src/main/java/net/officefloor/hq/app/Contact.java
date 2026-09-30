@@ -29,6 +29,9 @@ public class Contact {
     @Column(name = "client_id")
     private Long clientId;
 
+    @Column(name = "is_primary")
+    private boolean primary;
+
     public Long getId() {
         return id;
     }
@@ -67,5 +70,13 @@ public class Contact {
 
     public void setClientId(Long clientId) {
         this.clientId = clientId;
+    }
+
+    public boolean isPrimary() {
+        return primary;
+    }
+
+    public void setPrimary(boolean primary) {
+        this.primary = primary;
     }
 }
