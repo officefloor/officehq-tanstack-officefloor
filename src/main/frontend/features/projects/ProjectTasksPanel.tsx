@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
+import { asString, useSearchParam } from '../../url/useSearchParam';
 
 // A task as the server returns it: a title and a done flag that can be ticked off, plus the id of
 // the project it belongs to. done=false shows as OPEN, done=true as DONE.
@@ -40,7 +41,13 @@ export function ProjectTasksPanel({ projectId }: { projectId: number }) {
     },
   });
 
-  const rows = (tasks.data ?? []).filter((t) => t.projectId === projectId);
+  // The open/done filter lives in the URL under the `taskFilter` key, owned by taskFilter.slot.tsx.
+  // We read the same key here (rule 4) and narrow the rows: OPEN keeps done=false, DONE keeps
+  // done=true, and no value (or an unknown one) shows every task.
+  const [filter] = useSearchParam('taskFilter', asString);
+  const rows = (tasks.data ?? [])
+    .filter((t) => t.projectId === projectId)
+    .filter((t) => (filter === 'OPEN' ? !t.done : filter === 'DONE' ? t.done : true));
 
   return (
     <section data-testid="project-tasks">
