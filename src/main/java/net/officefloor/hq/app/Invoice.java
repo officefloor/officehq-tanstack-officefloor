@@ -30,6 +30,14 @@ public class Invoice {
     /** Payment status: UNPAID by default, PAID once marked paid (see V5__invoice_status.sql). */
     private String status;
 
+    /** The day the invoice went out, an ISO date literal (see V9__invoice_dates.sql). */
+    @Column(name = "issued_date")
+    private String issuedDate;
+
+    /** The day the invoice is due, an ISO date literal (see V9__invoice_dates.sql). */
+    @Column(name = "due_date")
+    private String dueDate;
+
     public Long getId() {
         return id;
     }
@@ -60,5 +68,21 @@ public class Invoice {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getIssuedDate() {
+        return issuedDate;
+    }
+
+    public void setIssuedDate(String issuedDate) {
+        this.issuedDate = issuedDate;
+    }
+
+    public String getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(String dueDate) {
+        this.dueDate = dueDate;
     }
 }

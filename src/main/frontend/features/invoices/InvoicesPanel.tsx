@@ -5,7 +5,14 @@ import { money } from '../../ui/money';
 
 // An invoice as the server returns it: which project it belongs to, its amount, and its payment
 // status (UNPAID until marked paid).
-export type Invoice = { id: number; projectId: number; amount: number; status: string };
+export type Invoice = {
+  id: number;
+  projectId: number;
+  amount: number;
+  status: string;
+  issuedDate: string;
+  dueDate: string;
+};
 
 // A project's invoices: the list scoped to this project, their derived total, and the form to add a
 // new one. Server data is read with useQuery under the ['invoices'] key and changed with
@@ -82,6 +89,8 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
         <thead>
           <tr>
             <th>Amount</th>
+            <th>Issued</th>
+            <th>Due</th>
             <th>Status</th>
             <th></th>
           </tr>
@@ -90,6 +99,8 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
           {rows.map((i) => (
             <tr key={i.id} data-testid={`invoice-row-${i.id}`}>
               <td data-testid="invoice-amount">{money(Number(i.amount))}</td>
+              <td data-testid="invoice-issued">{i.issuedDate}</td>
+              <td data-testid="invoice-due">{i.dueDate}</td>
               <td data-testid="invoice-status">{i.status}</td>
               <td>
                 {i.status !== 'PAID' && (

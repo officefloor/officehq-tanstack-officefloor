@@ -65,11 +65,14 @@ public class TestSupportController {
         if (invoices != null) {
             for (Map<String, Object> i : invoices) {
                 Object status = i.get("status");
-                jdbc.update("INSERT INTO invoice (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
+                jdbc.update("INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
+                                + "VALUES (?, ?, ?, ?, ?, ?)",
                         ((Number) i.get("id")).longValue(),
                         ((Number) i.get("projectId")).longValue(),
                         ((Number) i.get("amount")).doubleValue(),
-                        status == null ? "UNPAID" : status);
+                        status == null ? "UNPAID" : status,
+                        i.get("issuedDate"),
+                        i.get("dueDate"));
             }
         }
     }
