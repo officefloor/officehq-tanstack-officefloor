@@ -1,0 +1,152 @@
+diff --git a/src/main/frontend/features/invoices/InvoicePaymentsPanel.tsx b/src/main/frontend/features/invoices/InvoicePaymentsPanel.tsx
+index 0a80e32..1db9edc 100644
+--- a/src/main/frontend/features/invoices/InvoicePaymentsPanel.tsx
++++ b/src/main/frontend/features/invoices/InvoicePaymentsPanel.tsx
+@@ -38,6 +38,9 @@ export function InvoicePaymentsPanel({ invoiceId }: { invoiceId: number }) {
+       setAmount('');
+       setDate('');
+       void queryClient.invalidateQueries({ queryKey: ['payments'] });
++      // A payment changes what the invoice still owes, so its derived status and amount-due (both
++      // read from ['invoices']) must refresh too — share the key, no import between features.
++      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+     },
+   });
+ 
+diff --git a/src/main/frontend/features/invoices/InvoicesPanel.tsx b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+index 3adcfe6..29fcd2f 100644
+--- a/src/main/frontend/features/invoices/InvoicesPanel.tsx
++++ b/src/main/frontend/features/invoices/InvoicesPanel.tsx
+@@ -6,6 +6,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
+ import { InvoiceRowCells } from '../../slots/defs/invoiceRowCells';
+ import { money } from '../../ui/money';
++import { invoiceStatus } from '../../ui/invoiceStatus';
+ 
+ // An invoice as the server returns it: which project it belongs to, its amount, and its lifecycle
+ // status (DRAFT until sent, SENT until paid, then PAID).
+@@ -62,16 +63,6 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+     },
+   });
+ 
+-  // Marking an invoice paid is a write: POST then invalidate ['invoices'] so the row re-renders with
+-  // its new status — never hand-maintained. The server also records the payment to the audit file.
+-  // Payment is only offered once the invoice has been sent (SENT -> PAID).
+-  const pay = useMutation({
+-    mutationFn: (id: number) => postJson<Invoice>('/api/invoices/pay', { id }),
+-    onSuccess: () => {
+-      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+-    },
+-  });
+-
+   const rows = (invoices.data ?? []).filter((i) => i.projectId === projectId);
+   const total = rows.reduce((sum, i) => sum + Number(i.amount), 0);
+ 
+@@ -133,7 +124,7 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+               <InvoiceRowCells.Slot invoiceId={i.id} />
+               <td data-testid="invoice-issued">{i.issuedDate}</td>
+               <td data-testid="invoice-due">{i.dueDate}</td>
+-              <td data-testid="invoice-status">{i.status}</td>
++              <td data-testid="invoice-status">{invoiceStatus(i)}</td>
+               <td>
+                 <Link
+                   to="/invoice/$invoiceId"
+@@ -151,15 +142,6 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
+                     Send
+                   </button>
+                 )}
+-                {i.status === 'SENT' && (
+-                  <button
+-                    type="button"
+-                    data-testid={`invoice-pay-${i.id}`}
+-                    onClick={() => pay.mutate(i.id)}
+-                  >
+-                    Mark paid
+-                  </button>
+-                )}
+               </td>
+             </tr>
+           ))}
+diff --git a/src/main/frontend/features/invoices/status.slot.tsx b/src/main/frontend/features/invoices/status.slot.tsx
+new file mode 100644
+index 0000000..084e666
+--- /dev/null
++++ b/src/main/frontend/features/invoices/status.slot.tsx
+@@ -0,0 +1,26 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { InvoiceDetail } from '../../slots/defs/invoiceDetail';
++import { invoiceStatus } from '../../ui/invoiceStatus';
++import type { Invoice } from './InvoicesPanel';
++
++// The invoice's status on its detail page — its own file, filling the invoice-detail slot above the
++// line items. It is worked out from the payments, not stored: this panel queries for itself
++// (['invoices'], the SAME key the amount-due cell owns) and derives the status from the invoice's
++// amount and amountDue. Recording a payment invalidates ['invoices'], so the status refreshes from
++// SENT to PARTIAL to PAID as the invoice is paid off. Carries data-testid="invoice-status".
++export const contribution = InvoiceDetail.fill({
++  order: 5,
++  Component: ({ invoiceId }: { invoiceId: number }) => {
++    const invoices = useQuery({
++      queryKey: ['invoices'],
++      queryFn: () => getJson<Invoice[]>('/api/invoices'),
++    });
++    const invoice = (invoices.data ?? []).find((i) => i.id === invoiceId);
++    return (
++      <section data-testid="invoice-status-panel">
++        Status: <span data-testid="invoice-status">{invoice ? invoiceStatus(invoice) : ''}</span>
++      </section>
++    );
++  },
++});
+diff --git a/src/main/frontend/ui/invoiceStatus.ts b/src/main/frontend/ui/invoiceStatus.ts
+new file mode 100644
+index 0000000..408e7e3
+--- /dev/null
++++ b/src/main/frontend/ui/invoiceStatus.ts
+@@ -0,0 +1,23 @@
++// Work out an invoice's status from the payments recorded against it — no longer flipped to paid by
++// hand. The server sends each invoice's amount and its amountDue (amount minus every payment); the
++// status follows from what is still owed:
++//   PAID    — nothing left to pay (payments cover the amount)
++//   PARTIAL — some has been paid but not all
++//   else    — nothing paid yet, so its lifecycle status stands (DRAFT until sent, then SENT)
++// Kept in one shared place so the project invoices row and the invoice-detail panel read the same
++// derived value (the test contract: SENT, PARTIAL, PAID).
++export function invoiceStatus(invoice: {
++  amount: number;
++  amountDue: number;
++  status: string;
++}): string {
++  const amount = Number(invoice.amount);
++  const due = Number(invoice.amountDue);
++  if (amount > 0 && due <= 0) {
++    return 'PAID';
++  }
++  if (due < amount) {
++    return 'PARTIAL';
++  }
++  return invoice.status;
++}
+diff --git a/src/main/java/net/officefloor/hq/app/PaymentsPost.java b/src/main/java/net/officefloor/hq/app/PaymentsPost.java
+index a59caf9..70fcf73 100644
+--- a/src/main/java/net/officefloor/hq/app/PaymentsPost.java
++++ b/src/main/java/net/officefloor/hq/app/PaymentsPost.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+@@ -33,8 +34,8 @@ public class PaymentsPost {
+         payment.setDate(date);
+         Payment saved = payments.save(payment);
+ 
+-        audit.record("PAYMENT_RECORDED id=" + saved.getId() + " invoice=" + invoiceId
+-                + " amount=" + saved.getAmount().toPlainString() + " date=" + saved.getDate());
++        audit.record("PAYMENT_RECORDED id=" + saved.getId() + " amount="
++                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
+         response.send(saved);
+     }
+ }
