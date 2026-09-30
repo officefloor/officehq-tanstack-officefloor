@@ -14,6 +14,22 @@ export type Invoice = {
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
 
+// Every invoice across all projects, each carrying the NAME of its project (the cross-entity join
+// is done server-side, in AllInvoicesGet). Read under ['invoices', 'all'] (CLAUDE.md rule 5).
+export type AllInvoice = {
+  id: number;
+  projectId: number;
+  projectName: string;
+  amount: number;
+  status: string;
+};
+
+export const allInvoicesKey = ['invoices', 'all'] as const;
+
+export function fetchAllInvoices(): Promise<AllInvoice[]> {
+  return getJson<AllInvoice[]>('/api/invoices');
+}
+
 /** URL key owned by the sort control; readers (the list) sort by the same key (CLAUDE.md rule 4). */
 export const INVOICE_SORT_PARAM = 'invoiceSort';
 
