@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.util.regex.Pattern;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -10,6 +11,11 @@ import org.springframework.web.bind.annotation.RequestBody;
  */
 public class ContactsPost {
 
+    // Every contact must carry a proper email. Mirror of the UI check
+    // (ClientContactsPanel.isValidEmail) so a request that bypasses the form is still rejected
+    // before any row or audit record is written.
+    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
     public void service(@RequestBody NewContact body, ContactRepository contacts,
             ClientRepository clients, Audit audit, ObjectResponse<Contact> response) {
         String name = body.getName() == null ? "" : body.getName().trim();
@@ -17,8 +23,8 @@ public class ContactsPost {
             throw new IllegalArgumentException("a contact requires a name");
         }
         String email = body.getEmail() == null ? "" : body.getEmail().trim();
-        if (email.isEmpty()) {
-            throw new IllegalArgumentException("a contact requires an email");
+        if (!EMAIL.matcher(email).matches()) {
+            throw new IllegalArgumentException("a contact requires a valid email address");
         }
         String role = body.getRole() == null ? "" : body.getRole().trim();
         if (role.isEmpty()) {
