@@ -4,10 +4,11 @@ import {
   fetchProjects,
   PROJECTS_SHOW_ARCHIVED_PARAM,
   PROJECTS_TAG_FILTER_PARAM,
+  PROJECTS_STATUS_FILTER_PARAM,
 } from './queries';
 import { ProjectRow } from '../../slots/defs/projectRow';
 import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
-import { useSearchParam, asFlag, asNumber } from '../../url/useSearchParam';
+import { useSearchParam, asFlag, asNumber, asString } from '../../url/useSearchParam';
 
 // The list. Queries for itself under ['projects'] — never handed its data by a parent (CLAUDE.md
 // rule 5). Each row shows the project's name and the client's NAME (from the server-side join).
@@ -17,6 +18,7 @@ export function ProjectsTable() {
   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: fetchProjects });
   const [showArchived] = useSearchParam(PROJECTS_SHOW_ARCHIVED_PARAM, asFlag);
   const [tagFilter] = useSearchParam(PROJECTS_TAG_FILTER_PARAM, asNumber);
+  const [statusFilter] = useSearchParam(PROJECTS_STATUS_FILTER_PARAM, asString);
 
   if (!projects) {
     return null;
@@ -24,7 +26,8 @@ export function ProjectsTable() {
 
   const visible = projects
     .filter((project) => showArchived || !project.archived)
-    .filter((project) => tagFilter === undefined || project.tagIds.includes(tagFilter));
+    .filter((project) => tagFilter === undefined || project.tagIds.includes(tagFilter))
+    .filter((project) => statusFilter === '' || project.status === statusFilter);
 
   if (projects.length === 0) {
     return (

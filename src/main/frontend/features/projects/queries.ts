@@ -28,6 +28,11 @@ export const PROJECTS_SHOW_ARCHIVED_PARAM = 'showArchived';
 // tag id, or absent for "all". Shared as a constant so the two files agree on the one key.
 export const PROJECTS_TAG_FILTER_PARAM = 'tag';
 
+// The URL search-param key the status filter owns and the list reads (CLAUDE.md rule 4): the chosen
+// lifecycle status (ACTIVE / ON_HOLD / FINISHED), or absent for "all". Shared as a constant so the
+// two files agree on the one key without importing each other.
+export const PROJECTS_STATUS_FILTER_PARAM = 'status';
+
 // The shared pool of labels, read under the SHARED ['tags'] key (CLAUDE.md rule 5) — the projects
 // filter and the project-detail label picker stay in step through the key, without importing each
 // other: attaching a label elsewhere invalidates ['tags'] and this select updates itself.
