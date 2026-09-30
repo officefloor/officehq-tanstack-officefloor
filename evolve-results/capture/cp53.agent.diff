@@ -1,0 +1,306 @@
+diff --git a/src/main/frontend/features/projects/ProjectsPage.tsx b/src/main/frontend/features/projects/ProjectsPage.tsx
+index c052659..bf9a81d 100644
+--- a/src/main/frontend/features/projects/ProjectsPage.tsx
++++ b/src/main/frontend/features/projects/ProjectsPage.tsx
+@@ -22,6 +22,7 @@ export type Project = {
+   clientName: string;
+   archived: boolean;
+   status: ProjectStatus;
++  code: string;
+ };
+ 
+ // The projects page: the whole list of projects plus the form to add one and pick its client.
+@@ -62,16 +63,30 @@ export function ProjectsPage() {
+   const [name, setName] = useState('');
+   const [clientId, setClientId] = useState('');
+   const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
++  const [code, setCode] = useState('');
++  // The code error message, or null when the field is fine. The server is the source of truth for
++  // uniqueness (another session may have taken the code), so a rejected create fills this in.
++  const [codeError, setCodeError] = useState<string | null>(null);
+ 
+   const create = useMutation({
+     mutationFn: () =>
+-      postJson<Project>('/api/projects', { name, clientId: Number(clientId), status }),
++      postJson<Project>('/api/projects', {
++        name,
++        clientId: Number(clientId),
++        status,
++        code,
++      }),
+     onSuccess: () => {
+       setName('');
+       setClientId('');
+       setStatus('ACTIVE');
++      setCode('');
++      setCodeError(null);
+       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+     },
++    onError: () => {
++      setCodeError('That code is already in use.');
++    },
+   });
+ 
+   const taggedIds = new Set(
+@@ -91,9 +106,10 @@ export function ProjectsPage() {
+         data-testid="project-form"
+         onSubmit={(e) => {
+           e.preventDefault();
+-          if (!name.trim() || !clientId) {
++          if (!name.trim() || !clientId || !code.trim()) {
+             return;
+           }
++          setCodeError(null);
+           create.mutate();
+         }}
+       >
+@@ -115,6 +131,17 @@ export function ProjectsPage() {
+             </option>
+           ))}
+         </select>
++        <input
++          data-testid="project-form-code"
++          placeholder="Code"
++          value={code}
++          onChange={(e) => setCode(e.target.value)}
++        />
++        {codeError && (
++          <p data-testid="project-form-code-error" role="alert">
++            {codeError}
++          </p>
++        )}
+         <select
+           data-testid="project-form-status"
+           value={status}
+@@ -141,6 +168,7 @@ export function ProjectsPage() {
+         <table data-testid="projects-table">
+           <thead>
+             <tr>
++              <th>Code</th>
+               <th>Name</th>
+               <th>Client</th>
+               <th>Status</th>
+@@ -150,6 +178,7 @@ export function ProjectsPage() {
+           <tbody>
+             {rows.map((p) => (
+               <tr key={p.id} data-testid={`project-row-${p.id}`}>
++                <td data-testid="project-code">{p.code}</td>
+                 <td data-testid="project-name">{p.name}</td>
+                 <td data-testid="project-client">{p.clientName}</td>
+                 <td data-testid="project-status">{p.status}</td>
+diff --git a/src/main/java/net/officefloor/hq/app/NewProject.java b/src/main/java/net/officefloor/hq/app/NewProject.java
+index dbe00ff..fa07b41 100644
+--- a/src/main/java/net/officefloor/hq/app/NewProject.java
++++ b/src/main/java/net/officefloor/hq/app/NewProject.java
+@@ -13,6 +13,8 @@ public class NewProject {
+ 
+     private String status;
+ 
++    private String code;
++
+     public String getName() {
+         return name;
+     }
+@@ -36,4 +38,12 @@ public class NewProject {
+     public void setStatus(String status) {
+         this.status = status;
+     }
++
++    public String getCode() {
++        return code;
++    }
++
++    public void setCode(String code) {
++        this.code = code;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index 91e47b8..98d5f12 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -26,6 +26,10 @@ public class Project {
+     @Column(name = "client_id")
+     private Long clientId;
+ 
++    /** A short reference code set when the project is created; unique across projects
++     * (V31__project_code.sql). */
++    private String code;
++
+     /** Archived projects are kept but hidden from the default lists (V16__project_archived.sql). */
+     @Column(nullable = false)
+     private boolean archived;
+@@ -63,6 +67,14 @@ public class Project {
+         this.clientId = clientId;
+     }
+ 
++    public String getCode() {
++        return code;
++    }
++
++    public void setCode(String code) {
++        this.code = code;
++    }
++
+     public boolean isArchived() {
+         return archived;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index 6cff4a6..367d70b 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -18,4 +18,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+      * they drop off the search, mirroring how the clients search excludes archived clients.
+      */
+     List<Project> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
++
++    /** Whether any project already carries {@code code} — backs the uniqueness check on create. */
++    boolean existsByCode(String code);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index ad9fa92..84d2260 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -13,15 +13,17 @@ public class ProjectView {
+     private final String clientName;
+     private final boolean archived;
+     private final String status;
++    private final String code;
+ 
+     public ProjectView(Long id, String name, Long clientId, String clientName, boolean archived,
+-            String status) {
++            String status, String code) {
+         this.id = id;
+         this.name = name;
+         this.clientId = clientId;
+         this.clientName = clientName;
+         this.archived = archived;
+         this.status = status;
++        this.code = code;
+     }
+ 
+     public Long getId() {
+@@ -47,4 +49,8 @@ public class ProjectView {
+     public String getStatus() {
+         return status;
+     }
++
++    public String getCode() {
++        return code;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsArchive.java b/src/main/java/net/officefloor/hq/app/ProjectsArchive.java
+index 32a0d4c..a32d827 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsArchive.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsArchive.java
+@@ -22,6 +22,6 @@ public class ProjectsArchive {
+         Project saved = projects.save(project);
+         audit.record("PROJECT_ARCHIVED id=" + id);
+         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(), null,
+-                saved.isArchived(), saved.getStatus()));
++                saved.isArchived(), saved.getStatus(), saved.getCode()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsGet.java b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+index e547c27..4a32328 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsGet.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+@@ -18,7 +18,7 @@ public class ProjectsGet {
+                 .collect(Collectors.toMap(Client::getId, Client::getName));
+         List<ProjectView> views = projects.findAllByOrderByIdAsc().stream()
+                 .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
+-                        nameById.get(p.getClientId()), p.isArchived(), p.getStatus()))
++                        nameById.get(p.getClientId()), p.isArchived(), p.getStatus(), p.getCode()))
+                 .collect(Collectors.toList());
+         response.send(views);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsPost.java b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+index 0df2d85..19ddcc1 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+@@ -25,14 +25,24 @@ public class ProjectsPost {
+         if (!status.equals("ACTIVE") && !status.equals("ON_HOLD") && !status.equals("FINISHED")) {
+             throw new IllegalArgumentException("a project status must be ACTIVE, ON_HOLD or FINISHED");
+         }
++        String code = body.getCode() == null ? "" : body.getCode().trim();
++        if (code.isEmpty()) {
++            throw new IllegalArgumentException("a project requires a code");
++        }
++        // Two projects may not share a reference code. Reject the duplicate before saving, so no row
++        // and no audit record is written. The UNIQUE constraint (V31__project_code.sql) backs this.
++        if (projects.existsByCode(code)) {
++            throw new IllegalArgumentException("a project with that code already exists");
++        }
+         Project project = new Project();
+         project.setName(name);
+         project.setClientId(clientId);
+         project.setStatus(status);
++        project.setCode(code);
+         Project saved = projects.save(project);
+         audit.record("PROJECT_CREATED id=" + saved.getId() + " name=" + saved.getName()
+                 + " client=" + client.getName());
+         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(),
+-                client.getName(), saved.isArchived(), saved.getStatus()));
++                client.getName(), saved.isArchived(), saved.getStatus(), saved.getCode()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsRemove.java b/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
+index a1821f7..f3ae2d8 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
+@@ -19,7 +19,8 @@ public class ProjectsRemove {
+             throw new IllegalArgumentException("no such project");
+         }
+         ProjectView removed = new ProjectView(project.getId(), project.getName(),
+-                project.getClientId(), null, project.isArchived(), project.getStatus());
++                project.getClientId(), null, project.isArchived(), project.getStatus(),
++                project.getCode());
+         projects.delete(project);
+         audit.record("PROJECT_DELETED id=" + id);
+         response.send(removed);
+diff --git a/src/main/java/net/officefloor/hq/app/SearchGet.java b/src/main/java/net/officefloor/hq/app/SearchGet.java
+index ede58d6..7e76409 100644
+--- a/src/main/java/net/officefloor/hq/app/SearchGet.java
++++ b/src/main/java/net/officefloor/hq/app/SearchGet.java
+@@ -34,7 +34,8 @@ public class SearchGet {
+         List<ProjectView> matchedProjects =
+                 projects.findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(term).stream()
+                         .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
+-                                nameById.get(p.getClientId()), p.isArchived(), p.getStatus()))
++                                nameById.get(p.getClientId()), p.isArchived(), p.getStatus(),
++                                p.getCode()))
+                         .collect(Collectors.toList());
+ 
+         response.send(new SearchView(matchedClients, matchedProjects));
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index f1934ae..db55b1f 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -63,12 +63,13 @@ public class TestSupportController {
+                 asLong(c, "id"), c.get("name"), c.get("email")));
+ 
+         seedRows(fixture, "projects", p -> jdbc.update(
+-                "INSERT INTO project (id, name, client_id, status, archived, budget) "
+-                        + "VALUES (?, ?, ?, ?, ?, ?)",
++                "INSERT INTO project (id, name, client_id, status, archived, budget, code) "
++                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                 asLong(p, "id"), p.get("name"), asLong(p, "clientId"),
+                 p.get("status") == null ? "ACTIVE" : p.get("status"),
+                 Boolean.TRUE.equals(p.get("archived")),
+-                p.get("budget") == null ? 0 : p.get("budget")));
++                p.get("budget") == null ? 0 : p.get("budget"),
++                p.get("code")));
+ 
+         seedRows(fixture, "tasks", t -> jdbc.update(
+                 "INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",
+diff --git a/src/main/resources/db/migration/V31__project_code.sql b/src/main/resources/db/migration/V31__project_code.sql
+new file mode 100644
+index 0000000..844ef0b
+--- /dev/null
++++ b/src/main/resources/db/migration/V31__project_code.sql
+@@ -0,0 +1,6 @@
++-- Each project (a "job") carries a short reference code, set when the job is created. No two jobs
++-- may share a code, so the codes are a stable human-readable handle for a job. Nullable so rows that
++-- predate the code (and seeds that omit one) stay valid; the UNIQUE constraint still forbids two
++-- jobs sharing a non-null code (SQL treats NULLs as distinct, so multiple code-less rows are fine).
++ALTER TABLE project ADD COLUMN code VARCHAR(255);
++ALTER TABLE project ADD CONSTRAINT project_code_unique UNIQUE (code);
