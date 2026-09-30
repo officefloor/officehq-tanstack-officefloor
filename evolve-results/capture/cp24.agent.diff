@@ -1,0 +1,103 @@
+diff --git a/src/main/frontend/features/projects/delete.slot.tsx b/src/main/frontend/features/projects/delete.slot.tsx
+new file mode 100644
+index 0000000..fd01c54
+--- /dev/null
++++ b/src/main/frontend/features/projects/delete.slot.tsx
+@@ -0,0 +1,32 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { ProjectRowActions } from '../../slots/defs/projectRowActions';
++import type { Project } from './ProjectsPage';
++
++// The button that deletes a project the user no longer needs — its own file, filling the
++// project-row-actions slot. Deleting is a useMutation that POSTs the id to /api/projects/remove;
++// on success it invalidates ['projects'] so the list (and anything else showing projects) refetches
++// and the row drops out — the list is never edited to know about this action. Carries
++// data-testid="project-delete-<id>" (the test contract).
++export const contribution = ProjectRowActions.fill({
++  order: 20,
++  Component: ({ projectId }) => {
++    const queryClient = useQueryClient();
++    const remove = useMutation({
++      mutationFn: () => postJson<Project>('/api/projects/remove', { id: projectId }),
++      onSuccess: () => {
++        void queryClient.invalidateQueries({ queryKey: ['projects'] });
++      },
++    });
++    return (
++      <button
++        type="button"
++        data-testid={`project-delete-${projectId}`}
++        disabled={remove.isPending}
++        onClick={() => remove.mutate()}
++      >
++        Delete
++      </button>
++    );
++  },
++});
+diff --git a/src/main/java/net/officefloor/hq/app/DeleteProject.java b/src/main/java/net/officefloor/hq/app/DeleteProject.java
+new file mode 100644
+index 0000000..80ec12c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DeleteProject.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app;
++
++/**
++ * Request body for {@code POST /api/projects/remove}: the id of the project to delete. Bound from
++ * the JSON payload by the Spring MVC {@code @RequestBody} argument resolver.
++ */
++public class DeleteProject {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsRemove.java b/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
+new file mode 100644
+index 0000000..33fe838
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/projects/remove} — delete a project the user no longer needs and return the row
++ * that was removed. Wired by {@code officefloor/rest/api/projects/remove.POST.yml}. The project must
++ * exist; the deletion is audited through {@link Audit} so the removal can be checked back later (the
++ * UI can only show what still exists).
++ */
++public class ProjectsRemove {
++
++    public void service(@RequestBody DeleteProject body, ProjectRepository projects, Audit audit,
++            ObjectResponse<ProjectView> response) {
++        Long id = body.getId();
++        Project project = id == null ? null : projects.findById(id).orElse(null);
++        if (project == null) {
++            throw new IllegalArgumentException("no such project");
++        }
++        ProjectView removed = new ProjectView(project.getId(), project.getName(),
++                project.getClientId(), null);
++        projects.delete(project);
++        audit.record("PROJECT_DELETED id=" + id);
++        response.send(removed);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/projects/remove.POST.yml b/src/main/resources/officefloor/rest/api/projects/remove.POST.yml
+new file mode 100644
+index 0000000..3823491
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/remove.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ProjectsRemove
