@@ -21,11 +21,13 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<ProjectView> findAllViews();
 
     /**
-     * A client's own project list, oldest id first — archived projects are excluded so a tucked-away
-     * project drops off the client's page (no toggle there).
+     * A client's own project list, oldest id first — every project (finished and archived included),
+     * each carrying its {@code status} and {@code archived} flag. The client's page shows only the
+     * ACTIVE, non-archived ones by default and reveals the finished and hidden ones on its toggle,
+     * so the list carries the flags and does the filtering without a second request.
      */
     @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
             + "FROM Project p, Client c WHERE p.clientId = c.id AND p.clientId = :clientId "
-            + "AND p.archived = FALSE ORDER BY p.id ASC")
+            + "ORDER BY p.id ASC")
     List<ProjectView> findViewsByClientId(@Param("clientId") Long clientId);
 }

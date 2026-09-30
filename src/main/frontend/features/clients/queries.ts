@@ -29,15 +29,34 @@ export function fetchClients(): Promise<Client[]> {
 }
 
 // A client's own projects, under a key nested beneath ['clients'] so invalidating clients refreshes
-// them too (CLAUDE.md rule 5). The row only needs the project's id and name; the server-side join
-// still supplies a client name we simply don't render here.
-export type ClientProject = { id: number; name: string };
+// them too (CLAUDE.md rule 5). The row carries the project's lifecycle `status` and `archived` flag
+// too, so the client's page can show just the active ones by default and reveal the rest on its
+// toggle without a second request. The server-side join also supplies a client name we don't render.
+export type ClientProject = {
+  id: number;
+  name: string;
+  status: string;
+  archived: boolean;
+};
 
 export const clientProjectsKey = (clientId: number) =>
   ['clients', clientId, 'projects'] as const;
 
 export function fetchClientProjects(clientId: number): Promise<ClientProject[]> {
   return getJson<ClientProject[]>(`/api/clients/${clientId}/projects`);
+}
+
+// The URL search-param key the "show all projects" toggle owns and the projects table reads
+// (CLAUDE.md rule 4). Off by default → only ACTIVE, non-archived projects show; on → the finished
+// and hidden (archived) ones show too. Shared as a constant so the two files agree on the one key
+// without importing each other's components.
+export const CLIENT_PROJECTS_SHOW_ALL_PARAM = 'clientProjectsAll';
+
+// An "active" project — one the user is currently working on: ACTIVE lifecycle status and not
+// archived (a tucked-away project is hidden even if still ACTIVE). The client's page shows these by
+// default; the toggle reveals the finished and hidden ones.
+export function isActiveProject(project: ClientProject): boolean {
+  return project.status === 'ACTIVE' && !project.archived;
 }
 
 // A client's statement: every invoice raised for the client (across their projects) plus the total
