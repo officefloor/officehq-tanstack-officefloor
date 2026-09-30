@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { money } from '../../ui/money';
+import { DashboardPanels } from '../../slots/defs/dashboardPanels';
 
 // The whole-app summary the server returns: how many clients and projects exist, and the money
 // still owed (the sum of every SENT invoice's amount — drafts and paid invoices are excluded).
@@ -37,6 +38,7 @@ export function Dashboard() {
         <dt>Overdue invoices</dt>
         <dd data-testid="dashboard-overdue-count">{data?.overdueCount ?? 0}</dd>
       </dl>
+      <DashboardPanels.Slot />
     </section>
   );
 }
