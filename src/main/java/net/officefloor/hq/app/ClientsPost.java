@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestBody;
  * <p>Every client must have a proper email address: an empty or malformed address is rejected with
  * 400 so the row is never persisted (the front-end enforces the same rule, and the DB carries a
  * CHECK constraint as the last line of defence).
+ *
+ * <p>No two clients may share an email: an address already in use is rejected with 400 so the
+ * duplicate row is never persisted (the DB carries a UNIQUE constraint as the last line of defence).
  */
 public class ClientsPost {
 
@@ -23,6 +26,9 @@ public class ClientsPost {
             ObjectResponse<Client> response) {
         String email = body.getEmail();
         if (email == null || !EMAIL.matcher(email.trim()).matches()) {
+            throw new HttpException(HttpStatus.BAD_REQUEST);
+        }
+        if (clients.existsByEmail(email.trim())) {
             throw new HttpException(HttpStatus.BAD_REQUEST);
         }
         Client client = new Client();

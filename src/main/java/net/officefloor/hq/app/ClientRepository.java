@@ -16,4 +16,7 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      * a tucked-away client drops off the list (and its search, which filters this same list).
      */
     List<Client> findAllByArchivedFalseOrderByIdAsc();
+
+    /** Whether a client already uses this email — no two clients may share one. */
+    boolean existsByEmail(String email);
 }
