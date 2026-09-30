@@ -1,0 +1,271 @@
+diff --git a/src/main/frontend/features/invoices/detail-status.slot.tsx b/src/main/frontend/features/invoices/detail-status.slot.tsx
+new file mode 100644
+index 0000000..6300398
+--- /dev/null
++++ b/src/main/frontend/features/invoices/detail-status.slot.tsx
+@@ -0,0 +1,23 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceDetail } from '../../slots/defs/invoiceDetail';
++import { fetchInvoiceStatus, invoiceStatusKey } from './queries';
++
++// The invoice's status on its detail page — its own file filling the InvoiceDetail region (CLAUDE.md
++// rule 3); nothing existing is edited to add it. The status is DERIVED from the payments recorded
++// (PAID / PARTIAL / SENT), so it is never flipped by hand. It queries for itself under the shared
++// payments key, so recording a payment (which invalidates ['payments', invoiceId]) refreshes it
++// (rule 5). Renders under data-testid="invoice-status" (the test contract).
++function InvoiceStatusPanel({ invoiceId }: { invoiceId: number }) {
++  const { data } = useQuery({
++    queryKey: invoiceStatusKey(invoiceId),
++    queryFn: () => fetchInvoiceStatus(invoiceId),
++  });
++
++  if (!data) {
++    return null;
++  }
++
++  return <p data-testid="invoice-status">{data.status}</p>;
++}
++
++export const contribution = InvoiceDetail.fill({ order: 5, Component: InvoiceStatusPanel });
+diff --git a/src/main/frontend/features/invoices/pay.slot.tsx b/src/main/frontend/features/invoices/pay.slot.tsx
+deleted file mode 100644
+index 52ae430..0000000
+--- a/src/main/frontend/features/invoices/pay.slot.tsx
++++ /dev/null
+@@ -1,36 +0,0 @@
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { InvoiceRow } from '../../slots/defs/invoiceRow';
+-import { invoicesKey, payInvoice } from './queries';
+-
+-// The "mark this invoice paid" action on every invoice row — its own file filling the invoice.row
+-// region (CLAUDE.md rule 3). Payment is only allowed once the invoice has been SENT, so the button
+-// renders only while the row's status (from context) is SENT; a DRAFT row shows nothing here. The
+-// write is a mutation that invalidates ['invoices', projectId] so the list (and its status cell)
+-// refresh themselves (rule 5); the audited record is written server-side. Carries
+-// data-testid="invoice-pay-<id>" (the test contract).
+-export const contribution = InvoiceRow.fill({
+-  order: 20,
+-  Component: ({ invoiceId, projectId, status }: { invoiceId: number; projectId: number; status: string }) => {
+-    const queryClient = useQueryClient();
+-    const mutation = useMutation({
+-      mutationFn: () => payInvoice(invoiceId),
+-      onSuccess: () => {
+-        void queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) });
+-      },
+-    });
+-    if (status !== 'SENT') {
+-      return null;
+-    }
+-    return (
+-      <td>
+-        <button
+-          data-testid={`invoice-pay-${invoiceId}`}
+-          type="button"
+-          onClick={() => mutation.mutate()}
+-        >
+-          Mark paid
+-        </button>
+-      </td>
+-    );
+-  },
+-});
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index 657506e..166261a 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -56,7 +56,16 @@ export function sendInvoice(invoiceId: number): Promise<Invoice> {
+   return postJson<Invoice>(`/api/invoices/${invoiceId}/send`, {});
+ }
+ 
+-/** Mark an invoice paid; the server flips its status and records the audited side-effect. */
+-export function payInvoice(invoiceId: number): Promise<Invoice> {
+-  return postJson<Invoice>(`/api/invoices/${invoiceId}/pay`, {});
++/**
++ * One invoice's status, worked out server-side from the payments recorded against it (PAID once
++ * covered, PARTIAL once part paid, otherwise its stored SENT/DRAFT stage) — an invoice is no longer
++ * flipped to paid by hand. Keyed UNDER the payments key: recording a payment invalidates
++ * ['payments', invoiceId], which prefix-matches this key, so the status refreshes itself (CLAUDE.md
++ * rule 5 — two features stay in step by sharing a key).
++ */
++export const invoiceStatusKey = (invoiceId: number) =>
++  ['payments', invoiceId, 'status'] as const;
++
++export function fetchInvoiceStatus(invoiceId: number): Promise<{ status: string }> {
++  return getJson<{ status: string }>(`/api/invoices/${invoiceId}/status`);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicePay.java b/src/main/java/net/officefloor/hq/app/InvoicePay.java
+deleted file mode 100644
+index 88451ea..0000000
+--- a/src/main/java/net/officefloor/hq/app/InvoicePay.java
++++ /dev/null
+@@ -1,32 +0,0 @@
+-package net.officefloor.hq.app;
+-
+-import java.math.RoundingMode;
+-import net.officefloor.server.http.HttpException;
+-import net.officefloor.server.http.HttpStatus;
+-import net.officefloor.web.HttpPathParameter;
+-import net.officefloor.web.ObjectResponse;
+-
+-/**
+- * POST /api/invoices/{id}/pay — mark an invoice paid and return the updated row. Wired by
+- * {@code officefloor/rest/api/invoices/{id}/pay.POST.yml}. Flipping the status is an audited
+- * side-effect: one {@code INVOICE_PAID id=<id> amount=<amount>} record is appended per payment so
+- * it can be checked back later (CLAUDE.md — audited behaviour goes through {@link Audit}). Payment
+- * is only allowed once the invoice has been SENT — paying a DRAFT (or already-paid) invoice is
+- * rejected with 400. An unknown invoice id is rejected with 404.
+- */
+-public class InvoicePay {
+-
+-    public void service(@HttpPathParameter("id") String id, InvoiceRepository invoices, Audit audit,
+-            ObjectResponse<Invoice> response) {
+-        Invoice invoice = invoices.findById(Long.valueOf(id))
+-                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
+-        if (!"SENT".equals(invoice.getStatus())) {
+-            throw new HttpException(HttpStatus.BAD_REQUEST);
+-        }
+-        invoice.setStatus("PAID");
+-        Invoice saved = invoices.save(invoice);
+-        audit.record("INVOICE_PAID id=" + saved.getId() + " amount="
+-                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
+-        response.send(saved);
+-    }
+-}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicePaymentsPost.java b/src/main/java/net/officefloor/hq/app/InvoicePaymentsPost.java
+index aef1009..d0446bc 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoicePaymentsPost.java
++++ b/src/main/java/net/officefloor/hq/app/InvoicePaymentsPost.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import net.officefloor.server.http.HttpException;
+ import net.officefloor.server.http.HttpStatus;
+ import net.officefloor.web.HttpPathParameter;
+@@ -12,11 +13,16 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * return the saved row (with its id). Wired by
+  * {@code officefloor/rest/api/invoices/{id}/payments.POST.yml}. A payment needs an amount above zero
+  * and a date; anything missing/invalid is rejected with 400 and an unknown invoice with 404.
++ *
++ * Recording a payment replaces flipping the invoice to paid by hand (the invoice's status is derived
++ * from its payments — see {@link ProjectInvoice#deriveStatus}), so it is an audited side-effect: one
++ * {@code PAYMENT_RECORDED id=<id> amount=<amount>} record is appended per payment (CLAUDE.md —
++ * audited behaviour goes through {@link Audit}).
+  */
+ public class InvoicePaymentsPost {
+ 
+     public void service(@HttpPathParameter("id") String id, @RequestBody NewPayment body,
+-            InvoiceRepository invoices, PaymentRepository payments,
++            InvoiceRepository invoices, PaymentRepository payments, Audit audit,
+             ObjectResponse<Payment> response) {
+         Long invoiceId = Long.valueOf(id);
+         invoices.findById(invoiceId).orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
+@@ -29,6 +35,9 @@ public class InvoicePaymentsPost {
+         payment.setInvoiceId(invoiceId);
+         payment.setAmount(amount);
+         payment.setDate(date.trim());
+-        response.send(payments.save(payment));
++        Payment saved = payments.save(payment);
++        audit.record("PAYMENT_RECORDED id=" + saved.getId() + " amount="
++                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
++        response.send(saved);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceStatusGet.java b/src/main/java/net/officefloor/hq/app/InvoiceStatusGet.java
+new file mode 100644
+index 0000000..ff46251
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceStatusGet.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/invoices/{id}/status — one invoice with its status worked out from the payments recorded
++ * against it (PAID / PARTIAL / the stored SENT-or-DRAFT stage), plus its amount and the paid/due
++ * split. Wired by {@code officefloor/rest/api/invoices/{id}/status.GET.yml}. The invoice's detail
++ * page reads this so its status reflects the payments without the invoice being flipped by hand; the
++ * derivation itself lives in {@link ProjectInvoice#deriveStatus}. An unknown invoice id is 404.
++ */
++public class InvoiceStatusGet {
++
++    public void service(@HttpPathParameter("id") String id, InvoiceRepository invoices,
++            PaymentRepository payments, ObjectResponse<ProjectInvoice> response) {
++        Long invoiceId = Long.valueOf(id);
++        Invoice invoice = invoices.findById(invoiceId)
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        response.send(new ProjectInvoice(invoice, payments.sumByInvoiceId(invoiceId)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectInvoice.java b/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
+index 1879c90..49ff284 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
+@@ -8,6 +8,11 @@ import java.math.BigDecimal;
+  * ({@code due} = amount - paid). The paid/due split is derived per request in {@link InvoicesGet}
+  * rather than stored, so it always reflects the current payments. Additive over the raw invoice
+  * shape — existing readers keep using {@code amount}; the new ones read {@code due}.
++ *
++ * The {@code status} is likewise DERIVED from the payments rather than flipped by hand: once some
++ * (but not all) of the amount is paid it reads {@code PARTIAL}, once the amount is covered it reads
++ * {@code PAID}; with nothing paid it stays at the invoice's stored lifecycle stage (DRAFT/SENT).
++ * See {@link #deriveStatus}.
+  */
+ public class ProjectInvoice {
+ 
+@@ -24,13 +29,31 @@ public class ProjectInvoice {
+         this.id = invoice.getId();
+         this.projectId = invoice.getProjectId();
+         this.amount = invoice.getAmount();
+-        this.status = invoice.getStatus();
++        this.status = deriveStatus(invoice.getStatus(), invoice.getAmount(), paid);
+         this.issuedDate = invoice.getIssuedDate();
+         this.dueDate = invoice.getDueDate();
+         this.paid = paid;
+         this.due = invoice.getAmount().subtract(paid);
+     }
+ 
++    /**
++     * Work out an invoice's status from what has been paid against it, so it is never flipped by
++     * hand: {@code PAID} once the payments cover the amount, {@code PARTIAL} once some (but not all)
++     * is paid, otherwise the invoice's stored lifecycle stage ({@code DRAFT}/{@code SENT} — a sent,
++     * unpaid invoice reads SENT).
++     */
++    static String deriveStatus(String stored, BigDecimal amount, BigDecimal paid) {
++        BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
++        BigDecimal pd = paid == null ? BigDecimal.ZERO : paid;
++        if (amt.signum() > 0 && pd.compareTo(amt) >= 0) {
++            return "PAID";
++        }
++        if (pd.signum() > 0) {
++            return "PARTIAL";
++        }
++        return stored;
++    }
++
+     public Long getId() {
+         return id;
+     }
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/pay.POST.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/pay.POST.yml
+deleted file mode 100644
+index 091a31e..0000000
+--- a/src/main/resources/officefloor/rest/api/invoices/{id}/pay.POST.yml
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# POST /api/invoices/{id}/pay -> mark an invoice paid, recording an audit entry (InvoicePay.service).
+-service:
+-  class: net.officefloor.hq.app.InvoicePay
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/status.GET.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/status.GET.yml
+new file mode 100644
+index 0000000..fa799f4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/{id}/status.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/invoices/{id}/status -> one invoice with its status derived from payments (InvoiceStatusGet.service).
++service:
++  class: net.officefloor.hq.app.InvoiceStatusGet
