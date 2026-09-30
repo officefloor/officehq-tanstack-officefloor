@@ -13,11 +13,14 @@ public class DashboardView {
     private final long clientsCount;
     private final long projectsCount;
     private final BigDecimal outstandingTotal;
+    private final long overdueCount;
 
-    public DashboardView(long clientsCount, long projectsCount, BigDecimal outstandingTotal) {
+    public DashboardView(long clientsCount, long projectsCount, BigDecimal outstandingTotal,
+            long overdueCount) {
         this.clientsCount = clientsCount;
         this.projectsCount = projectsCount;
         this.outstandingTotal = outstandingTotal;
+        this.overdueCount = overdueCount;
     }
 
     public long getClientsCount() {
@@ -30,5 +33,10 @@ public class DashboardView {
 
     public BigDecimal getOutstandingTotal() {
         return outstandingTotal;
+    }
+
+    /** How many SENT invoices are overdue against the dashboard's reference date. */
+    public long getOverdueCount() {
+        return overdueCount;
     }
 }

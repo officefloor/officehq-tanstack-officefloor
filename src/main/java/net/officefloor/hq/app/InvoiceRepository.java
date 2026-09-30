@@ -38,6 +38,18 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     BigDecimal sumSentAmount();
 
     /**
+     * How many SENT invoices are overdue as of {@code asOf}: an invoice whose due date has already
+     * passed and which has actually gone out. Only SENT counts — a DRAFT has not been sent and a PAID
+     * one is settled — and "overdue" means the due date is strictly before the reference day. Due
+     * dates are ISO date literals (YYYY-MM-DD), which sort lexically = chronologically, so a string
+     * comparison is the date comparison. Backs the dashboard's overdue count ({@code
+     * GET /api/dashboard}).
+     */
+    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.status = 'SENT' "
+            + "AND i.dueDate IS NOT NULL AND i.dueDate < :asOf")
+    long countSentOverdue(@Param("asOf") String asOf);
+
+    /**
      * The total invoiced against one project: the sum of every invoice's amount raised against it, or
      * 0 when it has none. Backs the project budget panel's "invoiced" figure ({@code
      * GET /api/projects/budget}).

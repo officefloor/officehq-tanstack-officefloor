@@ -11,8 +11,14 @@ import net.officefloor.web.ObjectResponse;
 public class DashboardGet {
 
     public void service(ClientRepository clients, ProjectRepository projects,
-            InvoiceRepository invoices, ObjectResponse<DashboardView> response) {
+            InvoiceRepository invoices, AppSettingRepository settings,
+            ObjectResponse<DashboardView> response) {
+        // Overdue is measured against the seeded "asOf" reference date so the count is deterministic.
+        // With no reference date set nothing is treated as overdue (count 0).
+        long overdueCount = settings.findById("asOf")
+                .map(s -> invoices.countSentOverdue(s.getValue()))
+                .orElse(0L);
         response.send(new DashboardView(clients.count(), projects.count(),
-                invoices.sumSentAmount()));
+                invoices.sumSentAmount(), overdueCount));
     }
 }

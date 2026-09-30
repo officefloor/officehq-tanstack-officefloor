@@ -8,6 +8,7 @@ export type DashboardSummary = {
   clientsCount: number;
   projectsCount: number;
   outstandingTotal: number;
+  overdueCount: number;
 };
 
 // The home screen: a read-only dashboard of the counts and the outstanding total. Server data is
@@ -33,6 +34,8 @@ export function Dashboard() {
         <dd data-testid="dashboard-outstanding-total">
           {money(Number(data?.outstandingTotal ?? 0))}
         </dd>
+        <dt>Overdue invoices</dt>
+        <dd data-testid="dashboard-overdue-count">{data?.overdueCount ?? 0}</dd>
       </dl>
     </section>
   );

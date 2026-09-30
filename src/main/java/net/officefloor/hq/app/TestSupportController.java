@@ -36,7 +36,7 @@ public class TestSupportController {
      */
     private static final List<String> DOMAIN_TABLES =
             List.of("note", "project_tag", "tag", "payment", "line_item", "invoice", "task",
-                    "contact", "project", "client");
+                    "contact", "project", "client", "app_setting");
 
     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
     @PostMapping("/reset")
@@ -138,6 +138,15 @@ public class TestSupportController {
                 asLong(p, "id"), asLong(p, "invoiceId"),
                 ((Number) p.get("amount")).doubleValue(), p.get("date")));
         syncIdentity("payment");
+
+        // A scalar top-level setting rather than a list of rows: the dashboard's "as of" reference
+        // date, the fixed day overdue is measured against. Stored in the app_setting key/value table
+        // so the dashboard reads a deterministic reference date.
+        Object asOf = fixture.get("asOf");
+        if (asOf != null) {
+            jdbc.update("INSERT INTO app_setting (setting_key, setting_value) VALUES ('asOf', ?)",
+                    asOf.toString());
+        }
     }
 
     /** A nested optional list of rows (e.g. an invoice's line items), or empty when the key is absent. */
