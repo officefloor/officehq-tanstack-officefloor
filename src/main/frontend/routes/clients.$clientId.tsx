@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ClientProjectsTable } from '../features/clients/ClientProjectsTable';
+import { ClientDetail } from '../slots/defs/clientDetail';
 
 // A client's detail page: one new file under routes/ (CLAUDE.md rule 1). Opening a client is a child
 // route, not a flag on the list (rule 2). It shows the projects the user is doing for that client;
@@ -14,6 +15,7 @@ function ClientDetailPage() {
   return (
     <section data-testid="client-detail">
       <ClientProjectsTable clientId={id} />
+      <ClientDetail.Slot clientId={id} />
     </section>
   );
 }
