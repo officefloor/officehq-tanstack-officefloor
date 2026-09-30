@@ -35,7 +35,7 @@ public class TestSupportController {
      * shape. A new table joins the reset by being added to this list — no new statement to write.
      */
     private static final List<String> DOMAIN_TABLES =
-            List.of("invoice", "task", "contact", "project", "client");
+            List.of("line_item", "invoice", "task", "contact", "project", "client");
 
     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
     @PostMapping("/reset")
@@ -75,13 +75,40 @@ public class TestSupportController {
                 asLong(c, "id"), asLong(c, "clientId"),
                 c.get("name"), c.get("email"), c.get("role")));
 
-        seedRows(fixture, "invoices", i -> jdbc.update(
-                "INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
-                        + "VALUES (?, ?, ?, ?, ?, ?)",
-                asLong(i, "id"), asLong(i, "projectId"),
-                ((Number) i.get("amount")).doubleValue(),
-                i.get("status") == null ? "UNPAID" : i.get("status"),
-                i.get("issuedDate"), i.get("dueDate")));
+        // An invoice is now itemised: its amount is the sum of qty * unit price across its lines
+        // (nested under the invoice in the fixture). The stored amount is the derived total — the
+        // fixture may still supply an explicit "amount" for an invoice with no lines, otherwise it
+        // is computed here so the invoice list reads the same total the lines add up to.
+        seedRows(fixture, "invoices", i -> {
+            List<Map<String, Object>> lines = asRows(i.get("lineItems"));
+            double computed = 0;
+            for (Map<String, Object> li : lines) {
+                computed += ((Number) li.get("qty")).doubleValue()
+                        * ((Number) li.get("unitPrice")).doubleValue();
+            }
+            Object explicit = i.get("amount");
+            double amount = explicit == null ? computed : ((Number) explicit).doubleValue();
+            jdbc.update(
+                    "INSERT INTO invoice (id, project_id, amount, status, issued_date, due_date) "
+                            + "VALUES (?, ?, ?, ?, ?, ?)",
+                    asLong(i, "id"), asLong(i, "projectId"), amount,
+                    i.get("status") == null ? "UNPAID" : i.get("status"),
+                    i.get("issuedDate"), i.get("dueDate"));
+            for (Map<String, Object> li : lines) {
+                jdbc.update(
+                        "INSERT INTO line_item (id, invoice_id, description, qty, unit_price) "
+                                + "VALUES (?, ?, ?, ?, ?)",
+                        asLong(li, "id"), asLong(i, "id"), li.get("description"),
+                        ((Number) li.get("qty")).intValue(),
+                        ((Number) li.get("unitPrice")).doubleValue());
+            }
+        });
+    }
+
+    /** A nested optional list of rows (e.g. an invoice's line items), or empty when the key is absent. */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> asRows(Object value) {
+        return value == null ? List.of() : (List<Map<String, Object>>) value;
     }
 
     /**

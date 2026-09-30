@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
@@ -128,6 +129,13 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
               <td data-testid="invoice-due">{i.dueDate}</td>
               <td data-testid="invoice-status">{i.status}</td>
               <td>
+                <Link
+                  to="/invoice/$invoiceId"
+                  params={{ invoiceId: String(i.id) }}
+                  data-testid={`invoice-open-${i.id}`}
+                >
+                  Open
+                </Link>
                 {i.status === 'DRAFT' && (
                   <button
                     type="button"
