@@ -36,6 +36,14 @@ public class Invoice {
     @Column(name = "due_date")
     private String dueDate;
 
+    /**
+     * The percentage taken off the invoice as a discount (0 = none). Applied to the subtotal (the
+     * sum of the line items) to work out the invoice's final total; the line-item amounts themselves
+     * are unchanged. Stored in the {@code discount_pct} column (Flyway V23).
+     */
+    @Column(name = "discount_pct")
+    private BigDecimal discountPct = BigDecimal.ZERO;
+
     public Long getId() {
         return id;
     }
@@ -82,5 +90,13 @@ public class Invoice {
 
     public void setDueDate(String dueDate) {
         this.dueDate = dueDate;
+    }
+
+    public BigDecimal getDiscountPct() {
+        return discountPct;
+    }
+
+    public void setDiscountPct(BigDecimal discountPct) {
+        this.discountPct = discountPct;
     }
 }

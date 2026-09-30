@@ -128,11 +128,14 @@ public class TestSupportController {
                     }
                 }
             }
-            jdbc.update("INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
-                    + " VALUES (?, ?, ?, ?, ?, ?)",
+            double discountPct = invoice.get("discountPct") == null ? 0.0
+                    : ((Number) invoice.get("discountPct")).doubleValue();
+            jdbc.update("INSERT INTO invoices"
+                    + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?)",
                     invoiceId, id(invoice, "projectId"), amount,
                     invoice.getOrDefault("status", "DRAFT"), invoice.get("issuedDate"),
-                    invoice.get("dueDate"));
+                    invoice.get("dueDate"), discountPct);
             if (lineItems != null) {
                 for (Map<String, Object> line : lineItems) {
                     jdbc.update("INSERT INTO invoice_line_items"

@@ -1,26 +1,34 @@
 import { useQuery } from '@tanstack/react-query';
 import { lineItemsKey, fetchLineItems, type LineItem } from './queries';
+import { fetchInvoiceDiscount, invoiceDiscountKey } from '../invoices/queries';
 import { LineItemRow } from '../../slots/defs/lineItemRow';
 import { formatMoney } from '../../ui/money';
 
 // An invoice's line items plus the derived total. Queries for itself under ['lineitems', invoiceId]
 // — never handed its data by a parent (CLAUDE.md rule 5). Each line's amount is qty * unitPrice; the
-// invoice total is a client-side aggregate of the same rows, so it stays in step with them for free
-// ("work out the total for me"). Carries the stable data-testid contract the test reads.
+// invoice total is the sum of the same rows LESS the invoice's percentage discount, worked out
+// server-side under the shared ['lineitems', invoiceId] key so it always tracks both the lines and
+// the discount. With no discount the total equals the plain line sum. Carries the stable
+// data-testid contract the test reads.
 export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
   const { data: lineItems } = useQuery({
     queryKey: lineItemsKey(invoiceId),
     queryFn: () => fetchLineItems(invoiceId),
+  });
+  const { data: discount } = useQuery({
+    queryKey: invoiceDiscountKey(invoiceId),
+    queryFn: () => fetchInvoiceDiscount(invoiceId),
   });
 
   if (!lineItems) {
     return null;
   }
 
-  const total = lineItems.reduce(
+  const subtotal = lineItems.reduce(
     (sum, line) => sum + Number(line.qty) * Number(line.unitPrice),
     0,
   );
+  const total = discount ? Number(discount.total) : subtotal;
 
   return (
     <>

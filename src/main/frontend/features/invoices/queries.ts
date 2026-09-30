@@ -83,3 +83,22 @@ export const invoiceStatusKey = (invoiceId: number) =>
 export function fetchInvoiceStatus(invoiceId: number): Promise<{ status: string }> {
   return getJson<{ status: string }>(`/api/invoices/${invoiceId}/status`);
 }
+
+/**
+ * One invoice's discount breakdown, derived server-side from its line items and stored discount
+ * percentage: the subtotal (sum of the lines), the discount taken off, and the final total
+ * (subtotal - discount). Keyed UNDER the shared ['lineitems', invoiceId] key so editing a line
+ * (which invalidates that key) refreshes the breakdown too (CLAUDE.md rule 5).
+ */
+export type InvoiceDiscount = {
+  subtotal: number;
+  discount: number;
+  total: number;
+};
+
+export const invoiceDiscountKey = (invoiceId: number) =>
+  ['lineitems', invoiceId, 'discount'] as const;
+
+export function fetchInvoiceDiscount(invoiceId: number): Promise<InvoiceDiscount> {
+  return getJson<InvoiceDiscount>(`/api/invoices/${invoiceId}/discount`);
+}
