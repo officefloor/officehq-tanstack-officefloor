@@ -1,0 +1,389 @@
+diff --git a/src/main/frontend/features/invoices/InvoiceLineItemsPanel.tsx b/src/main/frontend/features/invoices/InvoiceLineItemsPanel.tsx
+index 5035f1f..b14c1a1 100644
+--- a/src/main/frontend/features/invoices/InvoiceLineItemsPanel.tsx
++++ b/src/main/frontend/features/invoices/InvoiceLineItemsPanel.tsx
+@@ -14,13 +14,18 @@ export type LineItem = {
+   unitPrice: number;
+ };
+ 
++// The fields the user is currently typing into a line they are editing (rule 4): held in state only
++// while an edit is open, keyed by the line's id so the row's inputs are controlled.
++type Draft = { description: string; qty: string; unitPrice: string };
++
+ // An invoice's line items, rendered in the invoice-detail context: the list of that invoice's lines,
+-// their derived total, and a form to add one (description, qty, unit price). Server data is read
+-// with useQuery under the ['lineItems'] key and filtered to the invoice this panel is handed — never
+-// copied into state, never hand-maintained (rule 5). Adding is a useMutation that invalidates
+-// ['lineItems'] (so this list refetches) and ['invoices'] (so the invoice's amount elsewhere
+-// refreshes too, sharing the key rather than importing). The only useState is the fields the user is
+-// currently typing (rule 4).
++// their derived total, and a form to add one (description, qty, unit price). Each existing line can
++// be CHANGED (edit its fields in place) or REMOVED, and the invoice's total recomputes when it is.
++// Server data is read with useQuery under the ['lineItems'] key and filtered to the invoice this
++// panel is handed — never copied into state, never hand-maintained (rule 5). Every write is a
++// useMutation that invalidates ['lineItems'] (so this list refetches) and ['invoices'] (so the
++// invoice's amount elsewhere refreshes too, sharing the key rather than importing). The only useState
++// is the add form and the line the user is currently editing (rule 4).
+ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
+   const queryClient = useQueryClient();
+   const lineItems = useQuery({
+@@ -32,6 +37,15 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
+   const [qty, setQty] = useState('');
+   const [unitPrice, setUnitPrice] = useState('');
+ 
++  // Which line is being edited and its uncommitted field values, or null when nothing is open.
++  const [editingId, setEditingId] = useState<number | null>(null);
++  const [draft, setDraft] = useState<Draft>({ description: '', qty: '', unitPrice: '' });
++
++  const invalidate = () => {
++    void queryClient.invalidateQueries({ queryKey: ['lineItems'] });
++    void queryClient.invalidateQueries({ queryKey: ['invoices'] });
++  };
++
+   const create = useMutation({
+     mutationFn: () =>
+       postJson<LineItem>('/api/lineitems', {
+@@ -44,11 +58,29 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
+       setDescription('');
+       setQty('');
+       setUnitPrice('');
+-      void queryClient.invalidateQueries({ queryKey: ['lineItems'] });
+-      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
++      invalidate();
++    },
++  });
++
++  const edit = useMutation({
++    mutationFn: (vars: { id: number } & Draft) =>
++      postJson<LineItem>('/api/lineitems/edit', {
++        id: vars.id,
++        description: vars.description,
++        qty: Number(vars.qty),
++        unitPrice: Number(vars.unitPrice),
++      }),
++    onSuccess: () => {
++      setEditingId(null);
++      invalidate();
+     },
+   });
+ 
++  const remove = useMutation({
++    mutationFn: (id: number) => postJson<unknown>('/api/lineitems/remove', { id }),
++    onSuccess: invalidate,
++  });
++
+   const rows = (lineItems.data ?? []).filter((li) => li.invoiceId === invoiceId);
+   const total = rows.reduce((sum, li) => sum + Number(li.qty) * Number(li.unitPrice), 0);
+ 
+@@ -99,17 +131,96 @@ export function InvoiceLineItemsPanel({ invoiceId }: { invoiceId: number }) {
+             <th>Qty</th>
+             <th>Unit price</th>
+             <th>Amount</th>
++            <th />
+           </tr>
+         </thead>
+         <tbody>
+-          {rows.map((li) => (
+-            <tr key={li.id} data-testid={`lineitem-row-${li.id}`}>
+-              <td data-testid="lineitem-description">{li.description}</td>
+-              <td data-testid="lineitem-qty">{li.qty}</td>
+-              <td data-testid="lineitem-unitprice">{money(Number(li.unitPrice))}</td>
+-              <td data-testid="lineitem-amount">{money(Number(li.qty) * Number(li.unitPrice))}</td>
+-            </tr>
+-          ))}
++          {rows.map((li) =>
++            editingId === li.id ? (
++              <tr key={li.id} data-testid={`lineitem-row-${li.id}`}>
++                <td>
++                  <input
++                    data-testid={`lineitem-edit-description-${li.id}`}
++                    value={draft.description}
++                    onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
++                  />
++                </td>
++                <td>
++                  <input
++                    data-testid={`lineitem-edit-qty-${li.id}`}
++                    type="number"
++                    value={draft.qty}
++                    onChange={(e) => setDraft((d) => ({ ...d, qty: e.target.value }))}
++                  />
++                </td>
++                <td>
++                  <input
++                    data-testid={`lineitem-edit-unitprice-${li.id}`}
++                    type="number"
++                    step="0.01"
++                    value={draft.unitPrice}
++                    onChange={(e) => setDraft((d) => ({ ...d, unitPrice: e.target.value }))}
++                  />
++                </td>
++                <td data-testid="lineitem-amount">
++                  {money(Number(draft.qty || 0) * Number(draft.unitPrice || 0))}
++                </td>
++                <td>
++                  <button
++                    data-testid={`lineitem-save-${li.id}`}
++                    type="button"
++                    onClick={() => {
++                      if (!draft.description.trim() || !draft.qty.trim() || !draft.unitPrice.trim()) {
++                        return;
++                      }
++                      edit.mutate({ id: li.id, ...draft });
++                    }}
++                  >
++                    Save
++                  </button>
++                  <button
++                    data-testid={`lineitem-cancel-${li.id}`}
++                    type="button"
++                    onClick={() => setEditingId(null)}
++                  >
++                    Cancel
++                  </button>
++                </td>
++              </tr>
++            ) : (
++              <tr key={li.id} data-testid={`lineitem-row-${li.id}`}>
++                <td data-testid="lineitem-description">{li.description}</td>
++                <td data-testid="lineitem-qty">{li.qty}</td>
++                <td data-testid="lineitem-unitprice">{money(Number(li.unitPrice))}</td>
++                <td data-testid="lineitem-amount">
++                  {money(Number(li.qty) * Number(li.unitPrice))}
++                </td>
++                <td>
++                  <button
++                    data-testid={`lineitem-edit-${li.id}`}
++                    type="button"
++                    onClick={() => {
++                      setEditingId(li.id);
++                      setDraft({
++                        description: li.description,
++                        qty: String(li.qty),
++                        unitPrice: String(li.unitPrice),
++                      });
++                    }}
++                  >
++                    Edit
++                  </button>
++                  <button
++                    data-testid={`lineitem-remove-${li.id}`}
++                    type="button"
++                    onClick={() => remove.mutate(li.id)}
++                  >
++                    Remove
++                  </button>
++                </td>
++              </tr>
++            ),
++          )}
+         </tbody>
+       </table>
+     </section>
+diff --git a/src/main/java/net/officefloor/hq/app/EditLineItem.java b/src/main/java/net/officefloor/hq/app/EditLineItem.java
+new file mode 100644
+index 0000000..1c827a8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/EditLineItem.java
+@@ -0,0 +1,51 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * Request body for {@code POST /api/lineitems/edit}: the id of the line to change plus its new
++ * description, quantity and unit price. Bound from the JSON payload by the Spring MVC
++ * {@code @RequestBody} argument resolver.
++ */
++public class EditLineItem {
++
++    private Long id;
++
++    private String description;
++
++    private Integer qty;
++
++    private BigDecimal unitPrice;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++
++    public String getDescription() {
++        return description;
++    }
++
++    public void setDescription(String description) {
++        this.description = description;
++    }
++
++    public Integer getQty() {
++        return qty;
++    }
++
++    public void setQty(Integer qty) {
++        this.qty = qty;
++    }
++
++    public BigDecimal getUnitPrice() {
++        return unitPrice;
++    }
++
++    public void setUnitPrice(BigDecimal unitPrice) {
++        this.unitPrice = unitPrice;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/LineItemsEdit.java b/src/main/java/net/officefloor/hq/app/LineItemsEdit.java
+new file mode 100644
+index 0000000..af90520
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/LineItemsEdit.java
+@@ -0,0 +1,57 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/lineitems/edit} — change a line's description, quantity and unit price and return
++ * the updated row. Wired by {@code officefloor/rest/api/lineitems/edit.POST.yml}. The same validation
++ * as adding applies (non-blank description, positive qty, non-negative unit price). Changing a line
++ * changes the invoice's total, so the invoice's derived {@code amount} is recomputed from all its
++ * lines and stored. The change is audited through {@link Audit}.
++ */
++public class LineItemsEdit {
++
++    public void service(@RequestBody EditLineItem body, LineItemRepository lineItems,
++            InvoiceRepository invoices, Audit audit, ObjectResponse<LineItem> response) {
++        Long id = body.getId();
++        LineItem item = id == null ? null : lineItems.findById(id).orElse(null);
++        if (item == null) {
++            throw new IllegalArgumentException("no such line item");
++        }
++        String description = body.getDescription() == null ? "" : body.getDescription().trim();
++        if (description.isEmpty()) {
++            throw new IllegalArgumentException("a line item requires a description");
++        }
++        Integer qty = body.getQty();
++        if (qty == null || qty <= 0) {
++            throw new IllegalArgumentException("a line item requires a positive quantity");
++        }
++        BigDecimal unitPrice = body.getUnitPrice();
++        if (unitPrice == null || unitPrice.signum() < 0) {
++            throw new IllegalArgumentException("a line item requires a non-negative unit price");
++        }
++        item.setDescription(description);
++        item.setQty(qty);
++        item.setUnitPrice(unitPrice);
++        LineItem saved = lineItems.save(item);
++
++        Long invoiceId = saved.getInvoiceId();
++        Invoice invoice = invoices.findById(invoiceId).orElseThrow(
++                () -> new IllegalArgumentException("a line item requires an existing invoice"));
++        // Recompute the invoice's derived amount from all its lines and store it, so the invoice
++        // list (/api/invoices) and the dashboard read a correct total without re-summing.
++        BigDecimal total = BigDecimal.ZERO;
++        for (LineItem li : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
++            total = total.add(li.getUnitPrice().multiply(BigDecimal.valueOf(li.getQty())));
++        }
++        invoice.setAmount(total);
++        invoices.save(invoice);
++
++        audit.record("LINE_ITEM_UPDATED id=" + saved.getId() + " invoice=" + invoiceId
++                + " description=" + saved.getDescription() + " qty=" + saved.getQty()
++                + " unitPrice=" + saved.getUnitPrice().toPlainString());
++        response.send(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/LineItemsRemove.java b/src/main/java/net/officefloor/hq/app/LineItemsRemove.java
+new file mode 100644
+index 0000000..8847c68
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/LineItemsRemove.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/lineitems/remove} — take a line off its invoice and return the invoice's updated
++ * total. Wired by {@code officefloor/rest/api/lineitems/remove.POST.yml}. Removing a line changes the
++ * invoice's total, so the invoice's derived {@code amount} is recomputed from its remaining lines and
++ * stored — that is what the invoice list and dashboard read. The removal is audited through
++ * {@link Audit}.
++ */
++public class LineItemsRemove {
++
++    public void service(@RequestBody RemoveLineItem body, LineItemRepository lineItems,
++            InvoiceRepository invoices, Audit audit, ObjectResponse<Invoice> response) {
++        Long id = body.getId();
++        LineItem item = id == null ? null : lineItems.findById(id).orElse(null);
++        if (item == null) {
++            throw new IllegalArgumentException("no such line item");
++        }
++        Long invoiceId = item.getInvoiceId();
++        lineItems.delete(item);
++
++        Invoice invoice = invoices.findById(invoiceId).orElseThrow(
++                () -> new IllegalArgumentException("a line item requires an existing invoice"));
++        // Recompute the invoice's derived amount from its remaining lines and store it, so the
++        // invoice list (/api/invoices) and the dashboard read a correct total without re-summing.
++        BigDecimal total = BigDecimal.ZERO;
++        for (LineItem li : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
++            total = total.add(li.getUnitPrice().multiply(BigDecimal.valueOf(li.getQty())));
++        }
++        invoice.setAmount(total);
++        invoices.save(invoice);
++
++        audit.record("LINE_ITEM_REMOVED id=" + id + " invoice=" + invoiceId
++                + " amount=" + total.toPlainString());
++        response.send(invoice);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/RemoveLineItem.java b/src/main/java/net/officefloor/hq/app/RemoveLineItem.java
+new file mode 100644
+index 0000000..a4e3fb7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/RemoveLineItem.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app;
++
++/**
++ * Request body for {@code POST /api/lineitems/remove}: the id of the line item to take off its
++ * invoice. Bound from the JSON payload by the Spring MVC {@code @RequestBody} argument resolver.
++ */
++public class RemoveLineItem {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/lineitems/edit.POST.yml b/src/main/resources/officefloor/rest/api/lineitems/edit.POST.yml
+new file mode 100644
+index 0000000..6e47ccb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/lineitems/edit.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.LineItemsEdit
+diff --git a/src/main/resources/officefloor/rest/api/lineitems/remove.POST.yml b/src/main/resources/officefloor/rest/api/lineitems/remove.POST.yml
+new file mode 100644
+index 0000000..8202ecd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/lineitems/remove.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.LineItemsRemove
