@@ -1,0 +1,454 @@
+diff --git a/src/main/frontend/features/projects/ProjectForm.tsx b/src/main/frontend/features/projects/ProjectForm.tsx
+new file mode 100644
+index 0000000..64ed3c4
+--- /dev/null
++++ b/src/main/frontend/features/projects/ProjectForm.tsx
+@@ -0,0 +1,64 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import {
++  projectsKey,
++  createProject,
++  clientsKey,
++  fetchClientOptions,
++} from './queries';
++
++// Add a project for a client. useState holds only what the user is currently entering (CLAUDE.md
++// rule 4); the write is a mutation that invalidates ['projects'] so the list refreshes itself.
++// The client picker is a <select> whose option values are client ids, read under the shared
++// ['clients'] key.
++export function ProjectForm() {
++  const [name, setName] = useState('');
++  const [clientId, setClientId] = useState('');
++  const queryClient = useQueryClient();
++
++  const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClientOptions });
++
++  const mutation = useMutation({
++    mutationFn: createProject,
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: projectsKey });
++      setName('');
++      setClientId('');
++    },
++  });
++
++  return (
++    <form
++      data-testid="project-form"
++      onSubmit={(event) => {
++        event.preventDefault();
++        if (name.trim() === '' || clientId === '') {
++          return;
++        }
++        mutation.mutate({ name, clientId: Number(clientId) });
++      }}
++    >
++      <input
++        data-testid="project-form-name"
++        placeholder="Name"
++        value={name}
++        onChange={(event) => setName(event.target.value)}
++      />
++      <select
++        data-testid="project-form-client"
++        value={clientId}
++        onChange={(event) => setClientId(event.target.value)}
++      >
++        <option value="">Select a client</option>
++        {(clients ?? []).map((client) => (
++          <option key={client.id} value={client.id}>
++            {client.name}
++          </option>
++        ))}
++      </select>
++      <button data-testid="project-form-submit" type="submit">
++        Add project
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/projects/ProjectsTable.tsx b/src/main/frontend/features/projects/ProjectsTable.tsx
+new file mode 100644
+index 0000000..f9bf4f7
+--- /dev/null
++++ b/src/main/frontend/features/projects/ProjectsTable.tsx
+@@ -0,0 +1,35 @@
++import { useQuery } from '@tanstack/react-query';
++import { projectsKey, fetchProjects } from './queries';
++
++// The list. Queries for itself under ['projects'] — never handed its data by a parent (CLAUDE.md
++// rule 5). Each row shows the project's name and the client's NAME (from the server-side join).
++export function ProjectsTable() {
++  const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: fetchProjects });
++
++  if (!projects) {
++    return null;
++  }
++
++  if (projects.length === 0) {
++    return <p data-testid="projects-empty">No projects yet.</p>;
++  }
++
++  return (
++    <table data-testid="projects-table">
++      <thead>
++        <tr>
++          <th>Name</th>
++          <th>Client</th>
++        </tr>
++      </thead>
++      <tbody>
++        {projects.map((project) => (
++          <tr key={project.id} data-testid={`project-row-${project.id}`}>
++            <td data-testid="project-name">{project.name}</td>
++            <td data-testid="project-client">{project.clientName}</td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
+diff --git a/src/main/frontend/features/projects/nav.slot.tsx b/src/main/frontend/features/projects/nav.slot.tsx
+new file mode 100644
+index 0000000..a0aca60
+--- /dev/null
++++ b/src/main/frontend/features/projects/nav.slot.tsx
+@@ -0,0 +1,13 @@
++import { Link } from '@tanstack/react-router';
++import { AppNav } from '../../slots/defs/appNav';
++
++// The Projects page's presence in the shell nav — its own file (CLAUDE.md rule 1). The shell lists
++// no pages; it renders whatever fills app.nav.
++export const contribution = AppNav.fill({
++  order: 20,
++  Component: () => (
++    <Link to="/projects" data-testid="nav-projects">
++      Projects
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/features/projects/queries.ts b/src/main/frontend/features/projects/queries.ts
+new file mode 100644
+index 0000000..1c6b55c
+--- /dev/null
++++ b/src/main/frontend/features/projects/queries.ts
+@@ -0,0 +1,27 @@
++import { getJson, postJson } from '../../api/http';
++
++// Server data under ONE shared key: anything showing projects reads ['projects'], and a write
++// invalidates the same key to refresh them all (CLAUDE.md rule 5). A project's row carries its
++// client's NAME (the cross-entity join is done server-side, in ProjectView).
++export type ProjectView = { id: number; name: string; clientName: string };
++
++export const projectsKey = ['projects'] as const;
++
++export function fetchProjects(): Promise<ProjectView[]> {
++  return getJson<ProjectView[]>('/api/projects');
++}
++
++export function createProject(input: { name: string; clientId: number }): Promise<ProjectView> {
++  return postJson<ProjectView>('/api/projects', input);
++}
++
++// The client options the form's select needs. Read under the SHARED ['clients'] key (CLAUDE.md
++// rule 5) — features never import each other, they stay in step through the key: creating a client
++// elsewhere invalidates ['clients'] and this select updates itself.
++export type ClientOption = { id: number; name: string };
++
++export const clientsKey = ['clients'] as const;
++
++export function fetchClientOptions(): Promise<ClientOption[]> {
++  return getJson<ClientOption[]>('/api/clients');
++}
+diff --git a/src/main/frontend/routes/projects.index.tsx b/src/main/frontend/routes/projects.index.tsx
+new file mode 100644
+index 0000000..b5aa352
+--- /dev/null
++++ b/src/main/frontend/routes/projects.index.tsx
+@@ -0,0 +1,18 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { ProjectForm } from '../features/projects/ProjectForm';
++import { ProjectsTable } from '../features/projects/ProjectsTable';
++
++// The Projects page: one new file under routes/ (CLAUDE.md rule 1). The route tree is generated from
++// this directory. The page composes the feature's form + list; each queries/mutates for itself.
++export const Route = createFileRoute('/projects/')({
++  component: ProjectsPage,
++});
++
++function ProjectsPage() {
++  return (
++    <section data-testid="projects-page">
++      <ProjectForm />
++      <ProjectsTable />
++    </section>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NewProject.java b/src/main/java/net/officefloor/hq/app/NewProject.java
+new file mode 100644
+index 0000000..b432523
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NewProject.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app;
++
++/**
++ * The request body for creating a project: the name and the id of the client it is for (the project
++ * id is generated). Bound from the POST JSON body via {@code @RequestBody}.
++ */
++public class NewProject {
++
++    private String name;
++
++    private Long clientId;
++
++    public String getName() {
++        return name;
++    }
++
++    public void setName(String name) {
++        this.name = name;
++    }
++
++    public Long getClientId() {
++        return clientId;
++    }
++
++    public void setClientId(Long clientId) {
++        this.clientId = clientId;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+new file mode 100644
+index 0000000..acba6d3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -0,0 +1,50 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A project the user tracks for a client: a name and the id of the {@link Client} it belongs to.
++ * Persisted to the {@code projects} table (Flyway V3).
++ */
++@Entity
++@Table(name = "projects")
++public class Project {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    private String name;
++
++    @Column(name = "client_id")
++    private Long clientId;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++
++    public String getName() {
++        return name;
++    }
++
++    public void setName(String name) {
++        this.name = name;
++    }
++
++    public Long getClientId() {
++        return clientId;
++    }
++
++    public void setClientId(Long clientId) {
++        this.clientId = clientId;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+new file mode 100644
+index 0000000..c6d754f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.data.jpa.repository.Query;
++
++/**
++ * Data access for {@link Project}. A Spring Data bean, injected into the OfficeFloor logic classes
++ * (Spring beans are exposed to OfficeFloor by the rest-spring-boot starter).
++ */
++public interface ProjectRepository extends JpaRepository<Project, Long> {
++
++    /** Every project with its client's name, oldest id first — the shape the list renders. */
++    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name) "
++            + "FROM Project p, Client c WHERE p.clientId = c.id ORDER BY p.id ASC")
++    List<ProjectView> findAllViews();
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+new file mode 100644
+index 0000000..5538e27
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app;
++
++/**
++ * A project as the list shows it: its own id and name plus the belonging client's NAME (not id), so
++ * the front-end renders the cross-entity join without a second request. Built by the JPQL
++ * constructor expression in {@link ProjectRepository#findAllViews()}.
++ */
++public class ProjectView {
++
++    private final Long id;
++    private final String name;
++    private final String clientName;
++
++    public ProjectView(Long id, String name, String clientName) {
++        this.id = id;
++        this.name = name;
++        this.clientName = clientName;
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public String getName() {
++        return name;
++    }
++
++    public String getClientName() {
++        return clientName;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsGet.java b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+new file mode 100644
+index 0000000..a711cce
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/projects — every project with its client's name, oldest id first. Wired by
++ * {@code officefloor/rest/api/projects.GET.yml}.
++ */
++public class ProjectsGet {
++
++    public void service(ProjectRepository projects, ObjectResponse<List<ProjectView>> response) {
++        response.send(projects.findAllViews());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsPost.java b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+new file mode 100644
+index 0000000..70c6f94
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/projects — create a project from {name, clientId} and return the saved row (with its
++ * id). Wired by {@code officefloor/rest/api/projects.POST.yml}. A project must have a name and
++ * belong to an existing client; a missing name or client id is rejected with 400.
++ */
++public class ProjectsPost {
++
++    public void service(@RequestBody NewProject body, ProjectRepository projects,
++            ClientRepository clients, ObjectResponse<Project> response) {
++        String name = body.getName();
++        Long clientId = body.getClientId();
++        if (name == null || name.trim().isEmpty() || clientId == null
++                || !clients.existsById(clientId)) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
++        Project project = new Project();
++        project.setName(name.trim());
++        project.setClientId(clientId);
++        response.send(projects.save(project));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 3db1fd4..427b168 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -32,7 +32,12 @@ public class TestSupportController {
+     @PostMapping("/reset")
+     public void reset() {
+         audit.clear();
++        // projects references clients (FK) — drop referential integrity so both parent and child
++        // can be TRUNCATE ... RESTART IDENTITY regardless of order, then restore it.
++        jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
++        jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
+         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
++        jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
+     }
+ 
+     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
+@@ -47,5 +52,13 @@ public class TestSupportController {
+                         ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"));
+             }
+         }
++        List<Map<String, Object>> projects = (List<Map<String, Object>>) fixture.get("projects");
++        if (projects != null) {
++            for (Map<String, Object> p : projects) {
++                jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
++                        ((Number) p.get("id")).longValue(), p.get("name"),
++                        ((Number) p.get("clientId")).longValue());
++            }
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V3__projects.sql b/src/main/resources/db/migration/V3__projects.sql
+new file mode 100644
+index 0000000..238f858
+--- /dev/null
++++ b/src/main/resources/db/migration/V3__projects.sql
+@@ -0,0 +1,7 @@
++-- Projects: the second domain table. A project has a name and belongs to a client (client_id FK).
++-- GENERATED BY DEFAULT (not ALWAYS) so the /__test__ seed path can insert explicit fixture ids.
++CREATE TABLE projects (
++    id        BIGINT       GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    name      VARCHAR(255) NOT NULL,
++    client_id BIGINT       NOT NULL REFERENCES clients(id)
++);
+diff --git a/src/main/resources/officefloor/rest/api/projects.GET.yml b/src/main/resources/officefloor/rest/api/projects.GET.yml
+new file mode 100644
+index 0000000..01173db
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/projects -> list every project with its client's name (ProjectsGet.service).
++service:
++  class: net.officefloor.hq.app.ProjectsGet
+diff --git a/src/main/resources/officefloor/rest/api/projects.POST.yml b/src/main/resources/officefloor/rest/api/projects.POST.yml
+new file mode 100644
+index 0000000..628bb2c
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/projects -> create a project (ProjectsPost.service).
++service:
++  class: net.officefloor.hq.app.ProjectsPost
