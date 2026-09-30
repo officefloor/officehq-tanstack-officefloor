@@ -1,8 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
-import { allInvoicesKey, fetchAllInvoices, INVOICE_STATUS_PARAM, type AllInvoice } from './queries';
+import {
+  allInvoicesKey,
+  fetchAllInvoices,
+  INVOICE_STATUS_PARAM,
+  INVOICE_PAGE_PARAM,
+  INVOICE_PAGE_SIZE,
+  type AllInvoice,
+} from './queries';
 import { formatMoney } from '../../ui/money';
 import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
-import { useSearchParam, asString } from '../../url/useSearchParam';
+import { useSearchParam, asString, asNumber } from '../../url/useSearchParam';
 
 // The one place listing every invoice from every project. Queries for itself under ['invoices',
 // 'all'] — never handed its data by a parent (CLAUDE.md rule 5). Each row shows the invoice's
@@ -11,6 +18,7 @@ import { useSearchParam, asString } from '../../url/useSearchParam';
 export function AllInvoicesTable() {
   const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: fetchAllInvoices });
   const [status] = useSearchParam(INVOICE_STATUS_PARAM, asString);
+  const [rawPage] = useSearchParam(INVOICE_PAGE_PARAM, asNumber);
 
   if (!invoices) {
     return null;
@@ -20,7 +28,13 @@ export function AllInvoicesTable() {
     return <p data-testid="all-invoices-empty">No invoices yet.</p>;
   }
 
-  const shown = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
+  const matching = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
+  // A page at a time (CLAUDE.md rule 4): the page number lives in the URL, owned by the pagination
+  // control; this list reads the same key and slices to that window. Clamp to a valid page so a
+  // stale/over-range number (e.g. after the stage filter shrinks the set) still shows real rows.
+  const totalPages = Math.max(1, Math.ceil(matching.length / INVOICE_PAGE_SIZE));
+  const page = Math.min(Math.max(rawPage ?? 1, 1), totalPages);
+  const shown = matching.slice((page - 1) * INVOICE_PAGE_SIZE, page * INVOICE_PAGE_SIZE);
 
   return (
     <>

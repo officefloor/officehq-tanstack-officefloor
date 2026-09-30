@@ -40,6 +40,12 @@ export const INVOICE_SORT_PARAM = 'invoiceSort';
 /** URL key owned by the stage filter; the all-invoices list narrows to this stage (CLAUDE.md rule 4). */
 export const INVOICE_STATUS_PARAM = 'invoiceStatus';
 
+/** URL key owned by the pagination control; the all-invoices list shows the matching page (CLAUDE.md rule 4). */
+export const INVOICE_PAGE_PARAM = 'invoicePage';
+
+/** How many invoices fill one page of the all-invoices list. */
+export const INVOICE_PAGE_SIZE = 10;
+
 /** The lifecycle stages an invoice can sit at — the options the stage filter offers. */
 export const INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID'] as const;
 
