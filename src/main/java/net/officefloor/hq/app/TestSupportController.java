@@ -35,7 +35,8 @@ public class TestSupportController {
      * clients). Add a new table here (and a matching {@code seedTable} call) to extend the harness.
      */
     private static final List<String> TABLES =
-            List.of("invoice_line_items", "invoices", "tasks", "contacts", "projects", "clients");
+            List.of("invoice_line_items", "invoices", "tasks", "contacts", "project_tags",
+                    "projects", "tags", "clients");
 
     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
     @PostMapping("/reset")
@@ -62,6 +63,11 @@ public class TestSupportController {
         seedTable(fixture, "tasks", "INSERT INTO tasks (id, title, done, project_id) VALUES (?, ?, ?, ?)",
                 t -> new Object[] {id(t, "id"), t.get("title"), Boolean.TRUE.equals(t.get("done")),
                         id(t, "projectId")});
+        seedTable(fixture, "tags", "INSERT INTO tags (id, name) VALUES (?, ?)",
+                t -> new Object[] {id(t, "id"), t.get("name")});
+        seedTable(fixture, "projectTags",
+                "INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)",
+                pt -> new Object[] {id(pt, "projectId"), id(pt, "tagId")});
         seedInvoices(fixture);
     }
 
