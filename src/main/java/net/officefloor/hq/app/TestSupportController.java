@@ -32,7 +32,12 @@ public class TestSupportController {
     @PostMapping("/reset")
     public void reset() {
         audit.clear();
+        // projects references clients (FK) — drop referential integrity so both parent and child
+        // can be TRUNCATE ... RESTART IDENTITY regardless of order, then restore it.
+        jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+        jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
+        jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     }
 
     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
@@ -45,6 +50,14 @@ public class TestSupportController {
                 // Explicit fixture id (JPA save() would ignore it — the spec asserts by these ids).
                 jdbc.update("INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
                         ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"));
+            }
+        }
+        List<Map<String, Object>> projects = (List<Map<String, Object>>) fixture.get("projects");
+        if (projects != null) {
+            for (Map<String, Object> p : projects) {
+                jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
+                        ((Number) p.get("id")).longValue(), p.get("name"),
+                        ((Number) p.get("clientId")).longValue());
             }
         }
     }
