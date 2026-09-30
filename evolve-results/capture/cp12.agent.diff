@@ -1,0 +1,106 @@
+diff --git a/src/main/frontend/features/invoices/InvoicesTable.tsx b/src/main/frontend/features/invoices/InvoicesTable.tsx
+index 956cf44..6cded87 100644
+--- a/src/main/frontend/features/invoices/InvoicesTable.tsx
++++ b/src/main/frontend/features/invoices/InvoicesTable.tsx
+@@ -1,6 +1,8 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { invoicesKey, fetchInvoices, type Invoice } from './queries';
++import { invoicesKey, fetchInvoices, INVOICE_SORT_PARAM, type Invoice } from './queries';
+ import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
+ import { formatMoney } from '../../ui/money';
+ 
+ // A project's invoices list plus the derived total. Queries for itself under ['invoices', projectId]
+@@ -11,15 +13,24 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
+     queryKey: invoicesKey(projectId),
+     queryFn: () => fetchInvoices(projectId),
+   });
++  // Which sort is active lives in the URL (CLAUDE.md rule 4); the sort control owns the key and this
++  // list reads it. Due dates are stored as ISO strings, so a plain string compare is chronological.
++  const [sort] = useSearchParam(INVOICE_SORT_PARAM, asString);
+ 
+   if (!invoices) {
+     return null;
+   }
+ 
++  const rows =
++    sort === 'due'
++      ? [...invoices].sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
++      : invoices;
++
+   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+ 
+   return (
+     <>
++      <InvoicesToolbar.Slot projectId={projectId} />
+       <table data-testid="project-invoices-table">
+         <thead>
+           <tr>
+@@ -28,7 +39,7 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {invoices.map((invoice: Invoice) => (
++          {rows.map((invoice: Invoice) => (
+             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+               <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+               <InvoiceRow.Slot
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index 6c6cbb3..0d3f2a1 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -14,6 +14,9 @@ export type Invoice = {
+ 
+ export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
+ 
++/** URL key owned by the sort control; readers (the list) sort by the same key (CLAUDE.md rule 4). */
++export const INVOICE_SORT_PARAM = 'invoiceSort';
++
+ export function fetchInvoices(projectId: number): Promise<Invoice[]> {
+   return getJson<Invoice[]>(`/api/invoices/${projectId}`);
+ }
+diff --git a/src/main/frontend/features/invoices/sort.slot.tsx b/src/main/frontend/features/invoices/sort.slot.tsx
+new file mode 100644
+index 0000000..50bc3c6
+--- /dev/null
++++ b/src/main/frontend/features/invoices/sort.slot.tsx
+@@ -0,0 +1,23 @@
++import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { INVOICE_SORT_PARAM } from './queries';
++
++// The "sort by due date" control — its own file filling the invoices.toolbar region (CLAUDE.md
++// rule 3). It owns the `invoiceSort` URL key (rule 4): the chosen sort outlives a click, so it lives
++// in the URL, and the list (InvoicesTable) reads the very same key to order its rows. No callback,
++// no shared state — just the key.
++function InvoiceSortByDue() {
++  const [sort, setSort] = useSearchParam(INVOICE_SORT_PARAM, asString);
++  return (
++    <button
++      type="button"
++      data-testid="invoice-sort-due"
++      aria-pressed={sort === 'due'}
++      onClick={() => setSort('due')}
++    >
++      Sort by due date
++    </button>
++  );
++}
++
++export const contribution = InvoicesToolbar.fill({ order: 10, Component: InvoiceSortByDue });
+diff --git a/src/main/frontend/slots/defs/invoicesToolbar.ts b/src/main/frontend/slots/defs/invoicesToolbar.ts
+new file mode 100644
+index 0000000..345a4ff
+--- /dev/null
++++ b/src/main/frontend/slots/defs/invoicesToolbar.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The project invoices toolbar — a region above a project's invoices list for controls that act on
++ * it (sorting, and whatever comes later). InvoicesTable renders the region; features fill it
++ * (CLAUDE.md rule 3), so a new control is a new `*.slot.tsx` file and the table is not edited again.
++ * Its context is the project's id, so a control can key its URL/query state per project.
++ */
++export const InvoicesToolbar = defineSlot<{ projectId: number }>('invoices.toolbar');
