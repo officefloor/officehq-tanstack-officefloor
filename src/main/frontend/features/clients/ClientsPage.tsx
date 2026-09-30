@@ -25,10 +25,20 @@ export function ClientsPage() {
   // no server data copied into state. The key still starts with 'clients', so writes that
   // invalidateQueries({ queryKey: ['clients'] }) still refresh it.
   const [q] = useSearchParam('clientSearch', asString);
+  // The sort lives in the URL too (owned by features/clients/sort.slot.tsx). The list reads the
+  // same key and asks the server for the ordered list, so it stays a single source of truth — no
+  // server data copied into state or re-sorted by hand. The key still starts with 'clients', so
+  // writes that invalidateQueries({ queryKey: ['clients'] }) still refresh it.
+  const [sort] = useSearchParam('clientSort', asString);
   const clients = useQuery({
-    queryKey: ['clients', q],
-    queryFn: () =>
-      getJson<Client[]>(q ? `/api/clients?q=${encodeURIComponent(q)}` : '/api/clients'),
+    queryKey: ['clients', q, sort],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (sort) params.set('sort', sort);
+      const qs = params.toString();
+      return getJson<Client[]>(qs ? `/api/clients?${qs}` : '/api/clients');
+    },
   });
 
   const [name, setName] = useState('');
