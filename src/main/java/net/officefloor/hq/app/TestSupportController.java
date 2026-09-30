@@ -36,6 +36,7 @@ public class TestSupportController {
         // can be TRUNCATE ... RESTART IDENTITY regardless of order, then restore it.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
+        jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
@@ -69,6 +70,15 @@ public class TestSupportController {
                         "INSERT INTO contacts (id, name, email, role, client_id) VALUES (?, ?, ?, ?, ?)",
                         ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"),
                         c.get("role"), ((Number) c.get("clientId")).longValue());
+            }
+        }
+        List<Map<String, Object>> tasks = (List<Map<String, Object>>) fixture.get("tasks");
+        if (tasks != null) {
+            for (Map<String, Object> t : tasks) {
+                jdbc.update("INSERT INTO tasks (id, title, done, project_id) VALUES (?, ?, ?, ?)",
+                        ((Number) t.get("id")).longValue(), t.get("title"),
+                        Boolean.TRUE.equals(t.get("done")),
+                        ((Number) t.get("projectId")).longValue());
             }
         }
         List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
