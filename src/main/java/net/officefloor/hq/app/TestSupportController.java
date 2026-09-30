@@ -64,10 +64,12 @@ public class TestSupportController {
         List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
         if (invoices != null) {
             for (Map<String, Object> i : invoices) {
-                jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
+                jdbc.update(
+                        "INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
                         ((Number) i.get("id")).longValue(),
                         ((Number) i.get("projectId")).longValue(),
-                        ((Number) i.get("amount")).doubleValue());
+                        ((Number) i.get("amount")).doubleValue(),
+                        i.getOrDefault("status", "UNPAID"));
             }
         }
     }
