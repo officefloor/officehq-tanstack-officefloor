@@ -1,0 +1,88 @@
+diff --git a/src/main/java/net/officefloor/hq/app/ClientStatementGet.java b/src/main/java/net/officefloor/hq/app/ClientStatementGet.java
+index 25fbe66..f654eaf 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientStatementGet.java
++++ b/src/main/java/net/officefloor/hq/app/ClientStatementGet.java
+@@ -48,7 +48,10 @@ public class ClientStatementGet {
+         BigDecimal outstanding = BigDecimal.ZERO;
+         for (Invoice invoice : clientInvoices) {
+             BigDecimal paid = paidByInvoice.getOrDefault(invoice.getId(), BigDecimal.ZERO);
+-            BigDecimal due = invoice.getAmount().subtract(paid);
++            // Owed = the discounted amount (subtotal minus the invoice's discount, the same figure the
++            // invoice detail and dashboard use) less what has been paid, so the discount shows up in
++            // the statement's amount due and outstanding total too.
++            BigDecimal due = invoice.getDiscountedAmount().subtract(paid);
+             invoice.setAmountDue(due);
+             outstanding = outstanding.add(due);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardGet.java b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+index 7b5fe14..92dd4d6 100644
+--- a/src/main/java/net/officefloor/hq/app/DashboardGet.java
++++ b/src/main/java/net/officefloor/hq/app/DashboardGet.java
+@@ -1,11 +1,12 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+  * {@code GET /api/dashboard} — the home-screen summary across all three entities: the count of
+- * clients, the count of projects, and the outstanding total (the sum of every SENT invoice's
+- * amount, i.e. the money actually owed — drafts and paid invoices are excluded). Wired by
++ * clients, the count of projects, and the outstanding total (the money actually owed — the sum of
++ * every SENT invoice's discounted amount, drafts and paid invoices excluded). Wired by
+  * {@code officefloor/rest/api/dashboard.GET.yml}.
+  */
+ public class DashboardGet {
+@@ -13,12 +14,19 @@ public class DashboardGet {
+     public void service(ClientRepository clients, ProjectRepository projects,
+             InvoiceRepository invoices, AppSettingRepository settings,
+             ObjectResponse<DashboardView> response) {
++        // Outstanding is what is owed AFTER each invoice's discount, so the home screen agrees with
++        // the invoice and statement: sum each SENT invoice's discounted amount (subtotal minus its
++        // discount, see Invoice#getDiscountedAmount), the same discount the invoice-detail total uses.
++        BigDecimal outstanding = BigDecimal.ZERO;
++        for (Invoice invoice : invoices.findByStatusOrderByIdAsc("SENT")) {
++            outstanding = outstanding.add(invoice.getDiscountedAmount());
++        }
+         // Overdue is measured against the seeded "asOf" reference date so the count is deterministic.
+         // With no reference date set nothing is treated as overdue (count 0).
+         long overdueCount = settings.findById("asOf")
+                 .map(s -> invoices.countSentOverdue(s.getValue()))
+                 .orElse(0L);
+         response.send(new DashboardView(clients.count(), projects.count(),
+-                invoices.sumSentAmount(), overdueCount));
++                outstanding, overdueCount));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index 53343e4..584386a 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
+ import jakarta.persistence.Table;
+ import jakarta.persistence.Transient;
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ 
+ /**
+  * An invoice raised against a project: the id of the {@link Project} it belongs to and a money
+@@ -122,4 +123,19 @@ public class Invoice {
+     public void setDiscountPct(BigDecimal discountPct) {
+         this.discountPct = discountPct;
+     }
++
++    /**
++     * What is actually owed on this invoice before payments: its {@link #amount} (the subtotal)
++     * minus the discount its {@link #discountPct} takes off, the discount rounded to cents HALF_UP —
++     * the same derivation {@link InvoiceSummaryGet} makes for the invoice-detail total. Derived, not
++     * stored (Hibernate uses field access, so this getter is not a mapped property), so every place
++     * that shows money owed — the invoice, the statement and the dashboard — applies one discount.
++     */
++    public BigDecimal getDiscountedAmount() {
++        BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
++        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
++        BigDecimal discount = amt.multiply(pct)
++                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        return amt.subtract(discount);
++    }
+ }
