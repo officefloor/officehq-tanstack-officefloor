@@ -1,11 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientRow } from '../../slots/defs/clientRow';
+import { asFlag } from '../../url/useSearchParam';
 import {
   CLIENT_SEARCH_PARAM,
   CLIENT_SORT_PARAM,
+  CLIENTS_SHOW_ARCHIVED_PARAM,
+  archivedClientsKey,
   clientsKey,
   clientsOutstandingKey,
+  fetchArchivedClients,
   fetchClients,
   fetchClientsOutstanding,
   matchesClientSearch,
@@ -22,6 +26,16 @@ export function ClientsTable() {
     queryKey: clientsOutstandingKey,
     queryFn: fetchClientsOutstanding,
   });
+  const [showArchived] = useSearchParam(CLIENTS_SHOW_ARCHIVED_PARAM, asFlag);
+  // The tucked-away clients — fetched only for the "show archived" view (kept off otherwise so a
+  // default page never asks for them). The list shows the active clients plus these when the toggle
+  // is on. Both queries live under ['clients'], so a restore that invalidates ['clients'] refreshes
+  // them together (CLAUDE.md rule 5).
+  const { data: archived } = useQuery({
+    queryKey: archivedClientsKey,
+    queryFn: fetchArchivedClients,
+    enabled: showArchived,
+  });
   const [query] = useSearchParam(CLIENT_SEARCH_PARAM, asString);
   const [sort] = useSearchParam(CLIENT_SORT_PARAM, asString);
 
@@ -29,7 +43,9 @@ export function ClientsTable() {
     return null;
   }
 
-  if (clients.length === 0) {
+  const all = showArchived ? [...clients, ...(archived ?? [])] : clients;
+
+  if (all.length === 0) {
     return <p data-testid="clients-empty">No clients yet.</p>;
   }
 
@@ -37,7 +53,7 @@ export function ClientsTable() {
   const owedById = new Map((outstanding ?? []).map((o) => [o.clientId, Number(o.outstanding)]));
   const owed = (clientId: number) => owedById.get(clientId) ?? 0;
 
-  const visible = clients
+  const visible = all
     .filter((client) => matchesClientSearch(client, query))
     .sort((a, b) =>
       sort === 'outstanding'

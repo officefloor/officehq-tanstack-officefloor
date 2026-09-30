@@ -17,6 +17,12 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      */
     List<Client> findAllByArchivedFalseOrderByIdAsc();
 
+    /**
+     * Every client that has been tucked away, oldest id first — the archived clients, so a "show
+     * archived" view can list them and bring one back.
+     */
+    List<Client> findAllByArchivedTrueOrderByIdAsc();
+
     /** Whether a client already uses this email — no two clients may share one. */
     boolean existsByEmail(String email);
 

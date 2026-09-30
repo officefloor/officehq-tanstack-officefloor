@@ -2,7 +2,7 @@ import { getJson, postJson } from '../../api/http';
 
 // Server data under ONE shared key: anything showing clients reads ['clients'], and a write
 // invalidates the same key to refresh them all (CLAUDE.md rule 5).
-export type Client = { id: number; name: string; email: string };
+export type Client = { id: number; name: string; email: string; archived: boolean };
 
 export const clientsKey = ['clients'] as const;
 
@@ -27,6 +27,22 @@ export function isValidEmail(email: string): boolean {
 export function fetchClients(): Promise<Client[]> {
   return getJson<Client[]>('/api/clients');
 }
+
+// The tucked-away (archived) clients, under a key nested beneath ['clients'] so invalidating clients
+// refreshes them too (CLAUDE.md rule 5). Read alongside ['clients'] so the list's "show archived"
+// view can reveal them and offer to bring one back, while the default list keeps showing only the
+// active ones.
+export const archivedClientsKey = ['clients', 'archived'] as const;
+
+export function fetchArchivedClients(): Promise<Client[]> {
+  return getJson<Client[]>('/api/clients/archived');
+}
+
+// The URL search-param key the "show archived" toggle owns and the clients list reads (CLAUDE.md
+// rule 4). Off by default → only active clients show; on → the tucked-away ones show too, each with a
+// control to bring it back. Shared as a constant so the two files agree on the one key without
+// importing each other's components.
+export const CLIENTS_SHOW_ARCHIVED_PARAM = 'clientsArchived';
 
 // How much each client still owes, keyed by client id — read alongside the clients list so the list
 // can be ordered by outstanding amount. Nested under ['clients'] so invalidating clients refreshes
@@ -122,6 +138,12 @@ export function createClient(input: { name: string; email: string }): Promise<Cl
  * path, no body needed. */
 export function archiveClient(clientId: number): Promise<void> {
   return postJson<void>(`/api/clients/${clientId}/archive`, {});
+}
+
+/** Bring a tucked-away client back so it returns to the main list and search; id is in the path, no
+ * body needed. The mirror of {@link archiveClient}. */
+export function restoreClient(clientId: number): Promise<void> {
+  return postJson<void>(`/api/clients/${clientId}/restore`, {});
 }
 
 // The URL search-param key the "edit this client" control owns: which client's row is currently

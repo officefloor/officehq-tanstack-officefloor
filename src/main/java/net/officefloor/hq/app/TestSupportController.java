@@ -52,8 +52,10 @@ public class TestSupportController {
     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
     @PostMapping("/seed")
     public void seed(@RequestBody Map<String, Object> fixture) {
-        seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
-                c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
+        seedTable(fixture, "clients",
+                "INSERT INTO clients (id, name, email, archived) VALUES (?, ?, ?, ?)",
+                c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"),
+                        Boolean.TRUE.equals(c.get("archived"))});
         seedTable(fixture, "projects",
                 "INSERT INTO projects (id, name, client_id, status, archived, budget, code)"
                         + " VALUES (?, ?, ?, ?, ?, ?, ?)",
