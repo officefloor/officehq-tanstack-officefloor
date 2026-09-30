@@ -1,0 +1,401 @@
+diff --git a/src/main/frontend/features/projects/ProjectNotesPanel.tsx b/src/main/frontend/features/projects/ProjectNotesPanel.tsx
+new file mode 100644
+index 0000000..9bd59eb
+--- /dev/null
++++ b/src/main/frontend/features/projects/ProjectNotesPanel.tsx
+@@ -0,0 +1,79 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson, postJson } from '../../api/http';
++
++// A note as the server returns it: free text kept against a target (a project here), plus the ISO
++// instant it was written. The server returns notes newest first.
++export type Note = {
++  id: number;
++  targetType: string;
++  targetId: number;
++  text: string;
++  at: string;
++};
++
++// A project's notes, rendered in the project-detail context: the list of that project's notes,
++// newest first, plus a form to add one. Server data is read with useQuery under the ['notes'] key
++// and filtered to this project (never copied into state, never hand-maintained — rule 5). Adding is a
++// useMutation that invalidates ['notes'], so the list refetches itself with the new note on top. The
++// only useState here is the text the user is currently typing (rule 4).
++export function ProjectNotesPanel({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const notes = useQuery({
++    queryKey: ['notes'],
++    queryFn: () => getJson<Note[]>('/api/notes'),
++  });
++
++  const [text, setText] = useState('');
++
++  const create = useMutation({
++    mutationFn: () =>
++      postJson<Note>('/api/notes', { targetType: 'project', targetId: projectId, text }),
++    onSuccess: () => {
++      setText('');
++      void queryClient.invalidateQueries({ queryKey: ['notes'] });
++    },
++  });
++
++  // Server returns notes newest first; keep that order and narrow to this project.
++  const rows = (notes.data ?? []).filter(
++    (n) => n.targetType === 'project' && n.targetId === projectId,
++  );
++
++  return (
++    <section data-testid="project-notes">
++      <form
++        data-testid="note-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          if (!text.trim()) {
++            return;
++          }
++          create.mutate();
++        }}
++      >
++        <input
++          data-testid="note-form-text"
++          placeholder="Write a note"
++          value={text}
++          onChange={(e) => setText(e.target.value)}
++        />
++        <button data-testid="note-form-submit" type="submit">
++          Add note
++        </button>
++      </form>
++
++      {rows.length === 0 ? (
++        <p data-testid="project-notes-empty">No notes yet.</p>
++      ) : (
++        <ul data-testid="project-notes-list">
++          {rows.map((n) => (
++            <li key={n.id} data-testid={`note-row-${n.id}`}>
++              <span data-testid="note-text">{n.text}</span>
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/projects/notes.slot.tsx b/src/main/frontend/features/projects/notes.slot.tsx
+new file mode 100644
+index 0000000..ff4b093
+--- /dev/null
++++ b/src/main/frontend/features/projects/notes.slot.tsx
+@@ -0,0 +1,10 @@
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { ProjectNotesPanel } from './ProjectNotesPanel';
++
++// The notes' presence on a project's detail page — its own file, filling the project-detail slot.
++// The detail route was written once and is not touched to add this; the panel queries for its own
++// data (['notes']) scoped to the project it is handed.
++export const contribution = ProjectDetail.fill({
++  order: 40,
++  Component: ProjectNotesPanel,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/NewNote.java b/src/main/java/net/officefloor/hq/app/NewNote.java
+new file mode 100644
+index 0000000..1d615b0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NewNote.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app;
++
++/**
++ * Request body for {@code POST /api/notes}: the fields the user supplies when writing a note — the
++ * target it is kept against ({@code targetType}/{@code targetId}) plus the note text. Bound from the
++ * JSON payload by the Spring MVC {@code @RequestBody} argument resolver.
++ */
++public class NewNote {
++
++    private String targetType;
++
++    private Long targetId;
++
++    private String text;
++
++    public String getTargetType() {
++        return targetType;
++    }
++
++    public void setTargetType(String targetType) {
++        this.targetType = targetType;
++    }
++
++    public Long getTargetId() {
++        return targetId;
++    }
++
++    public void setTargetId(Long targetId) {
++        this.targetId = targetId;
++    }
++
++    public String getText() {
++        return text;
++    }
++
++    public void setText(String text) {
++        this.text = text;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Note.java b/src/main/java/net/officefloor/hq/app/Note.java
+new file mode 100644
+index 0000000..79fd03c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Note.java
+@@ -0,0 +1,77 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A free-text note the user keeps against a target (a project, for now). Polymorphic: it names its
++ * target by {@code targetType}/{@code targetId} rather than a hard FK. {@code text} is the note body
++ * and {@code at} is the ISO-8601 UTC instant it was written (stored as text so it sorts lexically =
++ * chronologically). Mapped to the {@code note} table created by {@code V18__notes.sql}. IDENTITY id
++ * so the DB assigns it on insert (seed inserts explicit ids via JdbcTemplate; GENERATED BY DEFAULT
++ * allows both).
++ */
++@Entity
++@Table(name = "note")
++public class Note {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "target_type")
++    private String targetType;
++
++    @Column(name = "target_id")
++    private Long targetId;
++
++    @Column(name = "note_text")
++    private String text;
++
++    @Column(name = "created_at")
++    private String at;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++
++    public String getTargetType() {
++        return targetType;
++    }
++
++    public void setTargetType(String targetType) {
++        this.targetType = targetType;
++    }
++
++    public Long getTargetId() {
++        return targetId;
++    }
++
++    public void setTargetId(Long targetId) {
++        this.targetId = targetId;
++    }
++
++    public String getText() {
++        return text;
++    }
++
++    public void setText(String text) {
++        this.text = text;
++    }
++
++    public String getAt() {
++        return at;
++    }
++
++    public void setAt(String at) {
++        this.at = at;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NoteRepository.java b/src/main/java/net/officefloor/hq/app/NoteRepository.java
+new file mode 100644
+index 0000000..3352031
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NoteRepository.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/**
++ * Data access for {@link Note}. A Spring Data bean, injected into the OfficeFloor logic classes that
++ * back the /api/notes routes.
++ */
++public interface NoteRepository extends JpaRepository<Note, Long> {
++
++    /**
++     * All notes, newest first. {@code at} is an ISO-8601 UTC string, so a descending sort on it is a
++     * chronological newest-first sort. The UI scopes them to one target.
++     */
++    List<Note> findAllByOrderByAtDesc();
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NotesGet.java b/src/main/java/net/officefloor/hq/app/NotesGet.java
+new file mode 100644
+index 0000000..f5999fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NotesGet.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * {@code GET /api/notes} — list every note, newest first. The UI scopes them to one target (e.g. a
++ * project). Wired by {@code officefloor/rest/api/notes.GET.yml}.
++ */
++public class NotesGet {
++
++    public void service(NoteRepository notes, ObjectResponse<List<Note>> response) {
++        response.send(notes.findAllByOrderByAtDesc());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/NotesPost.java b/src/main/java/net/officefloor/hq/app/NotesPost.java
+new file mode 100644
+index 0000000..90ab19a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/NotesPost.java
+@@ -0,0 +1,35 @@
++package net.officefloor.hq.app;
++
++import java.time.Instant;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/notes} — write a note against a target ({@code targetType}/{@code targetId}) and
++ * return the created row. The server stamps {@code at} with the current instant so a fresh note is
++ * always the newest. Wired by {@code officefloor/rest/api/notes.POST.yml}; the create is audited
++ * through {@link Audit}.
++ */
++public class NotesPost {
++
++    public void service(@RequestBody NewNote body, NoteRepository notes, Audit audit,
++            ObjectResponse<Note> response) {
++        String text = body.getText() == null ? "" : body.getText().trim();
++        if (text.isEmpty()) {
++            throw new IllegalArgumentException("a note requires text");
++        }
++        String targetType = body.getTargetType() == null ? "" : body.getTargetType().trim();
++        Long targetId = body.getTargetId();
++        if (targetType.isEmpty() || targetId == null) {
++            throw new IllegalArgumentException("a note requires a target");
++        }
++        Note note = new Note();
++        note.setTargetType(targetType);
++        note.setTargetId(targetId);
++        note.setText(text);
++        note.setAt(Instant.now().toString());
++        Note saved = notes.save(note);
++        audit.record("NOTE_CREATED id=" + saved.getId() + " target=" + targetType + ":" + targetId);
++        response.send(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 1513adb..6a8a862 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -35,8 +35,8 @@ public class TestSupportController {
+      * shape. A new table joins the reset by being added to this list — no new statement to write.
+      */
+     private static final List<String> DOMAIN_TABLES =
+-            List.of("project_tag", "tag", "line_item", "invoice", "task", "contact", "project",
+-                    "client");
++            List.of("note", "project_tag", "tag", "line_item", "invoice", "task", "contact",
++                    "project", "client");
+ 
+     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
+     @PostMapping("/reset")
+@@ -81,6 +81,17 @@ public class TestSupportController {
+                 "INSERT INTO project_tag (project_id, tag_id) VALUES (?, ?)",
+                 asLong(pt, "projectId"), asLong(pt, "tagId")));
+ 
++        seedRows(fixture, "notes", n -> jdbc.update(
++                "INSERT INTO note (id, target_type, target_id, note_text, created_at) "
++                        + "VALUES (?, ?, ?, ?, ?)",
++                asLong(n, "id"), n.get("targetType"), asLong(n, "targetId"),
++                n.get("text"), n.get("at")));
++        // The seed inserts explicit ids into note's IDENTITY column (GENERATED BY DEFAULT), which does
++        // not advance the identity sequence — reset RESTARTed it at 1. Without this the first app-side
++        // save() would regenerate id=1 and collide with a seeded row. Advance it past the max seeded
++        // id so a note added through the API (POST /api/notes) gets a fresh id.
++        syncIdentity("note");
++
+         seedRows(fixture, "contacts", c -> jdbc.update(
+                 "INSERT INTO contact (id, client_id, name, email, role) VALUES (?, ?, ?, ?, ?)",
+                 asLong(c, "id"), asLong(c, "clientId"),
+@@ -138,6 +149,17 @@ public class TestSupportController {
+         }
+     }
+ 
++    /**
++     * Advance {@code table}'s IDENTITY sequence past its current max id, so app-side {@code save()}
++     * calls that generate ids do not collide with rows the seed inserted at explicit ids.
++     */
++    private void syncIdentity(String table) {
++        Long max = jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM " + table, Long.class);
++        if (max != null && max > 0) {
++            jdbc.execute("ALTER TABLE " + table + " ALTER COLUMN id RESTART WITH " + (max + 1));
++        }
++    }
++
+     /** Read a JSON number field as a {@code long} (JSON integers arrive as {@link Number}). */
+     private static long asLong(Map<String, Object> row, String key) {
+         return ((Number) row.get(key)).longValue();
+diff --git a/src/main/resources/db/migration/V18__notes.sql b/src/main/resources/db/migration/V18__notes.sql
+new file mode 100644
+index 0000000..0239fa7
+--- /dev/null
++++ b/src/main/resources/db/migration/V18__notes.sql
+@@ -0,0 +1,14 @@
++-- Free-text notes a user keeps against something (a project, for now). A note is polymorphic: it
++-- names its target by (target_type, target_id) rather than a hard FK, so the same table can carry
++-- notes for other things later without a schema change. note_text holds the note body; created_at is
++-- the ISO-8601 UTC instant it was written, stored as text so it both round-trips exactly and sorts
++-- lexically = chronologically (newest first is ORDER BY created_at DESC). IDENTITY id like the other
++-- domain tables, so the DB assigns it on insert while the seed path can still supply explicit ids
++-- (GENERATED BY DEFAULT allows both).
++CREATE TABLE note (
++    id          BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    target_type VARCHAR(32) NOT NULL,
++    target_id   BIGINT NOT NULL,
++    note_text   VARCHAR(2000) NOT NULL,
++    created_at  VARCHAR(64) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/notes.GET.yml b/src/main/resources/officefloor/rest/api/notes.GET.yml
+new file mode 100644
+index 0000000..c938f9b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/notes.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.NotesGet
+diff --git a/src/main/resources/officefloor/rest/api/notes.POST.yml b/src/main/resources/officefloor/rest/api/notes.POST.yml
+new file mode 100644
+index 0000000..a6bf06b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/notes.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.NotesPost
