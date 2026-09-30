@@ -1,16 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
+import { money } from '../../ui/money';
 
 // An invoice as the server returns it: which project it belongs to, its amount, and its payment
 // status (UNPAID until marked paid).
 export type Invoice = { id: number; projectId: number; amount: number; status: string };
-
-// Amounts always render with 2 decimals (the test contract). Kept in one place so the rows and the
-// derived total format identically.
-function money(amount: number): string {
-  return amount.toFixed(2);
-}
 
 // A project's invoices: the list scoped to this project, their derived total, and the form to add a
 // new one. Server data is read with useQuery under the ['invoices'] key and changed with

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { money } from '../../ui/money';
 
 // The whole-app summary the server returns: how many clients and projects exist, and the money
 // still owed (the sum of every UNPAID invoice's amount).
@@ -8,12 +9,6 @@ export type DashboardSummary = {
   projectsCount: number;
   outstandingTotal: number;
 };
-
-// The outstanding total renders with 2 decimals (the test contract), matching how invoice amounts
-// format elsewhere.
-function money(amount: number): string {
-  return amount.toFixed(2);
-}
 
 // The home screen: a read-only dashboard of the counts and the outstanding total. Server data is
 // read with useQuery under the ['dashboard'] key — never copied into state. A write elsewhere that
