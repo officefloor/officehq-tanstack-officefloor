@@ -1,0 +1,171 @@
+diff --git a/src/main/frontend/features/search/queries.ts b/src/main/frontend/features/search/queries.ts
+new file mode 100644
+index 0000000..66bedeb
+--- /dev/null
++++ b/src/main/frontend/features/search/queries.ts
+@@ -0,0 +1,20 @@
++import { getJson } from '../../api/http';
++
++// The one global search box looks across BOTH clients and projects. It reads the server's combined
++// result under a per-query key (CLAUDE.md rule 5) — the box queries for itself; nothing hands it
++// data. The server does the matching so "one search box across both" is a single request.
++export type SearchClient = { id: number; name: string; email: string };
++export type SearchProject = { id: number; name: string; clientName: string };
++export type SearchResults = { clients: SearchClient[]; projects: SearchProject[] };
++
++// The URL search-param key the box owns (CLAUDE.md rule 4): the query text outlives a click, so it
++// lives in the URL. A constant so any reader agrees on the one key without importing the box.
++export const GLOBAL_SEARCH_PARAM = 'q';
++
++// One query key per search text, so react-query caches each distinct search and refetches when the
++// text changes.
++export const searchKey = (query: string) => ['search', query] as const;
++
++export function fetchSearch(query: string): Promise<SearchResults> {
++  return getJson<SearchResults>(`/api/search?q=${encodeURIComponent(query)}`);
++}
+diff --git a/src/main/frontend/features/search/search.slot.tsx b/src/main/frontend/features/search/search.slot.tsx
+new file mode 100644
+index 0000000..4883535
+--- /dev/null
++++ b/src/main/frontend/features/search/search.slot.tsx
+@@ -0,0 +1,52 @@
++import { useQuery } from '@tanstack/react-query';
++import { AppNav } from '../../slots/defs/appNav';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { GLOBAL_SEARCH_PARAM, fetchSearch, searchKey } from './queries';
++
++// The one global search box, with its results grouped by kind. It fills the shell nav region (an
++// existing region — CLAUDE.md rule 3), so a single box is present on every page and looks across
++// both clients and projects. It owns the `q` URL key (rule 4) and queries the server's combined
++// result for itself under ['search', q] (rule 5) — nothing hands it data. Results appear only once
++// something has been typed.
++function GlobalSearch() {
++  const [query, setQuery] = useSearchParam(GLOBAL_SEARCH_PARAM, asString);
++  const trimmed = query.trim();
++  const { data } = useQuery({
++    queryKey: searchKey(trimmed),
++    queryFn: () => fetchSearch(trimmed),
++    enabled: trimmed.length > 0,
++  });
++
++  return (
++    <div data-testid="global-search-box">
++      <input
++        data-testid="global-search"
++        type="search"
++        aria-label="Search clients and projects"
++        placeholder="Search clients and projects"
++        value={query}
++        onChange={(event) => setQuery(event.target.value)}
++      />
++      {trimmed.length > 0 && data ? (
++        <div data-testid="search-results">
++          <div data-testid="search-clients">
++            {data.clients.map((client) => (
++              <div key={client.id} data-testid={`client-row-${client.id}`}>
++                <span data-testid="client-name">{client.name}</span>
++              </div>
++            ))}
++          </div>
++          <div data-testid="search-projects">
++            {data.projects.map((project) => (
++              <div key={project.id} data-testid={`project-row-${project.id}`}>
++                <span data-testid="project-name">{project.name}</span>
++              </div>
++            ))}
++          </div>
++        </div>
++      ) : null}
++    </div>
++  );
++}
++
++export const contribution = AppNav.fill({ order: 100, Component: GlobalSearch });
+diff --git a/src/main/java/net/officefloor/hq/app/SearchGet.java b/src/main/java/net/officefloor/hq/app/SearchGet.java
+new file mode 100644
+index 0000000..5cb2d4f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SearchGet.java
+@@ -0,0 +1,37 @@
++package net.officefloor.hq.app;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.web.HttpQueryParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/search?q=... — the one search box that looks across BOTH clients and projects. Returns
++ * the matching clients and matching projects together (grouped by kind) so a single box can show
++ * both. A match is a case-insensitive substring of the entity's name; archived (tucked-away)
++ * clients and projects are excluded, exactly as they are from their own lists. An empty query
++ * matches nothing. Wired by {@code officefloor/rest/api/search.GET.yml}.
++ */
++public class SearchGet {
++
++    public void service(@HttpQueryParameter("q") String q, ClientRepository clients,
++            ProjectRepository projects, ObjectResponse<SearchResults> response) {
++        String needle = q == null ? "" : q.trim().toLowerCase();
++
++        List<Client> matchedClients = new ArrayList<>();
++        List<ProjectView> matchedProjects = new ArrayList<>();
++        if (!needle.isEmpty()) {
++            for (Client client : clients.findAllByArchivedFalseOrderByIdAsc()) {
++                if (client.getName().toLowerCase().contains(needle)) {
++                    matchedClients.add(client);
++                }
++            }
++            for (ProjectView project : projects.findAllViews()) {
++                if (!project.isArchived() && project.getName().toLowerCase().contains(needle)) {
++                    matchedProjects.add(project);
++                }
++            }
++        }
++        response.send(new SearchResults(matchedClients, matchedProjects));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/SearchResults.java b/src/main/java/net/officefloor/hq/app/SearchResults.java
+new file mode 100644
+index 0000000..c9a4ff4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SearchResults.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++
++/**
++ * The result of the one global search: the matching clients and the matching projects, kept in
++ * separate lists so the front-end shows each kind under its own group. Jackson serialises the
++ * getters as the JSON the search box reads. Built by {@link SearchGet}.
++ */
++public class SearchResults {
++
++    private final List<Client> clients;
++    private final List<ProjectView> projects;
++
++    public SearchResults(List<Client> clients, List<ProjectView> projects) {
++        this.clients = clients;
++        this.projects = projects;
++    }
++
++    /** The clients whose name matched the search text (archived clients excluded). */
++    public List<Client> getClients() {
++        return clients;
++    }
++
++    /** The projects whose name matched the search text (archived projects excluded). */
++    public List<ProjectView> getProjects() {
++        return projects;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/search.GET.yml b/src/main/resources/officefloor/rest/api/search.GET.yml
+new file mode 100644
+index 0000000..0dd7cb3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/search.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/search?q=... -> matching clients and projects, grouped by kind (SearchGet.service).
++service:
++  class: net.officefloor.hq.app.SearchGet
