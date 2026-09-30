@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
-import { asFlag, useSearchParam } from '../../url/useSearchParam';
+import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import type { Client } from '../clients/ClientsPage';
+import type { ProjectTag } from './ProjectTagsPanel';
 import { ProjectRowActions } from '../../slots/defs/projectRowActions';
 import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
 
@@ -37,6 +38,16 @@ export function ProjectsPage() {
   // projects drop off the list; the toggle brings them back — no server data copied into state.
   const [showArchived] = useSearchParam('showArchived', asFlag);
 
+  // Which tag the list is filtered to lives in the URL, owned by features/projects/tagFilter.slot.tsx.
+  // The page reads the same key and narrows its rows to projects carrying that tag; the pairings come
+  // from useQuery under ['projectTags'] — the SAME key the tags panel owns (rule 5) — so nothing is
+  // passed between the control and the list. Undefined means no filter: every project shows.
+  const [tagFilter] = useSearchParam('projectTag', asNumber);
+  const projectTags = useQuery({
+    queryKey: ['projectTags'],
+    queryFn: () => getJson<ProjectTag[]>('/api/project-tags'),
+  });
+
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
 
@@ -49,7 +60,14 @@ export function ProjectsPage() {
     },
   });
 
-  const rows = (projects.data ?? []).filter((p) => showArchived || !p.archived);
+  const taggedIds = new Set(
+    (projectTags.data ?? [])
+      .filter((pt) => pt.tagId === tagFilter)
+      .map((pt) => pt.projectId),
+  );
+  const rows = (projects.data ?? [])
+    .filter((p) => showArchived || !p.archived)
+    .filter((p) => tagFilter === undefined || taggedIds.has(p.id));
   const clientOptions = clients.data ?? [];
 
   return (
