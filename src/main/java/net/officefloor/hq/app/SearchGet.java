@@ -34,7 +34,8 @@ public class SearchGet {
         List<ProjectView> matchedProjects =
                 projects.findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(term).stream()
                         .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
-                                nameById.get(p.getClientId()), p.isArchived(), p.getStatus()))
+                                nameById.get(p.getClientId()), p.isArchived(), p.getStatus(),
+                                p.getCode()))
                         .collect(Collectors.toList());
 
         response.send(new SearchView(matchedClients, matchedProjects));

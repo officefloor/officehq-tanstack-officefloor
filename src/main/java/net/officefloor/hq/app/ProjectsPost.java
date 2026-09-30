@@ -25,14 +25,24 @@ public class ProjectsPost {
         if (!status.equals("ACTIVE") && !status.equals("ON_HOLD") && !status.equals("FINISHED")) {
             throw new IllegalArgumentException("a project status must be ACTIVE, ON_HOLD or FINISHED");
         }
+        String code = body.getCode() == null ? "" : body.getCode().trim();
+        if (code.isEmpty()) {
+            throw new IllegalArgumentException("a project requires a code");
+        }
+        // Two projects may not share a reference code. Reject the duplicate before saving, so no row
+        // and no audit record is written. The UNIQUE constraint (V31__project_code.sql) backs this.
+        if (projects.existsByCode(code)) {
+            throw new IllegalArgumentException("a project with that code already exists");
+        }
         Project project = new Project();
         project.setName(name);
         project.setClientId(clientId);
         project.setStatus(status);
+        project.setCode(code);
         Project saved = projects.save(project);
         audit.record("PROJECT_CREATED id=" + saved.getId() + " name=" + saved.getName()
                 + " client=" + client.getName());
         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(),
-                client.getName(), saved.isArchived(), saved.getStatus()));
+                client.getName(), saved.isArchived(), saved.getStatus(), saved.getCode()));
     }
 }

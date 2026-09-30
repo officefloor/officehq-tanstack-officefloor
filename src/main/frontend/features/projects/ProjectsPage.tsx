@@ -22,6 +22,7 @@ export type Project = {
   clientName: string;
   archived: boolean;
   status: ProjectStatus;
+  code: string;
 };
 
 // The projects page: the whole list of projects plus the form to add one and pick its client.
@@ -62,15 +63,29 @@ export function ProjectsPage() {
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
   const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
+  const [code, setCode] = useState('');
+  // The code error message, or null when the field is fine. The server is the source of truth for
+  // uniqueness (another session may have taken the code), so a rejected create fills this in.
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: () =>
-      postJson<Project>('/api/projects', { name, clientId: Number(clientId), status }),
+      postJson<Project>('/api/projects', {
+        name,
+        clientId: Number(clientId),
+        status,
+        code,
+      }),
     onSuccess: () => {
       setName('');
       setClientId('');
       setStatus('ACTIVE');
+      setCode('');
+      setCodeError(null);
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: () => {
+      setCodeError('That code is already in use.');
     },
   });
 
@@ -91,9 +106,10 @@ export function ProjectsPage() {
         data-testid="project-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!name.trim() || !clientId) {
+          if (!name.trim() || !clientId || !code.trim()) {
             return;
           }
+          setCodeError(null);
           create.mutate();
         }}
       >
@@ -115,6 +131,17 @@ export function ProjectsPage() {
             </option>
           ))}
         </select>
+        <input
+          data-testid="project-form-code"
+          placeholder="Code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        {codeError && (
+          <p data-testid="project-form-code-error" role="alert">
+            {codeError}
+          </p>
+        )}
         <select
           data-testid="project-form-status"
           value={status}
@@ -141,6 +168,7 @@ export function ProjectsPage() {
         <table data-testid="projects-table">
           <thead>
             <tr>
+              <th>Code</th>
               <th>Name</th>
               <th>Client</th>
               <th>Status</th>
@@ -150,6 +178,7 @@ export function ProjectsPage() {
           <tbody>
             {rows.map((p) => (
               <tr key={p.id} data-testid={`project-row-${p.id}`}>
+                <td data-testid="project-code">{p.code}</td>
                 <td data-testid="project-name">{p.name}</td>
                 <td data-testid="project-client">{p.clientName}</td>
                 <td data-testid="project-status">{p.status}</td>

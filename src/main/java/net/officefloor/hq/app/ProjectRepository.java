@@ -18,4 +18,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
      * they drop off the search, mirroring how the clients search excludes archived clients.
      */
     List<Project> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
+
+    /** Whether any project already carries {@code code} — backs the uniqueness check on create. */
+    boolean existsByCode(String code);
 }

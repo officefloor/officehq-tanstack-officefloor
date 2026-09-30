@@ -26,6 +26,10 @@ public class Project {
     @Column(name = "client_id")
     private Long clientId;
 
+    /** A short reference code set when the project is created; unique across projects
+     * (V31__project_code.sql). */
+    private String code;
+
     /** Archived projects are kept but hidden from the default lists (V16__project_archived.sql). */
     @Column(nullable = false)
     private boolean archived;
@@ -61,6 +65,14 @@ public class Project {
 
     public void setClientId(Long clientId) {
         this.clientId = clientId;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public boolean isArchived() {

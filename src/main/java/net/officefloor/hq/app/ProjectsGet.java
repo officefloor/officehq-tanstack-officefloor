@@ -18,7 +18,7 @@ public class ProjectsGet {
                 .collect(Collectors.toMap(Client::getId, Client::getName));
         List<ProjectView> views = projects.findAllByOrderByIdAsc().stream()
                 .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
-                        nameById.get(p.getClientId()), p.isArchived(), p.getStatus()))
+                        nameById.get(p.getClientId()), p.isArchived(), p.getStatus(), p.getCode()))
                 .collect(Collectors.toList());
         response.send(views);
     }
