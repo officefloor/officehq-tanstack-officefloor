@@ -15,6 +15,11 @@ export function createProject(input: { name: string; clientId: number }): Promis
   return postJson<ProjectView>('/api/projects', input);
 }
 
+/** Delete a project the user no longer needs; the id is in the path, no body needed. */
+export function deleteProject(projectId: number): Promise<void> {
+  return postJson<void>(`/api/projects/${projectId}/delete`, {});
+}
+
 // The client options the form's select needs. Read under the SHARED ['clients'] key (CLAUDE.md
 // rule 5) — features never import each other, they stay in step through the key: creating a client
 // elsewhere invalidates ['clients'] and this select updates itself.
