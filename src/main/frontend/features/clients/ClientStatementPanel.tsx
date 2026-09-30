@@ -46,6 +46,23 @@ export function ClientStatementPanel({ clientId }: { clientId: number }) {
   const invoices = data?.invoices ?? [];
   const outstanding = data ? Number(data.outstanding) : 0;
 
+  // Group the client's invoices by the job (project) they were raised against, preserving the
+  // server's oldest-first order both across jobs (first job to appear stays first) and within each
+  // job. Each job carries a subtotal — the sum of its invoices' amounts due — so the statement reads
+  // per job while the outstanding total across every job is unchanged (still server-derived).
+  const groups: { projectId: number; invoices: StatementInvoice[]; subtotal: number }[] = [];
+  const groupByProject = new Map<number, (typeof groups)[number]>();
+  for (const invoice of invoices) {
+    let group = groupByProject.get(invoice.projectId);
+    if (!group) {
+      group = { projectId: invoice.projectId, invoices: [], subtotal: 0 };
+      groupByProject.set(invoice.projectId, group);
+      groups.push(group);
+    }
+    group.invoices.push(invoice);
+    group.subtotal += Number(invoice.amountDue);
+  }
+
   return (
     <section data-testid="client-statement">
       <table data-testid="client-statement-table">
@@ -58,17 +75,23 @@ export function ClientStatementPanel({ clientId }: { clientId: number }) {
             <th>Status</th>
           </tr>
         </thead>
-        <tbody>
-          {invoices.map((i) => (
-            <tr key={i.id} data-testid={`statement-invoice-row-${i.id}`}>
-              <td data-testid="statement-invoice-amount">{money(Number(i.amount))}</td>
-              <td data-testid="statement-invoice-due">{money(Number(i.amountDue))}</td>
-              <td data-testid="statement-invoice-issued">{i.issuedDate}</td>
-              <td data-testid="statement-invoice-dueDate">{i.dueDate}</td>
-              <td data-testid="statement-invoice-status">{invoiceStatus(i)}</td>
+        {groups.map((group) => (
+          <tbody key={group.projectId} data-testid={`statement-project-${group.projectId}`}>
+            {group.invoices.map((i) => (
+              <tr key={i.id} data-testid={`statement-invoice-row-${i.id}`}>
+                <td data-testid="statement-invoice-amount">{money(Number(i.amount))}</td>
+                <td data-testid="statement-invoice-due">{money(Number(i.amountDue))}</td>
+                <td data-testid="statement-invoice-issued">{i.issuedDate}</td>
+                <td data-testid="statement-invoice-dueDate">{i.dueDate}</td>
+                <td data-testid="statement-invoice-status">{invoiceStatus(i)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td>Job subtotal</td>
+              <td data-testid="statement-project-subtotal">{money(group.subtotal)}</td>
             </tr>
-          ))}
-        </tbody>
+          </tbody>
+        ))}
         <tfoot>
           <tr>
             <td>Total still owed</td>
