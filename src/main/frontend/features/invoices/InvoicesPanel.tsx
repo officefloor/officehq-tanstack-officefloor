@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
+import { asString, useSearchParam } from '../../url/useSearchParam';
+import { InvoicesToolbar } from '../../slots/defs/invoicesToolbar';
 import { money } from '../../ui/money';
 
 // An invoice as the server returns it: which project it belongs to, its amount, and its payment
@@ -20,9 +22,17 @@ export type Invoice = {
 // useState is the amount the user is currently typing (rule 4).
 export function InvoicesPanel({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
+  // The sort lives in the URL (owned by features/invoices/sortByDue.slot.tsx). The panel reads the
+  // same key and asks the server for the ordered list, so it stays a single source of truth — no
+  // server data copied into state or re-sorted by hand. The key still starts with 'invoices', so
+  // writes that invalidateQueries({ queryKey: ['invoices'] }) still refresh it.
+  const [sort] = useSearchParam('invoiceSort', asString);
   const invoices = useQuery({
-    queryKey: ['invoices'],
-    queryFn: () => getJson<Invoice[]>('/api/invoices'),
+    queryKey: ['invoices', sort],
+    queryFn: () =>
+      getJson<Invoice[]>(
+        sort ? `/api/invoices?sort=${encodeURIComponent(sort)}` : '/api/invoices',
+      ),
   });
 
   const [amount, setAmount] = useState('');
@@ -84,6 +94,10 @@ export function InvoicesPanel({ projectId }: { projectId: number }) {
           </p>
         )}
       </form>
+
+      <div data-testid="project-invoices-toolbar">
+        <InvoicesToolbar.Slot />
+      </div>
 
       <table data-testid="project-invoices-table">
         <thead>

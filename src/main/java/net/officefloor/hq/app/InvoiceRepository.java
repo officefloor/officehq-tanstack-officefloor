@@ -15,6 +15,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findAllByOrderByIdAsc();
 
     /**
+     * All invoices, earliest due date first (id as a stable tiebreaker), backing the project
+     * invoices' sort-by-due-date control.
+     */
+    List<Invoice> findAllByOrderByDueDateAscIdAsc();
+
+    /**
      * The money still owed: the sum of every UNPAID invoice's amount, or 0 when none are unpaid.
      * Backs the dashboard's outstanding total ({@code GET /api/dashboard}).
      */
