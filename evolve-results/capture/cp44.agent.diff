@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/clients/ClientsPage.tsx b/src/main/frontend/features/clients/ClientsPage.tsx
+index 7c725bc..fd6f774 100644
+--- a/src/main/frontend/features/clients/ClientsPage.tsx
++++ b/src/main/frontend/features/clients/ClientsPage.tsx
+@@ -33,16 +33,22 @@ export function ClientsPage() {
+ 
+   const [name, setName] = useState('');
+   const [email, setEmail] = useState('');
+-  const [emailError, setEmailError] = useState(false);
++  // The email error message, or null when the field is fine. It covers both a locally-caught bad
++  // format and a server rejection (a duplicate email — the server is the source of truth for
++  // uniqueness, since another session may have taken the address).
++  const [emailError, setEmailError] = useState<string | null>(null);
+ 
+   const create = useMutation({
+     mutationFn: () => postJson<Client>('/api/clients', { name, email }),
+     onSuccess: () => {
+       setName('');
+       setEmail('');
+-      setEmailError(false);
++      setEmailError(null);
+       void queryClient.invalidateQueries({ queryKey: ['clients'] });
+     },
++    onError: () => {
++      setEmailError('That email is already in use.');
++    },
+   });
+ 
+   const rows = clients.data ?? [];
+@@ -54,10 +60,10 @@ export function ClientsPage() {
+         onSubmit={(e) => {
+           e.preventDefault();
+           if (!isValidEmail(email)) {
+-            setEmailError(true);
++            setEmailError('Enter a valid email address.');
+             return;
+           }
+-          setEmailError(false);
++          setEmailError(null);
+           create.mutate();
+         }}
+       >
+@@ -75,7 +81,7 @@ export function ClientsPage() {
+         />
+         {emailError && (
+           <p data-testid="client-form-email-error" role="alert">
+-            Enter a valid email address.
++            {emailError}
+           </p>
+         )}
+         <button data-testid="client-form-submit" type="submit">
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+index 5feffb0..56f0eab 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -29,4 +29,10 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
+      * name search, which likewise excludes archived clients.
+      */
+     List<Client> findByArchivedFalseAndNameContainingIgnoreCaseOrderByIdAsc(String term);
++
++    /**
++     * Whether a client already holds this email. Backs the uniqueness check in {@link ClientsPost}
++     * so a duplicate email is rejected before any row or audit record is written.
++     */
++    boolean existsByEmail(String email);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ClientsPost.java b/src/main/java/net/officefloor/hq/app/ClientsPost.java
+index 5f5a254..860ef11 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ClientsPost.java
+@@ -20,9 +20,14 @@ public class ClientsPost {
+         if (!EMAIL.matcher(email).matches()) {
+             throw new IllegalArgumentException("a client requires a valid email address");
+         }
++        // Two clients may not share an email. Reject the duplicate before saving, so no row and no
++        // audit record is written. The UNIQUE constraint (V26__client_email_unique.sql) backs this.
++        if (repository.existsByEmail(email)) {
++            throw new IllegalArgumentException("a client with that email already exists");
++        }
+         Client client = new Client();
+         client.setName(body.getName());
+-        client.setEmail(body.getEmail());
++        client.setEmail(email);
+         Client saved = repository.save(client);
+         audit.record("CLIENT_CREATED id=" + saved.getId() + " name=" + saved.getName());
+         response.send(saved);
+diff --git a/src/main/resources/db/migration/V26__client_email_unique.sql b/src/main/resources/db/migration/V26__client_email_unique.sql
+new file mode 100644
+index 0000000..a3fde66
+--- /dev/null
++++ b/src/main/resources/db/migration/V26__client_email_unique.sql
+@@ -0,0 +1,4 @@
++-- No two clients may share an email address. Enforce it at the schema level (defense in depth
++-- behind the ClientsPost check and the UI), so a duplicate can never be persisted regardless of the
++-- path that tries. Existing rows are already distinct; the seed inserts one row per email.
++ALTER TABLE client ADD CONSTRAINT client_email_unique UNIQUE (email);
