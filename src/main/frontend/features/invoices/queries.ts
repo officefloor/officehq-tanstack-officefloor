@@ -33,6 +33,12 @@ export function fetchAllInvoices(): Promise<AllInvoice[]> {
 /** URL key owned by the sort control; readers (the list) sort by the same key (CLAUDE.md rule 4). */
 export const INVOICE_SORT_PARAM = 'invoiceSort';
 
+/** URL key owned by the stage filter; the all-invoices list narrows to this stage (CLAUDE.md rule 4). */
+export const INVOICE_STATUS_PARAM = 'invoiceStatus';
+
+/** The lifecycle stages an invoice can sit at — the options the stage filter offers. */
+export const INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID'] as const;
+
 export function fetchInvoices(projectId: number): Promise<Invoice[]> {
   return getJson<Invoice[]>(`/api/invoices/${projectId}`);
 }

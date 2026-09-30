@@ -1,12 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { allInvoicesKey, fetchAllInvoices, type AllInvoice } from './queries';
+import { allInvoicesKey, fetchAllInvoices, INVOICE_STATUS_PARAM, type AllInvoice } from './queries';
 import { formatMoney } from '../../ui/money';
+import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
+import { useSearchParam, asString } from '../../url/useSearchParam';
 
 // The one place listing every invoice from every project. Queries for itself under ['invoices',
 // 'all'] — never handed its data by a parent (CLAUDE.md rule 5). Each row shows the invoice's
-// project NAME (from the server-side join) and its lifecycle stage.
+// project NAME (from the server-side join) and its lifecycle stage. The stage filter lives in the
+// URL (rule 4): the list reads `invoiceStatus` and, when set, drops rows at any other stage.
 export function AllInvoicesTable() {
   const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: fetchAllInvoices });
+  const [status] = useSearchParam(INVOICE_STATUS_PARAM, asString);
 
   if (!invoices) {
     return null;
@@ -16,8 +20,12 @@ export function AllInvoicesTable() {
     return <p data-testid="all-invoices-empty">No invoices yet.</p>;
   }
 
+  const shown = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
+
   return (
-    <table data-testid="all-invoices-table">
+    <>
+      <AllInvoicesToolbar.Slot />
+      <table data-testid="all-invoices-table">
       <thead>
         <tr>
           <th>Project</th>
@@ -26,7 +34,7 @@ export function AllInvoicesTable() {
         </tr>
       </thead>
       <tbody>
-        {invoices.map((invoice: AllInvoice) => (
+        {shown.map((invoice: AllInvoice) => (
           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
             <td data-testid="invoice-project">{invoice.projectName}</td>
             <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
@@ -35,5 +43,6 @@ export function AllInvoicesTable() {
         ))}
       </tbody>
     </table>
+    </>
   );
 }
