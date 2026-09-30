@@ -1,0 +1,204 @@
+diff --git a/src/main/frontend/features/dashboard/TopClients.tsx b/src/main/frontend/features/dashboard/TopClients.tsx
+new file mode 100644
+index 0000000..aec6cea
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/TopClients.tsx
+@@ -0,0 +1,29 @@
++import { useQuery } from '@tanstack/react-query';
++import { topClientsKey, fetchTopClients } from './queries';
++import { formatMoney } from '../../ui/money';
++
++// The dashboard's "top clients" panel: the five clients who owe the most, most owed first. Queries
++// for itself under ['dashboard', 'top-clients'] — never handed its data by a parent (CLAUDE.md
++// rule 5). Each amount renders through the shared money primitive so it matches every other figure
++// in the app. Each row and value carries its stable data-testid (the test contract).
++export function TopClients() {
++  const { data } = useQuery({ queryKey: topClientsKey, queryFn: fetchTopClients });
++
++  if (!data) {
++    return null;
++  }
++
++  return (
++    <section data-testid="dashboard-top-clients">
++      <h2>Top clients</h2>
++      <ol>
++        {data.map((client) => (
++          <li key={client.clientId} data-testid={`top-client-row-${client.clientId}`}>
++            <span data-testid="top-client-name">{client.name}</span>
++            <span data-testid="top-client-amount">{formatMoney(client.outstanding)}</span>
++          </li>
++        ))}
++      </ol>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/dashboard/queries.ts b/src/main/frontend/features/dashboard/queries.ts
+index 9e1ed2a..8b8648d 100644
+--- a/src/main/frontend/features/dashboard/queries.ts
++++ b/src/main/frontend/features/dashboard/queries.ts
+@@ -15,3 +15,19 @@ export const dashboardKey = ['dashboard'] as const;
+ export function fetchDashboardSummary(): Promise<DashboardSummary> {
+   return getJson<DashboardSummary>('/api/dashboard/summary');
+ }
++
++// The dashboard's top clients, ranked by how much they owe (most owed first, at most five). A
++// read-only cross-entity view under its own query key; anything that changes clients, projects,
++// invoices or payments can refresh it by invalidating ['dashboard', 'top-clients'] (CLAUDE.md
++// rule 5).
++export type TopClient = {
++  clientId: number;
++  name: string;
++  outstanding: number;
++};
++
++export const topClientsKey = ['dashboard', 'top-clients'] as const;
++
++export function fetchTopClients(): Promise<TopClient[]> {
++  return getJson<TopClient[]>('/api/dashboard/top-clients');
++}
+diff --git a/src/main/frontend/features/dashboard/top-clients.slot.tsx b/src/main/frontend/features/dashboard/top-clients.slot.tsx
+new file mode 100644
+index 0000000..6b17738
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/top-clients.slot.tsx
+@@ -0,0 +1,6 @@
++import { Dashboard } from '../../slots/defs/dashboard';
++import { TopClients } from './TopClients';
++
++// The top-clients panel on the home dashboard — one new *.slot.tsx file filling the dashboard.main
++// region (CLAUDE.md rule 3). Nothing existing is edited to add it; the panel queries for itself.
++export const contribution = Dashboard.fill({ order: 20, Component: TopClients });
+diff --git a/src/main/frontend/routes/dashboard.tsx b/src/main/frontend/routes/dashboard.tsx
+index 358aabe..563895f 100644
+--- a/src/main/frontend/routes/dashboard.tsx
++++ b/src/main/frontend/routes/dashboard.tsx
+@@ -1,9 +1,11 @@
+ import { createFileRoute } from '@tanstack/react-router';
+ import { DashboardSummary } from '../features/dashboard/DashboardSummary';
++import { Dashboard } from '../slots/defs/dashboard';
+ 
+ // The Dashboard page: one new file under routes/ (CLAUDE.md rule 1). The route tree is generated
+ // from this directory. A flat page with no detail views, so a single route file (no layout). The
+-// page composes the feature's summary, which queries for itself.
++// page composes the feature's summary and renders the dashboard.main region, which features fill
++// with panels (CLAUDE.md rule 3) — each queries for itself.
+ export const Route = createFileRoute('/dashboard')({
+   component: DashboardPage,
+ });
+@@ -12,6 +14,7 @@ function DashboardPage() {
+   return (
+     <section data-testid="dashboard-page">
+       <DashboardSummary />
++      <Dashboard.Slot />
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/slots/defs/dashboard.ts b/src/main/frontend/slots/defs/dashboard.ts
+new file mode 100644
+index 0000000..0801445
+--- /dev/null
++++ b/src/main/frontend/slots/defs/dashboard.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The body of the home dashboard — the region where dashboard panels live (the top-clients panel,
++ * and anything added later). Declared once here; features fill it without the page listing what goes
++ * in it (CLAUDE.md rule 3). Its context is empty — the panels each query for themselves.
++ */
++export const Dashboard = defineSlot('dashboard.main');
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardTopClientsGet.java b/src/main/java/net/officefloor/hq/app/DashboardTopClientsGet.java
+new file mode 100644
+index 0000000..554d766
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DashboardTopClientsGet.java
+@@ -0,0 +1,37 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/dashboard/top-clients — the home dashboard's top five clients, ranked by how much they
++ * still owe (most owed first). Each client's outstanding figure is the sum of the dues across all of
++ * their invoices, computed exactly the way the client statement and {@link ClientsOutstandingGet} do
++ * it ({@link ProjectInvoice#getDue}), so the panel agrees with the rest of the app. Ties fall back to
++ * the oldest client id so the order is always stable. Wired by
++ * {@code officefloor/rest/api/dashboard/top-clients.GET.yml}.
++ */
++public class DashboardTopClientsGet {
++
++    private static final int LIMIT = 5;
++
++    public void service(ClientRepository clients, InvoiceRepository invoices,
++            PaymentRepository payments, ObjectResponse<List<TopClient>> response) {
++        List<TopClient> owed = new ArrayList<>();
++        for (Client client : clients.findAllByArchivedFalseOrderByIdAsc()) {
++            BigDecimal total = BigDecimal.ZERO;
++            for (Invoice invoice : invoices.findByClientId(client.getId())) {
++                ProjectInvoice row =
++                        new ProjectInvoice(invoice, payments.sumByInvoiceId(invoice.getId()));
++                total = total.add(row.getDue());
++            }
++            owed.add(new TopClient(client.getId(), client.getName(), total));
++        }
++        owed.sort(Comparator.comparing(TopClient::getOutstanding).reversed()
++                .thenComparing(TopClient::getClientId));
++        response.send(owed.subList(0, Math.min(LIMIT, owed.size())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TopClient.java b/src/main/java/net/officefloor/hq/app/TopClient.java
+new file mode 100644
+index 0000000..f830d6e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TopClient.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * One entry in the home dashboard's "top clients" panel: a client and how much they still owe,
++ * carrying the client's {@code name} so the panel renders without a second lookup. The
++ * {@code outstanding} figure is the sum of the dues across every invoice raised for the client, the
++ * same per-invoice due the client statement and the outstanding list use
++ * ({@link ProjectInvoice#getDue}), so the three always agree. Derived per request in
++ * {@link DashboardTopClientsGet}; nothing new is stored.
++ */
++public class TopClient {
++
++    private final Long clientId;
++    private final String name;
++    private final BigDecimal outstanding;
++
++    public TopClient(Long clientId, String name, BigDecimal outstanding) {
++        this.clientId = clientId;
++        this.name = name;
++        this.outstanding = outstanding;
++    }
++
++    public Long getClientId() {
++        return clientId;
++    }
++
++    public String getName() {
++        return name;
++    }
++
++    public BigDecimal getOutstanding() {
++        return outstanding;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/dashboard/top-clients.GET.yml b/src/main/resources/officefloor/rest/api/dashboard/top-clients.GET.yml
+new file mode 100644
+index 0000000..20eaba7
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/dashboard/top-clients.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/dashboard/top-clients -> the top five clients ranked by how much they owe (DashboardTopClientsGet.service).
++service:
++  class: net.officefloor.hq.app.DashboardTopClientsGet
