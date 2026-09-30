@@ -18,8 +18,10 @@ public class ClientStatementGet {
 
     public void service(@HttpPathParameter("clientId") String clientId,
             ProjectRepository projectsRepo, InvoiceRepository invoices, PaymentRepository payments,
-            ObjectResponse<ClientStatement> response) {
+            ClientRepository clients, ObjectResponse<ClientStatement> response) {
         long client = Long.valueOf(clientId);
+        // The client's currency, looked up once — every invoice on the statement renders in it.
+        String currency = clients.findById(client).map(Client::getCurrency).orElse("USD");
         List<ProjectInvoice> rows = new ArrayList<>();
         List<StatementProject> groups = new ArrayList<>();
         BigDecimal totalOwed = BigDecimal.ZERO;
@@ -30,13 +32,13 @@ public class ClientStatementGet {
             List<ProjectInvoice> jobRows = new ArrayList<>();
             for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(project.getId())) {
                 ProjectInvoice row = new ProjectInvoice(invoice,
-                        payments.sumByInvoiceId(invoice.getId()));
+                        payments.sumByInvoiceId(invoice.getId()), currency);
                 jobRows.add(row);
                 rows.add(row);
                 totalOwed = totalOwed.add(row.getDue());
             }
             groups.add(new StatementProject(project.getId(), project.getName(), jobRows));
         }
-        response.send(new ClientStatement(groups, rows, totalOwed));
+        response.send(new ClientStatement(groups, rows, totalOwed, currency));
     }
 }

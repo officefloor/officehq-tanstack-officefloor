@@ -38,14 +38,18 @@ export function StatementPrintView({ clientId }: { clientId: number }) {
               data-testid={`statement-summary-row-${project.projectId}`}
             >
               <td data-testid="statement-summary-job">{project.projectName}</td>
-              <td data-testid="statement-summary-owed">{formatMoney(project.subtotal)}</td>
+              <td data-testid="statement-summary-owed">
+                {formatMoney(project.subtotal, statement.currency)}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       <p>
         <span>Grand total</span>{' '}
-        <span data-testid="statement-grand-total">{formatMoney(statement.totalOwed)}</span>
+        <span data-testid="statement-grand-total">
+          {formatMoney(statement.totalOwed, statement.currency)}
+        </span>
       </p>
     </section>
   );

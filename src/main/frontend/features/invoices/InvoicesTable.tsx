@@ -27,6 +27,8 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
       : invoices;
 
   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+  // Every invoice in a project belongs to the same client, so they share one currency (server-side).
+  const currency = invoices[0]?.currency;
 
   return (
     <>
@@ -41,7 +43,7 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
         <tbody>
           {rows.map((invoice: Invoice) => (
             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-              <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+              <td data-testid="invoice-amount">{formatMoney(invoice.amount, invoice.currency)}</td>
               <InvoiceRow.Slot
                 invoiceId={invoice.id}
                 projectId={projectId}
@@ -51,7 +53,7 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
           ))}
         </tbody>
       </table>
-      <p data-testid="project-invoices-total">{formatMoney(total)}</p>
+      <p data-testid="project-invoices-total">{formatMoney(total, currency)}</p>
     </>
   );
 }

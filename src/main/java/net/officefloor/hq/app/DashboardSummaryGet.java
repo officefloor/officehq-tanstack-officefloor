@@ -3,6 +3,9 @@ package net.officefloor.hq.app;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TreeMap;
 
 import net.officefloor.web.ObjectResponse;
 
@@ -23,12 +26,28 @@ public class DashboardSummaryGet {
             ObjectResponse<DashboardSummary> response) {
         String asOf = settings.findById(AS_OF_KEY).map(AppSetting::getValue)
                 .orElseGet(() -> LocalDate.now(ZoneOffset.UTC).toString());
+        // Which currency each project bills in, via its client — so a SENT invoice's owed amount is
+        // added to the right currency bucket. Clients pay in different currencies and we never add
+        // different currencies together (CLAUDE.md — the totals are kept separate per currency).
+        Map<Long, String> clientCurrency = new HashMap<>();
+        for (Client client : clients.findAll()) {
+            clientCurrency.put(client.getId(), client.getCurrency());
+        }
+        Map<Long, String> projectCurrency = new HashMap<>();
+        for (Project project : projects.findAll()) {
+            projectCurrency.put(project.getId(),
+                    clientCurrency.getOrDefault(project.getClientId(), "USD"));
+        }
         BigDecimal outstanding = BigDecimal.ZERO;
+        Map<String, BigDecimal> byCurrency = new TreeMap<>();
         for (Invoice invoice : invoices.findByStatus("SENT")) {
-            outstanding = outstanding.add(
-                    ProjectInvoice.owedAmount(invoice.getAmount(), invoice.getDiscountPct()));
+            BigDecimal owed =
+                    ProjectInvoice.owedAmount(invoice.getAmount(), invoice.getDiscountPct());
+            outstanding = outstanding.add(owed);
+            String currency = projectCurrency.getOrDefault(invoice.getProjectId(), "USD");
+            byCurrency.merge(currency, owed, BigDecimal::add);
         }
         response.send(new DashboardSummary(clients.count(), projects.count(),
-                outstanding, invoices.countOverdue(asOf)));
+                outstanding, byCurrency, invoices.countOverdue(asOf)));
     }
 }

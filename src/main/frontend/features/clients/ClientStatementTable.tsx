@@ -40,17 +40,25 @@ export function ClientStatementTable({ clientId }: { clientId: number }) {
             <tbody>
               {project.invoices.map((invoice: StatementInvoice) => (
                 <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
-                  <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
+                  <td data-testid="statement-invoice-amount">
+                    {formatMoney(invoice.amount, statement.currency)}
+                  </td>
                   <td data-testid="statement-invoice-status">{invoice.status}</td>
-                  <td data-testid="statement-invoice-due">{formatMoney(invoice.due)}</td>
+                  <td data-testid="statement-invoice-due">
+                    {formatMoney(invoice.due, statement.currency)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p data-testid="statement-project-subtotal">{formatMoney(project.subtotal)}</p>
+          <p data-testid="statement-project-subtotal">
+            {formatMoney(project.subtotal, statement.currency)}
+          </p>
         </section>
       ))}
-      <p data-testid="client-outstanding-total">{formatMoney(statement.totalOwed)}</p>
+      <p data-testid="client-outstanding-total">
+        {formatMoney(statement.totalOwed, statement.currency)}
+      </p>
     </>
   );
 }

@@ -30,8 +30,17 @@ public class ProjectInvoice {
     private final String dueDate;
     private final BigDecimal paid;
     private final BigDecimal due;
+    private final String currency;
 
     public ProjectInvoice(Invoice invoice, BigDecimal paid) {
+        this(invoice, paid, "USD");
+    }
+
+    /**
+     * As {@link #ProjectInvoice(Invoice, BigDecimal)} but carrying the currency the invoice's client
+     * pays in, so the front-end renders the amount and due in that currency (e.g. USD or EUR).
+     */
+    public ProjectInvoice(Invoice invoice, BigDecimal paid, String currency) {
         BigDecimal owed = owedAmount(invoice.getAmount(), invoice.getDiscountPct());
         this.id = invoice.getId();
         this.projectId = invoice.getProjectId();
@@ -41,6 +50,7 @@ public class ProjectInvoice {
         this.dueDate = invoice.getDueDate();
         this.paid = paid;
         this.due = owed.subtract(paid);
+        this.currency = currency;
     }
 
     /**
@@ -106,5 +116,10 @@ public class ProjectInvoice {
 
     public BigDecimal getDue() {
         return due;
+    }
+
+    /** The currency the invoice's client pays in (an ISO code, e.g. USD or EUR). */
+    public String getCurrency() {
+        return currency;
     }
 }

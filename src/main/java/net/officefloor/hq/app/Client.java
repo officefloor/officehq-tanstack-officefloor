@@ -24,6 +24,9 @@ public class Client {
 
     private boolean archived;
 
+    /** The currency the client pays in (an ISO code, e.g. USD or EUR). Their money is shown in it. */
+    private String currency = "USD";
+
     public Long getId() {
         return id;
     }
@@ -54,5 +57,14 @@ public class Client {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    /** The currency the client pays in (an ISO code, e.g. USD or EUR). Their money is shown in it. */
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 }

@@ -28,7 +28,7 @@ public class DashboardTopClientsGet {
                         new ProjectInvoice(invoice, payments.sumByInvoiceId(invoice.getId()));
                 total = total.add(row.getDue());
             }
-            owed.add(new TopClient(client.getId(), client.getName(), total));
+            owed.add(new TopClient(client.getId(), client.getName(), total, client.getCurrency()));
         }
         owed.sort(Comparator.comparing(TopClient::getOutstanding).reversed()
                 .thenComparing(TopClient::getClientId));

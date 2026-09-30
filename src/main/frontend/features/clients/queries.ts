@@ -2,9 +2,26 @@ import { getJson, postJson } from '../../api/http';
 
 // Server data under ONE shared key: anything showing clients reads ['clients'], and a write
 // invalidates the same key to refresh them all (CLAUDE.md rule 5).
-export type Client = { id: number; name: string; email: string; archived: boolean };
+export type Client = {
+  id: number;
+  name: string;
+  email: string;
+  archived: boolean;
+  // The currency the client pays in (an ISO code, e.g. USD or EUR); their money is shown in it.
+  currency: string;
+};
 
 export const clientsKey = ['clients'] as const;
+
+// The currencies a client can be paid in — the options the currency control offers, and the codes the
+// money primitive knows how to render. Shared as a constant so the control and any reader agree.
+export const CLIENT_CURRENCIES = ['USD', 'EUR'] as const;
+
+/** Set the currency a client pays in; id is in the path, {currency} in the body. Returns the saved
+ * row. */
+export function updateClientCurrency(clientId: number, currency: string): Promise<Client> {
+  return postJson<Client>(`/api/clients/${clientId}/currency`, { currency });
+}
 
 // The URL search-param key the search box owns and the list reads (CLAUDE.md rule 4). Shared as a
 // constant so the two files agree on the one key without importing each other's components.
@@ -118,6 +135,8 @@ export type ClientStatement = {
   projects: StatementProject[];
   invoices: StatementInvoice[];
   totalOwed: number;
+  // The currency the client pays in (an ISO code, e.g. USD or EUR); the statement renders in it.
+  currency: string;
 };
 
 export const clientStatementKey = (clientId: number) =>

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * The home dashboard's headline figures: how many clients and projects the user has, and how much
@@ -12,12 +13,15 @@ public class DashboardSummary {
     private final long clients;
     private final long projects;
     private final BigDecimal outstanding;
+    private final Map<String, BigDecimal> outstandingByCurrency;
     private final long overdue;
 
-    public DashboardSummary(long clients, long projects, BigDecimal outstanding, long overdue) {
+    public DashboardSummary(long clients, long projects, BigDecimal outstanding,
+            Map<String, BigDecimal> outstandingByCurrency, long overdue) {
         this.clients = clients;
         this.projects = projects;
         this.outstanding = outstanding;
+        this.outstandingByCurrency = outstandingByCurrency;
         this.overdue = overdue;
     }
 
@@ -31,6 +35,14 @@ public class DashboardSummary {
 
     public BigDecimal getOutstanding() {
         return outstanding;
+    }
+
+    /**
+     * How much is still owed, split out per currency (keyed by ISO code, e.g. USD/EUR). The totals are
+     * kept separate — money in different currencies is never added together.
+     */
+    public Map<String, BigDecimal> getOutstandingByCurrency() {
+        return outstandingByCurrency;
     }
 
     /** How many SENT invoices are past their due date as of the dashboard's reference date. */

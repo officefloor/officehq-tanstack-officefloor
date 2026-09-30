@@ -7,6 +7,9 @@ export type DashboardSummary = {
   clients: number;
   projects: number;
   outstanding: number;
+  // How much is still owed, split out per currency (keyed by ISO code, e.g. USD/EUR). The totals are
+  // kept separate — money in different currencies is never added together.
+  outstandingByCurrency: Record<string, number>;
   overdue: number;
 };
 
@@ -24,6 +27,8 @@ export type TopClient = {
   clientId: number;
   name: string;
   outstanding: number;
+  // The currency this client pays in (an ISO code, e.g. USD or EUR); their figure renders in it.
+  currency: string;
 };
 
 export const topClientsKey = ['dashboard', 'top-clients'] as const;

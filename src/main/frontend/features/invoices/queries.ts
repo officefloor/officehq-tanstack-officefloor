@@ -14,6 +14,8 @@ export type Invoice = {
   paid: number;
   /** How much is still owed after payments: amount - paid. Derived server-side. */
   due: number;
+  /** The currency the invoice's client pays in (an ISO code, e.g. USD or EUR); amounts render in it. */
+  currency: string;
 };
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;

@@ -53,9 +53,10 @@ public class TestSupportController {
     @PostMapping("/seed")
     public void seed(@RequestBody Map<String, Object> fixture) {
         seedTable(fixture, "clients",
-                "INSERT INTO clients (id, name, email, archived) VALUES (?, ?, ?, ?)",
+                "INSERT INTO clients (id, name, email, archived, currency) VALUES (?, ?, ?, ?, ?)",
                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"),
-                        Boolean.TRUE.equals(c.get("archived"))});
+                        Boolean.TRUE.equals(c.get("archived")),
+                        c.getOrDefault("currency", "USD")});
         seedTable(fixture, "projects",
                 "INSERT INTO projects (id, name, client_id, status, archived, budget, code)"
                         + " VALUES (?, ?, ?, ?, ?, ?, ?)",

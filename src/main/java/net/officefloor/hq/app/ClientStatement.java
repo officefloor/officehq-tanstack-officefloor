@@ -19,12 +19,14 @@ public class ClientStatement {
     private final List<StatementProject> projects;
     private final List<ProjectInvoice> invoices;
     private final BigDecimal totalOwed;
+    private final String currency;
 
     public ClientStatement(List<StatementProject> projects, List<ProjectInvoice> invoices,
-            BigDecimal totalOwed) {
+            BigDecimal totalOwed, String currency) {
         this.projects = projects;
         this.invoices = invoices;
         this.totalOwed = totalOwed;
+        this.currency = currency;
     }
 
     public List<StatementProject> getProjects() {
@@ -37,5 +39,10 @@ public class ClientStatement {
 
     public BigDecimal getTotalOwed() {
         return totalOwed;
+    }
+
+    /** The currency the client pays in (an ISO code, e.g. USD or EUR); the statement renders in it. */
+    public String getCurrency() {
+        return currency;
     }
 }

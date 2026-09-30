@@ -15,11 +15,13 @@ public class TopClient {
     private final Long clientId;
     private final String name;
     private final BigDecimal outstanding;
+    private final String currency;
 
-    public TopClient(Long clientId, String name, BigDecimal outstanding) {
+    public TopClient(Long clientId, String name, BigDecimal outstanding, String currency) {
         this.clientId = clientId;
         this.name = name;
         this.outstanding = outstanding;
+        this.currency = currency;
     }
 
     public Long getClientId() {
@@ -32,5 +34,10 @@ public class TopClient {
 
     public BigDecimal getOutstanding() {
         return outstanding;
+    }
+
+    /** The currency this client pays in (an ISO code, e.g. USD or EUR); their figure renders in it. */
+    public String getCurrency() {
+        return currency;
     }
 }
