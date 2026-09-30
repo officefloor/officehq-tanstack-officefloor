@@ -1,0 +1,142 @@
+diff --git a/src/main/frontend/features/invoices/due.slot.tsx b/src/main/frontend/features/invoices/due.slot.tsx
+new file mode 100644
+index 0000000..c840c2e
+--- /dev/null
++++ b/src/main/frontend/features/invoices/due.slot.tsx
+@@ -0,0 +1,18 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { invoicesKey, fetchInvoices } from './queries';
++
++// An invoice's due date (when it is due) — its own file filling the invoice.row region (CLAUDE.md
++// rule 3). Queries for itself under ['invoices', projectId] (rule 5) and reads its own row by id.
++// Renders the literal ISO date under data-testid="invoice-due" (the test contract).
++export const contribution = InvoiceRow.fill({
++  order: 5,
++  Component: ({ invoiceId, projectId }: { invoiceId: number; projectId: number; status: string }) => {
++    const { data: invoices } = useQuery({
++      queryKey: invoicesKey(projectId),
++      queryFn: () => fetchInvoices(projectId),
++    });
++    const invoice = invoices?.find((i) => i.id === invoiceId);
++    return <td data-testid="invoice-due">{invoice?.dueDate ?? ''}</td>;
++  },
++});
+diff --git a/src/main/frontend/features/invoices/issued.slot.tsx b/src/main/frontend/features/invoices/issued.slot.tsx
+new file mode 100644
+index 0000000..e51ac29
+--- /dev/null
++++ b/src/main/frontend/features/invoices/issued.slot.tsx
+@@ -0,0 +1,19 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { invoicesKey, fetchInvoices } from './queries';
++
++// An invoice's issued date (when it went out) — its own file filling the invoice.row region
++// (CLAUDE.md rule 3). Queries for itself under ['invoices', projectId] (rule 5) and reads its own
++// row by id, rather than being handed the value by the table. Renders the literal ISO date under
++// data-testid="invoice-issued" (the test contract).
++export const contribution = InvoiceRow.fill({
++  order: 4,
++  Component: ({ invoiceId, projectId }: { invoiceId: number; projectId: number; status: string }) => {
++    const { data: invoices } = useQuery({
++      queryKey: invoicesKey(projectId),
++      queryFn: () => fetchInvoices(projectId),
++    });
++    const invoice = invoices?.find((i) => i.id === invoiceId);
++    return <td data-testid="invoice-issued">{invoice?.issuedDate ?? ''}</td>;
++  },
++});
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index 7dac569..6c6cbb3 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -3,7 +3,14 @@ import { getJson, postJson } from '../../api/http';
+ // A project's invoices under a per-project key: anything showing project 1's invoices reads
+ // ['invoices', 1], and a write invalidates the same key to refresh them (CLAUDE.md rule 5). An
+ // invoice carries its own id, its project's id and a monetary amount.
+-export type Invoice = { id: number; projectId: number; amount: number; status: string };
++export type Invoice = {
++  id: number;
++  projectId: number;
++  amount: number;
++  status: string;
++  issuedDate: string;
++  dueDate: string;
++};
+ 
+ export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index dcf5c51..4a15d83 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -28,6 +28,14 @@ public class Invoice {
+     /** Payment status: 'UNPAID' (the default for a new invoice) or 'PAID'. */
+     private String status = "UNPAID";
+ 
++    /** The date the invoice went out, as an ISO date string (YYYY-MM-DD). */
++    @Column(name = "issued_date")
++    private String issuedDate;
++
++    /** The date the invoice is due, as an ISO date string (YYYY-MM-DD). */
++    @Column(name = "due_date")
++    private String dueDate;
++
+     public Long getId() {
+         return id;
+     }
+@@ -59,4 +67,20 @@ public class Invoice {
+     public void setStatus(String status) {
+         this.status = status;
+     }
++
++    public String getIssuedDate() {
++        return issuedDate;
++    }
++
++    public void setIssuedDate(String issuedDate) {
++        this.issuedDate = issuedDate;
++    }
++
++    public String getDueDate() {
++        return dueDate;
++    }
++
++    public void setDueDate(String dueDate) {
++        this.dueDate = dueDate;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index b57ef78..e6a9620 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -65,11 +65,14 @@ public class TestSupportController {
+         if (invoices != null) {
+             for (Map<String, Object> i : invoices) {
+                 jdbc.update(
+-                        "INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
++                        "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
++                                + " VALUES (?, ?, ?, ?, ?, ?)",
+                         ((Number) i.get("id")).longValue(),
+                         ((Number) i.get("projectId")).longValue(),
+                         ((Number) i.get("amount")).doubleValue(),
+-                        i.getOrDefault("status", "UNPAID"));
++                        i.getOrDefault("status", "UNPAID"),
++                        i.get("issuedDate"),
++                        i.get("dueDate"));
+             }
+         }
+     }
+diff --git a/src/main/resources/db/migration/V6__invoice_dates.sql b/src/main/resources/db/migration/V6__invoice_dates.sql
+new file mode 100644
+index 0000000..7b51e02
+--- /dev/null
++++ b/src/main/resources/db/migration/V6__invoice_dates.sql
+@@ -0,0 +1,6 @@
++-- Invoices gain two dates: when the invoice was issued (went out) and when it is due. Additive
++-- columns stored as ISO date strings (YYYY-MM-DD) so the value the app surfaces is exactly what was
++-- stored — the front-end shows the literal date. Nullable so existing rows are unaffected; the
++-- /__test__ seed supplies both for a fixture invoice.
++ALTER TABLE invoices ADD COLUMN issued_date VARCHAR(10);
++ALTER TABLE invoices ADD COLUMN due_date    VARCHAR(10);
