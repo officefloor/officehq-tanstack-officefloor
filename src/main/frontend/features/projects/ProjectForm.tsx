@@ -5,6 +5,8 @@ import {
   createProject,
   clientsKey,
   fetchClientOptions,
+  PROJECT_STATUSES,
+  type ProjectStatus,
 } from './queries';
 
 // Add a project for a client. useState holds only what the user is currently entering (CLAUDE.md
@@ -14,6 +16,7 @@ import {
 export function ProjectForm() {
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
+  const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
   const queryClient = useQueryClient();
 
   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClientOptions });
@@ -24,6 +27,7 @@ export function ProjectForm() {
       void queryClient.invalidateQueries({ queryKey: projectsKey });
       setName('');
       setClientId('');
+      setStatus('ACTIVE');
     },
   });
 
@@ -35,7 +39,7 @@ export function ProjectForm() {
         if (name.trim() === '' || clientId === '') {
           return;
         }
-        mutation.mutate({ name, clientId: Number(clientId) });
+        mutation.mutate({ name, clientId: Number(clientId), status });
       }}
     >
       <input
@@ -53,6 +57,17 @@ export function ProjectForm() {
         {(clients ?? []).map((client) => (
           <option key={client.id} value={client.id}>
             {client.name}
+          </option>
+        ))}
+      </select>
+      <select
+        data-testid="project-form-status"
+        value={status}
+        onChange={(event) => setStatus(event.target.value as ProjectStatus)}
+      >
+        {PROJECT_STATUSES.map((option) => (
+          <option key={option} value={option}>
+            {option}
           </option>
         ))}
       </select>

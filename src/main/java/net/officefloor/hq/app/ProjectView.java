@@ -15,25 +15,27 @@ public class ProjectView {
     private final String name;
     private final String clientName;
     private final boolean archived;
+    private final String status;
     private final List<Long> tagIds;
 
     /** The shape the JPQL constructor expression builds — no labels yet, so tagIds starts empty. */
-    public ProjectView(Long id, String name, String clientName, boolean archived) {
-        this(id, name, clientName, archived, List.of());
+    public ProjectView(Long id, String name, String clientName, boolean archived, String status) {
+        this(id, name, clientName, archived, status, List.of());
     }
 
-    public ProjectView(Long id, String name, String clientName, boolean archived,
+    public ProjectView(Long id, String name, String clientName, boolean archived, String status,
             List<Long> tagIds) {
         this.id = id;
         this.name = name;
         this.clientName = clientName;
         this.archived = archived;
+        this.status = status;
         this.tagIds = tagIds;
     }
 
     /** A copy carrying the ids of the labels attached to this project (for the label filter). */
     public ProjectView withTagIds(List<Long> tagIds) {
-        return new ProjectView(id, name, clientName, archived, tagIds);
+        return new ProjectView(id, name, clientName, archived, status, tagIds);
     }
 
     public Long getId() {
@@ -51,6 +53,11 @@ public class ProjectView {
     /** Whether the project has been archived (tucked off the lists but retained). */
     public boolean isArchived() {
         return archived;
+    }
+
+    /** The project's lifecycle status: ACTIVE, ON_HOLD or FINISHED — shown on the row. */
+    public String getStatus() {
+        return status;
     }
 
     /** The ids of the labels attached to this project — the list filters by label on these. */

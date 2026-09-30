@@ -54,8 +54,10 @@ public class TestSupportController {
     public void seed(@RequestBody Map<String, Object> fixture) {
         seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
-        seedTable(fixture, "projects", "INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
-                p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId")});
+        seedTable(fixture, "projects",
+                "INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
+                p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId"),
+                        p.getOrDefault("status", "ACTIVE")});
         seedTable(fixture, "contacts",
                 "INSERT INTO contacts (id, name, email, role, client_id) VALUES (?, ?, ?, ?, ?)",
                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"), c.get("role"),

@@ -8,8 +8,15 @@ export type ProjectView = {
   name: string;
   clientName: string;
   archived: boolean;
+  status: ProjectStatus;
   tagIds: number[];
 };
+
+// A project's lifecycle status: ACTIVE while worked on, ON_HOLD when paused, FINISHED when done.
+// The one list the form's picker offers and the row displays, so both agree without importing.
+export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'FINISHED';
+
+export const PROJECT_STATUSES: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'FINISHED'];
 
 export const projectsKey = ['projects'] as const;
 
@@ -36,7 +43,9 @@ export function fetchProjects(): Promise<ProjectView[]> {
   return getJson<ProjectView[]>('/api/projects');
 }
 
-export function createProject(input: { name: string; clientId: number }): Promise<ProjectView> {
+export function createProject(
+  input: { name: string; clientId: number; status: ProjectStatus },
+): Promise<ProjectView> {
   return postJson<ProjectView>('/api/projects', input);
 }
 
