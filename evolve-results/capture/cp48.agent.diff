@@ -1,0 +1,115 @@
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardSummaryGet.java b/src/main/java/net/officefloor/hq/app/DashboardSummaryGet.java
+index 6bb3832..e14c377 100644
+--- a/src/main/java/net/officefloor/hq/app/DashboardSummaryGet.java
++++ b/src/main/java/net/officefloor/hq/app/DashboardSummaryGet.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.time.ZoneOffset;
+ 
+@@ -22,7 +23,12 @@ public class DashboardSummaryGet {
+             ObjectResponse<DashboardSummary> response) {
+         String asOf = settings.findById(AS_OF_KEY).map(AppSetting::getValue)
+                 .orElseGet(() -> LocalDate.now(ZoneOffset.UTC).toString());
++        BigDecimal outstanding = BigDecimal.ZERO;
++        for (Invoice invoice : invoices.findByStatus("SENT")) {
++            outstanding = outstanding.add(
++                    ProjectInvoice.owedAmount(invoice.getAmount(), invoice.getDiscountPct()));
++        }
+         response.send(new DashboardSummary(clients.count(), projects.count(),
+-                invoices.sumOutstanding(), invoices.countOverdue(asOf)));
++                outstanding, invoices.countOverdue(asOf)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index 5d24242..554256a 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -1,6 +1,5 @@
+ package net.officefloor.hq.app;
+ 
+-import java.math.BigDecimal;
+ import java.util.List;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ import org.springframework.data.jpa.repository.Query;
+@@ -32,13 +31,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+     List<InvoiceView> findAllViews();
+ 
+     /**
+-     * Total amount still owed: the sum of every SENT-but-not-yet-paid invoice's amount across all
+-     * projects. Only invoices actually sent to the client count — DRAFT invoices are excluded
+-     * (they have not been billed yet) and PAID invoices are settled. COALESCE keeps it 0 (never
+-     * null) when nothing is outstanding — the dashboard's headline figure.
++     * Every SENT invoice across all projects — the invoices that count toward what is owed (a DRAFT
++     * has not been billed and a PAID one is settled). The dashboard sums each one's DISCOUNTED amount
++     * ({@link ProjectInvoice#owedAmount}) so its outstanding headline reflects the discount, the same
++     * way the invoice row and the client statement do.
+      */
+-    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
+-    BigDecimal sumOutstanding();
++    List<Invoice> findByStatus(String status);
+ 
+     /**
+      * How many SENT invoices are overdue as of the given reference date: sent-but-not-paid invoices
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectInvoice.java b/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
+index 49ff284..f34f11d 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectInvoice.java
+@@ -1,13 +1,19 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ 
+ /**
+  * An invoice as a project's list shows it: every stored {@link Invoice} field plus the money already
+  * settled against it ({@code paid}, the sum of its {@link Payment}s) and how much is still owed
+- * ({@code due} = amount - paid). The paid/due split is derived per request in {@link InvoicesGet}
+- * rather than stored, so it always reflects the current payments. Additive over the raw invoice
+- * shape — existing readers keep using {@code amount}; the new ones read {@code due}.
++ * ({@code due} = discounted amount - paid). The paid/due split is derived per request in
++ * {@link InvoicesGet} rather than stored, so it always reflects the current payments. Additive over
++ * the raw invoice shape — existing readers keep using {@code amount}; the new ones read {@code due}.
++ *
++ * What is OWED is the invoice's percentage discount applied on top of the stored {@code amount} (the
++ * subtotal), the same figure the invoice's discount breakdown shows — so the discount flows through
++ * everywhere money owed is surfaced (the invoice row's due, the client statement, the dashboard
++ * outstanding total). The stored {@code amount} itself is left as the face (pre-discount) figure.
+  *
+  * The {@code status} is likewise DERIVED from the payments rather than flipped by hand: once some
+  * (but not all) of the amount is paid it reads {@code PARTIAL}, once the amount is covered it reads
+@@ -26,14 +32,30 @@ public class ProjectInvoice {
+     private final BigDecimal due;
+ 
+     public ProjectInvoice(Invoice invoice, BigDecimal paid) {
++        BigDecimal owed = owedAmount(invoice.getAmount(), invoice.getDiscountPct());
+         this.id = invoice.getId();
+         this.projectId = invoice.getProjectId();
+         this.amount = invoice.getAmount();
+-        this.status = deriveStatus(invoice.getStatus(), invoice.getAmount(), paid);
++        this.status = deriveStatus(invoice.getStatus(), owed, paid);
+         this.issuedDate = invoice.getIssuedDate();
+         this.dueDate = invoice.getDueDate();
+         this.paid = paid;
+-        this.due = invoice.getAmount().subtract(paid);
++        this.due = owed.subtract(paid);
++    }
++
++    /**
++     * What a client actually owes for an invoice: the stored {@code amount} (the subtotal, before any
++     * discount) less the percentage discount taken off it. The discount is {@code amount * pct / 100}
++     * rounded to the cent, matching {@link InvoiceDiscount}, so the invoice's due, the statement and
++     * the dashboard all agree with the invoice's discount breakdown. A null amount or percentage is
++     * treated as zero.
++     */
++    static BigDecimal owedAmount(BigDecimal amount, BigDecimal discountPct) {
++        BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
++        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
++        BigDecimal discount = amt.multiply(pct)
++                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        return amt.subtract(discount);
+     }
+ 
+     /**
