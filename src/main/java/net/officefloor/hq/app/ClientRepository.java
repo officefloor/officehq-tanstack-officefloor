@@ -10,4 +10,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ClientRepository extends JpaRepository<Client, Long> {
 
     List<Client> findAllByOrderByIdAsc();
+
+    /**
+     * Every client that has not been tucked away, oldest id first — archived clients are excluded so
+     * a tucked-away client drops off the list (and its search, which filters this same list).
+     */
+    List<Client> findAllByArchivedFalseOrderByIdAsc();
 }

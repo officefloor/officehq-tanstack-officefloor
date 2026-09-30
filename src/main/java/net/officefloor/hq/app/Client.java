@@ -22,6 +22,8 @@ public class Client {
 
     private String email;
 
+    private boolean archived;
+
     public Long getId() {
         return id;
     }
@@ -44,5 +46,13 @@ public class Client {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 }

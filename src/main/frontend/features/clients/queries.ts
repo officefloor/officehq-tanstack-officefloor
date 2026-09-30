@@ -43,3 +43,9 @@ export function fetchClientProjects(clientId: number): Promise<ClientProject[]> 
 export function createClient(input: { name: string; email: string }): Promise<Client> {
   return postJson<Client>('/api/clients', input);
 }
+
+/** Archive (tuck away) a client so it drops off the list and search but is retained; id is in the
+ * path, no body needed. */
+export function archiveClient(clientId: number): Promise<void> {
+  return postJson<void>(`/api/clients/${clientId}/archive`, {});
+}
