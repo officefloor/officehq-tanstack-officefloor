@@ -1,0 +1,222 @@
+diff --git a/src/main/frontend/features/invoices/InvoicesTable.tsx b/src/main/frontend/features/invoices/InvoicesTable.tsx
+index eec07dc..fea2596 100644
+--- a/src/main/frontend/features/invoices/InvoicesTable.tsx
++++ b/src/main/frontend/features/invoices/InvoicesTable.tsx
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { invoicesKey, fetchInvoices, type Invoice } from './queries';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
+ 
+ // A project's invoices list plus the derived total. Queries for itself under ['invoices', projectId]
+ // — never handed its data by a parent (CLAUDE.md rule 5). Amounts render with 2 decimals; the total
+@@ -22,12 +23,18 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
+         <thead>
+           <tr>
+             <th>Amount</th>
++            <th />
+           </tr>
+         </thead>
+         <tbody>
+           {invoices.map((invoice: Invoice) => (
+             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+               <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
++              <InvoiceRow.Slot
++                invoiceId={invoice.id}
++                projectId={projectId}
++                status={invoice.status}
++              />
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/invoices/pay.slot.tsx b/src/main/frontend/features/invoices/pay.slot.tsx
+new file mode 100644
+index 0000000..679930d
+--- /dev/null
++++ b/src/main/frontend/features/invoices/pay.slot.tsx
+@@ -0,0 +1,31 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { invoicesKey, payInvoice } from './queries';
++
++// The "mark this invoice paid" action on every invoice row — its own file filling the invoice.row
++// region (CLAUDE.md rule 3). The write is a mutation that invalidates ['invoices', projectId] so the
++// list (and its status cell) refresh themselves (rule 5); the audited record is written server-side.
++// Carries data-testid="invoice-pay-<id>" (the test contract).
++export const contribution = InvoiceRow.fill({
++  order: 20,
++  Component: ({ invoiceId, projectId }: { invoiceId: number; projectId: number; status: string }) => {
++    const queryClient = useQueryClient();
++    const mutation = useMutation({
++      mutationFn: () => payInvoice(invoiceId),
++      onSuccess: () => {
++        void queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) });
++      },
++    });
++    return (
++      <td>
++        <button
++          data-testid={`invoice-pay-${invoiceId}`}
++          type="button"
++          onClick={() => mutation.mutate()}
++        >
++          Mark paid
++        </button>
++      </td>
++    );
++  },
++});
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index b0e42af..7dac569 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -3,7 +3,7 @@ import { getJson, postJson } from '../../api/http';
+ // A project's invoices under a per-project key: anything showing project 1's invoices reads
+ // ['invoices', 1], and a write invalidates the same key to refresh them (CLAUDE.md rule 5). An
+ // invoice carries its own id, its project's id and a monetary amount.
+-export type Invoice = { id: number; projectId: number; amount: number };
++export type Invoice = { id: number; projectId: number; amount: number; status: string };
+ 
+ export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
+ 
+@@ -14,3 +14,8 @@ export function fetchInvoices(projectId: number): Promise<Invoice[]> {
+ export function createInvoice(input: { projectId: number; amount: number }): Promise<Invoice> {
+   return postJson<Invoice>('/api/invoices', input);
+ }
++
++/** Mark an invoice paid; the server flips its status and records the audited side-effect. */
++export function payInvoice(invoiceId: number): Promise<Invoice> {
++  return postJson<Invoice>(`/api/invoices/${invoiceId}/pay`, {});
++}
+diff --git a/src/main/frontend/features/invoices/status.slot.tsx b/src/main/frontend/features/invoices/status.slot.tsx
+new file mode 100644
+index 0000000..728bfff
+--- /dev/null
++++ b/src/main/frontend/features/invoices/status.slot.tsx
+@@ -0,0 +1,11 @@
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++
++// An invoice's payment status cell — its own file filling the invoice.row region (CLAUDE.md rule 3).
++// Reads the status from the row's context (the value the table already queried for) and renders it
++// under data-testid="invoice-status" (the test contract).
++export const contribution = InvoiceRow.fill({
++  order: 10,
++  Component: ({ status }: { invoiceId: number; projectId: number; status: string }) => (
++    <td data-testid="invoice-status">{status}</td>
++  ),
++});
+diff --git a/src/main/frontend/slots/defs/invoiceRow.ts b/src/main/frontend/slots/defs/invoiceRow.ts
+new file mode 100644
+index 0000000..d64f33d
+--- /dev/null
++++ b/src/main/frontend/slots/defs/invoiceRow.ts
+@@ -0,0 +1,11 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * Cells at the end of every invoice row — the region where an invoice's status and per-row actions
++ * (e.g. "mark this invoice paid") live. Declared once here; features fill it without the table
++ * listing what goes in it (CLAUDE.md rule 3). Its context is the invoice's id, its project's id
++ * (for cache invalidation) and its current status.
++ */
++export const InvoiceRow = defineSlot<{ invoiceId: number; projectId: number; status: string }>(
++  'invoice.row',
++);
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index abbf44a..dcf5c51 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -25,6 +25,9 @@ public class Invoice {
+ 
+     private BigDecimal amount;
+ 
++    /** Payment status: 'UNPAID' (the default for a new invoice) or 'PAID'. */
++    private String status = "UNPAID";
++
+     public Long getId() {
+         return id;
+     }
+@@ -48,4 +51,12 @@ public class Invoice {
+     public void setAmount(BigDecimal amount) {
+         this.amount = amount;
+     }
++
++    public String getStatus() {
++        return status;
++    }
++
++    public void setStatus(String status) {
++        this.status = status;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoicePay.java b/src/main/java/net/officefloor/hq/app/InvoicePay.java
+new file mode 100644
+index 0000000..287a94a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoicePay.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app;
++
++import java.math.RoundingMode;
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * POST /api/invoices/{id}/pay — mark an invoice paid and return the updated row. Wired by
++ * {@code officefloor/rest/api/invoices/{id}/pay.POST.yml}. Flipping the status is an audited
++ * side-effect: one {@code INVOICE_PAID id=<id> amount=<amount>} record is appended per payment so
++ * it can be checked back later (CLAUDE.md — audited behaviour goes through {@link Audit}). An
++ * unknown invoice id is rejected with 404.
++ */
++public class InvoicePay {
++
++    public void service(@HttpPathParameter("id") String id, InvoiceRepository invoices, Audit audit,
++            ObjectResponse<Invoice> response) {
++        Invoice invoice = invoices.findById(Long.valueOf(id))
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        invoice.setStatus("PAID");
++        Invoice saved = invoices.save(invoice);
++        audit.record("INVOICE_PAID id=" + saved.getId() + " amount="
++                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
++        response.send(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 03d5a62..b57ef78 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -64,10 +64,12 @@ public class TestSupportController {
+         List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
+         if (invoices != null) {
+             for (Map<String, Object> i : invoices) {
+-                jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
++                jdbc.update(
++                        "INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
+                         ((Number) i.get("id")).longValue(),
+                         ((Number) i.get("projectId")).longValue(),
+-                        ((Number) i.get("amount")).doubleValue());
++                        ((Number) i.get("amount")).doubleValue(),
++                        i.getOrDefault("status", "UNPAID"));
+             }
+         }
+     }
+diff --git a/src/main/resources/db/migration/V5__invoice_status.sql b/src/main/resources/db/migration/V5__invoice_status.sql
+new file mode 100644
+index 0000000..4875d8f
+--- /dev/null
++++ b/src/main/resources/db/migration/V5__invoice_status.sql
+@@ -0,0 +1,4 @@
++-- Invoices gain a payment status so an invoice can be marked paid. Additive column with a NOT NULL
++-- default of 'UNPAID' so every existing row (and any insert that omits it) starts unpaid; the app
++-- flips it to 'PAID' when the invoice is paid.
++ALTER TABLE invoices ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'UNPAID';
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/pay.POST.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/pay.POST.yml
+new file mode 100644
+index 0000000..091a31e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/{id}/pay.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/invoices/{id}/pay -> mark an invoice paid, recording an audit entry (InvoicePay.service).
++service:
++  class: net.officefloor.hq.app.InvoicePay
