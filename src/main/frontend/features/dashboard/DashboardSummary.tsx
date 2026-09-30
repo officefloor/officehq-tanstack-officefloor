@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { dashboardKey, fetchDashboardSummary } from './queries';
+import { formatMoney } from '../../ui/money';
 
 // The dashboard's headline figures. Queries for itself under ['dashboard'] — never handed its data
 // by a parent (CLAUDE.md rule 5). The outstanding total renders with 2 decimals like every other
@@ -23,7 +24,7 @@ export function DashboardSummary() {
       </div>
       <div>
         <dt>Outstanding</dt>
-        <dd data-testid="dashboard-outstanding-total">{Number(data.outstanding).toFixed(2)}</dd>
+        <dd data-testid="dashboard-outstanding-total">{formatMoney(data.outstanding)}</dd>
       </div>
     </dl>
   );

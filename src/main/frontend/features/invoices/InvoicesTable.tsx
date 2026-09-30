@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { invoicesKey, fetchInvoices, type Invoice } from './queries';
 import { InvoiceRow } from '../../slots/defs/invoiceRow';
+import { formatMoney } from '../../ui/money';
 
 // A project's invoices list plus the derived total. Queries for itself under ['invoices', projectId]
 // — never handed its data by a parent (CLAUDE.md rule 5). Amounts render with 2 decimals; the total
@@ -29,7 +30,7 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
         <tbody>
           {invoices.map((invoice: Invoice) => (
             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-              <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
+              <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
               <InvoiceRow.Slot
                 invoiceId={invoice.id}
                 projectId={projectId}
@@ -39,7 +40,7 @@ export function InvoicesTable({ projectId }: { projectId: number }) {
           ))}
         </tbody>
       </table>
-      <p data-testid="project-invoices-total">{total.toFixed(2)}</p>
+      <p data-testid="project-invoices-total">{formatMoney(total)}</p>
     </>
   );
 }
