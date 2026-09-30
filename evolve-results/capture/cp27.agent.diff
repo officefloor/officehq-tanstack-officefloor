@@ -1,0 +1,89 @@
+diff --git a/src/main/frontend/features/projects/ProjectsPage.tsx b/src/main/frontend/features/projects/ProjectsPage.tsx
+index 9ba9f81..83e0bbc 100644
+--- a/src/main/frontend/features/projects/ProjectsPage.tsx
++++ b/src/main/frontend/features/projects/ProjectsPage.tsx
+@@ -1,8 +1,9 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson, postJson } from '../../api/http';
+-import { asFlag, useSearchParam } from '../../url/useSearchParam';
++import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
+ import type { Client } from '../clients/ClientsPage';
++import type { ProjectTag } from './ProjectTagsPanel';
+ import { ProjectRowActions } from '../../slots/defs/projectRowActions';
+ import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+ 
+@@ -37,6 +38,16 @@ export function ProjectsPage() {
+   // projects drop off the list; the toggle brings them back — no server data copied into state.
+   const [showArchived] = useSearchParam('showArchived', asFlag);
+ 
++  // Which tag the list is filtered to lives in the URL, owned by features/projects/tagFilter.slot.tsx.
++  // The page reads the same key and narrows its rows to projects carrying that tag; the pairings come
++  // from useQuery under ['projectTags'] — the SAME key the tags panel owns (rule 5) — so nothing is
++  // passed between the control and the list. Undefined means no filter: every project shows.
++  const [tagFilter] = useSearchParam('projectTag', asNumber);
++  const projectTags = useQuery({
++    queryKey: ['projectTags'],
++    queryFn: () => getJson<ProjectTag[]>('/api/project-tags'),
++  });
++
+   const [name, setName] = useState('');
+   const [clientId, setClientId] = useState('');
+ 
+@@ -49,7 +60,14 @@ export function ProjectsPage() {
+     },
+   });
+ 
+-  const rows = (projects.data ?? []).filter((p) => showArchived || !p.archived);
++  const taggedIds = new Set(
++    (projectTags.data ?? [])
++      .filter((pt) => pt.tagId === tagFilter)
++      .map((pt) => pt.projectId),
++  );
++  const rows = (projects.data ?? [])
++    .filter((p) => showArchived || !p.archived)
++    .filter((p) => tagFilter === undefined || taggedIds.has(p.id));
+   const clientOptions = clients.data ?? [];
+ 
+   return (
+diff --git a/src/main/frontend/features/projects/tagFilter.slot.tsx b/src/main/frontend/features/projects/tagFilter.slot.tsx
+new file mode 100644
+index 0000000..ec780cf
+--- /dev/null
++++ b/src/main/frontend/features/projects/tagFilter.slot.tsx
+@@ -0,0 +1,35 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import type { Tag } from './ProjectTagsPanel';
++
++// The by-tag project filter — its own file, filling the projects toolbar slot (order 20, after the
++// show-archived toggle at 10). It OWNS the `projectTag` URL key (rule 4: a filter outlives a click,
++// so it lives in the URL, not useState). The projects page reads the same key and narrows its rows;
++// nothing is passed between them. The options come from useQuery under ['tags'] — the SAME key the
++// tags feature owns — so a newly created tag appears here too. Carries data-testid="project-tag-filter"
++// (the test contract); the empty option clears the key, showing every project again.
++function TagFilter() {
++  const [tag, setTag] = useSearchParam('projectTag', asString);
++  const tags = useQuery({
++    queryKey: ['tags'],
++    queryFn: () => getJson<Tag[]>('/api/tags'),
++  });
++  return (
++    <select
++      data-testid="project-tag-filter"
++      value={tag}
++      onChange={(e) => setTag(e.target.value || undefined)}
++    >
++      <option value="">All tags</option>
++      {(tags.data ?? []).map((t) => (
++        <option key={t.id} value={String(t.id)}>
++          {t.name}
++        </option>
++      ))}
++    </select>
++  );
++}
++
++export const contribution = ProjectsToolbar.fill({ order: 20, Component: TagFilter });
