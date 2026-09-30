@@ -1,0 +1,164 @@
+diff --git a/src/main/frontend/features/notes/InvoiceNoteForm.tsx b/src/main/frontend/features/notes/InvoiceNoteForm.tsx
+new file mode 100644
+index 0000000..9981498
+--- /dev/null
++++ b/src/main/frontend/features/notes/InvoiceNoteForm.tsx
+@@ -0,0 +1,43 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { invoiceNotesKey, createNote } from './queries';
++
++// Write a note on an invoice. useState holds only what the user is currently typing (CLAUDE.md rule
++// 4); the write is a mutation that invalidates ['invoices', invoiceId, 'notes'] so the list refreshes
++// itself with the new note on top — no hand-maintained list. Blank text is not submitted (the server
++// enforces the same rule). Reuses the shared createNote mutation with an 'invoice' target.
++export function InvoiceNoteForm({ invoiceId }: { invoiceId: number }) {
++  const [text, setText] = useState('');
++  const queryClient = useQueryClient();
++
++  const mutation = useMutation({
++    mutationFn: createNote,
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: invoiceNotesKey(invoiceId) });
++      setText('');
++    },
++  });
++
++  return (
++    <form
++      data-testid="note-form"
++      onSubmit={(event) => {
++        event.preventDefault();
++        if (text.trim().length === 0) {
++          return;
++        }
++        mutation.mutate({ targetType: 'invoice', targetId: invoiceId, text });
++      }}
++    >
++      <input
++        data-testid="note-form-text"
++        placeholder="Write a note"
++        value={text}
++        onChange={(event) => setText(event.target.value)}
++      />
++      <button data-testid="note-form-submit" type="submit">
++        Add note
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/notes/InvoiceNotesTable.tsx b/src/main/frontend/features/notes/InvoiceNotesTable.tsx
+new file mode 100644
+index 0000000..7ea130e
+--- /dev/null
++++ b/src/main/frontend/features/notes/InvoiceNotesTable.tsx
+@@ -0,0 +1,30 @@
++import { useQuery } from '@tanstack/react-query';
++import { invoiceNotesKey, fetchInvoiceNotes, type Note } from './queries';
++
++// The notes written on one invoice. Queries for itself under ['invoices', invoiceId, 'notes'] —
++// never handed its data by a parent (CLAUDE.md rule 5). The server returns them newest first, so the
++// rows render in that order untouched. Carries the same stable note data-testid contract as the
++// project notes table: a row per note and the text cell the test reads.
++export function InvoiceNotesTable({ invoiceId }: { invoiceId: number }) {
++  const { data: notes } = useQuery({
++    queryKey: invoiceNotesKey(invoiceId),
++    queryFn: () => fetchInvoiceNotes(invoiceId),
++  });
++
++  if (!notes) {
++    return null;
++  }
++
++  return (
++    <ul data-testid="invoice-notes-list">
++      {notes.map((note: Note) => (
++        <li key={note.id} data-testid={`note-row-${note.id}`}>
++          <span data-testid="note-text">{note.text}</span>
++          <time data-testid="note-at" dateTime={note.at}>
++            {note.at}
++          </time>
++        </li>
++      ))}
++    </ul>
++  );
++}
+diff --git a/src/main/frontend/features/notes/invoice-notes.slot.tsx b/src/main/frontend/features/notes/invoice-notes.slot.tsx
+new file mode 100644
+index 0000000..de6c814
+--- /dev/null
++++ b/src/main/frontend/features/notes/invoice-notes.slot.tsx
+@@ -0,0 +1,19 @@
++import { InvoiceDetail } from '../../slots/defs/invoiceDetail';
++import { InvoiceNotesTable } from './InvoiceNotesTable';
++import { InvoiceNoteForm } from './InvoiceNoteForm';
++
++// The notes panel on an invoice's detail page — one new *.slot.tsx file filling the InvoiceDetail
++// region (CLAUDE.md rule 3). Nothing existing is edited to add it. Shows the invoice's notes newest
++// first and the form to add one; each queries/mutates for itself under the shared notes key. Notes
++// were already generic over their target, so this is a second target alongside projects, not new
++// note machinery.
++function InvoiceNotesPanel({ invoiceId }: { invoiceId: number }) {
++  return (
++    <section data-testid="invoice-notes">
++      <InvoiceNoteForm invoiceId={invoiceId} />
++      <InvoiceNotesTable invoiceId={invoiceId} />
++    </section>
++  );
++}
++
++export const contribution = InvoiceDetail.fill({ order: 20, Component: InvoiceNotesPanel });
+diff --git a/src/main/frontend/features/notes/queries.ts b/src/main/frontend/features/notes/queries.ts
+index 99b9326..a1f75b0 100644
+--- a/src/main/frontend/features/notes/queries.ts
++++ b/src/main/frontend/features/notes/queries.ts
+@@ -18,6 +18,14 @@ export function fetchProjectNotes(projectId: number): Promise<Note[]> {
+   return getJson<Note[]>(`/api/projects/${projectId}/notes`);
+ }
+ 
++/** An invoice's notes, nested beneath ['invoices'] so invalidating invoices refreshes them too. */
++export const invoiceNotesKey = (invoiceId: number) =>
++  ['invoices', invoiceId, 'notes'] as const;
++
++export function fetchInvoiceNotes(invoiceId: number): Promise<Note[]> {
++  return getJson<Note[]>(`/api/invoices/${invoiceId}/notes`);
++}
++
+ /** Write a note on a project; the server stamps its id and written-at instant. */
+ export function createNote(input: {
+   targetType: string;
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceNotesGet.java b/src/main/java/net/officefloor/hq/app/InvoiceNotesGet.java
+new file mode 100644
+index 0000000..db0e59a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceNotesGet.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/invoices/{id}/notes — every note written on one invoice, newest first. Wired by
++ * {@code officefloor/rest/api/invoices/{id}/notes.GET.yml}. Notes are already a generic target
++ * (target_type/target_id, Flyway V14); this reads the ones on an {@code "invoice"} target, the
++ * same way {@link ProjectNotesGet} reads a project's.
++ */
++public class InvoiceNotesGet {
++
++    public void service(@HttpPathParameter("id") String id, NoteRepository notes,
++            ObjectResponse<List<Note>> response) {
++        response.send(
++                notes.findByTargetTypeAndTargetIdOrderByAtDescIdDesc("invoice", Long.valueOf(id)));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/notes.GET.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/notes.GET.yml
+new file mode 100644
+index 0000000..109024d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/{id}/notes.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/invoices/{id}/notes -> list every note on one invoice, newest first (InvoiceNotesGet.service).
++service:
++  class: net.officefloor.hq.app.InvoiceNotesGet
