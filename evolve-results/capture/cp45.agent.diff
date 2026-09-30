@@ -1,0 +1,205 @@
+diff --git a/src/main/frontend/features/clients/edit.slot.tsx b/src/main/frontend/features/clients/edit.slot.tsx
+new file mode 100644
+index 0000000..5460b6d
+--- /dev/null
++++ b/src/main/frontend/features/clients/edit.slot.tsx
+@@ -0,0 +1,103 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { ClientRow } from '../../slots/defs/clientRow';
++import { asNumber, useSearchParam } from '../../url/useSearchParam';
++import {
++  CLIENT_EDIT_PARAM,
++  clientsKey,
++  fetchClients,
++  isValidEmail,
++  updateClient,
++} from './queries';
++
++// The "edit this client" action on every client row — its own file (CLAUDE.md rule 3), so the
++// clients table never lists what goes at the end of a row. Which row is open outlives the click, so
++// it lives in the URL under the shared `editClient` key (rule 4): the Edit button sets it, and each
++// row's control reads the same key to decide whether it shows its button or its inline form. Saving
++// is a mutation that invalidates ['clients'] (rule 5), so the row re-renders with the new values for
++// free. Carries data-testid="client-edit-<id>" and the form anchors (the test contract).
++function ClientEdit({ clientId }: { clientId: number }) {
++  const [editing, setEditing] = useSearchParam(CLIENT_EDIT_PARAM, asNumber);
++
++  if (editing !== clientId) {
++    return (
++      <button
++        type="button"
++        data-testid={`client-edit-${clientId}`}
++        onClick={() => setEditing(clientId)}
++      >
++        Edit
++      </button>
++    );
++  }
++
++  return <ClientEditForm clientId={clientId} onDone={() => setEditing(undefined)} />;
++}
++
++// The inline form, mounted only while this row is the one being edited. useState holds only what the
++// user is currently typing (CLAUDE.md rule 4), primed once from the already-loaded client row. Email
++// is required and must be well-formed: we block the write client-side (and the server enforces the
++// same rule) so a bad address can never be saved.
++function ClientEditForm({ clientId, onDone }: { clientId: number; onDone: () => void }) {
++  const queryClient = useQueryClient();
++  const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClients });
++  const client = clients?.find((c) => c.id === clientId);
++  const [name, setName] = useState(client?.name ?? '');
++  const [email, setEmail] = useState(client?.email ?? '');
++  const [emailError, setEmailError] = useState(false);
++
++  const mutation = useMutation({
++    mutationFn: () => updateClient(clientId, { name, email }),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: clientsKey });
++      onDone();
++    },
++    onError: () => {
++      // Server rejected the address (defence in depth) — surface the same error anchor.
++      setEmailError(true);
++    },
++  });
++
++  return (
++    <form
++      data-testid={`client-edit-form-${clientId}`}
++      onSubmit={(event) => {
++        event.preventDefault();
++        if (!isValidEmail(email)) {
++          setEmailError(true);
++          return;
++        }
++        setEmailError(false);
++        mutation.mutate();
++      }}
++    >
++      <input
++        data-testid="client-edit-form-name"
++        placeholder="Name"
++        value={name}
++        onChange={(event) => setName(event.target.value)}
++      />
++      <input
++        data-testid="client-edit-form-email"
++        placeholder="Email"
++        value={email}
++        onChange={(event) => {
++          setEmail(event.target.value);
++          if (emailError) {
++            setEmailError(false);
++          }
++        }}
++      />
++      {emailError && (
++        <p data-testid="client-edit-form-email-error" role="alert">
++          Enter a valid email address.
++        </p>
++      )}
++      <button data-testid="client-edit-form-submit" type="submit">
++        Save
++      </button>
++    </form>
++  );
++}
++
++export const contribution = ClientRow.fill({ order: 10, Component: ClientEdit });
+diff --git a/src/main/frontend/features/clients/queries.ts b/src/main/frontend/features/clients/queries.ts
+index b6f9abf..3478f60 100644
+--- a/src/main/frontend/features/clients/queries.ts
++++ b/src/main/frontend/features/clients/queries.ts
+@@ -85,3 +85,17 @@ export function createClient(input: { name: string; email: string }): Promise<Cl
+ export function archiveClient(clientId: number): Promise<void> {
+   return postJson<void>(`/api/clients/${clientId}/archive`, {});
+ }
++
++// The URL search-param key the "edit this client" control owns: which client's row is currently
++// being edited (CLAUDE.md rule 4). One key shared by every row's edit control, so opening one row's
++// form is a URL change, not per-row component state.
++export const CLIENT_EDIT_PARAM = 'editClient';
++
++/** Correct a client's name and email; id is in the path, {name, email} in the body. Returns the
++ * saved row. */
++export function updateClient(
++  clientId: number,
++  input: { name: string; email: string },
++): Promise<Client> {
++  return postJson<Client>(`/api/clients/${clientId}`, input);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+index e8fbac1..0e667c1 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -19,4 +19,10 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
+ 
+     /** Whether a client already uses this email — no two clients may share one. */
+     boolean existsByEmail(String email);
++
++    /**
++     * Whether a client OTHER than the one with {@code id} already uses this email — the uniqueness
++     * check for an edit, so a client may keep its own address without tripping the duplicate rule.
++     */
++    boolean existsByEmailAndIdNot(String email, Long id);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ClientUpdate.java b/src/main/java/net/officefloor/hq/app/ClientUpdate.java
+new file mode 100644
+index 0000000..33a8802
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientUpdate.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app;
++
++import java.util.regex.Pattern;
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/clients/{clientId} — correct a client's name and/or email from {name, email} and return
++ * the saved row. Wired by {@code officefloor/rest/api/clients/{clientId}.POST.yml}.
++ *
++ * <p>Same rules as creating a client: a proper (dotted, single-@) email address is required, and no
++ * two clients may share an email — but the client keeping its own address must be allowed, so the
++ * uniqueness check excludes this client. A malformed address or one already used by ANOTHER client
++ * is rejected with 400 (the front-end enforces the same rules and the DB carries a UNIQUE
++ * constraint), and an unknown client id with 404. Editing is an audited side-effect: one
++ * {@code CLIENT_UPDATED id=<id>} record is appended per save (CLAUDE.md — audited behaviour goes
++ * through {@link Audit}).
++ */
++public class ClientUpdate {
++
++    // Mirror of the front-end EMAIL_PATTERN: one @, non-empty local/domain parts, dotted domain.
++    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
++
++    public void service(@HttpPathParameter("clientId") String clientId, @RequestBody NewClient body,
++            ClientRepository clients, Audit audit, ObjectResponse<Client> response) {
++        Client client = clients.findById(Long.valueOf(clientId))
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        String email = body.getEmail();
++        if (email == null || !EMAIL.matcher(email.trim()).matches()) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
++        if (clients.existsByEmailAndIdNot(email.trim(), client.getId())) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
++        client.setName(body.getName());
++        client.setEmail(email.trim());
++        clients.save(client);
++        audit.record("CLIENT_UPDATED id=" + client.getId());
++        response.send(client);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/clients/{clientId}.POST.yml b/src/main/resources/officefloor/rest/api/clients/{clientId}.POST.yml
+new file mode 100644
+index 0000000..6814de5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/{clientId}.POST.yml
+@@ -0,0 +1,3 @@
++# POST /api/clients/{clientId} -> correct a client's name and/or email (ClientUpdate.service).
++service:
++  class: net.officefloor.hq.app.ClientUpdate
