@@ -1,0 +1,308 @@
+diff --git a/src/main/frontend/features/projects/ProjectForm.tsx b/src/main/frontend/features/projects/ProjectForm.tsx
+index 64ed3c4..e1a5740 100644
+--- a/src/main/frontend/features/projects/ProjectForm.tsx
++++ b/src/main/frontend/features/projects/ProjectForm.tsx
+@@ -5,6 +5,8 @@ import {
+   createProject,
+   clientsKey,
+   fetchClientOptions,
++  PROJECT_STATUSES,
++  type ProjectStatus,
+ } from './queries';
+ 
+ // Add a project for a client. useState holds only what the user is currently entering (CLAUDE.md
+@@ -14,6 +16,7 @@ import {
+ export function ProjectForm() {
+   const [name, setName] = useState('');
+   const [clientId, setClientId] = useState('');
++  const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
+   const queryClient = useQueryClient();
+ 
+   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: fetchClientOptions });
+@@ -24,6 +27,7 @@ export function ProjectForm() {
+       void queryClient.invalidateQueries({ queryKey: projectsKey });
+       setName('');
+       setClientId('');
++      setStatus('ACTIVE');
+     },
+   });
+ 
+@@ -35,7 +39,7 @@ export function ProjectForm() {
+         if (name.trim() === '' || clientId === '') {
+           return;
+         }
+-        mutation.mutate({ name, clientId: Number(clientId) });
++        mutation.mutate({ name, clientId: Number(clientId), status });
+       }}
+     >
+       <input
+@@ -56,6 +60,17 @@ export function ProjectForm() {
+           </option>
+         ))}
+       </select>
++      <select
++        data-testid="project-form-status"
++        value={status}
++        onChange={(event) => setStatus(event.target.value as ProjectStatus)}
++      >
++        {PROJECT_STATUSES.map((option) => (
++          <option key={option} value={option}>
++            {option}
++          </option>
++        ))}
++      </select>
+       <button data-testid="project-form-submit" type="submit">
+         Add project
+       </button>
+diff --git a/src/main/frontend/features/projects/queries.ts b/src/main/frontend/features/projects/queries.ts
+index 5167c84..4f7274f 100644
+--- a/src/main/frontend/features/projects/queries.ts
++++ b/src/main/frontend/features/projects/queries.ts
+@@ -8,9 +8,16 @@ export type ProjectView = {
+   name: string;
+   clientName: string;
+   archived: boolean;
++  status: ProjectStatus;
+   tagIds: number[];
+ };
+ 
++// A project's lifecycle status: ACTIVE while worked on, ON_HOLD when paused, FINISHED when done.
++// The one list the form's picker offers and the row displays, so both agree without importing.
++export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'FINISHED';
++
++export const PROJECT_STATUSES: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'FINISHED'];
++
+ export const projectsKey = ['projects'] as const;
+ 
+ // The URL search-param key the show-archived toggle owns and the list reads (CLAUDE.md rule 4).
+@@ -36,7 +43,9 @@ export function fetchProjects(): Promise<ProjectView[]> {
+   return getJson<ProjectView[]>('/api/projects');
+ }
+ 
+-export function createProject(input: { name: string; clientId: number }): Promise<ProjectView> {
++export function createProject(
++  input: { name: string; clientId: number; status: ProjectStatus },
++): Promise<ProjectView> {
+   return postJson<ProjectView>('/api/projects', input);
+ }
+ 
+diff --git a/src/main/frontend/features/projects/status.slot.tsx b/src/main/frontend/features/projects/status.slot.tsx
+new file mode 100644
+index 0000000..17ced44
+--- /dev/null
++++ b/src/main/frontend/features/projects/status.slot.tsx
+@@ -0,0 +1,18 @@
++import { useQuery } from '@tanstack/react-query';
++import { ProjectRow } from '../../slots/defs/projectRow';
++import { projectsKey, fetchProjects } from './queries';
++
++// Shows a project's lifecycle status on its row — its own file (CLAUDE.md rule 3), so the projects
++// table never lists what each row carries. Queries the shared ['projects'] key for itself (rule 5)
++// and reads the status off the matching project. Carries data-testid="project-status" (the test
++// contract); ordered first so the status reads before the row's actions.
++function ProjectStatus({ projectId }: { projectId: number }) {
++  const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: fetchProjects });
++  const project = projects?.find((p) => p.id === projectId);
++  if (!project) {
++    return null;
++  }
++  return <span data-testid="project-status">{project.status}</span>;
++}
++
++export const contribution = ProjectRow.fill({ order: 1, Component: ProjectStatus });
+diff --git a/src/main/java/net/officefloor/hq/app/NewProject.java b/src/main/java/net/officefloor/hq/app/NewProject.java
+index b432523..b5f53c8 100644
+--- a/src/main/java/net/officefloor/hq/app/NewProject.java
++++ b/src/main/java/net/officefloor/hq/app/NewProject.java
+@@ -10,6 +10,8 @@ public class NewProject {
+ 
+     private Long clientId;
+ 
++    private String status;
++
+     public String getName() {
+         return name;
+     }
+@@ -25,4 +27,13 @@ public class NewProject {
+     public void setClientId(Long clientId) {
+         this.clientId = clientId;
+     }
++
++    /** The chosen lifecycle status (ACTIVE, ON_HOLD, FINISHED); absent falls back to ACTIVE. */
++    public String getStatus() {
++        return status;
++    }
++
++    public void setStatus(String status) {
++        this.status = status;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index eb48e7e..452b0a2 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -26,6 +26,8 @@ public class Project {
+ 
+     private boolean archived;
+ 
++    private String status;
++
+     public Long getId() {
+         return id;
+     }
+@@ -57,4 +59,13 @@ public class Project {
+     public void setArchived(boolean archived) {
+         this.archived = archived;
+     }
++
++    /** The project's lifecycle status: ACTIVE, ON_HOLD or FINISHED. */
++    public String getStatus() {
++        return status;
++    }
++
++    public void setStatus(String status) {
++        this.status = status;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index 883b2d0..1b713ed 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -16,7 +16,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+      * The main list carries the flag so it can hide archived rows by default and reveal them on the
+      * show-archived toggle without a second request.
+      */
+-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived) "
++    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
+             + "FROM Project p, Client c WHERE p.clientId = c.id ORDER BY p.id ASC")
+     List<ProjectView> findAllViews();
+ 
+@@ -24,7 +24,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+      * A client's own project list, oldest id first — archived projects are excluded so a tucked-away
+      * project drops off the client's page (no toggle there).
+      */
+-    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived) "
++    @Query("SELECT new net.officefloor.hq.app.ProjectView(p.id, p.name, c.name, p.archived, p.status) "
+             + "FROM Project p, Client c WHERE p.clientId = c.id AND p.clientId = :clientId "
+             + "AND p.archived = FALSE ORDER BY p.id ASC")
+     List<ProjectView> findViewsByClientId(@Param("clientId") Long clientId);
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index aed4087..ff6acc9 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -15,25 +15,27 @@ public class ProjectView {
+     private final String name;
+     private final String clientName;
+     private final boolean archived;
++    private final String status;
+     private final List<Long> tagIds;
+ 
+     /** The shape the JPQL constructor expression builds — no labels yet, so tagIds starts empty. */
+-    public ProjectView(Long id, String name, String clientName, boolean archived) {
+-        this(id, name, clientName, archived, List.of());
++    public ProjectView(Long id, String name, String clientName, boolean archived, String status) {
++        this(id, name, clientName, archived, status, List.of());
+     }
+ 
+-    public ProjectView(Long id, String name, String clientName, boolean archived,
++    public ProjectView(Long id, String name, String clientName, boolean archived, String status,
+             List<Long> tagIds) {
+         this.id = id;
+         this.name = name;
+         this.clientName = clientName;
+         this.archived = archived;
++        this.status = status;
+         this.tagIds = tagIds;
+     }
+ 
+     /** A copy carrying the ids of the labels attached to this project (for the label filter). */
+     public ProjectView withTagIds(List<Long> tagIds) {
+-        return new ProjectView(id, name, clientName, archived, tagIds);
++        return new ProjectView(id, name, clientName, archived, status, tagIds);
+     }
+ 
+     public Long getId() {
+@@ -53,6 +55,11 @@ public class ProjectView {
+         return archived;
+     }
+ 
++    /** The project's lifecycle status: ACTIVE, ON_HOLD or FINISHED — shown on the row. */
++    public String getStatus() {
++        return status;
++    }
++
+     /** The ids of the labels attached to this project — the list filters by label on these. */
+     public List<Long> getTagIds() {
+         return tagIds;
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsPost.java b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+index 70c6f94..d341638 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+@@ -1,17 +1,22 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.Set;
+ import net.officefloor.server.http.HttpException;
+ import net.officefloor.server.http.HttpStatus;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+- * POST /api/projects — create a project from {name, clientId} and return the saved row (with its
+- * id). Wired by {@code officefloor/rest/api/projects.POST.yml}. A project must have a name and
+- * belong to an existing client; a missing name or client id is rejected with 400.
++ * POST /api/projects — create a project from {name, clientId, status} and return the saved row (with
++ * its id). Wired by {@code officefloor/rest/api/projects.POST.yml}. A project must have a name and
++ * belong to an existing client; a missing name or client id is rejected with 400. The status is one
++ * of ACTIVE/ON_HOLD/FINISHED and defaults to ACTIVE when omitted; an unknown value is rejected.
+  */
+ public class ProjectsPost {
+ 
++    /** The project lifecycle statuses the form offers and the server accepts. */
++    private static final Set<String> STATUSES = Set.of("ACTIVE", "ON_HOLD", "FINISHED");
++
+     public void service(@RequestBody NewProject body, ProjectRepository projects,
+             ClientRepository clients, ObjectResponse<Project> response) {
+         String name = body.getName();
+@@ -20,9 +25,15 @@ public class ProjectsPost {
+                 || !clients.existsById(clientId)) {
+             throw new HttpException(HttpStatus.BAD_REQUEST);
+         }
++        String status = body.getStatus() == null || body.getStatus().isEmpty()
++                ? "ACTIVE" : body.getStatus();
++        if (!STATUSES.contains(status)) {
++            throw new HttpException(HttpStatus.BAD_REQUEST);
++        }
+         Project project = new Project();
+         project.setName(name.trim());
+         project.setClientId(clientId);
++        project.setStatus(status);
+         response.send(projects.save(project));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index c933bf2..969da6b 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -54,8 +54,10 @@ public class TestSupportController {
+     public void seed(@RequestBody Map<String, Object> fixture) {
+         seedTable(fixture, "clients", "INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email")});
+-        seedTable(fixture, "projects", "INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
+-                p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId")});
++        seedTable(fixture, "projects",
++                "INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
++                p -> new Object[] {id(p, "id"), p.get("name"), id(p, "clientId"),
++                        p.getOrDefault("status", "ACTIVE")});
+         seedTable(fixture, "contacts",
+                 "INSERT INTO contacts (id, name, email, role, client_id) VALUES (?, ?, ?, ?, ?)",
+                 c -> new Object[] {id(c, "id"), c.get("name"), c.get("email"), c.get("role"),
+diff --git a/src/main/resources/db/migration/V17__projects_status.sql b/src/main/resources/db/migration/V17__projects_status.sql
+new file mode 100644
+index 0000000..986d066
+--- /dev/null
++++ b/src/main/resources/db/migration/V17__projects_status.sql
+@@ -0,0 +1,3 @@
++-- A project's lifecycle status: ACTIVE while worked on, ON_HOLD when paused, FINISHED when done.
++-- Shown on the project's row and chosen when creating one. Existing projects default to ACTIVE.
++ALTER TABLE projects ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
