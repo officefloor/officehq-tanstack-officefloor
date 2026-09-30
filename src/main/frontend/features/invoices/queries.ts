@@ -10,6 +10,10 @@ export type Invoice = {
   status: string;
   issuedDate: string;
   dueDate: string;
+  /** How much has been settled against this invoice so far (sum of its payments). */
+  paid: number;
+  /** How much is still owed after payments: amount - paid. Derived server-side. */
+  due: number;
 };
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
