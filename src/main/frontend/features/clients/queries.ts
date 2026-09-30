@@ -80,8 +80,29 @@ export function isActiveProject(project: ClientProject): boolean {
 // still owed, under a key nested beneath ['clients'] so invalidating clients refreshes it too
 // (CLAUDE.md rule 5). Each invoice carries the money still due (amount - payments), derived
 // server-side; the total is the sum of those dues.
-export type StatementInvoice = { id: number; amount: number; status: string; due: number };
-export type ClientStatement = { invoices: StatementInvoice[]; totalOwed: number };
+//
+// The same invoices are also grouped by job in `projects` — one entry per project, each carrying
+// that job's own `subtotal` (the sum of its invoices' dues) — so the statement can present the
+// invoices under their job with a per-job subtotal. `totalOwed` is unchanged (it still sums every
+// due across every job).
+export type StatementInvoice = {
+  id: number;
+  projectId: number;
+  amount: number;
+  status: string;
+  due: number;
+};
+export type StatementProject = {
+  projectId: number;
+  projectName: string;
+  invoices: StatementInvoice[];
+  subtotal: number;
+};
+export type ClientStatement = {
+  projects: StatementProject[];
+  invoices: StatementInvoice[];
+  totalOwed: number;
+};
 
 export const clientStatementKey = (clientId: number) =>
   ['clients', clientId, 'statement'] as const;
