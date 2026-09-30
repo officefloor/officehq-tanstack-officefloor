@@ -1,0 +1,249 @@
+diff --git a/src/main/frontend/features/projects/ProjectsPage.tsx b/src/main/frontend/features/projects/ProjectsPage.tsx
+index 83e0bbc..4cfeaaf 100644
+--- a/src/main/frontend/features/projects/ProjectsPage.tsx
++++ b/src/main/frontend/features/projects/ProjectsPage.tsx
+@@ -10,12 +10,18 @@ import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+ // A project as the server returns it: it carries the client's NAME so the list shows the name, not
+ // the id. project.clientId is the id the form's select submits. `archived` projects are kept but
+ // hidden from the default list.
++// A project's state: ACTIVE while worked on, ON_HOLD when paused, FINISHED when done. Stored on the
++// row and pickable when creating a project (V21__project_status.sql).
++export const PROJECT_STATUSES = ['ACTIVE', 'ON_HOLD', 'FINISHED'] as const;
++export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
++
+ export type Project = {
+   id: number;
+   name: string;
+   clientId: number;
+   clientName: string;
+   archived: boolean;
++  status: ProjectStatus;
+ };
+ 
+ // The projects page: the whole list of projects plus the form to add one and pick its client.
+@@ -50,12 +56,15 @@ export function ProjectsPage() {
+ 
+   const [name, setName] = useState('');
+   const [clientId, setClientId] = useState('');
++  const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
+ 
+   const create = useMutation({
+-    mutationFn: () => postJson<Project>('/api/projects', { name, clientId: Number(clientId) }),
++    mutationFn: () =>
++      postJson<Project>('/api/projects', { name, clientId: Number(clientId), status }),
+     onSuccess: () => {
+       setName('');
+       setClientId('');
++      setStatus('ACTIVE');
+       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+     },
+   });
+@@ -100,6 +109,17 @@ export function ProjectsPage() {
+             </option>
+           ))}
+         </select>
++        <select
++          data-testid="project-form-status"
++          value={status}
++          onChange={(e) => setStatus(e.target.value as ProjectStatus)}
++        >
++          {PROJECT_STATUSES.map((s) => (
++            <option key={s} value={s}>
++              {s}
++            </option>
++          ))}
++        </select>
+         <button data-testid="project-form-submit" type="submit">
+           Add project
+         </button>
+@@ -117,6 +137,7 @@ export function ProjectsPage() {
+             <tr>
+               <th>Name</th>
+               <th>Client</th>
++              <th>Status</th>
+               <th />
+             </tr>
+           </thead>
+@@ -125,6 +146,7 @@ export function ProjectsPage() {
+               <tr key={p.id} data-testid={`project-row-${p.id}`}>
+                 <td data-testid="project-name">{p.name}</td>
+                 <td data-testid="project-client">{p.clientName}</td>
++                <td data-testid="project-status">{p.status}</td>
+                 <td>
+                   <ProjectRowActions.Slot projectId={p.id} />
+                 </td>
+diff --git a/src/main/java/net/officefloor/hq/app/NewProject.java b/src/main/java/net/officefloor/hq/app/NewProject.java
+index f75e6d5..dbe00ff 100644
+--- a/src/main/java/net/officefloor/hq/app/NewProject.java
++++ b/src/main/java/net/officefloor/hq/app/NewProject.java
+@@ -11,6 +11,8 @@ public class NewProject {
+ 
+     private Long clientId;
+ 
++    private String status;
++
+     public String getName() {
+         return name;
+     }
+@@ -26,4 +28,12 @@ public class NewProject {
+     public void setClientId(Long clientId) {
+         this.clientId = clientId;
+     }
++
++    public String getStatus() {
++        return status;
++    }
++
++    public void setStatus(String status) {
++        this.status = status;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index 5257552..3465c3b 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -29,6 +29,10 @@ public class Project {
+     @Column(nullable = false)
+     private boolean archived;
+ 
++    /** ACTIVE, ON_HOLD or FINISHED — the project's state (V21__project_status.sql). */
++    @Column(nullable = false)
++    private String status = "ACTIVE";
++
+     public Long getId() {
+         return id;
+     }
+@@ -60,4 +64,12 @@ public class Project {
+     public void setArchived(boolean archived) {
+         this.archived = archived;
+     }
++
++    public String getStatus() {
++        return status;
++    }
++
++    public void setStatus(String status) {
++        this.status = status;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index 91775ff..ad9fa92 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -12,13 +12,16 @@ public class ProjectView {
+     private final Long clientId;
+     private final String clientName;
+     private final boolean archived;
++    private final String status;
+ 
+-    public ProjectView(Long id, String name, Long clientId, String clientName, boolean archived) {
++    public ProjectView(Long id, String name, Long clientId, String clientName, boolean archived,
++            String status) {
+         this.id = id;
+         this.name = name;
+         this.clientId = clientId;
+         this.clientName = clientName;
+         this.archived = archived;
++        this.status = status;
+     }
+ 
+     public Long getId() {
+@@ -40,4 +43,8 @@ public class ProjectView {
+     public boolean isArchived() {
+         return archived;
+     }
++
++    public String getStatus() {
++        return status;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsArchive.java b/src/main/java/net/officefloor/hq/app/ProjectsArchive.java
+index 33b4845..32a0d4c 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsArchive.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsArchive.java
+@@ -22,6 +22,6 @@ public class ProjectsArchive {
+         Project saved = projects.save(project);
+         audit.record("PROJECT_ARCHIVED id=" + id);
+         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(), null,
+-                saved.isArchived()));
++                saved.isArchived(), saved.getStatus()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsGet.java b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+index c1ed0c5..e547c27 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsGet.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsGet.java
+@@ -18,7 +18,7 @@ public class ProjectsGet {
+                 .collect(Collectors.toMap(Client::getId, Client::getName));
+         List<ProjectView> views = projects.findAllByOrderByIdAsc().stream()
+                 .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
+-                        nameById.get(p.getClientId()), p.isArchived()))
++                        nameById.get(p.getClientId()), p.isArchived(), p.getStatus()))
+                 .collect(Collectors.toList());
+         response.send(views);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsPost.java b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+index b338911..0df2d85 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsPost.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsPost.java
+@@ -21,13 +21,18 @@ public class ProjectsPost {
+         if (client == null) {
+             throw new IllegalArgumentException("a project requires an existing client");
+         }
++        String status = body.getStatus() == null ? "ACTIVE" : body.getStatus().trim();
++        if (!status.equals("ACTIVE") && !status.equals("ON_HOLD") && !status.equals("FINISHED")) {
++            throw new IllegalArgumentException("a project status must be ACTIVE, ON_HOLD or FINISHED");
++        }
+         Project project = new Project();
+         project.setName(name);
+         project.setClientId(clientId);
++        project.setStatus(status);
+         Project saved = projects.save(project);
+         audit.record("PROJECT_CREATED id=" + saved.getId() + " name=" + saved.getName()
+                 + " client=" + client.getName());
+         response.send(new ProjectView(saved.getId(), saved.getName(), saved.getClientId(),
+-                client.getName(), saved.isArchived()));
++                client.getName(), saved.isArchived(), saved.getStatus()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectsRemove.java b/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
+index 9a928c3..a1821f7 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectsRemove.java
+@@ -19,7 +19,7 @@ public class ProjectsRemove {
+             throw new IllegalArgumentException("no such project");
+         }
+         ProjectView removed = new ProjectView(project.getId(), project.getName(),
+-                project.getClientId(), null, project.isArchived());
++                project.getClientId(), null, project.isArchived(), project.getStatus());
+         projects.delete(project);
+         audit.record("PROJECT_DELETED id=" + id);
+         response.send(removed);
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 00b204b..5066df4 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -63,8 +63,9 @@ public class TestSupportController {
+                 asLong(c, "id"), c.get("name"), c.get("email")));
+ 
+         seedRows(fixture, "projects", p -> jdbc.update(
+-                "INSERT INTO project (id, name, client_id) VALUES (?, ?, ?)",
+-                asLong(p, "id"), p.get("name"), asLong(p, "clientId")));
++                "INSERT INTO project (id, name, client_id, status) VALUES (?, ?, ?, ?)",
++                asLong(p, "id"), p.get("name"), asLong(p, "clientId"),
++                p.get("status") == null ? "ACTIVE" : p.get("status")));
+ 
+         seedRows(fixture, "tasks", t -> jdbc.update(
+                 "INSERT INTO task (id, project_id, title, done) VALUES (?, ?, ?, ?)",
+diff --git a/src/main/resources/db/migration/V21__project_status.sql b/src/main/resources/db/migration/V21__project_status.sql
+new file mode 100644
+index 0000000..549ec5b
+--- /dev/null
++++ b/src/main/resources/db/migration/V21__project_status.sql
+@@ -0,0 +1,6 @@
++-- A project can be marked ACTIVE, ON_HOLD or FINISHED so its state is visible on the list. Additive
++-- column with a default, so existing rows and any caller that omits it start ACTIVE. The CHECK pins
++-- the column to the three known values, mirroring the other value-guard migrations.
++ALTER TABLE project ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
++ALTER TABLE project ADD CONSTRAINT project_status_valid
++    CHECK (status IN ('ACTIVE', 'ON_HOLD', 'FINISHED'));
