@@ -38,6 +38,9 @@ export function InvoicePaymentsPanel({ invoiceId }: { invoiceId: number }) {
       setAmount('');
       setDate('');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
+      // A payment changes what the invoice still owes, so its derived status and amount-due (both
+      // read from ['invoices']) must refresh too — share the key, no import between features.
+      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
     },
   });
 

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -33,8 +34,8 @@ public class PaymentsPost {
         payment.setDate(date);
         Payment saved = payments.save(payment);
 
-        audit.record("PAYMENT_RECORDED id=" + saved.getId() + " invoice=" + invoiceId
-                + " amount=" + saved.getAmount().toPlainString() + " date=" + saved.getDate());
+        audit.record("PAYMENT_RECORDED id=" + saved.getId() + " amount="
+                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
         response.send(saved);
     }
 }
