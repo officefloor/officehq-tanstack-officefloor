@@ -1,0 +1,404 @@
+diff --git a/src/main/frontend/features/clients/RecordPaymentPanel.tsx b/src/main/frontend/features/clients/RecordPaymentPanel.tsx
+new file mode 100644
+index 0000000..d57de62
+--- /dev/null
++++ b/src/main/frontend/features/clients/RecordPaymentPanel.tsx
+@@ -0,0 +1,137 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson, postJson } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { money } from '../../ui/money';
++
++// A client's invoices as the statement endpoint returns them: each with its derived amountDue (its
++// amount minus every payment recorded against it), the same shape the statement panel reads.
++type StatementInvoice = {
++  id: number;
++  projectId: number;
++  amount: number;
++  status: string;
++  issuedDate: string;
++  dueDate: string;
++  amountDue: number;
++};
++type Statement = { invoices: StatementInvoice[]; outstanding: number };
++
++// Record one lump payment split across several of a client's open invoices, rendered in the
++// client-detail context. It only shows once the form is opened — the `payment` URL key, owned by
++// features/clients/recordPayment.slot.tsx, which this reads (rule 4). The client's open invoices are
++// read with useQuery under a key that starts with ['invoices'] (the client statement, scoped to the
++// client) so it stays in step with any invoice/payment write; the user's typing (the total, the date
++// and each invoice's share) is the only useState (rule 4). Submitting POSTs the split to
++// /api/payments/allocate and invalidates ['invoices'] (and ['payments']) so every view of these
++// invoices — the project list, the statement, the invoice detail — refreshes from the derived balances
++// (rule 5), never hand-maintained.
++export function RecordPaymentPanel({ clientId }: { clientId: number }) {
++  const [payment] = useSearchParam('payment', asString);
++  const open = payment === 'open';
++  const queryClient = useQueryClient();
++
++  const query = useQuery({
++    queryKey: ['invoices', 'statement', clientId],
++    queryFn: () => getJson<Statement>(`/api/clients/statement?clientId=${clientId}`),
++    enabled: open,
++  });
++
++  const [amount, setAmount] = useState('');
++  const [date, setDate] = useState('');
++  // The share the user is typing against each invoice, keyed by invoice id (uncommitted input, so
++  // useState — rule 4).
++  const [alloc, setAlloc] = useState<Record<number, string>>({});
++
++  const create = useMutation({
++    mutationFn: () =>
++      postJson('/api/payments/allocate', {
++        amount: Number(amount),
++        date,
++        allocations: Object.entries(alloc)
++          .map(([invoiceId, share]) => ({ invoiceId: Number(invoiceId), amount: Number(share) }))
++          .filter((a) => a.amount > 0),
++      }),
++    onSuccess: () => {
++      setAmount('');
++      setDate('');
++      setAlloc({});
++      // The split changes what each invoice still owes, so its derived status and amount-due (read
++      // from ['invoices']) and the payments lists (['payments']) must refresh — share the keys, no
++      // import between features.
++      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
++      void queryClient.invalidateQueries({ queryKey: ['payments'] });
++    },
++  });
++
++  if (!open) {
++    return null;
++  }
++
++  // Only invoices with a balance left can take a share of the payment.
++  const invoices = (query.data?.invoices ?? []).filter((i) => Number(i.amountDue) > 0);
++
++  return (
++    <section data-testid="client-record-payment-form">
++      <form
++        data-testid="payment-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          if (!amount.trim() || !date.trim()) {
++            return;
++          }
++          create.mutate();
++        }}
++      >
++        <input
++          data-testid="payment-form-amount"
++          type="number"
++          step="0.01"
++          placeholder="Amount"
++          value={amount}
++          onChange={(e) => setAmount(e.target.value)}
++        />
++        <input
++          data-testid="payment-form-date"
++          type="date"
++          value={date}
++          onChange={(e) => setDate(e.target.value)}
++        />
++
++        <table data-testid="payment-alloc-table">
++          <thead>
++            <tr>
++              <th>Invoice</th>
++              <th>Amount due</th>
++              <th>Allocate</th>
++            </tr>
++          </thead>
++          <tbody>
++            {invoices.map((i) => (
++              <tr key={i.id} data-testid={`payment-alloc-row-${i.id}`}>
++                <td data-testid="payment-alloc-invoice">{i.id}</td>
++                <td data-testid="payment-alloc-due">{money(Number(i.amountDue))}</td>
++                <td>
++                  <input
++                    data-testid={`payment-alloc-${i.id}`}
++                    type="number"
++                    step="0.01"
++                    placeholder="0"
++                    value={alloc[i.id] ?? ''}
++                    onChange={(e) =>
++                      setAlloc((prev) => ({ ...prev, [i.id]: e.target.value }))
++                    }
++                  />
++                </td>
++              </tr>
++            ))}
++          </tbody>
++        </table>
++
++        <button data-testid="payment-form-submit" type="submit">
++          Record payment
++        </button>
++      </form>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/clients/recordPayment.slot.tsx b/src/main/frontend/features/clients/recordPayment.slot.tsx
+new file mode 100644
+index 0000000..0132099
+--- /dev/null
++++ b/src/main/frontend/features/clients/recordPayment.slot.tsx
+@@ -0,0 +1,24 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The control that opens the "record a payment" form on a client's detail page — its own file,
++// filling the client-detail slot. It OWNS the `payment` URL key (rule 4: whether the form is open
++// outlives a click, so it lives in the URL, not useState). The form panel
++// (features/clients/recordPaymentForm.slot.tsx) reads the same key to decide whether to show; nothing
++// is passed between them. Carries data-testid="client-record-payment" (the test contract).
++function RecordPaymentOpen() {
++  const [payment, setPayment] = useSearchParam('payment', asString);
++  const open = payment === 'open';
++  return (
++    <button
++      type="button"
++      data-testid="client-record-payment"
++      aria-pressed={open}
++      onClick={() => setPayment(open ? undefined : 'open')}
++    >
++      {open ? 'Hide payment' : 'Record payment'}
++    </button>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 25, Component: RecordPaymentOpen });
+diff --git a/src/main/frontend/features/clients/recordPaymentForm.slot.tsx b/src/main/frontend/features/clients/recordPaymentForm.slot.tsx
+new file mode 100644
+index 0000000..60cbcdb
+--- /dev/null
++++ b/src/main/frontend/features/clients/recordPaymentForm.slot.tsx
+@@ -0,0 +1,12 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { RecordPaymentPanel } from './RecordPaymentPanel';
++
++// The record-payment form's presence on a client's detail page — its own file, filling the
++// client-detail slot below the control that opens it. The detail route was written once and is not
++// touched to add this; the panel queries for its own data (the client statement, scoped to the client
++// it is handed) and only shows once the `payment` URL key opens it (owned by
++// features/clients/recordPayment.slot.tsx).
++export const contribution = ClientDetail.fill({
++  order: 26,
++  Component: RecordPaymentPanel,
++});
+diff --git a/src/main/java/net/officefloor/hq/app/AllocatedPayment.java b/src/main/java/net/officefloor/hq/app/AllocatedPayment.java
+new file mode 100644
+index 0000000..a731722
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/AllocatedPayment.java
+@@ -0,0 +1,68 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.List;
++
++/**
++ * Request body for {@code POST /api/payments/allocate}: one lump payment a client has made, split
++ * across several of their invoices. The {@code amount} is the whole sum handed over and the
++ * {@code date} is when; {@code allocations} says how that sum is spread — one entry per invoice with
++ * the share applied to it. The shares must add up to {@code amount} (see {@link PaymentsAllocatePost}).
++ * Bound from the JSON payload by the Spring MVC {@code @RequestBody} argument resolver.
++ */
++public class AllocatedPayment {
++
++    private BigDecimal amount;
++
++    private String date;
++
++    private List<Allocation> allocations;
++
++    public BigDecimal getAmount() {
++        return amount;
++    }
++
++    public void setAmount(BigDecimal amount) {
++        this.amount = amount;
++    }
++
++    public String getDate() {
++        return date;
++    }
++
++    public void setDate(String date) {
++        this.date = date;
++    }
++
++    public List<Allocation> getAllocations() {
++        return allocations;
++    }
++
++    public void setAllocations(List<Allocation> allocations) {
++        this.allocations = allocations;
++    }
++
++    /** One share of the lump payment: which invoice it goes against and how much of the sum it takes. */
++    public static class Allocation {
++
++        private Long invoiceId;
++
++        private BigDecimal amount;
++
++        public Long getInvoiceId() {
++            return invoiceId;
++        }
++
++        public void setInvoiceId(Long invoiceId) {
++            this.invoiceId = invoiceId;
++        }
++
++        public BigDecimal getAmount() {
++            return amount;
++        }
++
++        public void setAmount(BigDecimal amount) {
++            this.amount = amount;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Payment.java b/src/main/java/net/officefloor/hq/app/Payment.java
+index d0a5d26..14a7255 100644
+--- a/src/main/java/net/officefloor/hq/app/Payment.java
++++ b/src/main/java/net/officefloor/hq/app/Payment.java
+@@ -31,6 +31,15 @@ public class Payment {
+     @Column(name = "paid_date")
+     private String date;
+ 
++    /**
++     * When this payment is one share of a lump payment split across several invoices, the reference
++     * of that lump payment (the same value on every allocation of the one payment); null for a
++     * standalone single-invoice payment. Set by {@link PaymentsAllocatePost}; stored by
++     * {@code V32__payment_batch_ref.sql}.
++     */
++    @Column(name = "batch_ref")
++    private String batchRef;
++
+     public Long getId() {
+         return id;
+     }
+@@ -62,4 +71,12 @@ public class Payment {
+     public void setDate(String date) {
+         this.date = date;
+     }
++
++    public String getBatchRef() {
++        return batchRef;
++    }
++
++    public void setBatchRef(String batchRef) {
++        this.batchRef = batchRef;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/PaymentsAllocatePost.java b/src/main/java/net/officefloor/hq/app/PaymentsAllocatePost.java
+new file mode 100644
+index 0000000..e17f486
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/PaymentsAllocatePost.java
+@@ -0,0 +1,79 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.UUID;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * {@code POST /api/payments/allocate} — record one lump payment a client has made, split across
++ * several of their invoices, and return the created rows. Wired by
++ * {@code officefloor/rest/api/payments/allocate.POST.yml}.
++ *
++ * <p>The whole {@code amount} must be positive, the {@code date} supplied, and every allocation must
++ * name an existing invoice with a positive share; the shares must add up to the lump {@code amount}
++ * (so nothing of the payment is left unaccounted for). Each allocation becomes one {@link Payment}
++ * row against its invoice (so each invoice's balance reflects only its share — the existing amount-due
++ * derivation sums the payment rows per invoice), and all of them carry the same {@code batchRef} so
++ * the rows that made up this one payment can be traced back together. Each row is audited through
++ * {@link Audit}, the same {@code PAYMENT_RECORDED} record a single-invoice payment writes, so the
++ * side effect is verifiable where the UI cannot show it.
++ */
++public class PaymentsAllocatePost {
++
++    public void service(@RequestBody AllocatedPayment body, PaymentRepository payments,
++            InvoiceRepository invoices, Audit audit, ObjectResponse<List<Payment>> response) {
++        BigDecimal amount = body.getAmount();
++        if (amount == null || amount.signum() <= 0) {
++            throw new IllegalArgumentException("a payment requires a positive amount");
++        }
++        String date = body.getDate() == null ? "" : body.getDate().trim();
++        if (date.isEmpty()) {
++            throw new IllegalArgumentException("a payment requires a date");
++        }
++        List<AllocatedPayment.Allocation> allocations = body.getAllocations();
++        if (allocations == null || allocations.isEmpty()) {
++            throw new IllegalArgumentException("a split payment requires at least one allocation");
++        }
++
++        // Validate every allocation up front and total the shares, so nothing is written unless the
++        // whole split is sound (an existing invoice and a positive share each) and the shares add up
++        // to the lump amount.
++        BigDecimal allocated = BigDecimal.ZERO;
++        for (AllocatedPayment.Allocation allocation : allocations) {
++            Long invoiceId = allocation.getInvoiceId();
++            if (invoiceId == null || invoices.findById(invoiceId).isEmpty()) {
++                throw new IllegalArgumentException("an allocation requires an existing invoice");
++            }
++            BigDecimal share = allocation.getAmount();
++            if (share == null || share.signum() <= 0) {
++                throw new IllegalArgumentException("an allocation requires a positive amount");
++            }
++            allocated = allocated.add(share);
++        }
++        if (allocated.compareTo(amount) != 0) {
++            throw new IllegalArgumentException("allocations must add up to the payment amount");
++        }
++
++        // One reference shared across every row of this one lump payment, so the allocations can be
++        // traced back together (payment.batch_ref).
++        String batchRef = UUID.randomUUID().toString();
++        List<Payment> saved = new ArrayList<>();
++        for (AllocatedPayment.Allocation allocation : allocations) {
++            Payment payment = new Payment();
++            payment.setInvoiceId(allocation.getInvoiceId());
++            payment.setAmount(allocation.getAmount());
++            payment.setDate(date);
++            payment.setBatchRef(batchRef);
++            Payment row = payments.save(payment);
++            audit.record("PAYMENT_RECORDED id=" + row.getId() + " amount="
++                    + row.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
++            saved.add(row);
++        }
++
++        response.send(saved);
++    }
++}
+diff --git a/src/main/resources/db/migration/V32__payment_batch_ref.sql b/src/main/resources/db/migration/V32__payment_batch_ref.sql
+new file mode 100644
+index 0000000..410588b
+--- /dev/null
++++ b/src/main/resources/db/migration/V32__payment_batch_ref.sql
+@@ -0,0 +1,7 @@
++-- A lump payment can be split across several invoices at once: the client hands over one sum and it
++-- is allocated across their open invoices — one payment row per invoice (amount = that invoice's
++-- share), so each invoice's balance reflects its share. This nullable column records, on each such
++-- allocation, the reference of the lump payment it came from, so the rows that made up one payment
++-- can be traced back together. Additive and nullable: a single-invoice payment (POST /api/payments)
++-- leaves it null, so existing rows and the existing pay path need no change.
++ALTER TABLE payment ADD COLUMN batch_ref VARCHAR(64);
+diff --git a/src/main/resources/officefloor/rest/api/payments/allocate.POST.yml b/src/main/resources/officefloor/rest/api/payments/allocate.POST.yml
+new file mode 100644
+index 0000000..3de87db
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/payments/allocate.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.PaymentsAllocatePost
