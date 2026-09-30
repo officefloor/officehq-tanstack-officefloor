@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { asString, useSearchParam } from '../../url/useSearchParam';
+import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
 import { money } from '../../ui/money';
 
@@ -25,12 +25,19 @@ export function AllInvoicesPage() {
   // server data copied into state or filtered by hand. The key still starts with 'invoices', so a
   // write that invalidates ['invoices'] refreshes this list too (rule 5).
   const [status] = useSearchParam('invoiceStatus', asString);
+  // The huge list is shown a page at a time. The chosen page lives in the URL too (owned by
+  // features/invoices/pagination.slot.tsx, which renders the next/previous controls); the page reads
+  // the same key and asks the server for just that slice — the same single-source-of-truth shape as
+  // the status filter above, no rows sliced or held in state here.
+  const [page] = useSearchParam('invoicePage', asNumber);
+  const currentPage = page ?? 1;
   const invoices = useQuery({
-    queryKey: ['invoices', 'all', status],
-    queryFn: () =>
-      getJson<InvoiceView[]>(
-        status ? `/api/invoices/all?status=${encodeURIComponent(status)}` : '/api/invoices/all',
-      ),
+    queryKey: ['invoices', 'all', status, currentPage],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(currentPage) });
+      if (status) params.set('status', status);
+      return getJson<InvoiceView[]>(`/api/invoices/all?${params.toString()}`);
+    },
   });
 
   const rows = invoices.data ?? [];

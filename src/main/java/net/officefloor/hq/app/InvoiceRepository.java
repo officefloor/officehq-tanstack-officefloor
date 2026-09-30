@@ -2,6 +2,8 @@ package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,6 +23,14 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
      * narrows the list, never reorders it.
      */
     List<Invoice> findByStatusOrderByIdAsc(String status);
+
+    /**
+     * One page of invoices at one lifecycle stage, ordered by the supplied {@link Pageable} (the
+     * all-invoices list orders by id ascending). Backs the all-invoices list's next/previous paging
+     * when a status filter is active — only the requested slice is fetched, so a huge list is shown a
+     * page at a time rather than all at once.
+     */
+    Page<Invoice> findByStatus(String status, Pageable pageable);
 
     /**
      * All invoices, earliest due date first (id as a stable tiebreaker), backing the project
