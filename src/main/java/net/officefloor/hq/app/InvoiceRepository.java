@@ -23,10 +23,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<InvoiceView> findAllViews();
 
     /**
-     * Total amount still owed: the sum of every not-yet-paid invoice's amount across all projects
-     * (DRAFT or SENT). COALESCE keeps it 0 (never null) when nothing is outstanding — the
-     * dashboard's headline figure.
+     * Total amount still owed: the sum of every SENT-but-not-yet-paid invoice's amount across all
+     * projects. Only invoices actually sent to the client count — DRAFT invoices are excluded
+     * (they have not been billed yet) and PAID invoices are settled. COALESCE keeps it 0 (never
+     * null) when nothing is outstanding — the dashboard's headline figure.
      */
-    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status <> 'PAID'")
+    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM Invoice i WHERE i.status = 'SENT'")
     BigDecimal sumOutstanding();
 }
