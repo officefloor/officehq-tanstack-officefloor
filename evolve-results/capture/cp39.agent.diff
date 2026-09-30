@@ -1,0 +1,121 @@
+diff --git a/src/main/frontend/features/invoices/AllInvoicesTable.tsx b/src/main/frontend/features/invoices/AllInvoicesTable.tsx
+index 0eafa32..fdc6e43 100644
+--- a/src/main/frontend/features/invoices/AllInvoicesTable.tsx
++++ b/src/main/frontend/features/invoices/AllInvoicesTable.tsx
+@@ -1,8 +1,15 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { allInvoicesKey, fetchAllInvoices, INVOICE_STATUS_PARAM, type AllInvoice } from './queries';
++import {
++  allInvoicesKey,
++  fetchAllInvoices,
++  INVOICE_STATUS_PARAM,
++  INVOICE_PAGE_PARAM,
++  INVOICE_PAGE_SIZE,
++  type AllInvoice,
++} from './queries';
+ import { formatMoney } from '../../ui/money';
+ import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
+-import { useSearchParam, asString } from '../../url/useSearchParam';
++import { useSearchParam, asString, asNumber } from '../../url/useSearchParam';
+ 
+ // The one place listing every invoice from every project. Queries for itself under ['invoices',
+ // 'all'] — never handed its data by a parent (CLAUDE.md rule 5). Each row shows the invoice's
+@@ -11,6 +18,7 @@ import { useSearchParam, asString } from '../../url/useSearchParam';
+ export function AllInvoicesTable() {
+   const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: fetchAllInvoices });
+   const [status] = useSearchParam(INVOICE_STATUS_PARAM, asString);
++  const [rawPage] = useSearchParam(INVOICE_PAGE_PARAM, asNumber);
+ 
+   if (!invoices) {
+     return null;
+@@ -20,7 +28,13 @@ export function AllInvoicesTable() {
+     return <p data-testid="all-invoices-empty">No invoices yet.</p>;
+   }
+ 
+-  const shown = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
++  const matching = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
++  // A page at a time (CLAUDE.md rule 4): the page number lives in the URL, owned by the pagination
++  // control; this list reads the same key and slices to that window. Clamp to a valid page so a
++  // stale/over-range number (e.g. after the stage filter shrinks the set) still shows real rows.
++  const totalPages = Math.max(1, Math.ceil(matching.length / INVOICE_PAGE_SIZE));
++  const page = Math.min(Math.max(rawPage ?? 1, 1), totalPages);
++  const shown = matching.slice((page - 1) * INVOICE_PAGE_SIZE, page * INVOICE_PAGE_SIZE);
+ 
+   return (
+     <>
+diff --git a/src/main/frontend/features/invoices/pagination.slot.tsx b/src/main/frontend/features/invoices/pagination.slot.tsx
+new file mode 100644
+index 0000000..036ddce
+--- /dev/null
++++ b/src/main/frontend/features/invoices/pagination.slot.tsx
+@@ -0,0 +1,53 @@
++import { useQuery } from '@tanstack/react-query';
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { useSearchParam, asString, asNumber } from '../../url/useSearchParam';
++import {
++  allInvoicesKey,
++  fetchAllInvoices,
++  INVOICE_STATUS_PARAM,
++  INVOICE_PAGE_PARAM,
++  INVOICE_PAGE_SIZE,
++  type AllInvoice,
++} from './queries';
++
++// The "one page at a time" control — its own file filling the all-invoices toolbar region
++// (CLAUDE.md rule 3). It owns the `invoicePage` URL key (rule 4): the current page outlives a click,
++// so it lives in the URL, and the list (AllInvoicesTable) reads the very same key to slice its rows.
++// No callback, no shared state — just the key. It queries the invoices for itself (rule 5) purely to
++// know how many pages there are, so it can disable next/prev at the ends; it reads the same
++// `invoiceStatus` key the list narrows by, so the page count matches what the list shows.
++function InvoicePagination() {
++  const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: fetchAllInvoices });
++  const [status] = useSearchParam(INVOICE_STATUS_PARAM, asString);
++  const [rawPage, setPage] = useSearchParam(INVOICE_PAGE_PARAM, asNumber);
++
++  const matching = (invoices ?? []).filter(
++    (invoice: AllInvoice) => !status || invoice.status === status,
++  );
++  const totalPages = Math.max(1, Math.ceil(matching.length / INVOICE_PAGE_SIZE));
++  const page = Math.min(Math.max(rawPage ?? 1, 1), totalPages);
++
++  return (
++    <div data-testid="invoice-pagination">
++      <button
++        type="button"
++        data-testid="invoice-page-prev"
++        disabled={page <= 1}
++        onClick={() => setPage(page - 1)}
++      >
++        Previous
++      </button>
++      <span data-testid="invoice-page-label">{page}</span>
++      <button
++        type="button"
++        data-testid="invoice-page-next"
++        disabled={page >= totalPages}
++        onClick={() => setPage(page + 1)}
++      >
++        Next
++      </button>
++    </div>
++  );
++}
++
++export const contribution = AllInvoicesToolbar.fill({ order: 20, Component: InvoicePagination });
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index 166261a..c4c66d0 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -40,6 +40,12 @@ export const INVOICE_SORT_PARAM = 'invoiceSort';
+ /** URL key owned by the stage filter; the all-invoices list narrows to this stage (CLAUDE.md rule 4). */
+ export const INVOICE_STATUS_PARAM = 'invoiceStatus';
+ 
++/** URL key owned by the pagination control; the all-invoices list shows the matching page (CLAUDE.md rule 4). */
++export const INVOICE_PAGE_PARAM = 'invoicePage';
++
++/** How many invoices fill one page of the all-invoices list. */
++export const INVOICE_PAGE_SIZE = 10;
++
+ /** The lifecycle stages an invoice can sit at — the options the stage filter offers. */
+ export const INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID'] as const;
+ 
