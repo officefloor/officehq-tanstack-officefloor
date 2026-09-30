@@ -1,0 +1,269 @@
+diff --git a/src/main/frontend/features/invoices/discount.slot.tsx b/src/main/frontend/features/invoices/discount.slot.tsx
+new file mode 100644
+index 0000000..d0abe54
+--- /dev/null
++++ b/src/main/frontend/features/invoices/discount.slot.tsx
+@@ -0,0 +1,35 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceDetail } from '../../slots/defs/invoiceDetail';
++import { fetchInvoiceDiscount, invoiceDiscountKey } from './queries';
++import { formatMoney } from '../../ui/money';
++
++// The discount breakdown on an invoice's detail page — its own file filling the InvoiceDetail region
++// (CLAUDE.md rule 3); nothing existing is edited to add it. The subtotal (sum of the lines) and the
++// percentage discount taken off are DERIVED server-side, so they always agree with the line items
++// and the final total (which the line-items table already surfaces under data-testid
++// "invoice-amount"). It queries for itself under the shared ['lineitems', invoiceId] key, so editing
++// a line (which invalidates that key) refreshes the breakdown for free (rule 5). Renders under the
++// data-testids the test contract expects.
++function InvoiceDiscountPanel({ invoiceId }: { invoiceId: number }) {
++  const { data } = useQuery({
++    queryKey: invoiceDiscountKey(invoiceId),
++    queryFn: () => fetchInvoiceDiscount(invoiceId),
++  });
++
++  if (!data) {
++    return null;
++  }
++
++  return (
++    <section data-testid="invoice-discount-panel">
++      <dl>
++        <dt>Subtotal</dt>
++        <dd data-testid="invoice-subtotal">{formatMoney(data.subtotal)}</dd>
++        <dt>Discount</dt>
++        <dd data-testid="invoice-discount">{formatMoney(data.discount)}</dd>
++      </dl>
++    </section>
++  );
++}
++
++export const contribution = InvoiceDetail.fill({ order: 10, Component: InvoiceDiscountPanel });
+diff --git a/src/main/frontend/features/invoices/queries.ts b/src/main/frontend/features/invoices/queries.ts
+index bf8ba8f..0fea1f3 100644
+--- a/src/main/frontend/features/invoices/queries.ts
++++ b/src/main/frontend/features/invoices/queries.ts
+@@ -83,3 +83,22 @@ export const invoiceStatusKey = (invoiceId: number) =>
+ export function fetchInvoiceStatus(invoiceId: number): Promise<{ status: string }> {
+   return getJson<{ status: string }>(`/api/invoices/${invoiceId}/status`);
+ }
++
++/**
++ * One invoice's discount breakdown, derived server-side from its line items and stored discount
++ * percentage: the subtotal (sum of the lines), the discount taken off, and the final total
++ * (subtotal - discount). Keyed UNDER the shared ['lineitems', invoiceId] key so editing a line
++ * (which invalidates that key) refreshes the breakdown too (CLAUDE.md rule 5).
++ */
++export type InvoiceDiscount = {
++  subtotal: number;
++  discount: number;
++  total: number;
++};
++
++export const invoiceDiscountKey = (invoiceId: number) =>
++  ['lineitems', invoiceId, 'discount'] as const;
++
++export function fetchInvoiceDiscount(invoiceId: number): Promise<InvoiceDiscount> {
++  return getJson<InvoiceDiscount>(`/api/invoices/${invoiceId}/discount`);
++}
+diff --git a/src/main/frontend/features/lineitems/LineItemsTable.tsx b/src/main/frontend/features/lineitems/LineItemsTable.tsx
+index ca630cd..0afd1e1 100644
+--- a/src/main/frontend/features/lineitems/LineItemsTable.tsx
++++ b/src/main/frontend/features/lineitems/LineItemsTable.tsx
+@@ -1,26 +1,34 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { lineItemsKey, fetchLineItems, type LineItem } from './queries';
++import { fetchInvoiceDiscount, invoiceDiscountKey } from '../invoices/queries';
+ import { LineItemRow } from '../../slots/defs/lineItemRow';
+ import { formatMoney } from '../../ui/money';
+ 
+ // An invoice's line items plus the derived total. Queries for itself under ['lineitems', invoiceId]
+ // — never handed its data by a parent (CLAUDE.md rule 5). Each line's amount is qty * unitPrice; the
+-// invoice total is a client-side aggregate of the same rows, so it stays in step with them for free
+-// ("work out the total for me"). Carries the stable data-testid contract the test reads.
++// invoice total is the sum of the same rows LESS the invoice's percentage discount, worked out
++// server-side under the shared ['lineitems', invoiceId] key so it always tracks both the lines and
++// the discount. With no discount the total equals the plain line sum. Carries the stable
++// data-testid contract the test reads.
+ export function LineItemsTable({ invoiceId }: { invoiceId: number }) {
+   const { data: lineItems } = useQuery({
+     queryKey: lineItemsKey(invoiceId),
+     queryFn: () => fetchLineItems(invoiceId),
+   });
++  const { data: discount } = useQuery({
++    queryKey: invoiceDiscountKey(invoiceId),
++    queryFn: () => fetchInvoiceDiscount(invoiceId),
++  });
+ 
+   if (!lineItems) {
+     return null;
+   }
+ 
+-  const total = lineItems.reduce(
++  const subtotal = lineItems.reduce(
+     (sum, line) => sum + Number(line.qty) * Number(line.unitPrice),
+     0,
+   );
++  const total = discount ? Number(discount.total) : subtotal;
+ 
+   return (
+     <>
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index beef11b..a043457 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -36,6 +36,14 @@ public class Invoice {
+     @Column(name = "due_date")
+     private String dueDate;
+ 
++    /**
++     * The percentage taken off the invoice as a discount (0 = none). Applied to the subtotal (the
++     * sum of the line items) to work out the invoice's final total; the line-item amounts themselves
++     * are unchanged. Stored in the {@code discount_pct} column (Flyway V23).
++     */
++    @Column(name = "discount_pct")
++    private BigDecimal discountPct = BigDecimal.ZERO;
++
+     public Long getId() {
+         return id;
+     }
+@@ -83,4 +91,12 @@ public class Invoice {
+     public void setDueDate(String dueDate) {
+         this.dueDate = dueDate;
+     }
++
++    public BigDecimal getDiscountPct() {
++        return discountPct;
++    }
++
++    public void setDiscountPct(BigDecimal discountPct) {
++        this.discountPct = discountPct;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceDiscount.java b/src/main/java/net/officefloor/hq/app/InvoiceDiscount.java
+new file mode 100644
+index 0000000..16a75f8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceDiscount.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++
++/**
++ * One invoice's discount picture: the {@code subtotal} (the sum of its line items, before any
++ * discount), the percentage-based {@code discount} taken off it, and the {@code total} the client
++ * actually owes ({@code subtotal - discount}). Derived per request in {@link InvoiceDiscountGet} from
++ * the invoice's stored {@code discountPct} and its line items, so the three figures always agree and
++ * nothing is stored twice. The discount is {@code subtotal * pct / 100}, rounded to the cent.
++ */
++public class InvoiceDiscount {
++
++    private final BigDecimal subtotal;
++    private final BigDecimal discount;
++    private final BigDecimal total;
++
++    public InvoiceDiscount(BigDecimal subtotal, BigDecimal discountPct) {
++        BigDecimal sub = subtotal == null ? BigDecimal.ZERO : subtotal;
++        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
++        this.subtotal = sub;
++        this.discount = sub.multiply(pct)
++                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        this.total = sub.subtract(this.discount);
++    }
++
++    /** The sum of the invoice's line items, before any discount. */
++    public BigDecimal getSubtotal() {
++        return subtotal;
++    }
++
++    /** The money taken off as a discount: subtotal * pct / 100. */
++    public BigDecimal getDiscount() {
++        return discount;
++    }
++
++    /** What the client owes after the discount: subtotal - discount. */
++    public BigDecimal getTotal() {
++        return total;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceDiscountGet.java b/src/main/java/net/officefloor/hq/app/InvoiceDiscountGet.java
+new file mode 100644
+index 0000000..a11e0e8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceDiscountGet.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.server.http.HttpException;
++import net.officefloor.server.http.HttpStatus;
++import net.officefloor.web.HttpPathParameter;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/invoices/{id}/discount — one invoice's discount breakdown: the subtotal (the sum of its
++ * line items), the percentage discount taken off it, and the final total (subtotal - discount).
++ * Derived per request from the invoice's stored {@code discountPct} and its line items, so it always
++ * reflects the current lines and never stores the total twice. Wired by
++ * {@code officefloor/rest/api/invoices/{id}/discount.GET.yml}. An unknown invoice id is 404.
++ */
++public class InvoiceDiscountGet {
++
++    public void service(@HttpPathParameter("id") String id, InvoiceRepository invoices,
++            LineItemRepository lineItems, ObjectResponse<InvoiceDiscount> response) {
++        Long invoiceId = Long.valueOf(id);
++        Invoice invoice = invoices.findById(invoiceId)
++                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND));
++        BigDecimal subtotal = BigDecimal.ZERO;
++        for (LineItem line : lineItems.findByInvoiceIdOrderByIdAsc(invoiceId)) {
++            if (line.getUnitPrice() != null && line.getQty() != null) {
++                subtotal = subtotal.add(line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQty())));
++            }
++        }
++        response.send(new InvoiceDiscount(subtotal, invoice.getDiscountPct()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 4b2d681..dd56b41 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -128,11 +128,14 @@ public class TestSupportController {
+                     }
+                 }
+             }
+-            jdbc.update("INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
+-                    + " VALUES (?, ?, ?, ?, ?, ?)",
++            double discountPct = invoice.get("discountPct") == null ? 0.0
++                    : ((Number) invoice.get("discountPct")).doubleValue();
++            jdbc.update("INSERT INTO invoices"
++                    + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
++                    + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     invoiceId, id(invoice, "projectId"), amount,
+                     invoice.getOrDefault("status", "DRAFT"), invoice.get("issuedDate"),
+-                    invoice.get("dueDate"));
++                    invoice.get("dueDate"), discountPct);
+             if (lineItems != null) {
+                 for (Map<String, Object> line : lineItems) {
+                     jdbc.update("INSERT INTO invoice_line_items"
+diff --git a/src/main/resources/db/migration/V23__invoices_discount.sql b/src/main/resources/db/migration/V23__invoices_discount.sql
+new file mode 100644
+index 0000000..10a55ff
+--- /dev/null
++++ b/src/main/resources/db/migration/V23__invoices_discount.sql
+@@ -0,0 +1,5 @@
++-- An invoice can have a percentage DISCOUNT taken off it: its final total is the subtotal (the sum of
++-- its line items) minus that percentage. Additive: a new NOT NULL column with a default of 0, so any
++-- existing invoice keeps its full amount (no discount) and remains valid. The stored line-item amounts
++-- are untouched — the discount is applied on top when the invoice's total is worked out.
++ALTER TABLE invoices ADD COLUMN discount_pct DECIMAL(5, 2) NOT NULL DEFAULT 0;
+diff --git a/src/main/resources/officefloor/rest/api/invoices/{id}/discount.GET.yml b/src/main/resources/officefloor/rest/api/invoices/{id}/discount.GET.yml
+new file mode 100644
+index 0000000..c701eec
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/{id}/discount.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/invoices/{id}/discount -> one invoice's subtotal, discount and final total (InvoiceDiscountGet.service).
++service:
++  class: net.officefloor.hq.app.InvoiceDiscountGet
