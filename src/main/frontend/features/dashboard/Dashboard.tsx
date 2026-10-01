@@ -20,6 +20,8 @@ export function Dashboard() {
       <dd data-testid="dashboard-projects-count">{data.projects}</dd>
       <dt>Outstanding</dt>
       <dd data-testid="dashboard-outstanding-total">{formatMoney(data.outstanding)}</dd>
+      <dt>Overdue</dt>
+      <dd data-testid="dashboard-overdue-count">{data.overdue}</dd>
     </dl>
   );
 }

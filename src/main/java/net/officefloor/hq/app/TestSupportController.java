@@ -36,6 +36,7 @@ public class TestSupportController {
         // the FK exists — drop referential integrity for the duration, truncate all, then restore.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         try {
+            jdbc.execute("TRUNCATE TABLE dashboard_reference");
             jdbc.execute("TRUNCATE TABLE notes RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE project_tags RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE tags RESTART IDENTITY");
@@ -55,6 +56,13 @@ public class TestSupportController {
     @PostMapping("/seed")
     @SuppressWarnings("unchecked")
     public void seed(@RequestBody Map<String, Object> fixture) {
+        // The reference date the dashboard measures "overdue" against (single row, id = 1). Optional:
+        // a spec that does not care leaves it out, so the dashboard falls back to today.
+        Object asOf = fixture.get("asOf");
+        if (asOf != null) {
+            jdbc.update("INSERT INTO dashboard_reference (id, as_of) VALUES (1, ?)",
+                    java.sql.Date.valueOf(java.time.LocalDate.parse(asOf.toString())));
+        }
         List<Map<String, Object>> clients =
                 (List<Map<String, Object>>) fixture.getOrDefault("clients", List.of());
         // Explicit ids from the fixture (the spec asserts rows by these ids), via JdbcTemplate.
