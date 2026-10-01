@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Dashboard } from '../features/dashboard/Dashboard';
+import { DashboardMain } from '../slots/defs/dashboardMain';
 
 // The dashboard page: one new file under routes/. A leaf page with no detail views, so it is a flat
 // route composing its own feature's summary, which queries for itself.
@@ -12,6 +13,7 @@ function DashboardPage() {
     <section data-testid="dashboard-page">
       <h1>Dashboard</h1>
       <Dashboard />
+      <DashboardMain.Slot />
     </section>
   );
 }
