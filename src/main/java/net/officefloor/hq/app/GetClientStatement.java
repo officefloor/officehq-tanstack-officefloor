@@ -31,7 +31,7 @@ public class GetClientStatement {
                 BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoice.getId()).stream()
                         .map(InvoicePayment::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
-                BigDecimal due = invoice.getAmount().subtract(paid);
+                BigDecimal due = invoice.getTotal().subtract(paid);
                 rows.add(new StatementInvoiceView(invoice.getId(), invoice.getProjectId(),
                         invoice.getStatus(), invoice.getAmount(), due));
                 total = total.add(due);

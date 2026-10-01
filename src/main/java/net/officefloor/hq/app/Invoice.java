@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -98,6 +99,21 @@ public class Invoice {
     /** The percentage discount taken off this invoice's subtotal (0–100, zero when none is set). */
     public BigDecimal getDiscountPct() {
         return discountPct;
+    }
+
+    /**
+     * The final total owed on this invoice: the subtotal ({@link #getAmount()}) minus the percentage
+     * discount taken off it. This is the figure that counts as money owed everywhere the amount due is
+     * worked out — the dashboard outstanding total, an invoice's remaining balance and the client
+     * statement — so the discount flows through consistently. Derived in {@link BigDecimal} at money
+     * scale (no float drift), the same derivation {@link GetInvoiceSummary} applies to the detail view.
+     */
+    public BigDecimal getTotal() {
+        BigDecimal base = amount == null ? BigDecimal.ZERO : amount;
+        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
+        BigDecimal discount =
+                base.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        return base.subtract(discount);
     }
 
     /** Send this invoice — the DRAFT -> SENT transition the send action performs. */

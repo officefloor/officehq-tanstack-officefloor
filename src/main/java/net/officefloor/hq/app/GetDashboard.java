@@ -20,7 +20,7 @@ public class GetDashboard {
             ObjectResponse<DashboardView> response) {
         BigDecimal outstanding = invoices.findAll().stream()
                 .filter(invoice -> "SENT".equals(invoice.getStatus()))
-                .map(Invoice::getAmount)
+                .map(Invoice::getTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         LocalDate asOf = reference.findAll().stream()
                 .findFirst()

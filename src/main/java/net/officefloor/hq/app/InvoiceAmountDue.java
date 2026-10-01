@@ -17,7 +17,7 @@ public class InvoiceAmountDue {
             InvoiceRepository invoices, InvoicePaymentRepository payments,
             ObjectResponse<InvoiceDueView> response) {
         Long id = Long.valueOf(invoiceId);
-        BigDecimal amount = invoices.findById(id).map(Invoice::getAmount).orElse(BigDecimal.ZERO);
+        BigDecimal amount = invoices.findById(id).map(Invoice::getTotal).orElse(BigDecimal.ZERO);
         BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(id).stream()
                 .map(InvoicePayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
