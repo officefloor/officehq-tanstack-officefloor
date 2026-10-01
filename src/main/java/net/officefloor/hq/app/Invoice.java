@@ -66,6 +66,14 @@ public class Invoice {
         return amount;
     }
 
+    /**
+     * Set this invoice's amount to the sum of its line items. The amount is derived from the lines
+     * (V15__invoice_line_items.sql), so it is recomputed and stored whenever a line is added.
+     */
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
     public String getStatus() {
         return status;
     }

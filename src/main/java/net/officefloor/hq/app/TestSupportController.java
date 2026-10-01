@@ -37,6 +37,7 @@ public class TestSupportController {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         try {
             jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
+            jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
@@ -85,15 +86,44 @@ public class TestSupportController {
             java.time.LocalDate due = inv.get("dueDate") != null
                     ? java.time.LocalDate.parse(inv.get("dueDate").toString())
                     : issued.plusDays(30);
+            // An invoice is built from line items; its amount is the sum of each line's qty times
+            // unit price. A fixture gives the lines (not a figure), so compute the amount from them
+            // here — the same derivation CreateLineItem keeps in step on every add. A legacy fixture
+            // that still supplies an explicit amount (and no lines) is honoured as-is.
+            List<Map<String, Object>> lineItems =
+                    (List<Map<String, Object>>) inv.getOrDefault("lineItems", List.of());
+            java.math.BigDecimal amount;
+            if (inv.get("amount") != null) {
+                amount = new java.math.BigDecimal(inv.get("amount").toString());
+            } else {
+                amount = java.math.BigDecimal.ZERO;
+                for (Map<String, Object> li : lineItems) {
+                    amount = amount.add(new java.math.BigDecimal(li.get("unitPrice").toString())
+                            .multiply(new java.math.BigDecimal(li.get("qty").toString())));
+                }
+            }
             jdbc.update(
                     "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
                             + " VALUES (?, ?, ?, ?, ?, ?)",
                     ((Number) inv.get("id")).longValue(),
                     ((Number) inv.get("projectId")).longValue(),
-                    new java.math.BigDecimal(inv.get("amount").toString()),
+                    amount,
                     status.toString(),
                     java.sql.Date.valueOf(issued),
                     java.sql.Date.valueOf(due));
+            // Insert the invoice's lines with their explicit fixture ids (the spec asserts rows by
+            // these ids), owned by this invoice.
+            for (Map<String, Object> li : lineItems) {
+                jdbc.update(
+                        "INSERT INTO invoice_line_items"
+                                + " (id, invoice_id, description, quantity, unit_price)"
+                                + " VALUES (?, ?, ?, ?, ?)",
+                        ((Number) li.get("id")).longValue(),
+                        ((Number) inv.get("id")).longValue(),
+                        li.get("description"),
+                        ((Number) li.get("qty")).intValue(),
+                        new java.math.BigDecimal(li.get("unitPrice").toString()));
+            }
         }
         List<Map<String, Object>> tasks =
                 (List<Map<String, Object>>) fixture.getOrDefault("tasks", List.of());
