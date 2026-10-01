@@ -1,20 +1,36 @@
+import { asString, useSearchParam } from '../../url/useSearchParam';
+import { ClientSearch } from './ClientSearch';
 import { useClients } from './clients';
 
 // The clients list. Reads server data straight from its query key — never copied into state, never
-// handed down from a parent.
+// handed down from a parent. The name filter lives in the URL (`clientSearch`), read directly here;
+// the search box owns that same key, so the two stay in step without any import between them.
 export function ClientList() {
   const { data: clients } = useClients();
+  const [query] = useSearchParam('clientSearch', asString);
 
   if (!clients) {
     return null;
   }
 
   if (clients.length === 0) {
-    return <p data-testid="clients-empty">No clients yet.</p>;
+    return (
+      <>
+        <ClientSearch />
+        <p data-testid="clients-empty">No clients yet.</p>
+      </>
+    );
   }
 
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? clients.filter((client) => client.name.toLowerCase().includes(needle))
+    : clients;
+
   return (
-    <table data-testid="clients-table">
+    <>
+      <ClientSearch />
+      <table data-testid="clients-table">
       <thead>
         <tr>
           <th>Name</th>
@@ -22,13 +38,14 @@ export function ClientList() {
         </tr>
       </thead>
       <tbody>
-        {clients.map((client) => (
+        {visible.map((client) => (
           <tr key={client.id} data-testid={`client-row-${client.id}`}>
             <td data-testid="client-name">{client.name}</td>
             <td data-testid="client-email">{client.email}</td>
           </tr>
         ))}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </>
   );
 }
