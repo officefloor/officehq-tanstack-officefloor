@@ -1,0 +1,429 @@
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+index df87d31..994d483 100644
+--- a/src/main/frontend/features/clients/api.ts
++++ b/src/main/frontend/features/clients/api.ts
+@@ -23,3 +23,25 @@ export const clientProjectsKey = (clientId: number) =>
+ 
+ export const listClientProjects = (clientId: number): Promise<ClientProject[]> =>
+   getJson<ClientProject[]>(`/api/clients/projects?clientId=${clientId}`);
++
++// A contact the user keeps for a client — a name, email and role. The query key is scoped to the
++// client, ['clients', clientId, 'contacts'], so each client's detail page reads (and invalidates)
++// only its own contacts: the list reads the key, the add form invalidates it. Sharing the
++// ['clients'] prefix means a client write can invalidate it too.
++export type Contact = {
++  id: number;
++  name: string;
++  email: string;
++  role: string;
++  clientId: number;
++};
++export type NewContact = { clientId: number; name: string; email: string; role: string };
++
++export const clientContactsKey = (clientId: number) =>
++  ['clients', clientId, 'contacts'] as const;
++
++export const listClientContacts = (clientId: number): Promise<Contact[]> =>
++  getJson<Contact[]>(`/api/clients/contacts?clientId=${clientId}`);
++
++export const createContact = (body: NewContact): Promise<Contact> =>
++  postJson<Contact>('/api/clients/contacts', body);
+diff --git a/src/main/frontend/features/clients/contactForm.slot.tsx b/src/main/frontend/features/clients/contactForm.slot.tsx
+new file mode 100644
+index 0000000..f317868
+--- /dev/null
++++ b/src/main/frontend/features/clients/contactForm.slot.tsx
+@@ -0,0 +1,61 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { clientContactsKey, createContact } from './api';
++
++// Add a contact (name, email, role) to this client — one panel filling the client.detail region.
++// What the user is typing lives in useState (uncommitted input); the saved data lives on the server.
++// On success we invalidate ['clients', clientId, 'contacts'] so the contacts panel refetches — we
++// never hand-maintain the list.
++function ContactForm({ clientId }: { clientId: number }) {
++  const queryClient = useQueryClient();
++  const [name, setName] = useState('');
++  const [email, setEmail] = useState('');
++  const [role, setRole] = useState('');
++
++  const mutation = useMutation({
++    mutationFn: createContact,
++    onSuccess: () => {
++      setName('');
++      setEmail('');
++      setRole('');
++      void queryClient.invalidateQueries({ queryKey: clientContactsKey(clientId) });
++    },
++  });
++
++  const submit = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (name.trim() === '' || email.trim() === '' || role.trim() === '') {
++      return;
++    }
++    mutation.mutate({ clientId, name: name.trim(), email: email.trim(), role: role.trim() });
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <input
++        data-testid="contact-form-name"
++        placeholder="Name"
++        value={name}
++        onChange={(e) => setName(e.target.value)}
++      />
++      <input
++        data-testid="contact-form-email"
++        placeholder="Email"
++        value={email}
++        onChange={(e) => setEmail(e.target.value)}
++      />
++      <input
++        data-testid="contact-form-role"
++        placeholder="Role"
++        value={role}
++        onChange={(e) => setRole(e.target.value)}
++      />
++      <button data-testid="contact-form-submit" type="submit">
++        Add contact
++      </button>
++    </form>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 40, Component: ContactForm });
+diff --git a/src/main/frontend/features/clients/contacts.slot.tsx b/src/main/frontend/features/clients/contacts.slot.tsx
+new file mode 100644
+index 0000000..4bee11d
+--- /dev/null
++++ b/src/main/frontend/features/clients/contacts.slot.tsx
+@@ -0,0 +1,45 @@
++import { useQuery } from '@tanstack/react-query';
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { clientContactsKey, listClientContacts, type Contact } from './api';
++
++// The contacts a client keeps — one panel filling the client.detail region. Reads server data under
++// ['clients', clientId, 'contacts'] (never copied into state); the server scopes to this client, so
++// only its contacts arrive. Each row exposes contact-row-<id>/contact-name/contact-role for the
++// test contract.
++function ClientContacts({ clientId }: { clientId: number }) {
++  const { data: contacts } = useQuery({
++    queryKey: clientContactsKey(clientId),
++    queryFn: () => listClientContacts(clientId),
++  });
++
++  if (!contacts) {
++    return null;
++  }
++
++  if (contacts.length === 0) {
++    return <p data-testid="client-contacts-empty">No contacts yet.</p>;
++  }
++
++  return (
++    <table data-testid="client-contacts-table">
++      <thead>
++        <tr>
++          <th>Name</th>
++          <th>Email</th>
++          <th>Role</th>
++        </tr>
++      </thead>
++      <tbody>
++        {contacts.map((contact: Contact) => (
++          <tr key={contact.id} data-testid={`contact-row-${contact.id}`}>
++            <td data-testid="contact-name">{contact.name}</td>
++            <td data-testid="contact-email">{contact.email}</td>
++            <td data-testid="contact-role">{contact.role}</td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 30, Component: ClientContacts });
+diff --git a/src/main/java/net/officefloor/hq/app/Contact.java b/src/main/java/net/officefloor/hq/app/Contact.java
+new file mode 100644
+index 0000000..0826c45
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Contact.java
+@@ -0,0 +1,64 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A contact the user keeps for a client: a name, an email, a role, and the id of the client the
++ * contact belongs to. Maps the {@code contacts} table (Flyway V11__contacts.sql); the id is
++ * IDENTITY-generated on create. The role maps to the {@code contact_role} column.
++ */
++@Entity
++@Table(name = "contacts")
++public class Contact {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(nullable = false)
++    private String name;
++
++    @Column(nullable = false)
++    private String email;
++
++    @Column(name = "contact_role", nullable = false)
++    private String role;
++
++    @Column(name = "client_id", nullable = false)
++    private Long clientId;
++
++    protected Contact() {
++    }
++
++    public Contact(String name, String email, String role, Long clientId) {
++        this.name = name;
++        this.email = email;
++        this.role = role;
++        this.clientId = clientId;
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public String getName() {
++        return name;
++    }
++
++    public String getEmail() {
++        return email;
++    }
++
++    public String getRole() {
++        return role;
++    }
++
++    public Long getClientId() {
++        return clientId;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ContactForm.java b/src/main/java/net/officefloor/hq/app/ContactForm.java
+new file mode 100644
+index 0000000..fc2b5ba
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ContactForm.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app;
++
++/** The request body for creating a contact: the name, email and role typed, plus the client id. */
++public class ContactForm {
++
++    private String name;
++    private String email;
++    private String role;
++    private Long clientId;
++
++    public String getName() {
++        return name;
++    }
++
++    public void setName(String name) {
++        this.name = name;
++    }
++
++    public String getEmail() {
++        return email;
++    }
++
++    public void setEmail(String email) {
++        this.email = email;
++    }
++
++    public String getRole() {
++        return role;
++    }
++
++    public void setRole(String role) {
++        this.role = role;
++    }
++
++    public Long getClientId() {
++        return clientId;
++    }
++
++    public void setClientId(Long clientId) {
++        this.clientId = clientId;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ContactRepository.java b/src/main/java/net/officefloor/hq/app/ContactRepository.java
+new file mode 100644
+index 0000000..11b84b2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ContactRepository.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/** Data access for {@link Contact}. A Spring bean, injected into the OfficeFloor logic classes. */
++public interface ContactRepository extends JpaRepository<Contact, Long> {
++
++    /** The contacts of one client, in id order — the shape a client's detail page lists. */
++    List<Contact> findByClientIdOrderByIdAsc(Long clientId);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ContactView.java b/src/main/java/net/officefloor/hq/app/ContactView.java
+new file mode 100644
+index 0000000..0507f30
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ContactView.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app;
++
++/**
++ * What the API exposes for a contact: the shape the front-end renders into a client's contacts
++ * table — a name, an email and a role, scoped to the client it belongs to.
++ */
++public record ContactView(Long id, String name, String email, String role, Long clientId) {
++
++    public static ContactView of(Contact contact) {
++        return new ContactView(contact.getId(), contact.getName(), contact.getEmail(),
++                contact.getRole(), contact.getClientId());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/CreateContact.java b/src/main/java/net/officefloor/hq/app/CreateContact.java
+new file mode 100644
+index 0000000..403146e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CreateContact.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/clients/contacts — create a contact from the submitted name + email + role for a client,
++ * returning the saved row (with its generated id). Wired by
++ * officefloor/rest/api/clients/contacts.POST.yml.
++ *
++ * A contact must name a real client and carry a name, email and role: we reject a blank field or an
++ * unknown/absent client id before persisting so a bad row can never be saved.
++ */
++public class CreateContact {
++
++    public void service(@RequestBody ContactForm form, ContactRepository contacts,
++            ClientRepository clients, ObjectResponse<ContactView> response) {
++        String name = form.getName() == null ? "" : form.getName().trim();
++        String email = form.getEmail() == null ? "" : form.getEmail().trim();
++        String role = form.getRole() == null ? "" : form.getRole().trim();
++        if (name.isEmpty() || email.isEmpty() || role.isEmpty()) {
++            throw new IllegalArgumentException("A contact name, email and role are required");
++        }
++        Long clientId = form.getClientId();
++        Client client = clientId == null ? null : clients.findById(clientId).orElse(null);
++        if (client == null) {
++            throw new IllegalArgumentException("A valid client is required");
++        }
++        Contact saved = contacts.save(new Contact(name, email, role, clientId));
++        response.send(ContactView.of(saved));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListClientContacts.java b/src/main/java/net/officefloor/hq/app/ListClientContacts.java
+new file mode 100644
+index 0000000..5e923ab
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListClientContacts.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/clients/contacts?clientId=&lt;id&gt; — the contacts of one client, in id order. Scoped to
++ * a client (the client detail page lists ITS contacts), so the client id arrives as a query
++ * parameter. Wired by officefloor/rest/api/clients/contacts.GET.yml.
++ */
++public class ListClientContacts {
++
++    public void service(@RequestParam("clientId") String clientId,
++            ContactRepository contacts, ObjectResponse<List<ContactView>> response) {
++        Long id = Long.valueOf(clientId);
++        List<ContactView> view = contacts.findByClientIdOrderByIdAsc(id).stream()
++                .map(ContactView::of)
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index f921565..f8eec21 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -37,6 +37,7 @@ public class TestSupportController {
+         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+         try {
+             jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
++            jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
+         } finally {
+@@ -62,6 +63,15 @@ public class TestSupportController {
+                     ((Number) p.get("id")).longValue(), p.get("name"),
+                     ((Number) p.get("clientId")).longValue());
+         }
++        List<Map<String, Object>> contacts =
++                (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());
++        for (Map<String, Object> c : contacts) {
++            jdbc.update(
++                    "INSERT INTO contacts (id, name, email, contact_role, client_id)"
++                            + " VALUES (?, ?, ?, ?, ?)",
++                    ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"),
++                    c.get("role"), ((Number) c.get("clientId")).longValue());
++        }
+         List<Map<String, Object>> invoices =
+                 (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
+         for (Map<String, Object> inv : invoices) {
+diff --git a/src/main/resources/db/migration/V11__contacts.sql b/src/main/resources/db/migration/V11__contacts.sql
+new file mode 100644
+index 0000000..bba7036
+--- /dev/null
++++ b/src/main/resources/db/migration/V11__contacts.sql
+@@ -0,0 +1,11 @@
++-- A contact is a person at a client: a name, an email and their role. IDENTITY id so the app
++-- generates ids on create, while the test seed inserts explicit ids (GENERATED BY DEFAULT lets a
++-- supplied id win). client_id is a FK to clients so a contact always points at a real client.
++-- The role column is named contact_role to steer clear of any reserved-word ambiguity.
++CREATE TABLE contacts (
++    id           BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    name         VARCHAR(255) NOT NULL,
++    email        VARCHAR(255) NOT NULL,
++    contact_role VARCHAR(255) NOT NULL,
++    client_id    BIGINT NOT NULL REFERENCES clients (id)
++);
+diff --git a/src/main/resources/officefloor/rest/api/clients/contacts.GET.yml b/src/main/resources/officefloor/rest/api/clients/contacts.GET.yml
+new file mode 100644
+index 0000000..7aa731b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/contacts.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListClientContacts
+diff --git a/src/main/resources/officefloor/rest/api/clients/contacts.POST.yml b/src/main/resources/officefloor/rest/api/clients/contacts.POST.yml
+new file mode 100644
+index 0000000..3c96095
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/contacts.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.CreateContact
