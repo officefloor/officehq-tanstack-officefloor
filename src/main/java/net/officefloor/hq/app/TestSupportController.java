@@ -36,6 +36,7 @@ public class TestSupportController {
         // referential integrity for the truncate and restore it immediately after.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
+        jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
@@ -93,15 +94,43 @@ public class TestSupportController {
                 // issuedDate/dueDate are optional; fall back to the Flyway V7 column defaults when absent.
                 Object issuedDate = invoice.get("issuedDate");
                 Object dueDate = invoice.get("dueDate");
+                // An invoice is built from line items (Flyway V13). Its amount is the worked-out sum
+                // of qty * unitPrice across them (zero when there are none yet) — a fixture no longer
+                // types a figure, it lists what is charged. (An explicit `amount` still wins if a
+                // fixture gives one, for back-compatibility with lump-sum invoices.)
+                List<Map<String, Object>> lineItems =
+                        (List<Map<String, Object>>) invoice.get("lineItems");
+                java.math.BigDecimal amount = java.math.BigDecimal.ZERO;
+                if (lineItems != null) {
+                    for (Map<String, Object> line : lineItems) {
+                        java.math.BigDecimal unitPrice =
+                                new java.math.BigDecimal(line.get("unitPrice").toString());
+                        int qty = ((Number) line.get("qty")).intValue();
+                        amount = amount.add(unitPrice.multiply(java.math.BigDecimal.valueOf(qty)));
+                    }
+                }
+                if (invoice.get("amount") != null) {
+                    amount = new java.math.BigDecimal(invoice.get("amount").toString());
+                }
+                long invoiceId = ((Number) invoice.get("id")).longValue();
                 jdbc.update("INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
                         + " VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_DATE),"
                         + " COALESCE(?, DATEADD('DAY', 30, CURRENT_DATE)))",
-                        ((Number) invoice.get("id")).longValue(),
+                        invoiceId,
                         ((Number) invoice.get("projectId")).longValue(),
-                        new java.math.BigDecimal(invoice.get("amount").toString()),
+                        amount,
                         status != null ? status.toString() : "UNPAID",
                         issuedDate != null ? java.sql.Date.valueOf(issuedDate.toString()) : null,
                         dueDate != null ? java.sql.Date.valueOf(dueDate.toString()) : null);
+                if (lineItems != null) {
+                    for (Map<String, Object> line : lineItems) {
+                        jdbc.update("INSERT INTO invoice_line_items"
+                                + " (id, invoice_id, description, qty, unit_price) VALUES (?, ?, ?, ?, ?)",
+                                ((Number) line.get("id")).longValue(), invoiceId,
+                                line.get("description"), ((Number) line.get("qty")).intValue(),
+                                new java.math.BigDecimal(line.get("unitPrice").toString()));
+                    }
+                }
             }
         }
     }

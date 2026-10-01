@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { InvoiceListToolbar } from '../../slots/defs/invoiceListToolbar';
 import { useSearchParam, asString } from '../../url/useSearchParam';
 import { formatMoney } from '../../ui/money';
@@ -42,6 +43,13 @@ export function InvoiceList({ projectId }: { projectId: number }) {
             <td data-testid="invoice-due">{invoice.dueDate}</td>
             <td data-testid="invoice-status">{invoice.status}</td>
             <td>
+              <Link
+                to="/invoices/$invoiceId"
+                params={{ invoiceId: String(invoice.id) }}
+                data-testid={`invoice-open-${invoice.id}`}
+              >
+                Open
+              </Link>
               {invoice.status === 'DRAFT' && (
                 <button
                   type="button"
