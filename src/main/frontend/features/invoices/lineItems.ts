@@ -36,3 +36,18 @@ export function useAddLineItem(invoiceId: number) {
     },
   });
 }
+
+// Take a line off an invoice: POSTs {id} and returns the updated invoice. Invalidates the same keys
+// as adding — ['lineItems', invoiceId] so the line list and its worked-out total re-read, and the
+// ['invoices'] prefix so every invoice list showing the amount refreshes too. The total is never
+// edited here; it drops because the list re-reads from the server (CLAUDE.md rule 5).
+export function useRemoveLineItem(invoiceId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postJson<unknown>('/api/lineitems/remove', { id }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lineItemsKey(invoiceId) });
+      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}

@@ -1,4 +1,5 @@
 import { formatMoney } from '../../ui/money';
+import { InvoiceLineItemRow } from '../../slots/defs/invoiceLineItemRow';
 import { useLineItems } from './lineItems';
 
 // An invoice's line items and what they add up to. Reads its own query key (scoped to the invoice)
@@ -26,6 +27,7 @@ export function LineItemList({ invoiceId }: { invoiceId: number }) {
           <th>Qty</th>
           <th>Unit price</th>
           <th>Amount</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -37,6 +39,9 @@ export function LineItemList({ invoiceId }: { invoiceId: number }) {
             <td data-testid="lineitem-amount">
               {formatMoney(Number(line.qty) * Number(line.unitPrice))}
             </td>
+            <td>
+              <InvoiceLineItemRow.Slot lineItem={line} />
+            </td>
           </tr>
         ))}
       </tbody>
@@ -46,6 +51,7 @@ export function LineItemList({ invoiceId }: { invoiceId: number }) {
           <td></td>
           <td></td>
           <td data-testid="invoice-amount">{formatMoney(total)}</td>
+          <td></td>
         </tr>
       </tfoot>
     </table>
