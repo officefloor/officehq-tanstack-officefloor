@@ -1,0 +1,73 @@
+diff --git a/src/main/java/net/officefloor/hq/app/GetClientStatement.java b/src/main/java/net/officefloor/hq/app/GetClientStatement.java
+index 12c9794..6240dff 100644
+--- a/src/main/java/net/officefloor/hq/app/GetClientStatement.java
++++ b/src/main/java/net/officefloor/hq/app/GetClientStatement.java
+@@ -31,7 +31,7 @@ public class GetClientStatement {
+                 BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoice.getId()).stream()
+                         .map(InvoicePayment::getAmount)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add);
+-                BigDecimal due = invoice.getAmount().subtract(paid);
++                BigDecimal due = invoice.getTotal().subtract(paid);
+                 rows.add(new StatementInvoiceView(invoice.getId(), invoice.getProjectId(),
+                         invoice.getStatus(), invoice.getAmount(), due));
+                 total = total.add(due);
+diff --git a/src/main/java/net/officefloor/hq/app/GetDashboard.java b/src/main/java/net/officefloor/hq/app/GetDashboard.java
+index 8521e84..e510d25 100644
+--- a/src/main/java/net/officefloor/hq/app/GetDashboard.java
++++ b/src/main/java/net/officefloor/hq/app/GetDashboard.java
+@@ -20,7 +20,7 @@ public class GetDashboard {
+             ObjectResponse<DashboardView> response) {
+         BigDecimal outstanding = invoices.findAll().stream()
+                 .filter(invoice -> "SENT".equals(invoice.getStatus()))
+-                .map(Invoice::getAmount)
++                .map(Invoice::getTotal)
+                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+         LocalDate asOf = reference.findAll().stream()
+                 .findFirst()
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index 45be645..54036c4 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.time.LocalDate;
+ import jakarta.persistence.Column;
+ import jakarta.persistence.Entity;
+@@ -100,6 +101,21 @@ public class Invoice {
+         return discountPct;
+     }
+ 
++    /**
++     * The final total owed on this invoice: the subtotal ({@link #getAmount()}) minus the percentage
++     * discount taken off it. This is the figure that counts as money owed everywhere the amount due is
++     * worked out — the dashboard outstanding total, an invoice's remaining balance and the client
++     * statement — so the discount flows through consistently. Derived in {@link BigDecimal} at money
++     * scale (no float drift), the same derivation {@link GetInvoiceSummary} applies to the detail view.
++     */
++    public BigDecimal getTotal() {
++        BigDecimal base = amount == null ? BigDecimal.ZERO : amount;
++        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
++        BigDecimal discount =
++                base.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        return base.subtract(discount);
++    }
++
+     /** Send this invoice — the DRAFT -> SENT transition the send action performs. */
+     public void markSent() {
+         this.status = "SENT";
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java b/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java
+index 5a94d78..eb424e5 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java
+@@ -17,7 +17,7 @@ public class InvoiceAmountDue {
+             InvoiceRepository invoices, InvoicePaymentRepository payments,
+             ObjectResponse<InvoiceDueView> response) {
+         Long id = Long.valueOf(invoiceId);
+-        BigDecimal amount = invoices.findById(id).map(Invoice::getAmount).orElse(BigDecimal.ZERO);
++        BigDecimal amount = invoices.findById(id).map(Invoice::getTotal).orElse(BigDecimal.ZERO);
+         BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(id).stream()
+                 .map(InvoicePayment::getAmount)
+                 .reduce(BigDecimal.ZERO, BigDecimal::add);
