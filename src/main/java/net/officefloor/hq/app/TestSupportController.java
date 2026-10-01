@@ -36,6 +36,8 @@ public class TestSupportController {
         // the FK exists — drop referential integrity for the duration, truncate all, then restore.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         try {
+            jdbc.execute("TRUNCATE TABLE project_tags RESTART IDENTITY");
+            jdbc.execute("TRUNCATE TABLE tags RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
@@ -135,6 +137,20 @@ public class TestSupportController {
                     ((Number) t.get("id")).longValue(),
                     ((Number) t.get("projectId")).longValue(),
                     t.get("title"), done);
+        }
+        List<Map<String, Object>> tags =
+                (List<Map<String, Object>>) fixture.getOrDefault("tags", List.of());
+        for (Map<String, Object> tag : tags) {
+            jdbc.update("INSERT INTO tags (id, name) VALUES (?, ?)",
+                    ((Number) tag.get("id")).longValue(), tag.get("name"));
+        }
+        // The many-to-many links: which seeded tag sits on which seeded project.
+        List<Map<String, Object>> projectTags =
+                (List<Map<String, Object>>) fixture.getOrDefault("projectTags", List.of());
+        for (Map<String, Object> pt : projectTags) {
+            jdbc.update("INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)",
+                    ((Number) pt.get("projectId")).longValue(),
+                    ((Number) pt.get("tagId")).longValue());
         }
     }
 }
