@@ -15,5 +15,9 @@ export type AllInvoice = {
 
 export const allInvoicesKey = ['invoices', 'all'] as const;
 
-export const listAllInvoices = (): Promise<AllInvoice[]> =>
-  getJson<AllInvoice[]>('/api/invoices/all');
+// A single lifecycle stage to narrow the list to ('' means every stage). The server reads the same
+// `status` key, so the narrowing is applied once, at the source, not re-filtered on the client. It
+// is appended to the query key below so each stage caches on its own, while a send/pay write still
+// invalidates ['invoices'] by prefix and refreshes whichever stage is on screen.
+export const listAllInvoices = (status = ''): Promise<AllInvoice[]> =>
+  getJson<AllInvoice[]>(`/api/invoices/all?status=${encodeURIComponent(status)}`);
