@@ -1,0 +1,392 @@
+diff --git a/src/main/frontend/features/clients/ClientForm.tsx b/src/main/frontend/features/clients/ClientForm.tsx
+new file mode 100644
+index 0000000..983d139
+--- /dev/null
++++ b/src/main/frontend/features/clients/ClientForm.tsx
+@@ -0,0 +1,46 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { clientsKey, createClient } from './api';
++
++// Add a client. The fields the user is typing live in useState (uncommitted input); the saved data
++// lives on the server. On success we invalidate ['clients'] so the list refetches — we never
++// hand-maintain the list after the write.
++export function ClientForm() {
++  const queryClient = useQueryClient();
++  const [name, setName] = useState('');
++  const [email, setEmail] = useState('');
++
++  const mutation = useMutation({
++    mutationFn: createClient,
++    onSuccess: () => {
++      setName('');
++      setEmail('');
++      void queryClient.invalidateQueries({ queryKey: clientsKey });
++    },
++  });
++
++  const submit = (e: React.FormEvent) => {
++    e.preventDefault();
++    mutation.mutate({ name, email });
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <input
++        data-testid="client-form-name"
++        placeholder="Name"
++        value={name}
++        onChange={(e) => setName(e.target.value)}
++      />
++      <input
++        data-testid="client-form-email"
++        placeholder="Email"
++        value={email}
++        onChange={(e) => setEmail(e.target.value)}
++      />
++      <button data-testid="client-form-submit" type="submit">
++        Add client
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/clients/ClientsList.tsx b/src/main/frontend/features/clients/ClientsList.tsx
+new file mode 100644
+index 0000000..2f303cc
+--- /dev/null
++++ b/src/main/frontend/features/clients/ClientsList.tsx
+@@ -0,0 +1,35 @@
++import { useQuery } from '@tanstack/react-query';
++import { clientsKey, listClients, type Client } from './api';
++
++// The clients list. Reads server data under ['clients'] (never copied into state); the create form
++// shares the key, so a successful create refreshes this list with no import between them.
++export function ClientsList() {
++  const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: listClients });
++
++  if (!clients) {
++    return null;
++  }
++
++  if (clients.length === 0) {
++    return <p data-testid="clients-empty">No clients yet.</p>;
++  }
++
++  return (
++    <table data-testid="clients-table">
++      <thead>
++        <tr>
++          <th>Name</th>
++          <th>Email</th>
++        </tr>
++      </thead>
++      <tbody>
++        {clients.map((client: Client) => (
++          <tr key={client.id} data-testid={`client-row-${client.id}`}>
++            <td data-testid="client-name">{client.name}</td>
++            <td data-testid="client-email">{client.email}</td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+new file mode 100644
+index 0000000..be3c8bd
+--- /dev/null
++++ b/src/main/frontend/features/clients/api.ts
+@@ -0,0 +1,13 @@
++import { getJson, postJson } from '../../api/http';
++
++// A client as the API exposes it. The query key ['clients'] is the shared handle: the list reads
++// it, the create form invalidates it, and any future feature showing clients joins by reusing it.
++export type Client = { id: number; name: string; email: string };
++export type NewClient = { name: string; email: string };
++
++export const clientsKey = ['clients'] as const;
++
++export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clients');
++
++export const createClient = (body: NewClient): Promise<Client> =>
++  postJson<Client>('/api/clients', body);
+diff --git a/src/main/frontend/features/clients/nav.slot.tsx b/src/main/frontend/features/clients/nav.slot.tsx
+new file mode 100644
+index 0000000..1090148
+--- /dev/null
++++ b/src/main/frontend/features/clients/nav.slot.tsx
+@@ -0,0 +1,13 @@
++import { Link } from '@tanstack/react-router';
++import { AppNav } from '../../slots/defs/appNav';
++
++// Clients' presence in the nav bar — one new file, the shell is not touched (see
++// features/home/nav.slot.tsx for the worked example).
++export const contribution = AppNav.fill({
++  order: 10,
++  Component: () => (
++    <Link to="/clients" data-testid="nav-clients">
++      Clients
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/routes/clients.index.tsx b/src/main/frontend/routes/clients.index.tsx
+new file mode 100644
+index 0000000..bb180b0
+--- /dev/null
++++ b/src/main/frontend/routes/clients.index.tsx
+@@ -0,0 +1,19 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { ClientForm } from '../features/clients/ClientForm';
++import { ClientsList } from '../features/clients/ClientsList';
++
++// The clients page: one new file under routes/. It composes its own feature's form + list; each
++// queries for itself, so this page holds no data and no state.
++export const Route = createFileRoute('/clients/')({
++  component: ClientsPage,
++});
++
++function ClientsPage() {
++  return (
++    <section data-testid="clients-page">
++      <h1>Clients</h1>
++      <ClientForm />
++      <ClientsList />
++    </section>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Client.java b/src/main/java/net/officefloor/hq/app/Client.java
+new file mode 100644
+index 0000000..5691179
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Client.java
+@@ -0,0 +1,47 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A client the user tracks: a name and an email. Maps the {@code clients} table (Flyway
++ * V1__clients.sql); the id is IDENTITY-generated on create.
++ */
++@Entity
++@Table(name = "clients")
++public class Client {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(nullable = false)
++    private String name;
++
++    @Column(nullable = false)
++    private String email;
++
++    protected Client() {
++    }
++
++    public Client(String name, String email) {
++        this.name = name;
++        this.email = email;
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public String getName() {
++        return name;
++    }
++
++    public String getEmail() {
++        return email;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientForm.java b/src/main/java/net/officefloor/hq/app/ClientForm.java
+new file mode 100644
+index 0000000..263af94
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientForm.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app;
++
++/** The request body for creating a client: the name and email the user typed. */
++public class ClientForm {
++
++    private String name;
++    private String email;
++
++    public String getName() {
++        return name;
++    }
++
++    public void setName(String name) {
++        this.name = name;
++    }
++
++    public String getEmail() {
++        return email;
++    }
++
++    public void setEmail(String email) {
++        this.email = email;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+new file mode 100644
+index 0000000..c9d01d8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app;
++
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/** Data access for {@link Client}. A Spring bean, injected into the OfficeFloor logic classes. */
++public interface ClientRepository extends JpaRepository<Client, Long> {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ClientView.java b/src/main/java/net/officefloor/hq/app/ClientView.java
+new file mode 100644
+index 0000000..0729b94
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientView.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app;
++
++/** What the API exposes for a client: the shape the front-end renders into the clients table. */
++public record ClientView(Long id, String name, String email) {
++
++    public static ClientView of(Client client) {
++        return new ClientView(client.getId(), client.getName(), client.getEmail());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/CreateClient.java b/src/main/java/net/officefloor/hq/app/CreateClient.java
+new file mode 100644
+index 0000000..e6ac446
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CreateClient.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/clients — create a client from the submitted name + email, returning the saved row
++ * (with its generated id). Wired by officefloor/rest/api/clients.POST.yml.
++ */
++public class CreateClient {
++
++    public void service(@RequestBody ClientForm form, ClientRepository clients,
++            ObjectResponse<ClientView> response) {
++        Client saved = clients.save(new Client(form.getName(), form.getEmail()));
++        response.send(ClientView.of(saved));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListClients.java b/src/main/java/net/officefloor/hq/app/ListClients.java
+new file mode 100644
+index 0000000..5d6eb3e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListClients.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/clients — every client, in id order, as the list the front-end renders.
++ * Wired by officefloor/rest/api/clients.GET.yml.
++ */
++public class ListClients {
++
++    public void service(ClientRepository clients, ObjectResponse<List<ClientView>> response) {
++        List<ClientView> view = clients.findAll().stream()
++                .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
++                .map(ClientView::of)
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 1d09de2..a5fa681 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.List;
+ import java.util.Map;
+ import org.springframework.context.annotation.Profile;
++import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.web.bind.annotation.PostMapping;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestMapping;
+@@ -19,21 +21,30 @@ import org.springframework.web.bind.annotation.RestController;
+ public class TestSupportController {
+ 
+     private final Audit audit;
++    private final JdbcTemplate jdbc;
+ 
+-    public TestSupportController(Audit audit) {
++    public TestSupportController(Audit audit, JdbcTemplate jdbc) {
+         this.audit = audit;
++        this.jdbc = jdbc;
+     }
+ 
+     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
+     @PostMapping("/reset")
+     public void reset() {
+         audit.clear();
+-        // TODO: TRUNCATE the domain tables that exist at this checkpoint (inject a JdbcTemplate/repo).
++        jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
+     }
+ 
+     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
+     @PostMapping("/seed")
++    @SuppressWarnings("unchecked")
+     public void seed(@RequestBody Map<String, Object> fixture) {
+-        // TODO: insert rows for the fixture.
++        List<Map<String, Object>> clients =
++                (List<Map<String, Object>>) fixture.getOrDefault("clients", List.of());
++        // Explicit ids from the fixture (the spec asserts rows by these ids), via JdbcTemplate.
++        for (Map<String, Object> c : clients) {
++            jdbc.update("INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
++                    ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"));
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V1__clients.sql b/src/main/resources/db/migration/V1__clients.sql
+new file mode 100644
+index 0000000..6b16ea3
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__clients.sql
+@@ -0,0 +1,7 @@
++-- First domain table: a client is a name + email. IDENTITY id so the app can generate ids on
++-- create, while the test seed inserts explicit ids (GENERATED BY DEFAULT lets a supplied id win).
++CREATE TABLE clients (
++    id    BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    name  VARCHAR(255) NOT NULL,
++    email VARCHAR(255) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/clients.GET.yml b/src/main/resources/officefloor/rest/api/clients.GET.yml
+new file mode 100644
+index 0000000..bf82697
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListClients
+diff --git a/src/main/resources/officefloor/rest/api/clients.POST.yml b/src/main/resources/officefloor/rest/api/clients.POST.yml
+new file mode 100644
+index 0000000..17b0a01
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.CreateClient
