@@ -1,0 +1,117 @@
+diff --git a/src/main/frontend/features/clients/contactForm.slot.tsx b/src/main/frontend/features/clients/contactForm.slot.tsx
+index f317868..afdde50 100644
+--- a/src/main/frontend/features/clients/contactForm.slot.tsx
++++ b/src/main/frontend/features/clients/contactForm.slot.tsx
+@@ -3,15 +3,22 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { ClientDetail } from '../../slots/defs/clientDetail';
+ import { clientContactsKey, createContact } from './api';
+ 
++// A proper email: some local part, an @, a domain, a dot and a TLD — no whitespace. The same check
++// clients use (ClientForm.tsx); the server (CreateContact.java) and the DB CHECK constraint in
++// V12__contact_email_format.sql are the further lines of defence.
++const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
++
+ // Add a contact (name, email, role) to this client — one panel filling the client.detail region.
+ // What the user is typing lives in useState (uncommitted input); the saved data lives on the server.
+-// On success we invalidate ['clients', clientId, 'contacts'] so the contacts panel refetches — we
+-// never hand-maintain the list.
++// Before we call the API we require a proper email — a blank or malformed address is refused in the
++// UI (never reaching the server) and surfaced on its own error anchor. On success we invalidate
++// ['clients', clientId, 'contacts'] so the contacts panel refetches — we never hand-maintain the list.
+ function ContactForm({ clientId }: { clientId: number }) {
+   const queryClient = useQueryClient();
+   const [name, setName] = useState('');
+   const [email, setEmail] = useState('');
+   const [role, setRole] = useState('');
++  const [emailError, setEmailError] = useState(false);
+ 
+   const mutation = useMutation({
+     mutationFn: createContact,
+@@ -25,9 +32,14 @@ function ContactForm({ clientId }: { clientId: number }) {
+ 
+   const submit = (e: React.FormEvent) => {
+     e.preventDefault();
+-    if (name.trim() === '' || email.trim() === '' || role.trim() === '') {
++    if (name.trim() === '' || role.trim() === '') {
++      return;
++    }
++    if (!EMAIL_RE.test(email.trim())) {
++      setEmailError(true);
+       return;
+     }
++    setEmailError(false);
+     mutation.mutate({ clientId, name: name.trim(), email: email.trim(), role: role.trim() });
+   };
+ 
+@@ -43,8 +55,18 @@ function ContactForm({ clientId }: { clientId: number }) {
+         data-testid="contact-form-email"
+         placeholder="Email"
+         value={email}
+-        onChange={(e) => setEmail(e.target.value)}
++        onChange={(e) => {
++          setEmail(e.target.value);
++          if (emailError) {
++            setEmailError(false);
++          }
++        }}
+       />
++      {emailError && (
++        <p data-testid="contact-form-email-error" role="alert">
++          Enter a valid email address.
++        </p>
++      )}
+       <input
+         data-testid="contact-form-role"
+         placeholder="Role"
+diff --git a/src/main/java/net/officefloor/hq/app/CreateContact.java b/src/main/java/net/officefloor/hq/app/CreateContact.java
+index 403146e..da24305 100644
+--- a/src/main/java/net/officefloor/hq/app/CreateContact.java
++++ b/src/main/java/net/officefloor/hq/app/CreateContact.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.regex.Pattern;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+@@ -8,11 +9,15 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * returning the saved row (with its generated id). Wired by
+  * officefloor/rest/api/clients/contacts.POST.yml.
+  *
+- * A contact must name a real client and carry a name, email and role: we reject a blank field or an
+- * unknown/absent client id before persisting so a bad row can never be saved.
++ * A contact must name a real client and carry a name, a proper email and a role: we reject a blank
++ * field, a malformed email or an unknown/absent client id before persisting so a bad row can never be
++ * saved, mirroring the UI check in contactForm.slot.tsx (the DB CHECK constraint in
++ * V12__contact_email_format.sql is the final guard).
+  */
+ public class CreateContact {
+ 
++    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
++
+     public void service(@RequestBody ContactForm form, ContactRepository contacts,
+             ClientRepository clients, ObjectResponse<ContactView> response) {
+         String name = form.getName() == null ? "" : form.getName().trim();
+@@ -21,6 +26,9 @@ public class CreateContact {
+         if (name.isEmpty() || email.isEmpty() || role.isEmpty()) {
+             throw new IllegalArgumentException("A contact name, email and role are required");
+         }
++        if (!EMAIL.matcher(email).matches()) {
++            throw new IllegalArgumentException("A valid email address is required");
++        }
+         Long clientId = form.getClientId();
+         Client client = clientId == null ? null : clients.findById(clientId).orElse(null);
+         if (client == null) {
+diff --git a/src/main/resources/db/migration/V12__contact_email_format.sql b/src/main/resources/db/migration/V12__contact_email_format.sql
+new file mode 100644
+index 0000000..7b4cbb1
+--- /dev/null
++++ b/src/main/resources/db/migration/V12__contact_email_format.sql
+@@ -0,0 +1,7 @@
++-- Every contact must have a PROPER email address. The column was already NOT NULL; this adds the
++-- format guard at the data layer so a malformed or blank email can never be persisted, matching the
++-- UI (contactForm.slot.tsx) and server (CreateContact.java) checks. Regex: local@domain.tld, no
++-- whitespace — the same shape clients use (V2__client_email_format.sql).
++ALTER TABLE contacts
++    ADD CONSTRAINT contacts_email_format
++    CHECK (REGEXP_LIKE(email, '^[^@\s]+@[^@\s]+\.[^@\s]+$'));
