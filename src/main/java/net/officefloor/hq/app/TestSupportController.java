@@ -71,10 +71,17 @@ public class TestSupportController {
             // archived is optional too — a spec that only cares a project exists leaves it out,
             // defaulting to not-archived (the same state a fresh project gets, V16__project_archived.sql).
             boolean archived = Boolean.TRUE.equals(p.getOrDefault("archived", Boolean.FALSE));
+            // budget is optional in the fixture — a spec that does not care about the budget leaves
+            // it out, so the column stays NULL (the same state a fresh project gets until one is set,
+            // V23__project_budget.sql).
+            java.math.BigDecimal budget = p.get("budget") != null
+                    ? new java.math.BigDecimal(p.get("budget").toString())
+                    : null;
             jdbc.update(
-                    "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO projects (id, name, client_id, status, archived, budget)"
+                            + " VALUES (?, ?, ?, ?, ?, ?)",
                     ((Number) p.get("id")).longValue(), p.get("name"),
-                    ((Number) p.get("clientId")).longValue(), status.toString(), archived);
+                    ((Number) p.get("clientId")).longValue(), status.toString(), archived, budget);
         }
         List<Map<String, Object>> contacts =
                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());

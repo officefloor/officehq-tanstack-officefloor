@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.math.BigDecimal;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -36,6 +37,12 @@ public class Project {
     @Column(nullable = false)
     private String status = ProjectStatus.ACTIVE.name();
 
+    // The planned spend set against the project, compared on the detail page with how much has been
+    // invoiced. Money, so a {@link BigDecimal} (fixed scale, no float drift). Nullable: a budget is
+    // optional, and a project without one has not had a budget set yet (V23__project_budget.sql).
+    @Column
+    private BigDecimal budget;
+
     protected Project() {
     }
 
@@ -68,6 +75,16 @@ public class Project {
 
     public String getStatus() {
         return status;
+    }
+
+    /** The planned spend set against this project, or {@code null} if no budget has been set. */
+    public BigDecimal getBudget() {
+        return budget;
+    }
+
+    /** Set (or change) the planned spend for this project. */
+    public void setBudget(BigDecimal budget) {
+        this.budget = budget;
     }
 
     /** Tuck this project away so it drops off the lists while the row is kept. */
