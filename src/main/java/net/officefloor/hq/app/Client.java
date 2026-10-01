@@ -23,6 +23,10 @@ public class Client {
 
     private String email;
 
+    // Archived clients are tucked away: they drop off the list and search but the row is retained.
+    // Defaults to active (false); matches Flyway V18's column default for existing rows.
+    private boolean archived = false;
+
     public Client() {
     }
 
@@ -53,5 +57,13 @@ public class Client {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 }

@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { ClientRow } from '../../slots/defs/clientRow';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientSearch } from './ClientSearch';
 import { useClients } from './clients';
@@ -6,6 +7,7 @@ import { useClients } from './clients';
 // The clients list. Reads server data straight from its query key — never copied into state, never
 // handed down from a parent. The name filter lives in the URL (`clientSearch`), read directly here;
 // the search box owns that same key, so the two stay in step without any import between them.
+// Archived clients are tucked away: they drop off the list and search but are retained server-side.
 export function ClientList() {
   const { data: clients } = useClients();
   const [query] = useSearchParam('clientSearch', asString);
@@ -23,10 +25,11 @@ export function ClientList() {
     );
   }
 
+  const active = clients.filter((client) => !client.archived);
   const needle = query.trim().toLowerCase();
   const visible = needle
-    ? clients.filter((client) => client.name.toLowerCase().includes(needle))
-    : clients;
+    ? active.filter((client) => client.name.toLowerCase().includes(needle))
+    : active;
 
   return (
     <>
@@ -52,6 +55,9 @@ export function ClientList() {
               >
                 Open
               </Link>
+            </td>
+            <td>
+              <ClientRow.Slot client={client} />
             </td>
           </tr>
         ))}
