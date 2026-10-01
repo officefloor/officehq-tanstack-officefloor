@@ -8,4 +8,7 @@ public interface ContactRepository extends JpaRepository<Contact, Long> {
 
     /** The contacts of one client, in id order — the shape a client's detail page lists. */
     List<Contact> findByClientIdOrderByIdAsc(Long clientId);
+
+    /** How many contacts one client keeps — the figure the client detail badge surfaces. */
+    long countByClientId(Long clientId);
 }

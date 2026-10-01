@@ -45,3 +45,15 @@ export const listClientContacts = (clientId: number): Promise<Contact[]> =>
 
 export const createContact = (body: NewContact): Promise<Contact> =>
   postJson<Contact>('/api/clients/contacts', body);
+
+// At-a-glance counts for one client: how many projects it owns and how many contacts it keeps.
+// Computed server-side (GET /api/clients/summary). The query key is scoped to the client under the
+// ['clients', clientId, ...] prefix, so a client write can invalidate it alongside the lists it
+// summarises — the badges stay in step with the projects and contacts panels for free.
+export type ClientSummary = { projects: number; contacts: number };
+
+export const clientSummaryKey = (clientId: number) =>
+  ['clients', clientId, 'summary'] as const;
+
+export const getClientSummary = (clientId: number): Promise<ClientSummary> =>
+  getJson<ClientSummary>(`/api/clients/summary?clientId=${clientId}`);

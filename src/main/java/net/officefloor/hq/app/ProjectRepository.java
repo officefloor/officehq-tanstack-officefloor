@@ -8,4 +8,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     /** The projects of one client, in id order — the shape a client's detail page lists. */
     List<Project> findByClientIdOrderByIdAsc(Long clientId);
+
+    /** How many projects one client owns — the figure the client detail badge surfaces. */
+    long countByClientId(Long clientId);
 }
