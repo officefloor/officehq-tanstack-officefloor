@@ -25,6 +25,11 @@ public class Project {
     @Column(name = "client_id", nullable = false)
     private Long clientId;
 
+    // Whether the project has been archived (tucked away): an archived project is retained but drops
+    // off the lists. New projects start not-archived (the column default, V16__project_archived.sql).
+    @Column(nullable = false)
+    private boolean archived;
+
     protected Project() {
     }
 
@@ -43,5 +48,14 @@ public class Project {
 
     public Long getClientId() {
         return clientId;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    /** Tuck this project away so it drops off the lists while the row is kept. */
+    public void archive() {
+        this.archived = true;
     }
 }

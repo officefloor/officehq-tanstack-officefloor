@@ -5,9 +5,11 @@ package net.officefloor.hq.app;
  * cross-entity join lives here — the project carries its client's NAME (not just the id) so the list
  * can show the client without a second lookup.
  */
-public record ProjectView(Long id, String name, Long clientId, String clientName) {
+public record ProjectView(Long id, String name, Long clientId, String clientName,
+        boolean archived) {
 
     public static ProjectView of(Project project, String clientName) {
-        return new ProjectView(project.getId(), project.getName(), project.getClientId(), clientName);
+        return new ProjectView(project.getId(), project.getName(), project.getClientId(),
+                clientName, project.isArchived());
     }
 }
