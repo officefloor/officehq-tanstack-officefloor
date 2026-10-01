@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -26,7 +27,10 @@ public class CreateInvoice {
         if (projectId == null || projects.findById(projectId).isEmpty()) {
             throw new IllegalArgumentException("A valid project is required");
         }
-        Invoice saved = invoices.save(new Invoice(projectId, amount));
+        // A raised invoice goes out today and is due 30 days later.
+        LocalDate issuedDate = LocalDate.now();
+        LocalDate dueDate = issuedDate.plusDays(30);
+        Invoice saved = invoices.save(new Invoice(projectId, amount, issuedDate, dueDate));
         response.send(InvoiceView.of(saved));
     }
 }

@@ -3,7 +3,14 @@ import { getJson, postJson } from '../../api/http';
 // An invoice as the API exposes it — an amount belonging to a project. The query key is scoped to
 // the project, ['invoices', projectId], so each project's detail page reads (and invalidates) only
 // its own invoices: the list reads the key, the add form invalidates it.
-export type Invoice = { id: number; projectId: number; amount: number; status: string };
+export type Invoice = {
+  id: number;
+  projectId: number;
+  amount: number;
+  status: string;
+  issuedDate: string;
+  dueDate: string;
+};
 export type NewInvoice = { projectId: number; amount: number };
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;

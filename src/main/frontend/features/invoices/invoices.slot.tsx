@@ -27,6 +27,8 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
           <tr>
             <th>Amount</th>
             <th>Status</th>
+            <th>Issued</th>
+            <th>Due</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -35,6 +37,8 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
               <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
               <td data-testid="invoice-status">{invoice.status}</td>
+              <td data-testid="invoice-issued">{invoice.issuedDate}</td>
+              <td data-testid="invoice-due">{invoice.dueDate}</td>
               <td>
                 <InvoiceRow.Slot invoiceId={invoice.id} projectId={projectId} />
               </td>

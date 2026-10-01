@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -31,13 +32,23 @@ public class Invoice {
     @Column(nullable = false)
     private String status;
 
+    /** When the invoice went out. */
+    @Column(name = "issued_date", nullable = false)
+    private LocalDate issuedDate;
+
+    /** When the invoice is due to be paid. */
+    @Column(name = "due_date", nullable = false)
+    private LocalDate dueDate;
+
     protected Invoice() {
     }
 
-    public Invoice(Long projectId, BigDecimal amount) {
+    public Invoice(Long projectId, BigDecimal amount, LocalDate issuedDate, LocalDate dueDate) {
         this.projectId = projectId;
         this.amount = amount;
         this.status = "UNPAID";
+        this.issuedDate = issuedDate;
+        this.dueDate = dueDate;
     }
 
     public Long getId() {
@@ -54,6 +65,14 @@ public class Invoice {
 
     public String getStatus() {
         return status;
+    }
+
+    public LocalDate getIssuedDate() {
+        return issuedDate;
+    }
+
+    public LocalDate getDueDate() {
+        return dueDate;
     }
 
     /** Mark this invoice paid — the status transition the pay action performs. */
