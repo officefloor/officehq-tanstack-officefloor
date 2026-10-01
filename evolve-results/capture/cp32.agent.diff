@@ -1,0 +1,265 @@
+diff --git a/src/main/frontend/features/invoices/api.ts b/src/main/frontend/features/invoices/api.ts
+index f1b3b99..bedfe6c 100644
+--- a/src/main/frontend/features/invoices/api.ts
++++ b/src/main/frontend/features/invoices/api.ts
+@@ -25,6 +25,11 @@ export type InvoiceSort = 'id' | 'due';
+ export const listInvoices = (projectId: number, sort: InvoiceSort = 'id'): Promise<Invoice[]> =>
+   getJson<Invoice[]>(`/api/invoices?projectId=${projectId}&sort=${sort}`);
+ 
++// One invoice, with its status WORKED OUT from its payments (still owing / part paid / paid). The
++// detail page reads this to show the derived status; it is recomputed server-side from the payments.
++export const getInvoice = (invoiceId: number): Promise<Invoice> =>
++  getJson<Invoice>(`/api/invoices/one?invoiceId=${invoiceId}`);
++
+ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
+   postJson<Invoice>('/api/invoices', body);
+ 
+@@ -32,8 +37,3 @@ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
+ // ['invoices', projectId] on success so the invoices panel (and the row actions) refetch the status.
+ export const sendInvoice = (id: number): Promise<Invoice> =>
+   postJson<Invoice>('/api/invoices/send', { id });
+-
+-// Mark an invoice paid — flips its status server-side and appends the audit record. Callers
+-// invalidate ['invoices', projectId] on success so the invoices panel refetches the new status.
+-export const payInvoice = (id: number): Promise<Invoice> =>
+-  postJson<Invoice>('/api/invoices/pay', { id });
+diff --git a/src/main/frontend/features/invoices/pay.slot.tsx b/src/main/frontend/features/invoices/pay.slot.tsx
+deleted file mode 100644
+index 3e3ca77..0000000
+--- a/src/main/frontend/features/invoices/pay.slot.tsx
++++ /dev/null
+@@ -1,42 +0,0 @@
+-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+-import { InvoiceRow } from '../../slots/defs/invoiceRow';
+-import { invoicesKey, listInvoices, payInvoice, type Invoice } from './api';
+-
+-// Mark an invoice paid — one new file filling the per-invoice-row action slot. Payment is the last
+-// step of the DRAFT -> SENT -> PAID lifecycle, so the button only appears once the invoice has been
+-// SENT: the slot queries ['invoices', projectId] for its OWN row's status rather than being handed
+-// it. The click is a useMutation (never a hand-rolled status flip in state); on success we invalidate
+-// the project's ['invoices', projectId] key so the invoices panel refetches the new status. The
+-// server also appends the audit record, so "keep a record every time" is handled where the
+-// side-effect lives.
+-function PayInvoice({ invoiceId, projectId }: { invoiceId: number; projectId: number }) {
+-  const queryClient = useQueryClient();
+-  const { data: invoices } = useQuery({
+-    queryKey: invoicesKey(projectId),
+-    queryFn: () => listInvoices(projectId),
+-  });
+-  const mutation = useMutation({
+-    mutationFn: () => payInvoice(invoiceId),
+-    onSuccess: () => {
+-      void queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) });
+-    },
+-  });
+-
+-  const invoice = invoices?.find((i: Invoice) => i.id === invoiceId);
+-  if (!invoice || invoice.status !== 'SENT') {
+-    return null;
+-  }
+-
+-  return (
+-    <button
+-      data-testid={`invoice-pay-${invoiceId}`}
+-      type="button"
+-      disabled={mutation.isPending}
+-      onClick={() => mutation.mutate()}
+-    >
+-      Mark paid
+-    </button>
+-  );
+-}
+-
+-export const contribution = InvoiceRow.fill({ order: 0, Component: PayInvoice });
+diff --git a/src/main/frontend/features/invoices/status.slot.tsx b/src/main/frontend/features/invoices/status.slot.tsx
+new file mode 100644
+index 0000000..617575d
+--- /dev/null
++++ b/src/main/frontend/features/invoices/status.slot.tsx
+@@ -0,0 +1,25 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceDetail } from '../../slots/defs/invoiceDetail';
++import { getInvoice } from './api';
++import { paymentsKey } from './paymentsApi';
++
++// This invoice's status, WORKED OUT from its payments — one panel filling the invoice.detail region.
++// The server derives it (still owing / part paid / paid) from the payments recorded against the
++// invoice, so there is no flipping it to paid by hand. It stays in step with the payments the same
++// way every other panel does: by sharing the KEY. The query sits UNDER ['invoice-payments', id], so
++// the record form's invalidate of that key (prefix match) refetches this status too — no import
++// between them and nothing passed down.
++function InvoiceStatus({ invoiceId }: { invoiceId: number }) {
++  const { data: invoice } = useQuery({
++    queryKey: [...paymentsKey(invoiceId), 'invoice'],
++    queryFn: () => getInvoice(invoiceId),
++  });
++
++  if (!invoice) {
++    return null;
++  }
++
++  return <p data-testid="invoice-status">{invoice.status}</p>;
++}
++
++export const contribution = InvoiceDetail.fill({ order: 5, Component: InvoiceStatus });
+diff --git a/src/main/java/net/officefloor/hq/app/CreatePayment.java b/src/main/java/net/officefloor/hq/app/CreatePayment.java
+index 45097a4..2eb0a90 100644
+--- a/src/main/java/net/officefloor/hq/app/CreatePayment.java
++++ b/src/main/java/net/officefloor/hq/app/CreatePayment.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import net.officefloor.web.ObjectResponse;
+@@ -15,11 +16,17 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * missing/unknown invoice id, a missing/non-positive amount, or a missing/unparseable date before
+  * persisting so a bad payment can never be saved. Payments are recorded against the invoice but do
+  * NOT change its amount (that stays the sum of its line items).
++ *
++ * Recording a payment is what moves an invoice along — the status is WORKED OUT from its payments
++ * (PARTIAL once some is paid, PAID once they cover it), replacing flipping it to paid by hand. It is
++ * an audited side-effect: alongside saving the payment we append one record through the {@link Audit}
++ * service ({@code PAYMENT_RECORDED id=<invoiceId> amount=<amount>}) so there is a durable trail the
++ * UI can't show. We audit only after a valid payment is saved, so a bad request never records.
+  */
+ public class CreatePayment {
+ 
+     public void service(@RequestBody PaymentForm form, InvoiceRepository invoices,
+-            InvoicePaymentRepository payments, ObjectResponse<PaymentView> response) {
++            InvoicePaymentRepository payments, Audit audit, ObjectResponse<PaymentView> response) {
+         Long invoiceId = form.getInvoiceId();
+         if (invoiceId == null) {
+             throw new IllegalArgumentException("An invoice id is required");
+@@ -45,6 +52,8 @@ public class CreatePayment {
+         }
+         InvoicePayment saved =
+                 payments.save(new InvoicePayment(invoiceId, amount, paidDate));
++        audit.record("PAYMENT_RECORDED id=" + saved.getInvoiceId() + " amount="
++                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
+         response.send(PaymentView.of(saved));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/GetInvoice.java b/src/main/java/net/officefloor/hq/app/GetInvoice.java
+new file mode 100644
+index 0000000..e2dd774
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/GetInvoice.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/invoices/one?invoiceId=&lt;id&gt; — one invoice, with its status WORKED OUT from its
++ * payments (still owing / part paid / paid) rather than a figure flipped by hand. The invoice detail
++ * page reads this to show the derived status; the invoice id arrives as a query parameter. Wired by
++ * officefloor/rest/api/invoices/one.GET.yml.
++ */
++public class GetInvoice {
++
++    public void service(@RequestParam("invoiceId") String invoiceId, InvoiceRepository invoices,
++            InvoicePaymentRepository payments, ObjectResponse<InvoiceView> response) {
++        Long id = Long.valueOf(invoiceId);
++        Invoice invoice = invoices.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid invoice is required"));
++        BigDecimal paidSum = payments.findByInvoiceIdOrderByIdAsc(id).stream()
++                .map(InvoicePayment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
++        response.send(InvoiceView.ofDerived(invoice, paidSum));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceView.java b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+index 144422a..4b11cef 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceView.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+@@ -14,4 +14,31 @@ public record InvoiceView(Long id, Long projectId, BigDecimal amount, String sta
+                 invoice.getStatus(), invoice.getIssuedDate().toString(),
+                 invoice.getDueDate().toString());
+     }
++
++    /**
++     * The same view, but with the status WORKED OUT from what has been paid against the invoice (the
++     * sum of its payments) rather than a figure flipped by hand. This is how the UI learns whether an
++     * invoice is still owing, part paid or settled.
++     */
++    public static InvoiceView ofDerived(Invoice invoice, java.math.BigDecimal paidSum) {
++        return new InvoiceView(invoice.getId(), invoice.getProjectId(), invoice.getAmount(),
++                deriveStatus(invoice, paidSum), invoice.getIssuedDate().toString(),
++                invoice.getDueDate().toString());
++    }
++
++    /**
++     * Work out an invoice's status from its payments: PAID once the payments cover its amount,
++     * PARTIAL once some has been paid but not all, otherwise the invoice's own lifecycle status
++     * (DRAFT before it goes out, SENT once it has). A zero-amount invoice is never PAID off nothing.
++     */
++    static String deriveStatus(Invoice invoice, java.math.BigDecimal paidSum) {
++        if (paidSum != null && paidSum.signum() > 0) {
++            java.math.BigDecimal amount = invoice.getAmount();
++            if (amount != null && amount.signum() > 0 && paidSum.compareTo(amount) >= 0) {
++                return "PAID";
++            }
++            return "PARTIAL";
++        }
++        return invoice.getStatus();
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ListInvoices.java b/src/main/java/net/officefloor/hq/app/ListInvoices.java
+index a5baa19..d84a0ed 100644
+--- a/src/main/java/net/officefloor/hq/app/ListInvoices.java
++++ b/src/main/java/net/officefloor/hq/app/ListInvoices.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import java.util.List;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestParam;
+@@ -14,12 +15,22 @@ public class ListInvoices {
+ 
+     public void service(@RequestParam("projectId") String projectId,
+             @RequestParam("sort") String sort,
+-            InvoiceRepository invoices, ObjectResponse<List<InvoiceView>> response) {
++            InvoiceRepository invoices, InvoicePaymentRepository payments,
++            ObjectResponse<List<InvoiceView>> response) {
+         Long id = Long.valueOf(projectId);
+         List<Invoice> rows = "due".equals(sort)
+                 ? invoices.findByProjectIdOrderByDueDateAscIdAsc(id)
+                 : invoices.findByProjectIdOrderByIdAsc(id);
+-        List<InvoiceView> view = rows.stream().map(InvoiceView::of).toList();
++        // Each row's status is worked out from what has been paid against it, not a stored flag.
++        List<InvoiceView> view = rows.stream()
++                .map(inv -> InvoiceView.ofDerived(inv, paidSum(payments, inv.getId())))
++                .toList();
+         response.send(view);
+     }
++
++    /** The total paid against one invoice — the sum of its recorded payments (zero if none). */
++    private static BigDecimal paidSum(InvoicePaymentRepository payments, Long invoiceId) {
++        return payments.findByInvoiceIdOrderByIdAsc(invoiceId).stream()
++                .map(InvoicePayment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
++    }
+ }
+diff --git a/src/main/resources/db/migration/V21__invoice_payments_invoice_index.sql b/src/main/resources/db/migration/V21__invoice_payments_invoice_index.sql
+new file mode 100644
+index 0000000..5e6b6cb
+--- /dev/null
++++ b/src/main/resources/db/migration/V21__invoice_payments_invoice_index.sql
+@@ -0,0 +1,5 @@
++-- An invoice's status is now DERIVED from its payments: on every read we sum the payments made
++-- against the invoice (ListInvoices, GetInvoice) to work out PARTIAL / PAID. That lookup is always
++-- by invoice_id, so index it — an additive index, no data change, matching the invoice_id read path
++-- the derivation now leans on.
++CREATE INDEX idx_invoice_payments_invoice ON invoice_payments (invoice_id);
+diff --git a/src/main/resources/officefloor/rest/api/invoices/one.GET.yml b/src/main/resources/officefloor/rest/api/invoices/one.GET.yml
+new file mode 100644
+index 0000000..6ede2f6
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/one.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.GetInvoice
