@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import net.officefloor.web.ObjectResponse;
@@ -15,11 +16,17 @@ import org.springframework.web.bind.annotation.RequestBody;
  * missing/unknown invoice id, a missing/non-positive amount, or a missing/unparseable date before
  * persisting so a bad payment can never be saved. Payments are recorded against the invoice but do
  * NOT change its amount (that stays the sum of its line items).
+ *
+ * Recording a payment is what moves an invoice along — the status is WORKED OUT from its payments
+ * (PARTIAL once some is paid, PAID once they cover it), replacing flipping it to paid by hand. It is
+ * an audited side-effect: alongside saving the payment we append one record through the {@link Audit}
+ * service ({@code PAYMENT_RECORDED id=<invoiceId> amount=<amount>}) so there is a durable trail the
+ * UI can't show. We audit only after a valid payment is saved, so a bad request never records.
  */
 public class CreatePayment {
 
     public void service(@RequestBody PaymentForm form, InvoiceRepository invoices,
-            InvoicePaymentRepository payments, ObjectResponse<PaymentView> response) {
+            InvoicePaymentRepository payments, Audit audit, ObjectResponse<PaymentView> response) {
         Long invoiceId = form.getInvoiceId();
         if (invoiceId == null) {
             throw new IllegalArgumentException("An invoice id is required");
@@ -45,6 +52,8 @@ public class CreatePayment {
         }
         InvoicePayment saved =
                 payments.save(new InvoicePayment(invoiceId, amount, paidDate));
+        audit.record("PAYMENT_RECORDED id=" + saved.getInvoiceId() + " amount="
+                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
         response.send(PaymentView.of(saved));
     }
 }

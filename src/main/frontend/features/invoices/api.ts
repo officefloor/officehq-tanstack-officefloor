@@ -25,6 +25,11 @@ export type InvoiceSort = 'id' | 'due';
 export const listInvoices = (projectId: number, sort: InvoiceSort = 'id'): Promise<Invoice[]> =>
   getJson<Invoice[]>(`/api/invoices?projectId=${projectId}&sort=${sort}`);
 
+// One invoice, with its status WORKED OUT from its payments (still owing / part paid / paid). The
+// detail page reads this to show the derived status; it is recomputed server-side from the payments.
+export const getInvoice = (invoiceId: number): Promise<Invoice> =>
+  getJson<Invoice>(`/api/invoices/one?invoiceId=${invoiceId}`);
+
 export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
   postJson<Invoice>('/api/invoices', body);
 
@@ -32,8 +37,3 @@ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
 // ['invoices', projectId] on success so the invoices panel (and the row actions) refetch the status.
 export const sendInvoice = (id: number): Promise<Invoice> =>
   postJson<Invoice>('/api/invoices/send', { id });
-
-// Mark an invoice paid — flips its status server-side and appends the audit record. Callers
-// invalidate ['invoices', projectId] on success so the invoices panel refetches the new status.
-export const payInvoice = (id: number): Promise<Invoice> =>
-  postJson<Invoice>('/api/invoices/pay', { id });
