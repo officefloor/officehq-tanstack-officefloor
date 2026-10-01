@@ -1,7 +1,9 @@
 package net.officefloor.hq.app;
 
+import java.util.List;
 import java.util.Map;
 import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,21 +21,32 @@ import org.springframework.web.bind.annotation.RestController;
 public class TestSupportController {
 
     private final Audit audit;
+    private final JdbcTemplate jdbc;
 
-    public TestSupportController(Audit audit) {
+    public TestSupportController(Audit audit, JdbcTemplate jdbc) {
         this.audit = audit;
+        this.jdbc = jdbc;
     }
 
     /** Truncate all domain tables and clear the audit file so each spec starts clean. */
     @PostMapping("/reset")
     public void reset() {
         audit.clear();
-        // TODO: TRUNCATE the domain tables that exist at this checkpoint (inject a JdbcTemplate/repo).
+        jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
     }
 
     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
     @PostMapping("/seed")
+    @SuppressWarnings("unchecked")
     public void seed(@RequestBody Map<String, Object> fixture) {
-        // TODO: insert rows for the fixture.
+        List<Map<String, Object>> clients = (List<Map<String, Object>>) fixture.get("clients");
+        if (clients != null) {
+            for (Map<String, Object> client : clients) {
+                // Explicit fixture id (JPA save() would ignore it on an IDENTITY column).
+                jdbc.update("INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
+                        ((Number) client.get("id")).longValue(), client.get("name"),
+                        client.get("email"));
+            }
+        }
     }
 }
