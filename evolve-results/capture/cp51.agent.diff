@@ -1,0 +1,197 @@
+diff --git a/src/main/frontend/features/clients/ClientsList.tsx b/src/main/frontend/features/clients/ClientsList.tsx
+index 91afc6c..1531542 100644
+--- a/src/main/frontend/features/clients/ClientsList.tsx
++++ b/src/main/frontend/features/clients/ClientsList.tsx
+@@ -1,7 +1,8 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { useSearchParam, asString } from '../../url/useSearchParam';
+-import { clientsKey, listClients, type Client } from './api';
++import { clientsKey, listClientsSorted, type Client } from './api';
+ import { ClientRow } from '../../slots/defs/clientRow';
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
+ 
+ // The clients list. Reads server data under ['clients'] (never copied into state); the create form
+ // shares the key, so a successful create refreshes this list with no import between them.
+@@ -11,7 +12,14 @@ import { ClientRow } from '../../slots/defs/clientRow';
+ // read the same key. Matching is a case-insensitive substring on the client name; an empty box
+ // shows every client.
+ export function ClientsList() {
+-  const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: listClients });
++  // The ordering lives in the URL under the shared `clientSort` key — the sort control writes it,
++  // this list reads it. It is part of the query key, so each ordering caches on its own, and the
++  // server returns the rows already sorted (by name, by amount owed, or the default id order).
++  const [sort] = useSearchParam('clientSort', asString);
++  const { data: clients } = useQuery({
++    queryKey: [...clientsKey, 'sorted', sort],
++    queryFn: () => listClientsSorted(sort),
++  });
+   const [query, setQuery] = useSearchParam('q', asString);
+ 
+   if (!clients) {
+@@ -32,6 +40,7 @@ export function ClientsList() {
+         value={query}
+         onChange={(e) => setQuery(e.target.value)}
+       />
++      <ClientsToolbar.Slot />
+       {clients.length === 0 ? (
+         <p data-testid="clients-empty">No clients yet.</p>
+       ) : (
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+index dacea34..3e6b2a7 100644
+--- a/src/main/frontend/features/clients/api.ts
++++ b/src/main/frontend/features/clients/api.ts
+@@ -9,6 +9,15 @@ export const clientsKey = ['clients'] as const;
+ 
+ export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clients');
+ 
++// How to order the clients list: by name, by how much each client owes ('outstanding'), or the
++// default id order (anything else, including the empty default). The server reads the same `sort`
++// key and applies the order once, at the source — the list never re-sorts on the client. The sort
++// control owns the matching `clientSort` URL key; the list reads it and asks for that order.
++export type ClientSort = 'name' | 'outstanding';
++
++export const listClientsSorted = (sort: string): Promise<Client[]> =>
++  getJson<Client[]>(`/api/clients/sorted?sort=${encodeURIComponent(sort)}`);
++
+ export const createClient = (body: NewClient): Promise<Client> =>
+   postJson<Client>('/api/clients', body);
+ 
+diff --git a/src/main/frontend/features/clients/sort.slot.tsx b/src/main/frontend/features/clients/sort.slot.tsx
+new file mode 100644
+index 0000000..4c3d21c
+--- /dev/null
++++ b/src/main/frontend/features/clients/sort.slot.tsx
+@@ -0,0 +1,23 @@
++import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++
++// The clients-list sort control — one new *.slot.tsx filling the clients.toolbar region. It owns the
++// `clientSort` URL key; the list reads the same key and asks the server for that order. Nothing is
++// passed between them: they stay in step through the shared search param. The empty option clears the
++// key, so the list falls back to its default (id) order.
++function ClientSort() {
++  const [sort, setSort] = useSearchParam('clientSort', asString);
++  return (
++    <select
++      data-testid="client-sort"
++      value={sort}
++      onChange={(e) => setSort(e.target.value)}
++    >
++      <option value="">Sort…</option>
++      <option value="name">By name</option>
++      <option value="outstanding">By amount owed</option>
++    </select>
++  );
++}
++
++export const contribution = ClientsToolbar.fill({ order: 10, Component: ClientSort });
+diff --git a/src/main/frontend/slots/defs/clientsToolbar.ts b/src/main/frontend/slots/defs/clientsToolbar.ts
+new file mode 100644
+index 0000000..3da986d
+--- /dev/null
++++ b/src/main/frontend/slots/defs/clientsToolbar.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * A toolbar over the clients list — controls that act on the whole list (a sort, a filter) rather
++ * than one row. Features add controls here as new *.slot.tsx files; the list never lists them. Each
++ * control owns a URL search key that the list reads, so nothing is passed between them. First use:
++ * the control that sorts the list by name or by how much each client owes.
++ */
++export const ClientsToolbar = defineSlot('clients.toolbar');
+diff --git a/src/main/java/net/officefloor/hq/app/ListClientsSorted.java b/src/main/java/net/officefloor/hq/app/ListClientsSorted.java
+new file mode 100644
+index 0000000..f5b4abd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListClientsSorted.java
+@@ -0,0 +1,71 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/clients/sorted?sort=&lt;key&gt; — the clients list in a chosen order, for the sort control
++ * on the clients page. Archived (tucked-away) clients are excluded, exactly as on the plain list
++ * {@link ListClients}. The {@code sort} key chooses the order:
++ * <ul>
++ *   <li>{@code outstanding} — most-owed-first. Each client's outstanding balance is DERIVED on the
++ *       server: the sum, across every invoice of every project the client owns, of the invoice total
++ *       minus what has been paid against it, computed in {@link BigDecimal} so there is no float
++ *       drift — the same derivation the client statement ({@link GetClientStatement}) uses.</li>
++ *   <li>{@code name} — case-insensitive name order.</li>
++ *   <li>anything else (and the default) — id order.</li>
++ * </ul>
++ * Ties break by id for a stable order. This is a NEW endpoint rather than a change to the shared
++ * {@link ListClients}, so the plain {@code /api/clients} that the projects picker and global search
++ * read stays untouched. Wired by officefloor/rest/api/clients/sorted.GET.yml.
++ */
++public class ListClientsSorted {
++
++    public void service(@RequestParam("sort") String sort,
++            ClientRepository clients, ProjectRepository projects,
++            InvoiceRepository invoices, InvoicePaymentRepository payments,
++            ObjectResponse<List<ClientView>> response) {
++        Comparator<Client> order;
++        if ("outstanding".equals(sort)) {
++            // Most owed first; equal balances (including everyone at zero) fall back to id order.
++            order = Comparator
++                    .comparing((Client c) -> outstanding(c, projects, invoices, payments))
++                    .reversed()
++                    .thenComparing(Client::getId);
++        } else if ("name".equals(sort)) {
++            order = Comparator
++                    .comparing((Client c) -> c.getName().toLowerCase())
++                    .thenComparing(Client::getId);
++        } else {
++            order = Comparator.comparing(Client::getId);
++        }
++        List<ClientView> view = clients.findAll().stream()
++                .filter(client -> !client.isArchived())
++                .sorted(order)
++                .map(ClientView::of)
++                .toList();
++        response.send(view);
++    }
++
++    /**
++     * What one client still owes: the sum, over every invoice of every project the client owns, of
++     * the invoice total less the payments recorded against it. The same money-scale BigDecimal
++     * derivation the client statement applies, so the two stay consistent.
++     */
++    private static BigDecimal outstanding(Client client, ProjectRepository projects,
++            InvoiceRepository invoices, InvoicePaymentRepository payments) {
++        BigDecimal total = BigDecimal.ZERO;
++        for (Project project : projects.findByClientIdOrderByIdAsc(client.getId())) {
++            for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(project.getId())) {
++                BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoice.getId()).stream()
++                        .map(InvoicePayment::getAmount)
++                        .reduce(BigDecimal.ZERO, BigDecimal::add);
++                total = total.add(invoice.getTotal().subtract(paid));
++            }
++        }
++        return total;
++    }
++}
+diff --git a/src/main/resources/db/migration/V31__clients_name_index.sql b/src/main/resources/db/migration/V31__clients_name_index.sql
+new file mode 100644
+index 0000000..4f13d4f
+--- /dev/null
++++ b/src/main/resources/db/migration/V31__clients_name_index.sql
+@@ -0,0 +1,4 @@
++-- The clients list can now be ordered by name. That read walks the clients by name, so index the
++-- name column — an additive index, no data change, matching the name-order read path the sort leans
++-- on (ListClientsSorted).
++CREATE INDEX idx_clients_name ON clients (name);
+diff --git a/src/main/resources/officefloor/rest/api/clients/sorted.GET.yml b/src/main/resources/officefloor/rest/api/clients/sorted.GET.yml
+new file mode 100644
+index 0000000..48f4d1e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/sorted.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListClientsSorted
