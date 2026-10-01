@@ -3,15 +3,22 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ClientDetail } from '../../slots/defs/clientDetail';
 import { clientContactsKey, createContact } from './api';
 
+// A proper email: some local part, an @, a domain, a dot and a TLD — no whitespace. The same check
+// clients use (ClientForm.tsx); the server (CreateContact.java) and the DB CHECK constraint in
+// V12__contact_email_format.sql are the further lines of defence.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Add a contact (name, email, role) to this client — one panel filling the client.detail region.
 // What the user is typing lives in useState (uncommitted input); the saved data lives on the server.
-// On success we invalidate ['clients', clientId, 'contacts'] so the contacts panel refetches — we
-// never hand-maintain the list.
+// Before we call the API we require a proper email — a blank or malformed address is refused in the
+// UI (never reaching the server) and surfaced on its own error anchor. On success we invalidate
+// ['clients', clientId, 'contacts'] so the contacts panel refetches — we never hand-maintain the list.
 function ContactForm({ clientId }: { clientId: number }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('');
+  const [emailError, setEmailError] = useState(false);
 
   const mutation = useMutation({
     mutationFn: createContact,
@@ -25,9 +32,14 @@ function ContactForm({ clientId }: { clientId: number }) {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() === '' || email.trim() === '' || role.trim() === '') {
+    if (name.trim() === '' || role.trim() === '') {
       return;
     }
+    if (!EMAIL_RE.test(email.trim())) {
+      setEmailError(true);
+      return;
+    }
+    setEmailError(false);
     mutation.mutate({ clientId, name: name.trim(), email: email.trim(), role: role.trim() });
   };
 
@@ -43,8 +55,18 @@ function ContactForm({ clientId }: { clientId: number }) {
         data-testid="contact-form-email"
         placeholder="Email"
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          if (emailError) {
+            setEmailError(false);
+          }
+        }}
       />
+      {emailError && (
+        <p data-testid="contact-form-email-error" role="alert">
+          Enter a valid email address.
+        </p>
+      )}
       <input
         data-testid="contact-form-role"
         placeholder="Role"
