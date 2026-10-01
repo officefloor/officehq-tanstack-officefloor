@@ -19,6 +19,9 @@ public class CreateInvoice {
         if (amount == null) {
             throw new IllegalArgumentException("An invoice amount is required");
         }
+        if (amount.signum() <= 0) {
+            throw new IllegalArgumentException("An invoice amount must be greater than zero");
+        }
         Long projectId = form.getProjectId();
         if (projectId == null || projects.findById(projectId).isEmpty()) {
             throw new IllegalArgumentException("A valid project is required");

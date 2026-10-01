@@ -10,6 +10,7 @@ import { createInvoice, invoicesKey } from './api';
 function InvoiceForm({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState('');
+  const [error, setError] = useState('');
 
   const mutation = useMutation({
     mutationFn: createInvoice,
@@ -25,6 +26,12 @@ function InvoiceForm({ projectId }: { projectId: number }) {
     if (amount.trim() === '' || Number.isNaN(value)) {
       return;
     }
+    // An invoice must be for something: the amount has to be more than zero.
+    if (value <= 0) {
+      setError('Amount must be greater than zero');
+      return;
+    }
+    setError('');
     mutation.mutate({ projectId, amount: value });
   };
 
@@ -39,6 +46,7 @@ function InvoiceForm({ projectId }: { projectId: number }) {
       <button data-testid="invoice-form-submit" type="submit">
         Add invoice
       </button>
+      {error && <p data-testid="invoice-form-amount-error">{error}</p>}
     </form>
   );
 }
