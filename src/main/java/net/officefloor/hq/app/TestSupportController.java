@@ -36,6 +36,7 @@ public class TestSupportController {
         // the FK exists — drop referential integrity for the duration, truncate all, then restore.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         try {
+            jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
@@ -93,6 +94,17 @@ public class TestSupportController {
                     status.toString(),
                     java.sql.Date.valueOf(issued),
                     java.sql.Date.valueOf(due));
+        }
+        List<Map<String, Object>> tasks =
+                (List<Map<String, Object>>) fixture.getOrDefault("tasks", List.of());
+        for (Map<String, Object> t : tasks) {
+            // done is optional in the fixture — a spec that only cares a task exists leaves it out,
+            // so it defaults to not-done (the same state CreateTask would give a fresh task).
+            boolean done = Boolean.TRUE.equals(t.getOrDefault("done", Boolean.FALSE));
+            jdbc.update("INSERT INTO tasks (id, project_id, title, done) VALUES (?, ?, ?, ?)",
+                    ((Number) t.get("id")).longValue(),
+                    ((Number) t.get("projectId")).longValue(),
+                    t.get("title"), done);
         }
     }
 }
