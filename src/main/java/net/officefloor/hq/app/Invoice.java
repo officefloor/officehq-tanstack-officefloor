@@ -100,4 +100,12 @@ public class Invoice {
     public void markPaid() {
         this.status = "PAID";
     }
+
+    /**
+     * Void this invoice — the terminal transition the cancel action performs when an invoice was
+     * sent by mistake. A VOID invoice no longer counts towards what is owed.
+     */
+    public void markVoid() {
+        this.status = "VOID";
+    }
 }

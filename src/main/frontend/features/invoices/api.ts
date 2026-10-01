@@ -37,3 +37,9 @@ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
 // ['invoices', projectId] on success so the invoices panel (and the row actions) refetch the status.
 export const sendInvoice = (id: number): Promise<Invoice> =>
   postJson<Invoice>('/api/invoices/send', { id });
+
+// Cancel an invoice sent by mistake — flips it to VOID server-side and appends the audit record. A
+// VOID invoice stops counting towards what is owed. Callers invalidate ['invoices', projectId] (and
+// ['dashboard']) on success so the invoices panel and the home figures refetch.
+export const cancelInvoice = (id: number): Promise<Invoice> =>
+  postJson<Invoice>('/api/invoices/cancel', { id });

@@ -32,6 +32,10 @@ public record InvoiceView(Long id, Long projectId, BigDecimal amount, String sta
      * (DRAFT before it goes out, SENT once it has). A zero-amount invoice is never PAID off nothing.
      */
     static String deriveStatus(Invoice invoice, java.math.BigDecimal paidSum) {
+        // VOID is terminal: a cancelled invoice stays VOID regardless of any payments against it.
+        if ("VOID".equals(invoice.getStatus())) {
+            return "VOID";
+        }
         if (paidSum != null && paidSum.signum() > 0) {
             java.math.BigDecimal amount = invoice.getAmount();
             if (amount != null && amount.signum() > 0 && paidSum.compareTo(amount) >= 0) {
