@@ -1,0 +1,68 @@
+diff --git a/src/main/frontend/features/projects/ProjectsList.tsx b/src/main/frontend/features/projects/ProjectsList.tsx
+index 168f03c..01cbf68 100644
+--- a/src/main/frontend/features/projects/ProjectsList.tsx
++++ b/src/main/frontend/features/projects/ProjectsList.tsx
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { projectsKey, listProjects, type Project } from './api';
+ import { ProjectRow } from '../../slots/defs/projectRow';
+ import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+-import { useSearchParam, asFlag, asNumber } from '../../url/useSearchParam';
++import { useSearchParam, asFlag, asNumber, asString } from '../../url/useSearchParam';
+ 
+ // The projects list. Reads server data under ['projects'] (never copied into state); the create form
+ // shares the key, so a successful create refreshes this list with no import between them. Each row
+@@ -17,6 +17,10 @@ export function ProjectsList() {
+   // only the projects carrying that tag, so they stay in step through the shared search param with
+   // nothing passed between them. Unset clears the key, so the list falls back to every project.
+   const [tagFilter] = useSearchParam('projectTag', asNumber);
++  // The status filter control (its own *.slot.tsx) owns this key; the list reads the same key and
++  // keeps only the projects at that lifecycle status, so they stay in step through the shared
++  // search param with nothing passed between them. An empty key means every status.
++  const [statusFilter] = useSearchParam('projectStatus', asString);
+   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: listProjects });
+ 
+   if (!projects) {
+@@ -26,7 +30,8 @@ export function ProjectsList() {
+   const visible = projects.filter(
+     (project: Project) =>
+       (showArchived || !project.archived) &&
+-      (tagFilter === undefined || project.tagIds.includes(tagFilter)),
++      (tagFilter === undefined || project.tagIds.includes(tagFilter)) &&
++      (statusFilter === '' || project.status === statusFilter),
+   );
+ 
+   return (
+diff --git a/src/main/frontend/features/projects/statusFilter.slot.tsx b/src/main/frontend/features/projects/statusFilter.slot.tsx
+new file mode 100644
+index 0000000..a7c7755
+--- /dev/null
++++ b/src/main/frontend/features/projects/statusFilter.slot.tsx
+@@ -0,0 +1,28 @@
++import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import { projectStatuses } from './api';
++
++// A control over the projects list — one new *.slot.tsx filling the projects.toolbar region. It owns
++// the `projectStatus` URL key; the list reads the same key and keeps only the projects at that
++// lifecycle status. Nothing is passed between them: they stay in step through the shared search
++// param. The empty option clears the key, so the list falls back to showing every project. The
++// options are the known statuses (ACTIVE / ON_HOLD / FINISHED), shared by the api module.
++function ProjectStatusFilter() {
++  const [status, setStatus] = useSearchParam('projectStatus', asString);
++  return (
++    <select
++      data-testid="project-status-filter"
++      value={status}
++      onChange={(e) => setStatus(e.target.value)}
++    >
++      <option value="">All statuses</option>
++      {projectStatuses.map((s) => (
++        <option key={s} value={s}>
++          {s}
++        </option>
++      ))}
++    </select>
++  );
++}
++
++export const contribution = ProjectsToolbar.fill({ order: 30, Component: ProjectStatusFilter });
