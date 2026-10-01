@@ -1,0 +1,159 @@
+diff --git a/src/main/frontend/features/invoices/AllInvoices.tsx b/src/main/frontend/features/invoices/AllInvoices.tsx
+index fd034d0..72230eb 100644
+--- a/src/main/frontend/features/invoices/AllInvoices.tsx
++++ b/src/main/frontend/features/invoices/AllInvoices.tsx
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { allInvoicesKey, listAllInvoices, type AllInvoice } from './allInvoices';
+ import { formatMoney } from '../../ui/money';
+ import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
+-import { useSearchParam, asString } from '../../url/useSearchParam';
++import { useSearchParam, asString, asNumber } from '../../url/useSearchParam';
+ 
+ // One place listing every invoice across all projects. Reads server data under ['invoices', 'all']
+ // (never copied into state); each row shows which PROJECT the invoice is for (the name the server
+@@ -13,9 +13,14 @@ import { useSearchParam, asString } from '../../url/useSearchParam';
+ // on its own and the server returns the rows already narrowed.
+ export function AllInvoices() {
+   const [status] = useSearchParam('invoiceStatus', asString);
++  // Which page to show lives in the URL under the shared `invoicePage` key — the pagination control
++  // (its own *.slot.tsx) writes it, this list reads it. It is part of the query key, so each page
++  // caches on its own and the server returns just that window of rows.
++  const [page] = useSearchParam('invoicePage', asNumber);
++  const pageNumber = page ?? 1;
+   const { data: invoices } = useQuery({
+-    queryKey: [...allInvoicesKey, status],
+-    queryFn: () => listAllInvoices(status),
++    queryKey: [...allInvoicesKey, status, pageNumber],
++    queryFn: () => listAllInvoices(status, pageNumber),
+   });
+ 
+   return (
+diff --git a/src/main/frontend/features/invoices/allInvoices.ts b/src/main/frontend/features/invoices/allInvoices.ts
+index 7972549..ccc7b05 100644
+--- a/src/main/frontend/features/invoices/allInvoices.ts
++++ b/src/main/frontend/features/invoices/allInvoices.ts
+@@ -15,9 +15,17 @@ export type AllInvoice = {
+ 
+ export const allInvoicesKey = ['invoices', 'all'] as const;
+ 
+-// A single lifecycle stage to narrow the list to ('' means every stage). The server reads the same
+-// `status` key, so the narrowing is applied once, at the source, not re-filtered on the client. It
+-// is appended to the query key below so each stage caches on its own, while a send/pay write still
+-// invalidates ['invoices'] by prefix and refreshes whichever stage is on screen.
+-export const listAllInvoices = (status = ''): Promise<AllInvoice[]> =>
+-  getJson<AllInvoice[]>(`/api/invoices/all?status=${encodeURIComponent(status)}`);
++// How many invoices one page of the list shows. The server slices to this window; the pagination
++// control steps through pages by the same count.
++export const INVOICE_PAGE_SIZE = 10;
++
++// A single lifecycle stage to narrow the list to ('' means every stage) and which PAGE of the
++// narrowed list to fetch (1-based). The server reads the same `status` and `page` the UI holds, so
++// the narrowing and the windowing are applied once, at the source, not re-done on the client. Both
++// are appended to the query key below so each stage/page caches on its own, while a send/pay write
++// still invalidates ['invoices'] by prefix and refreshes whichever window is on screen.
++export const listAllInvoices = (status = '', page = 1): Promise<AllInvoice[]> =>
++  getJson<AllInvoice[]>(
++    `/api/invoices/all?status=${encodeURIComponent(status)}` +
++      `&page=${page}&pageSize=${INVOICE_PAGE_SIZE}`,
++  );
+diff --git a/src/main/frontend/features/invoices/pagination.slot.tsx b/src/main/frontend/features/invoices/pagination.slot.tsx
+new file mode 100644
+index 0000000..423bf79
+--- /dev/null
++++ b/src/main/frontend/features/invoices/pagination.slot.tsx
+@@ -0,0 +1,34 @@
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { useSearchParam, asNumber } from '../../url/useSearchParam';
++
++// Step through the all-invoices list a page at a time — one new *.slot.tsx filling the
++// invoices.toolbar region. It owns the `invoicePage` URL key; the list reads the same key and asks
++// the server for just that window. Nothing is passed between them: they stay in step through the
++// shared search param. Prev floors at the first page; the label shows the page the list is on.
++function InvoicePagination() {
++  const [page, setPage] = useSearchParam('invoicePage', asNumber);
++  const current = page ?? 1;
++
++  return (
++    <span>
++      <button
++        type="button"
++        data-testid="invoice-page-prev"
++        disabled={current <= 1}
++        onClick={() => setPage(Math.max(1, current - 1))}
++      >
++        Previous
++      </button>
++      <span data-testid="invoice-page-label">{current}</span>
++      <button
++        type="button"
++        data-testid="invoice-page-next"
++        onClick={() => setPage(current + 1)}
++      >
++        Next
++      </button>
++    </span>
++  );
++}
++
++export const contribution = AllInvoicesToolbar.fill({ order: 20, Component: InvoicePagination });
+diff --git a/src/main/java/net/officefloor/hq/app/ListAllInvoices.java b/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
+index 42d6b1e..d387b99 100644
+--- a/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
++++ b/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
+@@ -7,25 +7,49 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * GET /api/invoices/all?status=&lt;stage&gt; — every invoice across every project, in id order, each
+- * carrying the NAME of the project it is for and its lifecycle stage (status). One place listing all
+- * invoices, so it injects both repositories and joins the project name on the server. The optional
+- * {@code status} narrows the list to a single stage (DRAFT, SENT, PAID); blank means every stage.
+- * Wired by officefloor/rest/api/invoices/all.GET.yml.
++ * GET /api/invoices/all?status=&lt;stage&gt;&amp;page=&lt;n&gt;&amp;pageSize=&lt;n&gt; — the invoices
++ * across every project, in id order, one PAGE at a time, each row carrying the NAME of the project it
++ * is for and its lifecycle stage (status). One place listing all invoices, so it injects both
++ * repositories and joins the project name on the server. The optional {@code status} narrows the list
++ * to a single stage (DRAFT, SENT, PAID); blank means every stage. {@code page} (1-based) and
++ * {@code pageSize} slice the already-narrowed, already-ordered list at the source, so the client gets
++ * just the window it shows — blank/absent means the first page of ten. Wired by
++ * officefloor/rest/api/invoices/all.GET.yml.
+  */
+ public class ListAllInvoices {
+ 
++    private static final int DEFAULT_PAGE_SIZE = 10;
++
+     public void service(@RequestParam("status") String status,
++            @RequestParam("page") String page, @RequestParam("pageSize") String pageSize,
+             InvoiceRepository invoices, ProjectRepository projects,
+             ObjectResponse<List<AllInvoiceView>> response) {
+         Map<Long, String> names = projects.findAll().stream()
+                 .collect(Collectors.toMap(Project::getId, Project::getName));
+         boolean all = status == null || status.isBlank();
+-        List<AllInvoiceView> view = invoices.findAll().stream()
++        List<AllInvoiceView> matching = invoices.findAll().stream()
+                 .filter(inv -> all || status.equals(inv.getStatus()))
+                 .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
+                 .map(inv -> AllInvoiceView.of(inv, names.getOrDefault(inv.getProjectId(), "")))
+                 .toList();
+-        response.send(view);
++
++        int size = positiveOr(pageSize, DEFAULT_PAGE_SIZE);
++        int pageNumber = positiveOr(page, 1);
++        int from = Math.min((pageNumber - 1) * size, matching.size());
++        int to = Math.min(from + size, matching.size());
++        response.send(matching.subList(from, to));
++    }
++
++    /** Parse a positive int from the raw query value, falling back when it is blank or malformed. */
++    private static int positiveOr(String raw, int fallback) {
++        if (raw == null || raw.isBlank()) {
++            return fallback;
++        }
++        try {
++            int value = Integer.parseInt(raw.trim());
++            return value > 0 ? value : fallback;
++        } catch (NumberFormatException e) {
++            return fallback;
++        }
+     }
+ }
