@@ -65,7 +65,15 @@ public class TestSupportController {
         List<Map<String, Object>> invoices =
                 (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
         for (Map<String, Object> inv : invoices) {
-            Object status = inv.getOrDefault("status", "UNPAID");
+            Object status = inv.getOrDefault("status", "DRAFT");
+            // Dates are optional in the fixture — a spec that only cares about the lifecycle leaves
+            // them out, so default issued=today / due=+30 days (the same rule CreateInvoice applies).
+            java.time.LocalDate issued = inv.get("issuedDate") != null
+                    ? java.time.LocalDate.parse(inv.get("issuedDate").toString())
+                    : java.time.LocalDate.now();
+            java.time.LocalDate due = inv.get("dueDate") != null
+                    ? java.time.LocalDate.parse(inv.get("dueDate").toString())
+                    : issued.plusDays(30);
             jdbc.update(
                     "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
                             + " VALUES (?, ?, ?, ?, ?, ?)",
@@ -73,8 +81,8 @@ public class TestSupportController {
                     ((Number) inv.get("projectId")).longValue(),
                     new java.math.BigDecimal(inv.get("amount").toString()),
                     status.toString(),
-                    java.sql.Date.valueOf(inv.get("issuedDate").toString()),
-                    java.sql.Date.valueOf(inv.get("dueDate").toString()));
+                    java.sql.Date.valueOf(issued),
+                    java.sql.Date.valueOf(due));
         }
     }
 }

@@ -28,6 +28,11 @@ export const listInvoices = (projectId: number, sort: InvoiceSort = 'id'): Promi
 export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
   postJson<Invoice>('/api/invoices', body);
 
+// Send an invoice — flips DRAFT -> SENT server-side and appends the audit record. Callers invalidate
+// ['invoices', projectId] on success so the invoices panel (and the row actions) refetch the status.
+export const sendInvoice = (id: number): Promise<Invoice> =>
+  postJson<Invoice>('/api/invoices/send', { id });
+
 // Mark an invoice paid — flips its status server-side and appends the audit record. Callers
 // invalidate ['invoices', projectId] on success so the invoices panel refetches the new status.
 export const payInvoice = (id: number): Promise<Invoice> =>

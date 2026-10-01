@@ -12,6 +12,10 @@ import org.springframework.web.bind.annotation.RequestBody;
  * file through the {@link Audit} service ({@code INVOICE_PAID id=<id> amount=<amount>}) so the user
  * can check back later — the record is the durable trail the UI can't show. We reject a missing or
  * unknown invoice id before writing anything so a bad request neither changes state nor audits.
+ *
+ * Payment follows the lifecycle: an invoice can only be paid once it has been SENT. We reject a pay
+ * on an invoice that hasn't been sent so the DRAFT -> SENT -> PAID order holds server-side too, not
+ * just in the UI that hides the control.
  */
 public class PayInvoice {
 
@@ -23,6 +27,9 @@ public class PayInvoice {
         }
         Invoice invoice = invoices.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("A valid invoice is required"));
+        if (!invoice.isSent()) {
+            throw new IllegalArgumentException("An invoice can only be paid once it has been sent");
+        }
         invoice.markPaid();
         Invoice saved = invoices.save(invoice);
         audit.record("INVOICE_PAID id=" + saved.getId() + " amount="

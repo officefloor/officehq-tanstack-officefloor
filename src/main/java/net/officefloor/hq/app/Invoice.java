@@ -28,7 +28,10 @@ public class Invoice {
     @Column(nullable = false)
     private BigDecimal amount;
 
-    /** The lifecycle status of the invoice: UNPAID when raised, PAID once the user marks it paid. */
+    /**
+     * The lifecycle status of the invoice: DRAFT when raised, SENT once the user sends it, PAID once
+     * the user takes payment. Payment is only allowed after it has been sent.
+     */
     @Column(nullable = false)
     private String status;
 
@@ -46,7 +49,7 @@ public class Invoice {
     public Invoice(Long projectId, BigDecimal amount, LocalDate issuedDate, LocalDate dueDate) {
         this.projectId = projectId;
         this.amount = amount;
-        this.status = "UNPAID";
+        this.status = "DRAFT";
         this.issuedDate = issuedDate;
         this.dueDate = dueDate;
     }
@@ -73,6 +76,16 @@ public class Invoice {
 
     public LocalDate getDueDate() {
         return dueDate;
+    }
+
+    /** Send this invoice — the DRAFT -> SENT transition the send action performs. */
+    public void markSent() {
+        this.status = "SENT";
+    }
+
+    /** Whether this invoice has been sent, and so may be paid. */
+    public boolean isSent() {
+        return "SENT".equals(this.status);
     }
 
     /** Mark this invoice paid — the status transition the pay action performs. */
