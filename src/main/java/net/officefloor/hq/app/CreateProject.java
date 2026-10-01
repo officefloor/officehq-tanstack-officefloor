@@ -24,7 +24,8 @@ public class CreateProject {
         if (client == null) {
             throw new IllegalArgumentException("A valid client is required");
         }
-        Project saved = projects.save(new Project(name, clientId));
+        ProjectStatus status = ProjectStatus.parse(form.getStatus());
+        Project saved = projects.save(new Project(name, clientId, status));
         response.send(ProjectView.of(saved, client.getName()));
     }
 }

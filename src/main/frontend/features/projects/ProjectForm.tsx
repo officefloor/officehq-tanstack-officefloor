@@ -5,6 +5,8 @@ import {
   createProject,
   listClientOptions,
   projectsKey,
+  projectStatuses,
+  type ProjectStatus,
 } from './api';
 
 // Add a project for a client. The fields the user is typing live in useState (uncommitted input);
@@ -16,12 +18,16 @@ export function ProjectForm() {
   const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: listClientOptions });
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
+  // The lifecycle the new project starts in — uncommitted input like name/client, so it lives in
+  // useState until submit. Defaults to ACTIVE, the state a fresh project gets.
+  const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
 
   const mutation = useMutation({
     mutationFn: createProject,
     onSuccess: () => {
       setName('');
       setClientId('');
+      setStatus('ACTIVE');
       void queryClient.invalidateQueries({ queryKey: projectsKey });
     },
   });
@@ -31,7 +37,7 @@ export function ProjectForm() {
     if (name.trim() === '' || clientId === '') {
       return;
     }
-    mutation.mutate({ name: name.trim(), clientId: Number(clientId) });
+    mutation.mutate({ name: name.trim(), clientId: Number(clientId), status });
   };
 
   return (
@@ -51,6 +57,17 @@ export function ProjectForm() {
         {(clients ?? []).map((client) => (
           <option key={client.id} value={client.id}>
             {client.name}
+          </option>
+        ))}
+      </select>
+      <select
+        data-testid="project-form-status"
+        value={status}
+        onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+      >
+        {projectStatuses.map((s) => (
+          <option key={s} value={s}>
+            {s}
           </option>
         ))}
       </select>

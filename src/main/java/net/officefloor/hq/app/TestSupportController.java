@@ -65,9 +65,12 @@ public class TestSupportController {
         List<Map<String, Object>> projects =
                 (List<Map<String, Object>>) fixture.getOrDefault("projects", List.of());
         for (Map<String, Object> p : projects) {
-            jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
+            // status is optional in the fixture — a spec that only cares a project exists leaves it
+            // out, defaulting to ACTIVE (the same state a fresh project gets, V22__project_status.sql).
+            Object status = p.getOrDefault("status", "ACTIVE");
+            jdbc.update("INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
                     ((Number) p.get("id")).longValue(), p.get("name"),
-                    ((Number) p.get("clientId")).longValue());
+                    ((Number) p.get("clientId")).longValue(), status.toString());
         }
         List<Map<String, Object>> contacts =
                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());

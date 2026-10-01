@@ -9,7 +9,7 @@ import java.util.List;
  * filtered by tag without a second lookup per row.
  */
 public record ProjectView(Long id, String name, Long clientId, String clientName,
-        boolean archived, List<Long> tagIds) {
+        boolean archived, String status, List<Long> tagIds) {
 
     public static ProjectView of(Project project, String clientName) {
         return of(project, clientName, List.of());
@@ -17,6 +17,6 @@ public record ProjectView(Long id, String name, Long clientId, String clientName
 
     public static ProjectView of(Project project, String clientName, List<Long> tagIds) {
         return new ProjectView(project.getId(), project.getName(), project.getClientId(),
-                clientName, project.isArchived(), tagIds);
+                clientName, project.isArchived(), project.getStatus(), tagIds);
     }
 }

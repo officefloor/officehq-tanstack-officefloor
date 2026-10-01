@@ -9,9 +9,14 @@ export type Project = {
   clientId: number;
   clientName: string;
   archived: boolean;
+  // Where the project sits in its lifecycle: ACTIVE, ON_HOLD or FINISHED. The row shows it; the
+  // create form sets it.
+  status: ProjectStatus;
   tagIds: number[];
 };
-export type NewProject = { name: string; clientId: number };
+export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'FINISHED';
+export const projectStatuses: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'FINISHED'];
+export type NewProject = { name: string; clientId: number; status: ProjectStatus };
 
 export const projectsKey = ['projects'] as const;
 

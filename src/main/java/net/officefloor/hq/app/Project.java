@@ -30,12 +30,24 @@ public class Project {
     @Column(nullable = false)
     private boolean archived;
 
+    // Where the project sits in its lifecycle: ACTIVE, ON_HOLD or FINISHED. New projects start
+    // ACTIVE (the column default, V22__project_status.sql); the allowed values are the names of
+    // {@link ProjectStatus}.
+    @Column(nullable = false)
+    private String status = ProjectStatus.ACTIVE.name();
+
     protected Project() {
     }
 
     public Project(String name, Long clientId) {
         this.name = name;
         this.clientId = clientId;
+    }
+
+    public Project(String name, Long clientId, ProjectStatus status) {
+        this.name = name;
+        this.clientId = clientId;
+        this.status = status.name();
     }
 
     public Long getId() {
@@ -52,6 +64,10 @@ public class Project {
 
     public boolean isArchived() {
         return archived;
+    }
+
+    public String getStatus() {
+        return status;
     }
 
     /** Tuck this project away so it drops off the lists while the row is kept. */
