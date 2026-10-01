@@ -3,7 +3,13 @@ import { getJson, postJson } from '../../api/http';
 
 // The shape the server returns (a project joined to its client's name) and the query key everything
 // that shows projects shares. Invalidating ['projects'] refreshes every view of projects.
-export type Project = { id: number; name: string; clientId: number; clientName: string };
+export type Project = {
+  id: number;
+  name: string;
+  clientId: number;
+  clientName: string;
+  archived: boolean;
+};
 
 export const projectsKey = ['projects'] as const;
 
@@ -30,6 +36,18 @@ export function useDeleteProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => postJson<{ id: number }>('/api/projects/remove', { id }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectsKey }),
+  });
+}
+
+// Archive a project instead of deleting it: POSTs {id} and returns the id archived. The project is
+// kept server-side with its archived flag set; invalidating ['projects'] re-reads every view so the
+// row drops off the lists with no hand-maintained list (CLAUDE.md rule 5). The audit record is
+// written server-side.
+export function useArchiveProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postJson<{ id: number }>('/api/projects/archive', { id }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectsKey }),
   });
 }

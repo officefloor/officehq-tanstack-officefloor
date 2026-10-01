@@ -25,6 +25,9 @@ public class Project {
     @Column(name = "client_id")
     private Long clientId;
 
+    // Archived projects are tucked away: kept in the table but dropped off the lists (Flyway V15).
+    private boolean archived;
+
     public Project() {
     }
 
@@ -55,5 +58,13 @@ public class Project {
 
     public void setClientId(Long clientId) {
         this.clientId = clientId;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 }

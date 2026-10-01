@@ -1,11 +1,15 @@
 import { Link } from '@tanstack/react-router';
 import { ProjectRow } from '../../slots/defs/projectRow';
+import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+import { useSearchParam, asFlag } from '../../url/useSearchParam';
 import { useProjects } from './projects';
 
 // The projects list. Reads server data straight from its query key and shows the client's NAME
-// (served alongside each project), not the id.
+// (served alongside each project), not the id. Archived projects are tucked away: they drop off the
+// list unless the shared `showArchived` URL key (set by a toolbar control) reveals them.
 export function ProjectList() {
   const { data: projects } = useProjects();
+  const [showArchived] = useSearchParam('showArchived', asFlag);
 
   if (!projects) {
     return null;
@@ -15,7 +19,11 @@ export function ProjectList() {
     return <p data-testid="projects-empty">No projects yet.</p>;
   }
 
+  const shown = showArchived ? projects : projects.filter((project) => !project.archived);
+
   return (
+    <>
+    <ProjectsToolbar.Slot />
     <table data-testid="projects-table">
       <thead>
         <tr>
@@ -25,7 +33,7 @@ export function ProjectList() {
         </tr>
       </thead>
       <tbody>
-        {projects.map((project) => (
+        {shown.map((project) => (
           <tr key={project.id} data-testid={`project-row-${project.id}`}>
             <td data-testid="project-name">{project.name}</td>
             <td data-testid="project-client">{project.clientName}</td>
@@ -45,5 +53,6 @@ export function ProjectList() {
         ))}
       </tbody>
     </table>
+    </>
   );
 }

@@ -5,7 +5,13 @@ import { getJson } from '../../api/http';
 // from the SHARED ['projects'] query key (CLAUDE.md rule 5) — the same key the Projects page uses —
 // so creating a project anywhere refreshes this list too, with no import of the projects feature.
 // Each project carries its clientId, so the client context is just a filter on that shared data.
-type Project = { id: number; name: string; clientId: number; clientName: string };
+type Project = {
+  id: number;
+  name: string;
+  clientId: number;
+  clientName: string;
+  archived: boolean;
+};
 
 export function ClientProjects({ clientId }: { clientId: number }) {
   const { data: projects } = useQuery({
@@ -17,7 +23,10 @@ export function ClientProjects({ clientId }: { clientId: number }) {
     return null;
   }
 
-  const owned = projects.filter((project) => project.clientId === clientId);
+  // Archived projects are tucked away: they drop off the client's page too (never lost, just hidden).
+  const owned = projects.filter(
+    (project) => project.clientId === clientId && !project.archived,
+  );
 
   if (owned.length === 0) {
     return <p data-testid="client-projects-empty">No projects for this client yet.</p>;
