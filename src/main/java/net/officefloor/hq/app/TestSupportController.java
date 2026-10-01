@@ -35,6 +35,8 @@ public class TestSupportController {
         // projects -> clients foreign key: H2 refuses TRUNCATE on a referenced table, so drop
         // referential integrity for the truncate and restore it immediately after.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+        jdbc.execute("TRUNCATE TABLE project_tags RESTART IDENTITY");
+        jdbc.execute("TRUNCATE TABLE tags RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
@@ -84,6 +86,24 @@ public class TestSupportController {
                         ((Number) task.get("id")).longValue(),
                         ((Number) task.get("projectId")).longValue(), task.get("title"),
                         done != null && Boolean.parseBoolean(done.toString()));
+            }
+        }
+        List<Map<String, Object>> tags = (List<Map<String, Object>>) fixture.get("tags");
+        if (tags != null) {
+            for (Map<String, Object> tag : tags) {
+                // Explicit fixture id (JPA save() would ignore it on an IDENTITY column).
+                jdbc.update("INSERT INTO tags (id, name) VALUES (?, ?)",
+                        ((Number) tag.get("id")).longValue(), tag.get("name"));
+            }
+        }
+        List<Map<String, Object>> projectTags =
+                (List<Map<String, Object>>) fixture.get("projectTags");
+        if (projectTags != null) {
+            for (Map<String, Object> link : projectTags) {
+                // The join row's own id is IDENTITY-generated; the fixture names only the pair.
+                jdbc.update("INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)",
+                        ((Number) link.get("projectId")).longValue(),
+                        ((Number) link.get("tagId")).longValue());
             }
         }
         List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
