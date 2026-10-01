@@ -37,6 +37,7 @@ public class TestSupportController {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         jdbc.execute("TRUNCATE TABLE project_tags RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE tags RESTART IDENTITY");
+        jdbc.execute("TRUNCATE TABLE notes RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
@@ -86,6 +87,28 @@ public class TestSupportController {
                         ((Number) task.get("id")).longValue(),
                         ((Number) task.get("projectId")).longValue(), task.get("title"),
                         done != null && Boolean.parseBoolean(done.toString()));
+            }
+        }
+        List<Map<String, Object>> notes = (List<Map<String, Object>>) fixture.get("notes");
+        if (notes != null) {
+            long maxId = 0;
+            for (Map<String, Object> note : notes) {
+                long id = ((Number) note.get("id")).longValue();
+                maxId = Math.max(maxId, id);
+                // `at` is an ISO instant (e.g. "2026-01-05T09:00:00Z"); store it as a UTC
+                // timestamp so notes sort newest-first by the instant they were written.
+                jdbc.update("INSERT INTO notes (id, target_type, target_id, note_text, at)"
+                        + " VALUES (?, ?, ?, ?, ?)",
+                        id, note.get("targetType"),
+                        ((Number) note.get("targetId")).longValue(), note.get("text"),
+                        java.time.OffsetDateTime.ofInstant(
+                                java.time.Instant.parse(note.get("at").toString()),
+                                java.time.ZoneOffset.UTC));
+            }
+            // Explicit-id inserts don't advance H2's IDENTITY counter, so a later JPA save() would
+            // regenerate a seeded id and collide. Restart the counter past the seeded ids.
+            if (maxId > 0) {
+                jdbc.execute("ALTER TABLE notes ALTER COLUMN id RESTART WITH " + (maxId + 1));
             }
         }
         List<Map<String, Object>> tags = (List<Map<String, Object>>) fixture.get("tags");
