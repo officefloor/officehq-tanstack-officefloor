@@ -1,0 +1,105 @@
+diff --git a/src/main/frontend/features/projects/delete.slot.tsx b/src/main/frontend/features/projects/delete.slot.tsx
+new file mode 100644
+index 0000000..3ab0a0c
+--- /dev/null
++++ b/src/main/frontend/features/projects/delete.slot.tsx
+@@ -0,0 +1,32 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { ProjectRow } from '../../slots/defs/projectRow';
++import { projectsKey } from './api';
++
++// Delete a project — one new file filling the per-project-row action slot. The click is a
++// useMutation (never a hand-rolled list edit in state); on success we invalidate the shared
++// ['projects'] key so the list refetches and the row disappears. The server performs the delete
++// and appends the audit record, so "keep a record" is handled where the side-effect lives.
++// Its testid is project-delete-<id> (the test contract; CLAUDE.md).
++function DeleteProject({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const mutation = useMutation({
++    mutationFn: () => postJson<unknown>('/api/projects/delete', { id: projectId }),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: projectsKey });
++    },
++  });
++
++  return (
++    <button
++      data-testid={`project-delete-${projectId}`}
++      type="button"
++      disabled={mutation.isPending}
++      onClick={() => mutation.mutate()}
++    >
++      Delete
++    </button>
++  );
++}
++
++export const contribution = ProjectRow.fill({ order: 10, Component: DeleteProject });
+diff --git a/src/main/java/net/officefloor/hq/app/DeleteProject.java b/src/main/java/net/officefloor/hq/app/DeleteProject.java
+new file mode 100644
+index 0000000..49007da
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DeleteProject.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/projects/delete — remove a project, returning the row that was deleted. Wired by
++ * officefloor/rest/api/projects/delete.POST.yml.
++ *
++ * Deleting is an audited side-effect: alongside the delete we append one record to the audit file
++ * through the {@link Audit} service ({@code PROJECT_DELETED id=<id>}) so there is a durable record
++ * every time a project is removed — the trail the UI can't show. We reject a missing or unknown
++ * project id before writing anything so a bad request neither changes state nor audits.
++ */
++public class DeleteProject {
++
++    public void service(@RequestBody DeleteProjectForm form, ProjectRepository projects,
++            ClientRepository clients, Audit audit, ObjectResponse<ProjectView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("A project id is required");
++        }
++        Project project = projects.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid project is required"));
++        String clientName = clients.findById(project.getClientId())
++                .map(Client::getName).orElse("");
++        ProjectView view = ProjectView.of(project, clientName);
++        projects.delete(project);
++        audit.record("PROJECT_DELETED id=" + id);
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/DeleteProjectForm.java b/src/main/java/net/officefloor/hq/app/DeleteProjectForm.java
+new file mode 100644
+index 0000000..b28a690
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DeleteProjectForm.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++/** The request body for deleting a project: which project to remove. */
++public class DeleteProjectForm {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/projects/delete.POST.yml b/src/main/resources/officefloor/rest/api/projects/delete.POST.yml
+new file mode 100644
+index 0000000..f2546df
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/delete.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.DeleteProject
