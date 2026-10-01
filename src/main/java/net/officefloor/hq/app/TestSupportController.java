@@ -32,10 +32,11 @@ public class TestSupportController {
     @PostMapping("/reset")
     public void reset() {
         audit.clear();
-        // projects references clients, so H2 refuses to TRUNCATE the parent while the FK exists —
-        // drop referential integrity for the duration, truncate both, then restore it.
+        // invoices references projects references clients, so H2 refuses to TRUNCATE a parent while
+        // the FK exists — drop referential integrity for the duration, truncate all, then restore.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         try {
+            jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
             jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
         } finally {
@@ -60,6 +61,14 @@ public class TestSupportController {
             jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
                     ((Number) p.get("id")).longValue(), p.get("name"),
                     ((Number) p.get("clientId")).longValue());
+        }
+        List<Map<String, Object>> invoices =
+                (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
+        for (Map<String, Object> inv : invoices) {
+            jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
+                    ((Number) inv.get("id")).longValue(),
+                    ((Number) inv.get("projectId")).longValue(),
+                    new java.math.BigDecimal(inv.get("amount").toString()));
         }
     }
 }

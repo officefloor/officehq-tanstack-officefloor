@@ -1,0 +1,42 @@
+import { useQuery } from '@tanstack/react-query';
+import { ProjectDetail } from '../../slots/defs/projectDetail';
+import { invoicesKey, listInvoices, type Invoice } from './api';
+
+// The project's invoices and what they add up to — one panel filling the project.detail region.
+// Reads server data under ['invoices', projectId] (never copied into state); the add form shares
+// the key, so a successful add refreshes this with no import between them. The total is DERIVED
+// from the same query (never stored), and amounts render with two decimals.
+function ProjectInvoices({ projectId }: { projectId: number }) {
+  const { data: invoices } = useQuery({
+    queryKey: invoicesKey(projectId),
+    queryFn: () => listInvoices(projectId),
+  });
+
+  if (!invoices) {
+    return null;
+  }
+
+  const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+
+  return (
+    <>
+      <table data-testid="project-invoices-table">
+        <thead>
+          <tr>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {invoices.map((invoice: Invoice) => (
+            <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+              <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p data-testid="project-invoices-total">{total.toFixed(2)}</p>
+    </>
+  );
+}
+
+export const contribution = ProjectDetail.fill({ order: 20, Component: ProjectInvoices });

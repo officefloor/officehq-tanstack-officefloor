@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { projectsKey, listProjects, type Project } from './api';
+import { ProjectRow } from '../../slots/defs/projectRow';
 
 // The projects list. Reads server data under ['projects'] (never copied into state); the create form
 // shares the key, so a successful create refreshes this list with no import between them. Each row
@@ -21,6 +22,7 @@ export function ProjectsList() {
         <tr>
           <th>Name</th>
           <th>Client</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -28,6 +30,9 @@ export function ProjectsList() {
           <tr key={project.id} data-testid={`project-row-${project.id}`}>
             <td data-testid="project-name">{project.name}</td>
             <td data-testid="project-client">{project.clientName}</td>
+            <td>
+              <ProjectRow.Slot projectId={project.id} />
+            </td>
           </tr>
         ))}
       </tbody>
