@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ClientProjects } from '../features/clients/ClientProjects';
+import { ClientDetail } from '../slots/defs/clientDetail';
 
 // Drilling into a client is its own route — a new file, not a flag on the list (CLAUDE.md rule 2).
 // The detail page shows the projects the owner is doing for that client.
@@ -15,6 +16,7 @@ function ClientDetailPage() {
     <section data-testid="client-detail-page">
       <h1>Client</h1>
       <ClientProjects clientId={id} />
+      <ClientDetail.Slot clientId={id} />
     </section>
   );
 }

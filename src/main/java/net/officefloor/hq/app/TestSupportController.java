@@ -36,6 +36,7 @@ public class TestSupportController {
         // referential integrity for the truncate and restore it immediately after.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
+        jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -60,6 +61,16 @@ public class TestSupportController {
                 jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
                         ((Number) project.get("id")).longValue(), project.get("name"),
                         ((Number) project.get("clientId")).longValue());
+            }
+        }
+        List<Map<String, Object>> contacts = (List<Map<String, Object>>) fixture.get("contacts");
+        if (contacts != null) {
+            for (Map<String, Object> contact : contacts) {
+                jdbc.update("INSERT INTO contacts (id, client_id, name, email, contact_role)"
+                        + " VALUES (?, ?, ?, ?, ?)",
+                        ((Number) contact.get("id")).longValue(),
+                        ((Number) contact.get("clientId")).longValue(), contact.get("name"),
+                        contact.get("email"), contact.get("role"));
             }
         }
         List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
