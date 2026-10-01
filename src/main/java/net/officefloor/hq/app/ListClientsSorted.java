@@ -8,8 +8,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * GET /api/clients/sorted?sort=&lt;key&gt; — the clients list in a chosen order, for the sort control
- * on the clients page. Archived (tucked-away) clients are excluded, exactly as on the plain list
- * {@link ListClients}. The {@code sort} key chooses the order:
+ * on the clients page. Every client is returned, each carrying its {@code archived} flag, so the
+ * front-end can hide tucked-away clients by default yet reveal (and restore) them when the "show
+ * archived" toggle is on — the one place that filter belongs, since the same page owns the toggle.
+ * (The plain {@link ListClients} that the projects picker and global search read still excludes
+ * archived clients.) The {@code sort} key chooses the order:
  * <ul>
  *   <li>{@code outstanding} — most-owed-first. Each client's outstanding balance is DERIVED on the
  *       server: the sum, across every invoice of every project the client owns, of the invoice total
@@ -43,7 +46,6 @@ public class ListClientsSorted {
             order = Comparator.comparing(Client::getId);
         }
         List<ClientView> view = clients.findAll().stream()
-                .filter(client -> !client.isArchived())
                 .sorted(order)
                 .map(ClientView::of)
                 .toList();

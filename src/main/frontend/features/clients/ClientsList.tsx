@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParam, asString } from '../../url/useSearchParam';
+import { useSearchParam, asString, asFlag } from '../../url/useSearchParam';
 import { clientsKey, listClientsSorted, type Client } from './api';
 import { ClientRow } from '../../slots/defs/clientRow';
 import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
@@ -21,15 +21,21 @@ export function ClientsList() {
     queryFn: () => listClientsSorted(sort),
   });
   const [query, setQuery] = useSearchParam('q', asString);
+  // Archived (tucked-away) clients are hidden by default: they drop off the list unless the shared
+  // `showArchived` URL key is on. The toggle control (its own *.slot.tsx) owns that key; this list
+  // reads the same key and filters, so they stay in step with nothing passed between them.
+  const [showArchived] = useSearchParam('showArchived', asFlag);
 
   if (!clients) {
     return null;
   }
 
   const needle = query.trim().toLowerCase();
-  const shown = needle
-    ? clients.filter((client: Client) => client.name.toLowerCase().includes(needle))
-    : clients;
+  const shown = clients.filter(
+    (client: Client) =>
+      (showArchived || !client.archived) &&
+      (needle === '' || client.name.toLowerCase().includes(needle)),
+  );
 
   return (
     <>

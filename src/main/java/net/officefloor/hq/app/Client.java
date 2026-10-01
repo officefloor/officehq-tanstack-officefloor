@@ -60,6 +60,11 @@ public class Client {
         this.archived = true;
     }
 
+    /** Bring a tucked-away client back so it returns to the list and the search. */
+    public void restore() {
+        this.archived = false;
+    }
+
     /** Correct this client's details — its name and email — in place. */
     public void update(String name, String email) {
         this.name = name;

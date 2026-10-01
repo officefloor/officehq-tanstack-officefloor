@@ -2,7 +2,7 @@ import { getJson, postJson } from '../../api/http';
 
 // A client as the API exposes it. The query key ['clients'] is the shared handle: the list reads
 // it, the create form invalidates it, and any future feature showing clients joins by reusing it.
-export type Client = { id: number; name: string; email: string };
+export type Client = { id: number; name: string; email: string; archived: boolean };
 export type NewClient = { name: string; email: string };
 
 export const clientsKey = ['clients'] as const;
@@ -34,6 +34,12 @@ export const updateClient = (body: ClientEdit): Promise<Client> =>
 // drops off both the list and the search.
 export const archiveClient = (id: number): Promise<Client> =>
   postJson<Client>('/api/clients/archive', { id });
+
+// Restore a client — the inverse of archive: brings a tucked-away client back (clears its archived
+// flag server-side) and returns the updated client. Callers invalidate ['clients'] on success so
+// the list refetches and the client returns to both the list and the search.
+export const restoreClient = (id: number): Promise<Client> =>
+  postJson<Client>('/api/clients/restore', { id });
 
 // A project of one client as the API exposes it — the same shape the projects list renders, so the
 // client detail panel reuses the project-row-<id>/project-name anchors. The query key is scoped to

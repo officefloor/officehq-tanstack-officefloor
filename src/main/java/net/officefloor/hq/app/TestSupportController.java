@@ -67,8 +67,12 @@ public class TestSupportController {
                 (List<Map<String, Object>>) fixture.getOrDefault("clients", List.of());
         // Explicit ids from the fixture (the spec asserts rows by these ids), via JdbcTemplate.
         for (Map<String, Object> c : clients) {
-            jdbc.update("INSERT INTO clients (id, name, email) VALUES (?, ?, ?)",
-                    ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"));
+            // archived is optional — a spec that only cares a client exists leaves it out, defaulting
+            // to not-archived (the same state a fresh client gets, V19__client_archived.sql); a spec
+            // that seeds a tucked-away client to restore supplies it.
+            boolean archived = Boolean.TRUE.equals(c.getOrDefault("archived", Boolean.FALSE));
+            jdbc.update("INSERT INTO clients (id, name, email, archived) VALUES (?, ?, ?, ?)",
+                    ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"), archived);
         }
         List<Map<String, Object>> projects =
                 (List<Map<String, Object>>) fixture.getOrDefault("projects", List.of());
