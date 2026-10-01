@@ -1,0 +1,109 @@
+diff --git a/src/main/frontend/features/invoices/dueApi.ts b/src/main/frontend/features/invoices/dueApi.ts
+new file mode 100644
+index 0000000..29b0514
+--- /dev/null
++++ b/src/main/frontend/features/invoices/dueApi.ts
+@@ -0,0 +1,17 @@
++import { getJson } from '../../api/http';
++
++// How much is still left to pay on one invoice after any payments — what the API exposes for the
++// outstanding balance. The query key is scoped to the invoice, ['invoice-due', invoiceId], so each
++// row reads (and would invalidate) only its own balance.
++export type InvoiceDue = {
++  invoiceId: number;
++  amountDue: number;
++};
++
++// The key for one invoice's outstanding balance. The row's due-amount cell reads it; a successful
++// payment invalidates it (shared with the payments key by prefix is not needed — the pay/record
++// forms invalidate this key directly) so the balance refetches, with no import between panels.
++export const invoiceDueKey = (invoiceId: number) => ['invoice-due', invoiceId] as const;
++
++export const getInvoiceDue = (invoiceId: number): Promise<InvoiceDue> =>
++  getJson<InvoiceDue>(`/api/invoices/due?invoiceId=${invoiceId}`);
+diff --git a/src/main/frontend/features/invoices/invoiceDue.slot.tsx b/src/main/frontend/features/invoices/invoiceDue.slot.tsx
+new file mode 100644
+index 0000000..4578ee1
+--- /dev/null
++++ b/src/main/frontend/features/invoices/invoiceDue.slot.tsx
+@@ -0,0 +1,23 @@
++import { useQuery } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { invoiceDueKey, getInvoiceDue } from './dueApi';
++import { formatMoney } from '../../ui/money';
++
++// How much is still left to pay on this invoice after any payments — one new file filling the
++// per-invoice-row action slot, so the cell lives inside its own invoice-row-<id>. The balance is
++// read from the server under ['invoice-due', invoiceId] (never computed in state and never handed
++// down by the table): the slot queries for its OWN row. Amounts render with two decimals.
++function InvoiceDueAmount({ invoiceId }: { invoiceId: number; projectId: number }) {
++  const { data: due } = useQuery({
++    queryKey: invoiceDueKey(invoiceId),
++    queryFn: () => getInvoiceDue(invoiceId),
++  });
++
++  if (!due) {
++    return null;
++  }
++
++  return <span data-testid="invoice-due-amount">{formatMoney(due.amountDue)}</span>;
++}
++
++export const contribution = InvoiceRow.fill({ order: 10, Component: InvoiceDueAmount });
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java b/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java
+new file mode 100644
+index 0000000..5a94d78
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceAmountDue.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/invoices/due?invoiceId=&lt;id&gt; — how much is still left to pay on one invoice after any
++ * payments. The amount due is DERIVED: the invoice's amount minus the sum of its payments, computed
++ * in {@link BigDecimal} so there is no float drift. Scoped to an invoice (each row asks for its own
++ * balance), so the invoice id arrives as a query parameter. Wired by
++ * officefloor/rest/api/invoices/due.GET.yml.
++ */
++public class InvoiceAmountDue {
++
++    public void service(@RequestParam("invoiceId") String invoiceId,
++            InvoiceRepository invoices, InvoicePaymentRepository payments,
++            ObjectResponse<InvoiceDueView> response) {
++        Long id = Long.valueOf(invoiceId);
++        BigDecimal amount = invoices.findById(id).map(Invoice::getAmount).orElse(BigDecimal.ZERO);
++        BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(id).stream()
++                .map(InvoicePayment::getAmount)
++                .reduce(BigDecimal.ZERO, BigDecimal::add);
++        response.send(new InvoiceDueView(id, amount.subtract(paid)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceDueView.java b/src/main/java/net/officefloor/hq/app/InvoiceDueView.java
+new file mode 100644
+index 0000000..ddf3fa2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceDueView.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * What the API exposes for one invoice's outstanding balance: how much is still left to pay after
++ * any payments. The amount due keeps its scale (a {@link BigDecimal}) so the client formats money to
++ * two places. Derived (invoice amount minus the sum of its payments), never stored.
++ */
++public record InvoiceDueView(Long invoiceId, BigDecimal amountDue) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/invoices/due.GET.yml b/src/main/resources/officefloor/rest/api/invoices/due.GET.yml
+new file mode 100644
+index 0000000..b46b702
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/due.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.InvoiceAmountDue
