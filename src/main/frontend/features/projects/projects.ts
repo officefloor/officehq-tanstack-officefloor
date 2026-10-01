@@ -23,6 +23,17 @@ export function useCreateProject() {
   });
 }
 
+// Delete a project the owner no longer needs: POSTs {id} and returns the id removed. Invalidates
+// ['projects'] so every view of projects re-reads from the server and the row drops — the list is
+// never hand-edited after the write (CLAUDE.md rule 5). The audit record is written server-side.
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postJson<{ id: number }>('/api/projects/remove', { id }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectsKey }),
+  });
+}
+
 // The client choices the project form needs. Reads the SHARED ['clients'] key — no import of the
 // clients feature; the two stay in step through the key, not a dependency.
 type ClientOption = { id: number; name: string };

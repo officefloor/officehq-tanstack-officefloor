@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { ProjectRow } from '../../slots/defs/projectRow';
 import { useProjects } from './projects';
 
 // The projects list. Reads server data straight from its query key and shows the client's NAME
@@ -36,6 +37,9 @@ export function ProjectList() {
               >
                 Open
               </Link>
+            </td>
+            <td>
+              <ProjectRow.Slot project={project} />
             </td>
           </tr>
         ))}
