@@ -22,6 +22,10 @@ public class InvoicesPayLogic {
         }
         Invoice invoice = invoices.findById(id)
                 .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND, "No such invoice"));
+        // Payment is only allowed once the invoice has been sent: a DRAFT must be sent first.
+        if (!"SENT".equals(invoice.getStatus())) {
+            throw new HttpException(HttpStatus.CONFLICT, "An invoice must be sent before it can be paid");
+        }
         invoice.setStatus("PAID");
         Invoice saved = invoices.save(invoice);
         String amount = saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString();

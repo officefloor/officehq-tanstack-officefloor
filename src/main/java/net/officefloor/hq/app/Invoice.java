@@ -27,8 +27,8 @@ public class Invoice {
 
     private BigDecimal amount;
 
-    /** Payment status: UNPAID (default, matching Flyway V5) until the invoice is marked paid. */
-    private String status = "UNPAID";
+    /** Lifecycle status: DRAFT (default, matching Flyway V9) -> SENT (once sent) -> PAID (once paid). */
+    private String status = "DRAFT";
 
     /** The date the invoice went out (Flyway V7). Serialized as an ISO date, e.g. "2026-01-05". */
     @Column(name = "issued_date")

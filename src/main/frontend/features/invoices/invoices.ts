@@ -34,6 +34,17 @@ export function useCreateInvoice(projectId: number) {
   });
 }
 
+// Send a draft invoice: POSTs {id} and invalidates ['invoices', projectId] so the list reflects the
+// new SENT status from the server. Sending is what records the audit entry and unlocks payment.
+export function useSendInvoice(projectId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: number }) =>
+      postJson<Invoice>('/api/invoices/send', { id: input.id }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) }),
+  });
+}
+
 // Mark an invoice paid: POSTs {id} and invalidates ['invoices', projectId] so the list reflects the
 // new status from the server. The server also keeps an audit record of every payment.
 export function usePayInvoice(projectId: number) {
