@@ -1,0 +1,220 @@
+diff --git a/src/main/frontend/features/clients/statement.slot.tsx b/src/main/frontend/features/clients/statement.slot.tsx
+new file mode 100644
+index 0000000..6ef7fb1
+--- /dev/null
++++ b/src/main/frontend/features/clients/statement.slot.tsx
+@@ -0,0 +1,56 @@
++import { useQuery } from '@tanstack/react-query';
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { clientStatementKey, getClientStatement, type StatementInvoice } from './statementApi';
++import { formatMoney } from '../../ui/money';
++
++// A client's statement — one panel filling the client.detail region: all of the client's invoices
++// in one place, with the total they still owe. It only renders when the `statement` URL flag is on
++// (owned by the statement-open control), so the two stay in step through the shared search param.
++// Server data is read under ['clients', clientId, 'statement'] (never copied into state): the panel
++// queries for itself, and the server does the cross-project join and derives each balance.
++function ClientStatement({ clientId }: { clientId: number }) {
++  const [open] = useSearchParam('statement', asFlag);
++  const { data: statement } = useQuery({
++    queryKey: clientStatementKey(clientId),
++    queryFn: () => getClientStatement(clientId),
++    enabled: open,
++  });
++
++  if (!open || !statement) {
++    return null;
++  }
++
++  return (
++    <section data-testid="client-statement">
++      <table data-testid="client-statement-table">
++        <thead>
++          <tr>
++            <th>Invoice</th>
++            <th>Status</th>
++            <th>Amount</th>
++            <th>Due</th>
++          </tr>
++        </thead>
++        <tbody>
++          {statement.invoices.map((invoice: StatementInvoice) => (
++            <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
++              <td data-testid="statement-invoice-id">{invoice.id}</td>
++              <td data-testid="statement-invoice-status">{invoice.status}</td>
++              <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
++              <td data-testid="statement-invoice-due">{formatMoney(invoice.amountDue)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p>
++        Total owed:{' '}
++        <span data-testid="client-outstanding-total">
++          {formatMoney(statement.outstandingTotal)}
++        </span>
++      </p>
++    </section>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 30, Component: ClientStatement });
+diff --git a/src/main/frontend/features/clients/statementApi.ts b/src/main/frontend/features/clients/statementApi.ts
+new file mode 100644
+index 0000000..fddc1c3
+--- /dev/null
++++ b/src/main/frontend/features/clients/statementApi.ts
+@@ -0,0 +1,26 @@
++import { getJson } from '../../api/http';
++
++// A client's statement as the API exposes it: all of the client's invoices in one place, each with
++// how much is still due, and the total still owed (the sum of those dues). The query key is scoped
++// to the client, ['clients', clientId, 'statement'], so each client's statement reads only its own
++// data; sharing the ['clients'] prefix means a client write (or an invoice/payment change
++// invalidating by this key) keeps it in step with the rest of the client page.
++export type StatementInvoice = {
++  id: number;
++  projectId: number;
++  status: string;
++  amount: number;
++  amountDue: number;
++};
++
++export type ClientStatement = {
++  clientId: number;
++  invoices: StatementInvoice[];
++  outstandingTotal: number;
++};
++
++export const clientStatementKey = (clientId: number) =>
++  ['clients', clientId, 'statement'] as const;
++
++export const getClientStatement = (clientId: number): Promise<ClientStatement> =>
++  getJson<ClientStatement>(`/api/clients/statement?clientId=${clientId}`);
+diff --git a/src/main/frontend/features/clients/statementOpen.slot.tsx b/src/main/frontend/features/clients/statementOpen.slot.tsx
+new file mode 100644
+index 0000000..78dc7b3
+--- /dev/null
++++ b/src/main/frontend/features/clients/statementOpen.slot.tsx
+@@ -0,0 +1,22 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++
++// The control that opens a client's statement — one new *.slot.tsx filling the client.detail region.
++// Showing the statement is a show/hide toggle, so it lives in the URL: this button owns the
++// `statement` key, and the statement panel reads the same key. Nothing is passed between them; they
++// stay in step through the shared search param. Off clears the key, tucking the statement away.
++function OpenStatement() {
++  const [open, setOpen] = useSearchParam('statement', asFlag);
++  return (
++    <button
++      data-testid="client-statement-open"
++      type="button"
++      aria-pressed={open}
++      onClick={() => setOpen(open ? undefined : true)}
++    >
++      {open ? 'Hide statement' : 'Statement'}
++    </button>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 25, Component: OpenStatement });
+diff --git a/src/main/java/net/officefloor/hq/app/ClientStatementView.java b/src/main/java/net/officefloor/hq/app/ClientStatementView.java
+new file mode 100644
+index 0000000..5d14349
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientStatementView.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.List;
++
++/**
++ * A client's statement: all of the client's invoices in one place, and the TOTAL they still owe
++ * (the sum of what is due across those invoices). The join across projects lives on the server —
++ * the client owns projects, a project owns invoices — so the one view carries every invoice without
++ * the client stitching it together. The outstanding total keeps its {@link BigDecimal} scale so the
++ * client formats it to two places.
++ */
++public record ClientStatementView(Long clientId, List<StatementInvoiceView> invoices,
++        BigDecimal outstandingTotal) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/GetClientStatement.java b/src/main/java/net/officefloor/hq/app/GetClientStatement.java
+new file mode 100644
+index 0000000..12c9794
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/GetClientStatement.java
+@@ -0,0 +1,43 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/clients/statement?clientId=&lt;id&gt; — a statement for one client: every invoice across
++ * every project the client owns, in id order, each carrying how much is still DUE on it, plus the
++ * TOTAL the client still owes (the sum of those dues). Scoped to a client (the statement is for one
++ * client), so the client id arrives as a query parameter. The cross-project join and the derived
++ * balances live on the server, computed in {@link BigDecimal} so there is no float drift — the same
++ * derivation {@link InvoiceAmountDue} applies per invoice. Wired by
++ * officefloor/rest/api/clients/statement.GET.yml.
++ */
++public class GetClientStatement {
++
++    public void service(@RequestParam("clientId") String clientId,
++            ProjectRepository projects, InvoiceRepository invoices,
++            InvoicePaymentRepository payments,
++            ObjectResponse<ClientStatementView> response) {
++        Long id = Long.valueOf(clientId);
++        List<StatementInvoiceView> rows = new ArrayList<>();
++        BigDecimal total = BigDecimal.ZERO;
++        // The client owns projects; each project owns invoices. Walk the client's projects (id order)
++        // and collect every invoice, so the statement puts them all in one place.
++        for (Project project : projects.findByClientIdOrderByIdAsc(id)) {
++            for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(project.getId())) {
++                BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoice.getId()).stream()
++                        .map(InvoicePayment::getAmount)
++                        .reduce(BigDecimal.ZERO, BigDecimal::add);
++                BigDecimal due = invoice.getAmount().subtract(paid);
++                rows.add(new StatementInvoiceView(invoice.getId(), invoice.getProjectId(),
++                        invoice.getStatus(), invoice.getAmount(), due));
++                total = total.add(due);
++            }
++        }
++        rows.sort((a, b) -> Long.compare(a.id(), b.id()));
++        response.send(new ClientStatementView(id, rows, total));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/StatementInvoiceView.java b/src/main/java/net/officefloor/hq/app/StatementInvoiceView.java
+new file mode 100644
+index 0000000..a705d0d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/StatementInvoiceView.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * One invoice as it appears on a client's statement: the invoice, the project it is for, its stage,
++ * its amount, and how much is still DUE on it (the invoice amount minus the sum of its payments).
++ * The amounts keep their {@link BigDecimal} scale so the client formats money to two places. The
++ * due figure is derived (never stored), the same derivation {@link InvoiceAmountDue} applies to a
++ * single invoice.
++ */
++public record StatementInvoiceView(Long id, Long projectId, String status, BigDecimal amount,
++        BigDecimal amountDue) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/clients/statement.GET.yml b/src/main/resources/officefloor/rest/api/clients/statement.GET.yml
+new file mode 100644
+index 0000000..a132cba
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/statement.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.GetClientStatement
