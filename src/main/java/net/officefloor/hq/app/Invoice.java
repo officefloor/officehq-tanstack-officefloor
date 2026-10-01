@@ -26,6 +26,9 @@ public class Invoice {
 
     private BigDecimal amount;
 
+    /** Payment status: UNPAID (default, matching Flyway V5) until the invoice is marked paid. */
+    private String status = "UNPAID";
+
     public Invoice() {
     }
 
@@ -56,5 +59,13 @@ public class Invoice {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }

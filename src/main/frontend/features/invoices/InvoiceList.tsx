@@ -1,9 +1,11 @@
-import { useInvoices } from './invoices';
+import { useInvoices, usePayInvoice } from './invoices';
 
 // A project's invoices and what they add up to. Reads its own query key (scoped to the project) and
 // derives the total from the rows — the aggregate is never stored, so it always matches the list.
+// Each row shows its payment status and, while UNPAID, a control to mark it paid.
 export function InvoiceList({ projectId }: { projectId: number }) {
   const { data: invoices } = useInvoices(projectId);
+  const pay = usePayInvoice(projectId);
 
   if (!invoices) {
     return null;
@@ -16,12 +18,27 @@ export function InvoiceList({ projectId }: { projectId: number }) {
       <thead>
         <tr>
           <th>Amount</th>
+          <th>Status</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {invoices.map((invoice) => (
           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
             <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
+            <td data-testid="invoice-status">{invoice.status}</td>
+            <td>
+              {invoice.status !== 'PAID' && (
+                <button
+                  type="button"
+                  data-testid={`invoice-pay-${invoice.id}`}
+                  disabled={pay.isPending}
+                  onClick={() => pay.mutate({ id: invoice.id })}
+                >
+                  Mark paid
+                </button>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>

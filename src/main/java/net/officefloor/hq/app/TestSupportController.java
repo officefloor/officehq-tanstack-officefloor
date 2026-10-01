@@ -65,10 +65,13 @@ public class TestSupportController {
         List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
         if (invoices != null) {
             for (Map<String, Object> invoice : invoices) {
-                jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
+                // status is optional in a fixture; default to UNPAID (matching Flyway V5) when absent.
+                Object status = invoice.get("status");
+                jdbc.update("INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
                         ((Number) invoice.get("id")).longValue(),
                         ((Number) invoice.get("projectId")).longValue(),
-                        new java.math.BigDecimal(invoice.get("amount").toString()));
+                        new java.math.BigDecimal(invoice.get("amount").toString()),
+                        status != null ? status.toString() : "UNPAID");
             }
         }
     }
