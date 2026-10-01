@@ -1,0 +1,171 @@
+diff --git a/src/main/frontend/features/invoices/api.ts b/src/main/frontend/features/invoices/api.ts
+index 6fb0dfb..3030c09 100644
+--- a/src/main/frontend/features/invoices/api.ts
++++ b/src/main/frontend/features/invoices/api.ts
+@@ -3,7 +3,14 @@ import { getJson, postJson } from '../../api/http';
+ // An invoice as the API exposes it — an amount belonging to a project. The query key is scoped to
+ // the project, ['invoices', projectId], so each project's detail page reads (and invalidates) only
+ // its own invoices: the list reads the key, the add form invalidates it.
+-export type Invoice = { id: number; projectId: number; amount: number; status: string };
++export type Invoice = {
++  id: number;
++  projectId: number;
++  amount: number;
++  status: string;
++  issuedDate: string;
++  dueDate: string;
++};
+ export type NewInvoice = { projectId: number; amount: number };
+ 
+ export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
+diff --git a/src/main/frontend/features/invoices/invoices.slot.tsx b/src/main/frontend/features/invoices/invoices.slot.tsx
+index 9751593..e40954b 100644
+--- a/src/main/frontend/features/invoices/invoices.slot.tsx
++++ b/src/main/frontend/features/invoices/invoices.slot.tsx
+@@ -27,6 +27,8 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
+           <tr>
+             <th>Amount</th>
+             <th>Status</th>
++            <th>Issued</th>
++            <th>Due</th>
+             <th>Actions</th>
+           </tr>
+         </thead>
+@@ -35,6 +37,8 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
+             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+               <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+               <td data-testid="invoice-status">{invoice.status}</td>
++              <td data-testid="invoice-issued">{invoice.issuedDate}</td>
++              <td data-testid="invoice-due">{invoice.dueDate}</td>
+               <td>
+                 <InvoiceRow.Slot invoiceId={invoice.id} projectId={projectId} />
+               </td>
+diff --git a/src/main/java/net/officefloor/hq/app/CreateInvoice.java b/src/main/java/net/officefloor/hq/app/CreateInvoice.java
+index 331fb7e..4e4ce02 100644
+--- a/src/main/java/net/officefloor/hq/app/CreateInvoice.java
++++ b/src/main/java/net/officefloor/hq/app/CreateInvoice.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+@@ -26,7 +27,10 @@ public class CreateInvoice {
+         if (projectId == null || projects.findById(projectId).isEmpty()) {
+             throw new IllegalArgumentException("A valid project is required");
+         }
+-        Invoice saved = invoices.save(new Invoice(projectId, amount));
++        // A raised invoice goes out today and is due 30 days later.
++        LocalDate issuedDate = LocalDate.now();
++        LocalDate dueDate = issuedDate.plusDays(30);
++        Invoice saved = invoices.save(new Invoice(projectId, amount, issuedDate, dueDate));
+         response.send(InvoiceView.of(saved));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index 076cb45..e26fa4a 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import jakarta.persistence.Column;
+ import jakarta.persistence.Entity;
+ import jakarta.persistence.GeneratedValue;
+@@ -31,13 +32,23 @@ public class Invoice {
+     @Column(nullable = false)
+     private String status;
+ 
++    /** When the invoice went out. */
++    @Column(name = "issued_date", nullable = false)
++    private LocalDate issuedDate;
++
++    /** When the invoice is due to be paid. */
++    @Column(name = "due_date", nullable = false)
++    private LocalDate dueDate;
++
+     protected Invoice() {
+     }
+ 
+-    public Invoice(Long projectId, BigDecimal amount) {
++    public Invoice(Long projectId, BigDecimal amount, LocalDate issuedDate, LocalDate dueDate) {
+         this.projectId = projectId;
+         this.amount = amount;
+         this.status = "UNPAID";
++        this.issuedDate = issuedDate;
++        this.dueDate = dueDate;
+     }
+ 
+     public Long getId() {
+@@ -56,6 +67,14 @@ public class Invoice {
+         return status;
+     }
+ 
++    public LocalDate getIssuedDate() {
++        return issuedDate;
++    }
++
++    public LocalDate getDueDate() {
++        return dueDate;
++    }
++
+     /** Mark this invoice paid — the status transition the pay action performs. */
+     public void markPaid() {
+         this.status = "PAID";
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceView.java b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+index 8bb160f..144422a 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceView.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+@@ -6,10 +6,12 @@ import java.math.BigDecimal;
+  * What the API exposes for an invoice: the shape the front-end renders into the project's invoices
+  * table. The amount keeps its scale (a {@link BigDecimal}) so the client formats it to two places.
+  */
+-public record InvoiceView(Long id, Long projectId, BigDecimal amount, String status) {
++public record InvoiceView(Long id, Long projectId, BigDecimal amount, String status,
++        String issuedDate, String dueDate) {
+ 
+     public static InvoiceView of(Invoice invoice) {
+         return new InvoiceView(invoice.getId(), invoice.getProjectId(), invoice.getAmount(),
+-                invoice.getStatus());
++                invoice.getStatus(), invoice.getIssuedDate().toString(),
++                invoice.getDueDate().toString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index e4041ee..aa85e48 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -66,11 +66,15 @@ public class TestSupportController {
+                 (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
+         for (Map<String, Object> inv : invoices) {
+             Object status = inv.getOrDefault("status", "UNPAID");
+-            jdbc.update("INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
++            jdbc.update(
++                    "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
++                            + " VALUES (?, ?, ?, ?, ?, ?)",
+                     ((Number) inv.get("id")).longValue(),
+                     ((Number) inv.get("projectId")).longValue(),
+                     new java.math.BigDecimal(inv.get("amount").toString()),
+-                    status.toString());
++                    status.toString(),
++                    java.sql.Date.valueOf(inv.get("issuedDate").toString()),
++                    java.sql.Date.valueOf(inv.get("dueDate").toString()));
+         }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V7__invoice_dates.sql b/src/main/resources/db/migration/V7__invoice_dates.sql
+new file mode 100644
+index 0000000..25be132
+--- /dev/null
++++ b/src/main/resources/db/migration/V7__invoice_dates.sql
+@@ -0,0 +1,6 @@
++-- An invoice now carries two dates: when it was issued (went out) and when it is due. Both are plain
++-- calendar dates (DATE, no time-of-day), so the UI shows a bare YYYY-MM-DD. New and existing rows get
++-- CURRENT_DATE as a safe default; the test seed supplies explicit dates, and CreateInvoice sets its
++-- own, so the default only guards rows raised before this column existed.
++ALTER TABLE invoices ADD COLUMN issued_date DATE NOT NULL DEFAULT CURRENT_DATE;
++ALTER TABLE invoices ADD COLUMN due_date DATE NOT NULL DEFAULT CURRENT_DATE;
