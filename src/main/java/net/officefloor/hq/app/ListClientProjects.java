@@ -17,10 +17,10 @@ public class ListClientProjects {
             ObjectResponse<List<ProjectView>> response) {
         Long id = Long.valueOf(clientId);
         String clientName = clients.findById(id).map(Client::getName).orElse("");
-        // Archived projects are tucked away — they drop off the client's list too, keeping the row
-        // in the table only while it is active.
+        // Every project the client owns, each carrying its status and archived flag — the client
+        // detail panel shows only the active ones by default and reveals the finished and hidden
+        // (archived) ones on demand, filtering client-side on those fields (as the projects list does).
         List<ProjectView> view = projects.findByClientIdOrderByIdAsc(id).stream()
-                .filter(p -> !p.isArchived())
                 .map(p -> ProjectView.of(p, clientName))
                 .toList();
         response.send(view);

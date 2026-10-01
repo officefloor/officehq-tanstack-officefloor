@@ -22,7 +22,14 @@ export const archiveClient = (id: number): Promise<Client> =>
 // client detail panel reuses the project-row-<id>/project-name anchors. The query key is scoped to
 // the client, ['clients', clientId, 'projects'], so each client's detail page reads only its own
 // projects; sharing the ['clients'] prefix means a client write can invalidate it too.
-export type ClientProject = { id: number; name: string; clientId: number; clientName: string };
+export type ClientProject = {
+  id: number;
+  name: string;
+  clientId: number;
+  clientName: string;
+  status: string;
+  archived: boolean;
+};
 
 export const clientProjectsKey = (clientId: number) =>
   ['clients', clientId, 'projects'] as const;

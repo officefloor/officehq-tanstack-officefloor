@@ -68,9 +68,13 @@ public class TestSupportController {
             // status is optional in the fixture — a spec that only cares a project exists leaves it
             // out, defaulting to ACTIVE (the same state a fresh project gets, V22__project_status.sql).
             Object status = p.getOrDefault("status", "ACTIVE");
-            jdbc.update("INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
+            // archived is optional too — a spec that only cares a project exists leaves it out,
+            // defaulting to not-archived (the same state a fresh project gets, V16__project_archived.sql).
+            boolean archived = Boolean.TRUE.equals(p.getOrDefault("archived", Boolean.FALSE));
+            jdbc.update(
+                    "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
                     ((Number) p.get("id")).longValue(), p.get("name"),
-                    ((Number) p.get("clientId")).longValue(), status.toString());
+                    ((Number) p.get("clientId")).longValue(), status.toString(), archived);
         }
         List<Map<String, Object>> contacts =
                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());
