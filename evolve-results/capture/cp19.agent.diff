@@ -1,0 +1,142 @@
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+index 994d483..ba123b9 100644
+--- a/src/main/frontend/features/clients/api.ts
++++ b/src/main/frontend/features/clients/api.ts
+@@ -45,3 +45,15 @@ export const listClientContacts = (clientId: number): Promise<Contact[]> =>
+ 
+ export const createContact = (body: NewContact): Promise<Contact> =>
+   postJson<Contact>('/api/clients/contacts', body);
++
++// At-a-glance counts for one client: how many projects it owns and how many contacts it keeps.
++// Computed server-side (GET /api/clients/summary). The query key is scoped to the client under the
++// ['clients', clientId, ...] prefix, so a client write can invalidate it alongside the lists it
++// summarises — the badges stay in step with the projects and contacts panels for free.
++export type ClientSummary = { projects: number; contacts: number };
++
++export const clientSummaryKey = (clientId: number) =>
++  ['clients', clientId, 'summary'] as const;
++
++export const getClientSummary = (clientId: number): Promise<ClientSummary> =>
++  getJson<ClientSummary>(`/api/clients/summary?clientId=${clientId}`);
+diff --git a/src/main/frontend/features/clients/counts.slot.tsx b/src/main/frontend/features/clients/counts.slot.tsx
+new file mode 100644
+index 0000000..8c90e2f
+--- /dev/null
++++ b/src/main/frontend/features/clients/counts.slot.tsx
+@@ -0,0 +1,29 @@
++import { useQuery } from '@tanstack/react-query';
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { clientSummaryKey, getClientSummary } from './api';
++
++// At-a-glance counts for one client — a small badge panel filling the top of the client.detail
++// region (order 10, above the projects and contacts tables). Reads server data under
++// ['clients', clientId, 'summary'] (never copied into state); the server does the counting, so this
++// just renders the two figures the client-projects-count / client-contacts-count anchors expose.
++function ClientCounts({ clientId }: { clientId: number }) {
++  const { data } = useQuery({
++    queryKey: clientSummaryKey(clientId),
++    queryFn: () => getClientSummary(clientId),
++  });
++
++  if (!data) {
++    return null;
++  }
++
++  return (
++    <dl data-testid="client-counts">
++      <dt>Projects</dt>
++      <dd data-testid="client-projects-count">{data.projects}</dd>
++      <dt>Contacts</dt>
++      <dd data-testid="client-contacts-count">{data.contacts}</dd>
++    </dl>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 10, Component: ClientCounts });
+diff --git a/src/main/java/net/officefloor/hq/app/ClientSummaryView.java b/src/main/java/net/officefloor/hq/app/ClientSummaryView.java
+new file mode 100644
+index 0000000..1b2b719
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ClientSummaryView.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app;
++
++/**
++ * At-a-glance counts for one client: how many projects it owns and how many contacts it keeps. The
++ * shape the client detail page renders into its two count badges (client-projects-count /
++ * client-contacts-count). Computed server-side so the page holds no arithmetic — it just renders.
++ */
++public record ClientSummaryView(long projects, long contacts) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ContactRepository.java b/src/main/java/net/officefloor/hq/app/ContactRepository.java
+index 11b84b2..149abae 100644
+--- a/src/main/java/net/officefloor/hq/app/ContactRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ContactRepository.java
+@@ -8,4 +8,7 @@ public interface ContactRepository extends JpaRepository<Contact, Long> {
+ 
+     /** The contacts of one client, in id order — the shape a client's detail page lists. */
+     List<Contact> findByClientIdOrderByIdAsc(Long clientId);
++
++    /** How many contacts one client keeps — the figure the client detail badge surfaces. */
++    long countByClientId(Long clientId);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/GetClientSummary.java b/src/main/java/net/officefloor/hq/app/GetClientSummary.java
+new file mode 100644
+index 0000000..6a50a4e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/GetClientSummary.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/clients/summary?clientId=&lt;id&gt; — at-a-glance counts for one client: how many projects
++ * it owns and how many contacts it keeps. Scoped to a client (the client detail page shows ITS
++ * figures), so the client id arrives as a query parameter. A small cross-entity aggregate read, so
++ * it injects both repositories and lets the database do the counting. Wired by
++ * officefloor/rest/api/clients/summary.GET.yml.
++ */
++public class GetClientSummary {
++
++    public void service(@RequestParam("clientId") String clientId,
++            ProjectRepository projects, ContactRepository contacts,
++            ObjectResponse<ClientSummaryView> response) {
++        Long id = Long.valueOf(clientId);
++        response.send(new ClientSummaryView(
++                projects.countByClientId(id), contacts.countByClientId(id)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index 0723a09..ca1c45e 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -8,4 +8,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+ 
+     /** The projects of one client, in id order — the shape a client's detail page lists. */
+     List<Project> findByClientIdOrderByIdAsc(Long clientId);
++
++    /** How many projects one client owns — the figure the client detail badge surfaces. */
++    long countByClientId(Long clientId);
+ }
+diff --git a/src/main/resources/db/migration/V13__client_child_counts.sql b/src/main/resources/db/migration/V13__client_child_counts.sql
+new file mode 100644
+index 0000000..1caff99
+--- /dev/null
++++ b/src/main/resources/db/migration/V13__client_child_counts.sql
+@@ -0,0 +1,6 @@
++-- The client detail page shows how many projects and contacts a client has, counted per client_id
++-- (GetClientSummary -> countByClientId). Index the two FK columns those count queries filter on so
++-- the aggregate is served from an index rather than a full scan. Additive and local: new indexes,
++-- no table or column change.
++CREATE INDEX idx_projects_client_id ON projects (client_id);
++CREATE INDEX idx_contacts_client_id ON contacts (client_id);
+diff --git a/src/main/resources/officefloor/rest/api/clients/summary.GET.yml b/src/main/resources/officefloor/rest/api/clients/summary.GET.yml
+new file mode 100644
+index 0000000..6d7efbe
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/summary.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.GetClientSummary
