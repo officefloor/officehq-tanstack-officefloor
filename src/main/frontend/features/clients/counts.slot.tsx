@@ -18,7 +18,7 @@ function ClientCounts({ clientId }: { clientId: number }) {
 
   return (
     <dl data-testid="client-counts">
-      <dt>Projects</dt>
+      <dt>Jobs</dt>
       <dd data-testid="client-projects-count">{data.projects}</dd>
       <dt>Contacts</dt>
       <dd data-testid="client-contacts-count">{data.contacts}</dd>

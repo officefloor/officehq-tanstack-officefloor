@@ -11,7 +11,7 @@ export const Route = createFileRoute('/projects/')({
 function ProjectsPage() {
   return (
     <section data-testid="projects-page">
-      <h1>Projects</h1>
+      <h1>Jobs</h1>
       <ProjectForm />
       <ProjectsList />
     </section>

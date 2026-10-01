@@ -44,7 +44,7 @@ function AllInvoicesList({ invoices }: { invoices: AllInvoice[] | undefined }) {
     <table data-testid="all-invoices-table">
       <thead>
         <tr>
-          <th>Project</th>
+          <th>Job</th>
           <th>Status</th>
           <th>Amount</th>
         </tr>

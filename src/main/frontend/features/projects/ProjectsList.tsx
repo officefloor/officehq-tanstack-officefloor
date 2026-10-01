@@ -38,7 +38,7 @@ export function ProjectsList() {
     <>
       <ProjectsToolbar.Slot />
       {visible.length === 0 ? (
-        <p data-testid="projects-empty">No projects yet.</p>
+        <p data-testid="projects-empty">No jobs yet.</p>
       ) : (
         <ProjectsTable projects={visible} />
       )}

@@ -72,7 +72,7 @@ export function ProjectForm() {
         ))}
       </select>
       <button data-testid="project-form-submit" type="submit">
-        Add project
+        Add job
       </button>
     </form>
   );
