@@ -1,0 +1,330 @@
+diff --git a/src/main/frontend/features/projects/tasks.slot.tsx b/src/main/frontend/features/projects/tasks.slot.tsx
+new file mode 100644
+index 0000000..a035706
+--- /dev/null
++++ b/src/main/frontend/features/projects/tasks.slot.tsx
+@@ -0,0 +1,57 @@
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { tasksKey, listTasks, toggleTask, type Task } from './tasksApi';
++
++// A project's task list, with a tick-off control on each row — one panel filling the project.detail
++// region. Reads server data under ['tasks', projectId] (never copied into state); the toggle is a
++// useMutation that, on success, invalidates the same key so this panel refetches the new status. The
++// OPEN/DONE label is DERIVED from each row's `done` flag, never stored.
++function ProjectTasks({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const { data: tasks } = useQuery({
++    queryKey: tasksKey(projectId),
++    queryFn: () => listTasks(projectId),
++  });
++  const mutation = useMutation({
++    mutationFn: (id: number) => toggleTask(id),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: tasksKey(projectId) });
++    },
++  });
++
++  if (!tasks) {
++    return null;
++  }
++
++  return (
++    <table data-testid="project-tasks-table">
++      <thead>
++        <tr>
++          <th>Task</th>
++          <th>Status</th>
++          <th>Actions</th>
++        </tr>
++      </thead>
++      <tbody>
++        {tasks.map((task: Task) => (
++          <tr key={task.id} data-testid={`task-row-${task.id}`}>
++            <td data-testid="task-title">{task.title}</td>
++            <td data-testid="task-status">{task.done ? 'DONE' : 'OPEN'}</td>
++            <td>
++              <button
++                data-testid={`task-toggle-${task.id}`}
++                type="button"
++                disabled={mutation.isPending}
++                onClick={() => mutation.mutate(task.id)}
++              >
++                {task.done ? 'Reopen' : 'Tick off'}
++              </button>
++            </td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 30, Component: ProjectTasks });
+diff --git a/src/main/frontend/features/projects/tasksApi.ts b/src/main/frontend/features/projects/tasksApi.ts
+new file mode 100644
+index 0000000..e9cc7da
+--- /dev/null
++++ b/src/main/frontend/features/projects/tasksApi.ts
+@@ -0,0 +1,17 @@
++import { getJson, postJson } from '../../api/http';
++
++// A task as the API exposes it — a to-do item belonging to a project. The query key is scoped to the
++// project, ['tasks', projectId], so each project's detail page reads (and invalidates) only its own
++// tasks: the list reads the key, a toggle invalidates it. `done` is the raw tick-off flag; the panel
++// maps it to the OPEN/DONE label the UI shows.
++export type Task = { id: number; projectId: number; title: string; done: boolean };
++
++export const tasksKey = (projectId: number) => ['tasks', projectId] as const;
++
++export const listTasks = (projectId: number): Promise<Task[]> =>
++  getJson<Task[]>(`/api/tasks?projectId=${projectId}`);
++
++// Tick a task off (or back on) — flips its done flag server-side and returns the updated row. Callers
++// invalidate ['tasks', projectId] on success so the tasks panel refetches the new status.
++export const toggleTask = (id: number): Promise<Task> =>
++  postJson<Task>('/api/tasks/toggle', { id });
+diff --git a/src/main/java/net/officefloor/hq/app/ListTasks.java b/src/main/java/net/officefloor/hq/app/ListTasks.java
+new file mode 100644
+index 0000000..469bc1e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListTasks.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/tasks?projectId=&lt;id&gt; — the tasks of one project. Scoped to a project (the detail page
++ * lists ITS tasks), so the project id arrives as a query parameter; rows come back in id order.
++ * Wired by officefloor/rest/api/tasks.GET.yml.
++ */
++public class ListTasks {
++
++    public void service(@RequestParam("projectId") String projectId,
++            TaskRepository tasks, ObjectResponse<List<TaskView>> response) {
++        Long id = Long.valueOf(projectId);
++        List<TaskView> view = tasks.findByProjectIdOrderByIdAsc(id).stream()
++                .map(TaskView::of).toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Task.java b/src/main/java/net/officefloor/hq/app/Task.java
+new file mode 100644
+index 0000000..b8599ee
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Task.java
+@@ -0,0 +1,61 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A to-do item the user tracks on a project: a title and the id of the project it is for. Maps the
++ * {@code tasks} table (Flyway V14__tasks.sql); the id is IDENTITY-generated on create. The
++ * {@code done} flag is the tick-off state — false while the task is OPEN, true once it is DONE.
++ */
++@Entity
++@Table(name = "tasks")
++public class Task {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "project_id", nullable = false)
++    private Long projectId;
++
++    @Column(nullable = false)
++    private String title;
++
++    @Column(nullable = false)
++    private boolean done;
++
++    protected Task() {
++    }
++
++    public Task(Long projectId, String title) {
++        this.projectId = projectId;
++        this.title = title;
++        this.done = false;
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public String getTitle() {
++        return title;
++    }
++
++    public boolean isDone() {
++        return done;
++    }
++
++    /** Tick this task off (or back on) — the OPEN &lt;-&gt; DONE transition the toggle performs. */
++    public void toggleDone() {
++        this.done = !this.done;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TaskRepository.java b/src/main/java/net/officefloor/hq/app/TaskRepository.java
+new file mode 100644
+index 0000000..eae8e99
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TaskRepository.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/** Data access for {@link Task}. A Spring bean, injected into the OfficeFloor logic classes. */
++public interface TaskRepository extends JpaRepository<Task, Long> {
++
++    /** The tasks of one project, in id order — the shape the project detail page lists. */
++    List<Task> findByProjectIdOrderByIdAsc(Long projectId);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TaskView.java b/src/main/java/net/officefloor/hq/app/TaskView.java
+new file mode 100644
+index 0000000..d0a84e1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TaskView.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app;
++
++/**
++ * What the API exposes for a task: the shape the front-end renders into the project's tasks table.
++ * {@code done} is the raw tick-off flag; the UI maps it to the OPEN/DONE label it shows.
++ */
++public record TaskView(Long id, Long projectId, String title, boolean done) {
++
++    public static TaskView of(Task task) {
++        return new TaskView(task.getId(), task.getProjectId(), task.getTitle(), task.isDone());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index f8eec21..6a3f9e3 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -36,6 +36,7 @@ public class TestSupportController {
+         // the FK exists — drop referential integrity for the duration, truncate all, then restore.
+         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+         try {
++            jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
+@@ -94,5 +95,16 @@ public class TestSupportController {
+                     java.sql.Date.valueOf(issued),
+                     java.sql.Date.valueOf(due));
+         }
++        List<Map<String, Object>> tasks =
++                (List<Map<String, Object>>) fixture.getOrDefault("tasks", List.of());
++        for (Map<String, Object> t : tasks) {
++            // done is optional in the fixture — a spec that only cares a task exists leaves it out,
++            // so it defaults to not-done (the same state CreateTask would give a fresh task).
++            boolean done = Boolean.TRUE.equals(t.getOrDefault("done", Boolean.FALSE));
++            jdbc.update("INSERT INTO tasks (id, project_id, title, done) VALUES (?, ?, ?, ?)",
++                    ((Number) t.get("id")).longValue(),
++                    ((Number) t.get("projectId")).longValue(),
++                    t.get("title"), done);
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ToggleTask.java b/src/main/java/net/officefloor/hq/app/ToggleTask.java
+new file mode 100644
+index 0000000..407286a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ToggleTask.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/tasks/toggle — tick a task off (or back on): flip its done flag and return the updated
++ * row. Wired by officefloor/rest/api/tasks/toggle.POST.yml.
++ *
++ * We reject a missing or unknown task id before writing anything so a bad request neither changes
++ * state nor returns a row.
++ */
++public class ToggleTask {
++
++    public void service(@RequestBody ToggleTaskForm form, TaskRepository tasks,
++            ObjectResponse<TaskView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("A task id is required");
++        }
++        Task task = tasks.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid task is required"));
++        task.toggleDone();
++        Task saved = tasks.save(task);
++        response.send(TaskView.of(saved));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ToggleTaskForm.java b/src/main/java/net/officefloor/hq/app/ToggleTaskForm.java
+new file mode 100644
+index 0000000..17d5589
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ToggleTaskForm.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++/** The request body for ticking a task off (or back on): the id of the task to toggle. */
++public class ToggleTaskForm {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/resources/db/migration/V14__tasks.sql b/src/main/resources/db/migration/V14__tasks.sql
+new file mode 100644
+index 0000000..91cd387
+--- /dev/null
++++ b/src/main/resources/db/migration/V14__tasks.sql
+@@ -0,0 +1,10 @@
++-- Fourth domain table: a task is a to-do item that belongs to a project. IDENTITY id so the app
++-- generates ids on create, while the test seed inserts explicit ids (GENERATED BY DEFAULT lets a
++-- supplied id win). project_id is a FK to projects so a task always points at a real project.
++-- done is the tick-off flag: new rows start not-done (the DEFAULT); ticking one flips it to TRUE.
++CREATE TABLE tasks (
++    id         BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    project_id BIGINT NOT NULL REFERENCES projects (id),
++    title      VARCHAR(255) NOT NULL,
++    done       BOOLEAN NOT NULL DEFAULT FALSE
++);
+diff --git a/src/main/resources/officefloor/rest/api/tasks.GET.yml b/src/main/resources/officefloor/rest/api/tasks.GET.yml
+new file mode 100644
+index 0000000..1372e29
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/tasks.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListTasks
+diff --git a/src/main/resources/officefloor/rest/api/tasks/toggle.POST.yml b/src/main/resources/officefloor/rest/api/tasks/toggle.POST.yml
+new file mode 100644
+index 0000000..be2970e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/tasks/toggle.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ToggleTask
