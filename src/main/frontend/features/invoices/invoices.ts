@@ -14,10 +14,14 @@ export type Invoice = {
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
 
-export function useInvoices(projectId: number) {
+// How a project's invoices are ordered. 'due' asks the server for earliest due date first; any other
+// value keeps the default id order. The sort is part of the query key (as a suffix under the shared
+// ['invoices', projectId] prefix) so each ordering caches on its own, while a write still invalidates
+// the whole prefix and refreshes every ordering at once.
+export function useInvoices(projectId: number, sort: string = 'id') {
   return useQuery({
-    queryKey: invoicesKey(projectId),
-    queryFn: () => getJson<Invoice[]>(`/api/invoices?projectId=${projectId}`),
+    queryKey: [...invoicesKey(projectId), sort],
+    queryFn: () => getJson<Invoice[]>(`/api/invoices?projectId=${projectId}&sort=${sort}`),
   });
 }
 

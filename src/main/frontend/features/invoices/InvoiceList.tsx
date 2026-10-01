@@ -1,11 +1,16 @@
+import { InvoiceListToolbar } from '../../slots/defs/invoiceListToolbar';
+import { useSearchParam, asString } from '../../url/useSearchParam';
 import { formatMoney } from '../../ui/money';
 import { useInvoices, usePayInvoice } from './invoices';
 
 // A project's invoices and what they add up to. Reads its own query key (scoped to the project) and
 // derives the total from the rows — the aggregate is never stored, so it always matches the list.
-// Each row shows its payment status and, while UNPAID, a control to mark it paid.
+// Each row shows its payment status and, while UNPAID, a control to mark it paid. The ordering comes
+// from the shared `invoiceSort` URL key (set by a toolbar control), so the server returns the rows
+// already in order.
 export function InvoiceList({ projectId }: { projectId: number }) {
-  const { data: invoices } = useInvoices(projectId);
+  const [sort] = useSearchParam('invoiceSort', asString);
+  const { data: invoices } = useInvoices(projectId, sort || undefined);
   const pay = usePayInvoice(projectId);
 
   if (!invoices) {
@@ -15,6 +20,8 @@ export function InvoiceList({ projectId }: { projectId: number }) {
   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
 
   return (
+    <>
+    <InvoiceListToolbar.Slot projectId={projectId} />
     <table data-testid="project-invoices-table">
       <thead>
         <tr>
@@ -53,5 +60,6 @@ export function InvoiceList({ projectId }: { projectId: number }) {
         </tr>
       </tfoot>
     </table>
+    </>
   );
 }
