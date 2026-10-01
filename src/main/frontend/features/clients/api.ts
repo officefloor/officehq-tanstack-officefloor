@@ -23,3 +23,25 @@ export const clientProjectsKey = (clientId: number) =>
 
 export const listClientProjects = (clientId: number): Promise<ClientProject[]> =>
   getJson<ClientProject[]>(`/api/clients/projects?clientId=${clientId}`);
+
+// A contact the user keeps for a client — a name, email and role. The query key is scoped to the
+// client, ['clients', clientId, 'contacts'], so each client's detail page reads (and invalidates)
+// only its own contacts: the list reads the key, the add form invalidates it. Sharing the
+// ['clients'] prefix means a client write can invalidate it too.
+export type Contact = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  clientId: number;
+};
+export type NewContact = { clientId: number; name: string; email: string; role: string };
+
+export const clientContactsKey = (clientId: number) =>
+  ['clients', clientId, 'contacts'] as const;
+
+export const listClientContacts = (clientId: number): Promise<Contact[]> =>
+  getJson<Contact[]>(`/api/clients/contacts?clientId=${clientId}`);
+
+export const createContact = (body: NewContact): Promise<Contact> =>
+  postJson<Contact>('/api/clients/contacts', body);
