@@ -1,0 +1,156 @@
+diff --git a/src/main/frontend/features/projects/ProjectsList.tsx b/src/main/frontend/features/projects/ProjectsList.tsx
+index b5f928e..168f03c 100644
+--- a/src/main/frontend/features/projects/ProjectsList.tsx
++++ b/src/main/frontend/features/projects/ProjectsList.tsx
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { projectsKey, listProjects, type Project } from './api';
+ import { ProjectRow } from '../../slots/defs/projectRow';
+ import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
+-import { useSearchParam, asFlag } from '../../url/useSearchParam';
++import { useSearchParam, asFlag, asNumber } from '../../url/useSearchParam';
+ 
+ // The projects list. Reads server data under ['projects'] (never copied into state); the create form
+ // shares the key, so a successful create refreshes this list with no import between them. Each row
+@@ -13,13 +13,21 @@ import { useSearchParam, asFlag } from '../../url/useSearchParam';
+ // so they stay in step through the shared search param with nothing passed between them.
+ export function ProjectsList() {
+   const [showArchived] = useSearchParam('showArchived', asFlag);
++  // The tag filter control (its own *.slot.tsx) owns this key; the list reads the same key and keeps
++  // only the projects carrying that tag, so they stay in step through the shared search param with
++  // nothing passed between them. Unset clears the key, so the list falls back to every project.
++  const [tagFilter] = useSearchParam('projectTag', asNumber);
+   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: listProjects });
+ 
+   if (!projects) {
+     return null;
+   }
+ 
+-  const visible = projects.filter((project: Project) => showArchived || !project.archived);
++  const visible = projects.filter(
++    (project: Project) =>
++      (showArchived || !project.archived) &&
++      (tagFilter === undefined || project.tagIds.includes(tagFilter)),
++  );
+ 
+   return (
+     <>
+diff --git a/src/main/frontend/features/projects/api.ts b/src/main/frontend/features/projects/api.ts
+index f5a86d3..3ee3e46 100644
+--- a/src/main/frontend/features/projects/api.ts
++++ b/src/main/frontend/features/projects/api.ts
+@@ -9,6 +9,7 @@ export type Project = {
+   clientId: number;
+   clientName: string;
+   archived: boolean;
++  tagIds: number[];
+ };
+ export type NewProject = { name: string; clientId: number };
+ 
+diff --git a/src/main/frontend/features/projects/tagFilter.slot.tsx b/src/main/frontend/features/projects/tagFilter.slot.tsx
+new file mode 100644
+index 0000000..665ca18
+--- /dev/null
++++ b/src/main/frontend/features/projects/tagFilter.slot.tsx
+@@ -0,0 +1,32 @@
++import { useQuery } from '@tanstack/react-query';
++import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
++import { useSearchParam, asNumber } from '../../url/useSearchParam';
++import { tagsKey, listTags, type Tag } from './tagsApi';
++
++// A control over the projects list — one new *.slot.tsx filling the projects.toolbar region. It owns
++// the `projectTag` URL key; the list reads the same key and keeps only the projects carrying that
++// tag. Nothing is passed between them: they stay in step through the shared search param. The empty
++// option clears the key, so the list falls back to showing every project. The options come from the
++// tag catalogue under ['tags'] (shared by KEY with the add-tag panel, not an import), so a new tag
++// appears here too.
++function ProjectTagFilter() {
++  const [tagId, setTagId] = useSearchParam('projectTag', asNumber);
++  const { data: tags } = useQuery({ queryKey: tagsKey, queryFn: listTags });
++
++  return (
++    <select
++      data-testid="project-tag-filter"
++      value={tagId ?? ''}
++      onChange={(e) => setTagId(asNumber(e.target.value))}
++    >
++      <option value="">All tags</option>
++      {(tags ?? []).map((tag: Tag) => (
++        <option key={tag.id} value={tag.id}>
++          {tag.name}
++        </option>
++      ))}
++    </select>
++  );
++}
++
++export const contribution = ProjectsToolbar.fill({ order: 20, Component: ProjectTagFilter });
+diff --git a/src/main/java/net/officefloor/hq/app/ListProjects.java b/src/main/java/net/officefloor/hq/app/ListProjects.java
+index 314bbba..e436ef3 100644
+--- a/src/main/java/net/officefloor/hq/app/ListProjects.java
++++ b/src/main/java/net/officefloor/hq/app/ListProjects.java
+@@ -1,24 +1,31 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Map;
+-import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+  * GET /api/projects — every project, in id order, each carrying its client's NAME so the list can
+- * show the client without the front-end joining. Wired by officefloor/rest/api/projects.GET.yml.
++ * show the client without the front-end joining, and the ids of the tags on it so the list can be
++ * filtered by tag. Wired by officefloor/rest/api/projects.GET.yml.
+  */
+ public class ListProjects {
+ 
+     public void service(ProjectRepository projects, ClientRepository clients,
+-            ObjectResponse<List<ProjectView>> response) {
++            ProjectTagRepository projectTags, ObjectResponse<List<ProjectView>> response) {
+         Map<Long, String> names = clients.findAll().stream()
+                 .collect(Collectors.toMap(Client::getId, Client::getName));
++        // Which tag ids sit on each project — grouped once from the join so a list of any size is a
++        // single scan, not a query per row.
++        Map<Long, List<Long>> tagsByProject = projectTags.findAll().stream()
++                .collect(Collectors.groupingBy(ProjectTag::getProjectId,
++                        Collectors.mapping(ProjectTag::getTagId, Collectors.toList())));
+         List<ProjectView> view = projects.findAll().stream()
+                 .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
+-                .map(p -> ProjectView.of(p, names.getOrDefault(p.getClientId(), "")))
++                .map(p -> ProjectView.of(p, names.getOrDefault(p.getClientId(), ""),
++                        tagsByProject.getOrDefault(p.getId(), new ArrayList<>())))
+                 .toList();
+         response.send(view);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index d4e2ab2..0f7a7a0 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -1,15 +1,22 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.List;
++
+ /**
+  * What the API exposes for a project: the shape the front-end renders into the projects table. The
+  * cross-entity join lives here — the project carries its client's NAME (not just the id) so the list
+- * can show the client without a second lookup.
++ * can show the client without a second lookup, and the ids of the tags on it so the list can be
++ * filtered by tag without a second lookup per row.
+  */
+ public record ProjectView(Long id, String name, Long clientId, String clientName,
+-        boolean archived) {
++        boolean archived, List<Long> tagIds) {
+ 
+     public static ProjectView of(Project project, String clientName) {
++        return of(project, clientName, List.of());
++    }
++
++    public static ProjectView of(Project project, String clientName, List<Long> tagIds) {
+         return new ProjectView(project.getId(), project.getName(), project.getClientId(),
+-                clientName, project.isArchived());
++                clientName, project.isArchived(), tagIds);
+     }
+ }
