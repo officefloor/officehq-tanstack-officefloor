@@ -15,9 +15,17 @@ export type AllInvoice = {
 
 export const allInvoicesKey = ['invoices', 'all'] as const;
 
-// A single lifecycle stage to narrow the list to ('' means every stage). The server reads the same
-// `status` key, so the narrowing is applied once, at the source, not re-filtered on the client. It
-// is appended to the query key below so each stage caches on its own, while a send/pay write still
-// invalidates ['invoices'] by prefix and refreshes whichever stage is on screen.
-export const listAllInvoices = (status = ''): Promise<AllInvoice[]> =>
-  getJson<AllInvoice[]>(`/api/invoices/all?status=${encodeURIComponent(status)}`);
+// How many invoices one page of the list shows. The server slices to this window; the pagination
+// control steps through pages by the same count.
+export const INVOICE_PAGE_SIZE = 10;
+
+// A single lifecycle stage to narrow the list to ('' means every stage) and which PAGE of the
+// narrowed list to fetch (1-based). The server reads the same `status` and `page` the UI holds, so
+// the narrowing and the windowing are applied once, at the source, not re-done on the client. Both
+// are appended to the query key below so each stage/page caches on its own, while a send/pay write
+// still invalidates ['invoices'] by prefix and refreshes whichever window is on screen.
+export const listAllInvoices = (status = '', page = 1): Promise<AllInvoice[]> =>
+  getJson<AllInvoice[]>(
+    `/api/invoices/all?status=${encodeURIComponent(status)}` +
+      `&page=${page}&pageSize=${INVOICE_PAGE_SIZE}`,
+  );

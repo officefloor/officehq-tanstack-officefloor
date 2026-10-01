@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { allInvoicesKey, listAllInvoices, type AllInvoice } from './allInvoices';
 import { formatMoney } from '../../ui/money';
 import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
-import { useSearchParam, asString } from '../../url/useSearchParam';
+import { useSearchParam, asString, asNumber } from '../../url/useSearchParam';
 
 // One place listing every invoice across all projects. Reads server data under ['invoices', 'all']
 // (never copied into state); each row shows which PROJECT the invoice is for (the name the server
@@ -13,9 +13,14 @@ import { useSearchParam, asString } from '../../url/useSearchParam';
 // on its own and the server returns the rows already narrowed.
 export function AllInvoices() {
   const [status] = useSearchParam('invoiceStatus', asString);
+  // Which page to show lives in the URL under the shared `invoicePage` key — the pagination control
+  // (its own *.slot.tsx) writes it, this list reads it. It is part of the query key, so each page
+  // caches on its own and the server returns just that window of rows.
+  const [page] = useSearchParam('invoicePage', asNumber);
+  const pageNumber = page ?? 1;
   const { data: invoices } = useQuery({
-    queryKey: [...allInvoicesKey, status],
-    queryFn: () => listAllInvoices(status),
+    queryKey: [...allInvoicesKey, status, pageNumber],
+    queryFn: () => listAllInvoices(status, pageNumber),
   });
 
   return (
