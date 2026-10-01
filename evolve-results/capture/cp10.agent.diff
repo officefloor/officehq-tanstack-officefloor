@@ -1,0 +1,59 @@
+diff --git a/src/main/frontend/features/invoices/invoiceForm.slot.tsx b/src/main/frontend/features/invoices/invoiceForm.slot.tsx
+index e1c0b8b..ab44d22 100644
+--- a/src/main/frontend/features/invoices/invoiceForm.slot.tsx
++++ b/src/main/frontend/features/invoices/invoiceForm.slot.tsx
+@@ -10,6 +10,7 @@ import { createInvoice, invoicesKey } from './api';
+ function InvoiceForm({ projectId }: { projectId: number }) {
+   const queryClient = useQueryClient();
+   const [amount, setAmount] = useState('');
++  const [error, setError] = useState('');
+ 
+   const mutation = useMutation({
+     mutationFn: createInvoice,
+@@ -25,6 +26,12 @@ function InvoiceForm({ projectId }: { projectId: number }) {
+     if (amount.trim() === '' || Number.isNaN(value)) {
+       return;
+     }
++    // An invoice must be for something: the amount has to be more than zero.
++    if (value <= 0) {
++      setError('Amount must be greater than zero');
++      return;
++    }
++    setError('');
+     mutation.mutate({ projectId, amount: value });
+   };
+ 
+@@ -39,6 +46,7 @@ function InvoiceForm({ projectId }: { projectId: number }) {
+       <button data-testid="invoice-form-submit" type="submit">
+         Add invoice
+       </button>
++      {error && <p data-testid="invoice-form-amount-error">{error}</p>}
+     </form>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/CreateInvoice.java b/src/main/java/net/officefloor/hq/app/CreateInvoice.java
+index e394d70..331fb7e 100644
+--- a/src/main/java/net/officefloor/hq/app/CreateInvoice.java
++++ b/src/main/java/net/officefloor/hq/app/CreateInvoice.java
+@@ -19,6 +19,9 @@ public class CreateInvoice {
+         if (amount == null) {
+             throw new IllegalArgumentException("An invoice amount is required");
+         }
++        if (amount.signum() <= 0) {
++            throw new IllegalArgumentException("An invoice amount must be greater than zero");
++        }
+         Long projectId = form.getProjectId();
+         if (projectId == null || projects.findById(projectId).isEmpty()) {
+             throw new IllegalArgumentException("A valid project is required");
+diff --git a/src/main/resources/db/migration/V6__invoice_amount_positive.sql b/src/main/resources/db/migration/V6__invoice_amount_positive.sql
+new file mode 100644
+index 0000000..4239464
+--- /dev/null
++++ b/src/main/resources/db/migration/V6__invoice_amount_positive.sql
+@@ -0,0 +1,6 @@
++-- An invoice must be for something: its amount has to be MORE THAN ZERO. This adds the guard at the
++-- data layer so a zero/negative amount can never be persisted, matching the UI (invoiceForm.slot.tsx)
++-- and server (CreateInvoice.java) checks.
++ALTER TABLE invoices
++    ADD CONSTRAINT invoices_amount_positive
++    CHECK (amount > 0);
