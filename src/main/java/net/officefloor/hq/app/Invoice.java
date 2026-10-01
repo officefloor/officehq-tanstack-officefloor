@@ -43,6 +43,15 @@ public class Invoice {
     @Column(name = "due_date", nullable = false)
     private LocalDate dueDate;
 
+    /**
+     * The percentage taken off the invoice as a discount (0–100). The subtotal is the sum of the
+     * invoice's line items; the discount is that percentage of the subtotal, and the final total is
+     * the subtotal minus the discount. Defaults to zero — no discount takes nothing off
+     * (V29__invoice_discount.sql).
+     */
+    @Column(name = "discount_pct", nullable = false)
+    private BigDecimal discountPct = BigDecimal.ZERO;
+
     protected Invoice() {
     }
 
@@ -84,6 +93,11 @@ public class Invoice {
 
     public LocalDate getDueDate() {
         return dueDate;
+    }
+
+    /** The percentage discount taken off this invoice's subtotal (0–100, zero when none is set). */
+    public BigDecimal getDiscountPct() {
+        return discountPct;
     }
 
     /** Send this invoice — the DRAFT -> SENT transition the send action performs. */

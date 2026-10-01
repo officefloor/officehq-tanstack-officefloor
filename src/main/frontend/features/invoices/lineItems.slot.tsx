@@ -7,18 +7,18 @@ import {
   removeLineItem,
   updateLineItem,
   lineAmount,
-  invoiceTotal,
   type LineItem,
 } from './lineItemsApi';
 import { formatMoney } from '../../ui/money';
 
-// The invoice's line items and what they add up to — one panel filling the invoice.detail region.
-// Reads server data under ['invoice-lineitems', invoiceId] (never copied into state); the add form
-// shares the key, so a successful add refreshes this with no import between them. Each line can be
-// CHANGED (inline) or REMOVED here: both are mutations that invalidate the same key so the list and
-// the DERIVED total refetch, plus ['invoices'] so the project's stored amount keeps step. The total
-// is derived from the query (never stored), and money renders with two decimals. useState holds only
-// what the user is currently typing into the row being edited.
+// The invoice's line items — one panel filling the invoice.detail region (the money summary below it,
+// subtotal / discount / total, is its own summary.slot.tsx). Reads server data under
+// ['invoice-lineitems', invoiceId] (never copied into state); the add form shares the key, so a
+// successful add refreshes this with no import between them. Each line can be CHANGED (inline) or
+// REMOVED here: both are mutations that invalidate the same key so the list — and, by prefix, the
+// summary's subtotal/total — refetch, plus ['invoices'] so the project's stored amount keeps step.
+// Each line's amount is derived from the query (never stored), and money renders with two decimals.
+// useState holds only what the user is currently typing into the row being edited.
 function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
   const queryClient = useQueryClient();
   const { data: items } = useQuery({
@@ -188,7 +188,6 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
         </tbody>
       </table>
       {error && <p data-testid="lineitem-edit-error">{error}</p>}
-      <p data-testid="invoice-amount">{formatMoney(invoiceTotal(items))}</p>
     </>
   );
 }

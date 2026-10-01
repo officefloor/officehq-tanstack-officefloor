@@ -131,15 +131,23 @@ public class TestSupportController {
                             .multiply(new java.math.BigDecimal(li.get("qty").toString())));
                 }
             }
+            // discountPct is optional in the fixture — a spec that does not care about a discount
+            // leaves it out, defaulting to 0 (the same state a fresh invoice gets until one is set,
+            // V29__invoice_discount.sql), so the final total equals the subtotal.
+            java.math.BigDecimal discountPct = inv.get("discountPct") != null
+                    ? new java.math.BigDecimal(inv.get("discountPct").toString())
+                    : java.math.BigDecimal.ZERO;
             jdbc.update(
-                    "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO invoices"
+                            + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?)",
                     ((Number) inv.get("id")).longValue(),
                     ((Number) inv.get("projectId")).longValue(),
                     amount,
                     status.toString(),
                     java.sql.Date.valueOf(issued),
-                    java.sql.Date.valueOf(due));
+                    java.sql.Date.valueOf(due),
+                    discountPct);
             // Insert the invoice's lines with their explicit fixture ids (the spec asserts rows by
             // these ids), owned by this invoice.
             for (Map<String, Object> li : lineItems) {
