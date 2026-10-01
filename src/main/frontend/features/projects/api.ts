@@ -9,6 +9,7 @@ export type Project = {
   clientId: number;
   clientName: string;
   archived: boolean;
+  tagIds: number[];
 };
 export type NewProject = { name: string; clientId: number };
 
