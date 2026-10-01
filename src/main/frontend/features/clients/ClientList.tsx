@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientSearch } from './ClientSearch';
 import { useClients } from './clients';
@@ -35,6 +36,7 @@ export function ClientList() {
         <tr>
           <th>Name</th>
           <th>Email</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -42,6 +44,15 @@ export function ClientList() {
           <tr key={client.id} data-testid={`client-row-${client.id}`}>
             <td data-testid="client-name">{client.name}</td>
             <td data-testid="client-email">{client.email}</td>
+            <td>
+              <Link
+                to="/clients/$clientId"
+                params={{ clientId: String(client.id) }}
+                data-testid={`client-open-${client.id}`}
+              >
+                Open
+              </Link>
+            </td>
           </tr>
         ))}
         </tbody>
