@@ -1,0 +1,176 @@
+diff --git a/src/main/frontend/features/invoices/AllInvoices.tsx b/src/main/frontend/features/invoices/AllInvoices.tsx
+new file mode 100644
+index 0000000..ad3302a
+--- /dev/null
++++ b/src/main/frontend/features/invoices/AllInvoices.tsx
+@@ -0,0 +1,39 @@
++import { useQuery } from '@tanstack/react-query';
++import { allInvoicesKey, listAllInvoices, type AllInvoice } from './allInvoices';
++import { formatMoney } from '../../ui/money';
++
++// One place listing every invoice across all projects. Reads server data under ['invoices', 'all']
++// (never copied into state); each row shows which PROJECT the invoice is for (the name the server
++// joins on) and what STAGE it is at (its status). Amounts render with two decimals.
++export function AllInvoices() {
++  const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: listAllInvoices });
++
++  if (!invoices) {
++    return null;
++  }
++
++  if (invoices.length === 0) {
++    return <p data-testid="all-invoices-empty">No invoices yet.</p>;
++  }
++
++  return (
++    <table data-testid="all-invoices-table">
++      <thead>
++        <tr>
++          <th>Project</th>
++          <th>Status</th>
++          <th>Amount</th>
++        </tr>
++      </thead>
++      <tbody>
++        {invoices.map((invoice: AllInvoice) => (
++          <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
++            <td data-testid="invoice-project">{invoice.projectName}</td>
++            <td data-testid="invoice-status">{invoice.status}</td>
++            <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
+diff --git a/src/main/frontend/features/invoices/allInvoices.ts b/src/main/frontend/features/invoices/allInvoices.ts
+new file mode 100644
+index 0000000..c00aab8
+--- /dev/null
++++ b/src/main/frontend/features/invoices/allInvoices.ts
+@@ -0,0 +1,19 @@
++import { getJson } from '../../api/http';
++
++// Every invoice across every project, as the API exposes it for the "all invoices" page. Each row
++// carries its project's NAME (the cross-entity join done on the server) and its lifecycle stage
++// (status), so the one list shows which project each invoice is for and what stage it is at without
++// a second lookup. The query key ['invoices', 'all'] is its own handle — a send/pay write invalidates
++// ['invoices'] by prefix, so this list refreshes in step with no import between them.
++export type AllInvoice = {
++  id: number;
++  projectId: number;
++  projectName: string;
++  status: string;
++  amount: number;
++};
++
++export const allInvoicesKey = ['invoices', 'all'] as const;
++
++export const listAllInvoices = (): Promise<AllInvoice[]> =>
++  getJson<AllInvoice[]>('/api/invoices/all');
+diff --git a/src/main/frontend/features/invoices/nav.slot.tsx b/src/main/frontend/features/invoices/nav.slot.tsx
+new file mode 100644
+index 0000000..3598fd8
+--- /dev/null
++++ b/src/main/frontend/features/invoices/nav.slot.tsx
+@@ -0,0 +1,13 @@
++import { Link } from '@tanstack/react-router';
++import { AppNav } from '../../slots/defs/appNav';
++
++// Invoices' presence in the nav bar — one new file, the shell is not touched (see
++// features/home/nav.slot.tsx for the worked example).
++export const contribution = AppNav.fill({
++  order: 30,
++  Component: () => (
++    <Link to="/invoices" data-testid="nav-invoices">
++      Invoices
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/routes/invoices.tsx b/src/main/frontend/routes/invoices.tsx
+new file mode 100644
+index 0000000..34cfc44
+--- /dev/null
++++ b/src/main/frontend/routes/invoices.tsx
+@@ -0,0 +1,17 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { AllInvoices } from '../features/invoices/AllInvoices';
++
++// The invoices page: one new file under routes/. A leaf page with no detail views, so it is a flat
++// route composing the one list of every invoice across all projects, which queries for itself.
++export const Route = createFileRoute('/invoices')({
++  component: InvoicesPage,
++});
++
++function InvoicesPage() {
++  return (
++    <section data-testid="invoices-page">
++      <h1>Invoices</h1>
++      <AllInvoices />
++    </section>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/AllInvoiceView.java b/src/main/java/net/officefloor/hq/app/AllInvoiceView.java
+new file mode 100644
+index 0000000..425efa1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/AllInvoiceView.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * What the API exposes for an invoice in the cross-project list: the shape the "all invoices" page
++ * renders. The cross-entity join lives here — each invoice carries its project's NAME (not just the
++ * id) so the one list can show which project the invoice is for without a second lookup. The amount
++ * keeps its {@link BigDecimal} scale so the client formats it to two places.
++ */
++public record AllInvoiceView(Long id, Long projectId, String projectName, String status,
++        BigDecimal amount) {
++
++    public static AllInvoiceView of(Invoice invoice, String projectName) {
++        return new AllInvoiceView(invoice.getId(), invoice.getProjectId(), projectName,
++                invoice.getStatus(), invoice.getAmount());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListAllInvoices.java b/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
+new file mode 100644
+index 0000000..3306a65
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/invoices/all — every invoice across every project, in id order, each carrying the NAME of
++ * the project it is for and its lifecycle stage (status). One place listing all invoices, so it
++ * injects both repositories and joins the project name on the server. Wired by
++ * officefloor/rest/api/invoices/all.GET.yml.
++ */
++public class ListAllInvoices {
++
++    public void service(InvoiceRepository invoices, ProjectRepository projects,
++            ObjectResponse<List<AllInvoiceView>> response) {
++        Map<Long, String> names = projects.findAll().stream()
++                .collect(Collectors.toMap(Project::getId, Project::getName));
++        List<AllInvoiceView> view = invoices.findAll().stream()
++                .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
++                .map(inv -> AllInvoiceView.of(inv, names.getOrDefault(inv.getProjectId(), "")))
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/invoices/all.GET.yml b/src/main/resources/officefloor/rest/api/invoices/all.GET.yml
+new file mode 100644
+index 0000000..0c0c8af
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/all.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListAllInvoices
