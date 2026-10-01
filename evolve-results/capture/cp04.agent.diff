@@ -1,0 +1,491 @@
+diff --git a/src/main/frontend/features/invoices/api.ts b/src/main/frontend/features/invoices/api.ts
+new file mode 100644
+index 0000000..f088fc8
+--- /dev/null
++++ b/src/main/frontend/features/invoices/api.ts
+@@ -0,0 +1,15 @@
++import { getJson, postJson } from '../../api/http';
++
++// An invoice as the API exposes it — an amount belonging to a project. The query key is scoped to
++// the project, ['invoices', projectId], so each project's detail page reads (and invalidates) only
++// its own invoices: the list reads the key, the add form invalidates it.
++export type Invoice = { id: number; projectId: number; amount: number };
++export type NewInvoice = { projectId: number; amount: number };
++
++export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
++
++export const listInvoices = (projectId: number): Promise<Invoice[]> =>
++  getJson<Invoice[]>(`/api/invoices?projectId=${projectId}`);
++
++export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
++  postJson<Invoice>('/api/invoices', body);
+diff --git a/src/main/frontend/features/invoices/invoiceForm.slot.tsx b/src/main/frontend/features/invoices/invoiceForm.slot.tsx
+new file mode 100644
+index 0000000..e1c0b8b
+--- /dev/null
++++ b/src/main/frontend/features/invoices/invoiceForm.slot.tsx
+@@ -0,0 +1,46 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { createInvoice, invoicesKey } from './api';
++
++// Add an invoice for an amount to this project — one panel filling the project.detail region. The
++// amount the user is typing lives in useState (uncommitted input); the saved data lives on the
++// server. On success we invalidate ['invoices', projectId] so the list + total refetch — we never
++// hand-maintain the list.
++function InvoiceForm({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const [amount, setAmount] = useState('');
++
++  const mutation = useMutation({
++    mutationFn: createInvoice,
++    onSuccess: () => {
++      setAmount('');
++      void queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) });
++    },
++  });
++
++  const submit = (e: React.FormEvent) => {
++    e.preventDefault();
++    const value = Number(amount);
++    if (amount.trim() === '' || Number.isNaN(value)) {
++      return;
++    }
++    mutation.mutate({ projectId, amount: value });
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <input
++        data-testid="invoice-form-amount"
++        placeholder="Amount"
++        value={amount}
++        onChange={(e) => setAmount(e.target.value)}
++      />
++      <button data-testid="invoice-form-submit" type="submit">
++        Add invoice
++      </button>
++    </form>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 10, Component: InvoiceForm });
+diff --git a/src/main/frontend/features/invoices/invoices.slot.tsx b/src/main/frontend/features/invoices/invoices.slot.tsx
+new file mode 100644
+index 0000000..7f26914
+--- /dev/null
++++ b/src/main/frontend/features/invoices/invoices.slot.tsx
+@@ -0,0 +1,42 @@
++import { useQuery } from '@tanstack/react-query';
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { invoicesKey, listInvoices, type Invoice } from './api';
++
++// The project's invoices and what they add up to — one panel filling the project.detail region.
++// Reads server data under ['invoices', projectId] (never copied into state); the add form shares
++// the key, so a successful add refreshes this with no import between them. The total is DERIVED
++// from the same query (never stored), and amounts render with two decimals.
++function ProjectInvoices({ projectId }: { projectId: number }) {
++  const { data: invoices } = useQuery({
++    queryKey: invoicesKey(projectId),
++    queryFn: () => listInvoices(projectId),
++  });
++
++  if (!invoices) {
++    return null;
++  }
++
++  const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
++
++  return (
++    <>
++      <table data-testid="project-invoices-table">
++        <thead>
++          <tr>
++            <th>Amount</th>
++          </tr>
++        </thead>
++        <tbody>
++          {invoices.map((invoice: Invoice) => (
++            <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
++              <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p data-testid="project-invoices-total">{total.toFixed(2)}</p>
++    </>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 20, Component: ProjectInvoices });
+diff --git a/src/main/frontend/features/projects/ProjectsList.tsx b/src/main/frontend/features/projects/ProjectsList.tsx
+index 7f3caf7..cbde54f 100644
+--- a/src/main/frontend/features/projects/ProjectsList.tsx
++++ b/src/main/frontend/features/projects/ProjectsList.tsx
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { projectsKey, listProjects, type Project } from './api';
++import { ProjectRow } from '../../slots/defs/projectRow';
+ 
+ // The projects list. Reads server data under ['projects'] (never copied into state); the create form
+ // shares the key, so a successful create refreshes this list with no import between them. Each row
+@@ -21,6 +22,7 @@ export function ProjectsList() {
+         <tr>
+           <th>Name</th>
+           <th>Client</th>
++          <th></th>
+         </tr>
+       </thead>
+       <tbody>
+@@ -28,6 +30,9 @@ export function ProjectsList() {
+           <tr key={project.id} data-testid={`project-row-${project.id}`}>
+             <td data-testid="project-name">{project.name}</td>
+             <td data-testid="project-client">{project.clientName}</td>
++            <td>
++              <ProjectRow.Slot projectId={project.id} />
++            </td>
+           </tr>
+         ))}
+       </tbody>
+diff --git a/src/main/frontend/features/projects/open.slot.tsx b/src/main/frontend/features/projects/open.slot.tsx
+new file mode 100644
+index 0000000..dbc2e55
+--- /dev/null
++++ b/src/main/frontend/features/projects/open.slot.tsx
+@@ -0,0 +1,18 @@
++import { Link } from '@tanstack/react-router';
++import { ProjectRow } from '../../slots/defs/projectRow';
++
++// The link that opens a project's detail page — one new file filling the projects-row action slot.
++// Drilling in is a child route (routes/projects.$projectId.tsx), never a flag, so this is a plain
++// navigation to that route. Its testid is project-open-<id> (the test contract; CLAUDE.md).
++export const contribution = ProjectRow.fill({
++  order: 0,
++  Component: ({ projectId }: { projectId: number }) => (
++    <Link
++      to="/projects/$projectId"
++      params={{ projectId: String(projectId) }}
++      data-testid={`project-open-${projectId}`}
++    >
++      Open
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/routes/projects.$projectId.tsx b/src/main/frontend/routes/projects.$projectId.tsx
+new file mode 100644
+index 0000000..20ca737
+--- /dev/null
++++ b/src/main/frontend/routes/projects.$projectId.tsx
+@@ -0,0 +1,19 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { ProjectDetail } from '../slots/defs/projectDetail';
++
++// A project's detail page: a new file under routes/, reached by project-open-<id>. It holds no data
++// and no state — it renders the project.detail region with the project id from the URL, and each
++// panel (invoices table, total, add form) is its own *.slot.tsx that queries for itself.
++export const Route = createFileRoute('/projects/$projectId')({
++  component: ProjectDetailPage,
++});
++
++function ProjectDetailPage() {
++  const { projectId } = Route.useParams();
++  return (
++    <section data-testid="project-page">
++      <h1>Project</h1>
++      <ProjectDetail.Slot projectId={Number(projectId)} />
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/projects.tsx b/src/main/frontend/routes/projects.tsx
+new file mode 100644
+index 0000000..a2228ad
+--- /dev/null
++++ b/src/main/frontend/routes/projects.tsx
+@@ -0,0 +1,8 @@
++import { createFileRoute, Outlet } from '@tanstack/react-router';
++
++// The projects section layout: the one-line route that lets projects have detail views beside the
++// list. It renders only <Outlet /> — the list (projects.index.tsx) and a project's detail page
++// (projects.$projectId.tsx) are its children, each its own file.
++export const Route = createFileRoute('/projects')({
++  component: () => <Outlet />,
++});
+diff --git a/src/main/frontend/slots/defs/projectDetail.ts b/src/main/frontend/slots/defs/projectDetail.ts
+new file mode 100644
+index 0000000..ac9cbd6
+--- /dev/null
++++ b/src/main/frontend/slots/defs/projectDetail.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * A project's detail page. Features fill this region with panels about one project (its invoices,
++ * their total, an add-invoice form). The detail route renders it with the project id as context;
++ * the page never lists what goes in it, so each panel is a new *.slot.tsx file.
++ */
++export const ProjectDetail = defineSlot<{ projectId: number }>('project.detail');
+diff --git a/src/main/frontend/slots/defs/projectRow.ts b/src/main/frontend/slots/defs/projectRow.ts
+new file mode 100644
+index 0000000..858190b
+--- /dev/null
++++ b/src/main/frontend/slots/defs/projectRow.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * A row action on the projects list — a per-project control rendered in the row's last cell (the
++ * Slot is a Fragment, so it is valid inside a <td>). Features add actions here as new *.slot.tsx
++ * files; the list never lists them. First use: the link that opens a project's detail page.
++ */
++export const ProjectRow = defineSlot<{ projectId: number }>('project.row');
+diff --git a/src/main/java/net/officefloor/hq/app/CreateInvoice.java b/src/main/java/net/officefloor/hq/app/CreateInvoice.java
+new file mode 100644
+index 0000000..e394d70
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CreateInvoice.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/invoices — raise an invoice against a project from the submitted amount + project id,
++ * returning the saved row (with its generated id). Wired by officefloor/rest/api/invoices.POST.yml.
++ *
++ * An invoice must name a real project and carry an amount: we reject a missing amount or an
++ * unknown/absent project id before persisting so a bad row can never be saved.
++ */
++public class CreateInvoice {
++
++    public void service(@RequestBody InvoiceForm form, InvoiceRepository invoices,
++            ProjectRepository projects, ObjectResponse<InvoiceView> response) {
++        BigDecimal amount = form.getAmount();
++        if (amount == null) {
++            throw new IllegalArgumentException("An invoice amount is required");
++        }
++        Long projectId = form.getProjectId();
++        if (projectId == null || projects.findById(projectId).isEmpty()) {
++            throw new IllegalArgumentException("A valid project is required");
++        }
++        Invoice saved = invoices.save(new Invoice(projectId, amount));
++        response.send(InvoiceView.of(saved));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+new file mode 100644
+index 0000000..c130f5d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -0,0 +1,49 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * An invoice the user raises against a project: an amount and the id of the project it is for. Maps
++ * the {@code invoices} table (Flyway V4__invoices.sql); the id is IDENTITY-generated on create. The
++ * amount is a {@link BigDecimal} because it is money (fixed scale, no float drift).
++ */
++@Entity
++@Table(name = "invoices")
++public class Invoice {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "project_id", nullable = false)
++    private Long projectId;
++
++    @Column(nullable = false)
++    private BigDecimal amount;
++
++    protected Invoice() {
++    }
++
++    public Invoice(Long projectId, BigDecimal amount) {
++        this.projectId = projectId;
++        this.amount = amount;
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public BigDecimal getAmount() {
++        return amount;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceForm.java b/src/main/java/net/officefloor/hq/app/InvoiceForm.java
+new file mode 100644
+index 0000000..684e482
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceForm.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/** The request body for creating an invoice: the amount typed and the id of the owning project. */
++public class InvoiceForm {
++
++    private Long projectId;
++    private BigDecimal amount;
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public void setProjectId(Long projectId) {
++        this.projectId = projectId;
++    }
++
++    public BigDecimal getAmount() {
++        return amount;
++    }
++
++    public void setAmount(BigDecimal amount) {
++        this.amount = amount;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+new file mode 100644
+index 0000000..04d4d53
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/** Data access for {@link Invoice}. A Spring bean, injected into the OfficeFloor logic classes. */
++public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
++
++    /** The invoices of one project, in id order — the shape the project detail page lists. */
++    List<Invoice> findByProjectIdOrderByIdAsc(Long projectId);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceView.java b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+new file mode 100644
+index 0000000..76c2eda
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * What the API exposes for an invoice: the shape the front-end renders into the project's invoices
++ * table. The amount keeps its scale (a {@link BigDecimal}) so the client formats it to two places.
++ */
++public record InvoiceView(Long id, Long projectId, BigDecimal amount) {
++
++    public static InvoiceView of(Invoice invoice) {
++        return new InvoiceView(invoice.getId(), invoice.getProjectId(), invoice.getAmount());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListInvoices.java b/src/main/java/net/officefloor/hq/app/ListInvoices.java
+new file mode 100644
+index 0000000..1359e02
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListInvoices.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/invoices?projectId=&lt;id&gt; — the invoices of one project, in id order. Scoped to a
++ * project (the detail page lists ITS invoices), so the project id arrives as a query parameter.
++ * Wired by officefloor/rest/api/invoices.GET.yml.
++ */
++public class ListInvoices {
++
++    public void service(@RequestParam("projectId") String projectId,
++            InvoiceRepository invoices, ObjectResponse<List<InvoiceView>> response) {
++        Long id = Long.valueOf(projectId);
++        List<InvoiceView> view = invoices.findByProjectIdOrderByIdAsc(id).stream()
++                .map(InvoiceView::of)
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 5d8c718..8ff04a2 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -32,10 +32,11 @@ public class TestSupportController {
+     @PostMapping("/reset")
+     public void reset() {
+         audit.clear();
+-        // projects references clients, so H2 refuses to TRUNCATE the parent while the FK exists —
+-        // drop referential integrity for the duration, truncate both, then restore it.
++        // invoices references projects references clients, so H2 refuses to TRUNCATE a parent while
++        // the FK exists — drop referential integrity for the duration, truncate all, then restore.
+         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+         try {
++            jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
+         } finally {
+@@ -61,5 +62,13 @@ public class TestSupportController {
+                     ((Number) p.get("id")).longValue(), p.get("name"),
+                     ((Number) p.get("clientId")).longValue());
+         }
++        List<Map<String, Object>> invoices =
++                (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
++        for (Map<String, Object> inv : invoices) {
++            jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
++                    ((Number) inv.get("id")).longValue(),
++                    ((Number) inv.get("projectId")).longValue(),
++                    new java.math.BigDecimal(inv.get("amount").toString()));
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V4__invoices.sql b/src/main/resources/db/migration/V4__invoices.sql
+new file mode 100644
+index 0000000..009b799
+--- /dev/null
++++ b/src/main/resources/db/migration/V4__invoices.sql
+@@ -0,0 +1,9 @@
++-- Third domain table: an invoice is an amount that belongs to a project. IDENTITY id so the app
++-- generates ids on create, while the test seed inserts explicit ids (GENERATED BY DEFAULT lets a
++-- supplied id win). project_id is a FK to projects so an invoice always points at a real project.
++-- amount is money, so a fixed-scale DECIMAL (two places) rather than a float.
++CREATE TABLE invoices (
++    id         BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    project_id BIGINT NOT NULL REFERENCES projects (id),
++    amount     DECIMAL(12, 2) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/invoices.GET.yml b/src/main/resources/officefloor/rest/api/invoices.GET.yml
+new file mode 100644
+index 0000000..31da003
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListInvoices
+diff --git a/src/main/resources/officefloor/rest/api/invoices.POST.yml b/src/main/resources/officefloor/rest/api/invoices.POST.yml
+new file mode 100644
+index 0000000..07a2b41
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.CreateInvoice
