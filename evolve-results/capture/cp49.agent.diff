@@ -1,0 +1,223 @@
+diff --git a/src/main/frontend/features/invoices/summary.slot.tsx b/src/main/frontend/features/invoices/summary.slot.tsx
+index 78839c2..6a29e34 100644
+--- a/src/main/frontend/features/invoices/summary.slot.tsx
++++ b/src/main/frontend/features/invoices/summary.slot.tsx
+@@ -4,12 +4,13 @@ import { getInvoiceSummary, invoiceSummaryKey } from './summaryApi';
+ import { formatMoney } from '../../ui/money';
+ 
+ // An invoice's money summary — one panel filling the invoice.detail region: the SUBTOTAL (what its
+-// line items add up to), the DISCOUNT taken off it (a percentage of the subtotal), and the final
+-// TOTAL (subtotal minus the discount). Server data is read under the summary key (never copied into
+-// state); the server derives the three figures so there is no float drift, and the key shares the
+-// line items' prefix so a line add/edit/remove refreshes these figures too. This panel owns the
+-// invoice-amount (the final total) — the line items table above is just the editable lines. Money
+-// renders with two decimals.
++// line items add up to), the DISCOUNT taken off it (a percentage of the subtotal), the sales TAX
++// added on top (a percentage of the discounted amount, applied after the discount), and the final
++// TOTAL (subtotal minus the discount, plus the tax on what is left). Server data is read under the
++// summary key (never copied into state); the server derives the figures so there is no float drift,
++// and the key shares the line items' prefix so a line add/edit/remove refreshes these figures too.
++// This panel owns the invoice-amount (the final total) — the line items table above is just the
++// editable lines. Money renders with two decimals.
+ function InvoiceSummary({ invoiceId }: { invoiceId: number }) {
+   const { data: summary } = useQuery({
+     queryKey: invoiceSummaryKey(invoiceId),
+@@ -26,6 +27,8 @@ function InvoiceSummary({ invoiceId }: { invoiceId: number }) {
+       <dd data-testid="invoice-subtotal">{formatMoney(summary.subtotal)}</dd>
+       <dt>Discount</dt>
+       <dd data-testid="invoice-discount">{formatMoney(summary.discount)}</dd>
++      <dt>Tax</dt>
++      <dd data-testid="invoice-tax">{formatMoney(summary.tax)}</dd>
+       <dt>Total</dt>
+       <dd data-testid="invoice-amount">{formatMoney(summary.total)}</dd>
+     </dl>
+diff --git a/src/main/frontend/features/invoices/summaryApi.ts b/src/main/frontend/features/invoices/summaryApi.ts
+index 5516756..7a1dd6b 100644
+--- a/src/main/frontend/features/invoices/summaryApi.ts
++++ b/src/main/frontend/features/invoices/summaryApi.ts
+@@ -1,16 +1,20 @@
+ import { getJson } from '../../api/http';
+ 
+ // An invoice's money summary as the API exposes it: the SUBTOTAL (the sum of its line items), the
+-// percentage DISCOUNT set on it, the DISCOUNT amount that works out to, and the final TOTAL (subtotal
+-// minus the discount). The derivation lives on the server (money scale, no float drift). The query
+-// key shares the ['invoice-lineitems', invoiceId] prefix the line items list uses, so when a line is
+-// added, changed or removed the same invalidate that refreshes the list also refetches this summary —
+-// the subtotal and total stay in step with the lines, with no import between the two panels.
++// percentage DISCOUNT set on it and the DISCOUNT amount that works out to, the percentage sales TAX
++// set on it and the TAX amount that works out to, and the final TOTAL. Tax is applied after the
++// discount, so the total is the subtotal minus the discount, plus the tax on what is left. The
++// derivation lives on the server (money scale, no float drift). The query key shares the
++// ['invoice-lineitems', invoiceId] prefix the line items list uses, so when a line is added, changed
++// or removed the same invalidate that refreshes the list also refetches this summary — the subtotal,
++// tax and total stay in step with the lines, with no import between the two panels.
+ export type InvoiceSummary = {
+   invoiceId: number;
+   subtotal: number;
+   discountPct: number;
+   discount: number;
++  taxPct: number;
++  tax: number;
+   total: number;
+ };
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/GetInvoiceSummary.java b/src/main/java/net/officefloor/hq/app/GetInvoiceSummary.java
+index 07ca081..419ada7 100644
+--- a/src/main/java/net/officefloor/hq/app/GetInvoiceSummary.java
++++ b/src/main/java/net/officefloor/hq/app/GetInvoiceSummary.java
+@@ -7,10 +7,12 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * GET /api/invoices/summary?invoiceId=&lt;id&gt; — an invoice's money summary: its SUBTOTAL (the sum
+- * of its line items' amounts), the percentage DISCOUNT set on it, the DISCOUNT amount that works out
+- * to, and the final TOTAL (subtotal minus the discount). Scoped to one invoice, so the invoice id
+- * arrives as a query parameter. Derived on the server in {@link BigDecimal} (money scale, no float
+- * drift). Wired by officefloor/rest/api/invoices/summary.GET.yml.
++ * of its line items' amounts), the percentage DISCOUNT set on it and the DISCOUNT amount that works
++ * out to, the percentage sales TAX set on it and the TAX amount that works out to, and the final
++ * TOTAL. Tax is applied after the discount, so the total is the subtotal minus the discount, plus the
++ * tax on what is left. Scoped to one invoice, so the invoice id arrives as a query parameter. Derived
++ * on the server in {@link BigDecimal} (money scale, no float drift). Wired by
++ * officefloor/rest/api/invoices/summary.GET.yml.
+  */
+ public class GetInvoiceSummary {
+ 
+@@ -27,7 +29,11 @@ public class GetInvoiceSummary {
+                 invoice.getDiscountPct() == null ? BigDecimal.ZERO : invoice.getDiscountPct();
+         BigDecimal discount = subtotal.multiply(discountPct)
+                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+-        BigDecimal total = subtotal.subtract(discount);
+-        response.send(new InvoiceSummaryView(id, subtotal, discountPct, discount, total));
++        BigDecimal discounted = subtotal.subtract(discount);
++        BigDecimal taxPct = invoice.getTaxPct() == null ? BigDecimal.ZERO : invoice.getTaxPct();
++        BigDecimal tax = discounted.multiply(taxPct)
++                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        BigDecimal total = discounted.add(tax);
++        response.send(new InvoiceSummaryView(id, subtotal, discountPct, discount, taxPct, tax, total));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index 54036c4..6c0c878 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -53,6 +53,15 @@ public class Invoice {
+     @Column(name = "discount_pct", nullable = false)
+     private BigDecimal discountPct = BigDecimal.ZERO;
+ 
++    /**
++     * The percentage sales tax added on top of the invoice (0–100), applied AFTER the discount. The
++     * tax is that percentage of the discounted amount (subtotal minus discount), and the final total
++     * is the discounted amount plus that tax. Defaults to zero — no tax set adds nothing on
++     * (V30__invoice_tax.sql).
++     */
++    @Column(name = "tax_pct", nullable = false)
++    private BigDecimal taxPct = BigDecimal.ZERO;
++
+     protected Invoice() {
+     }
+ 
+@@ -101,19 +110,29 @@ public class Invoice {
+         return discountPct;
+     }
+ 
++    /** The percentage sales tax added on top of this invoice (0–100, zero when none is set). */
++    public BigDecimal getTaxPct() {
++        return taxPct;
++    }
++
+     /**
+      * The final total owed on this invoice: the subtotal ({@link #getAmount()}) minus the percentage
+-     * discount taken off it. This is the figure that counts as money owed everywhere the amount due is
+-     * worked out — the dashboard outstanding total, an invoice's remaining balance and the client
+-     * statement — so the discount flows through consistently. Derived in {@link BigDecimal} at money
+-     * scale (no float drift), the same derivation {@link GetInvoiceSummary} applies to the detail view.
++     * discount taken off it, then the percentage sales tax added on top of what is left. This is the
++     * figure that counts as money owed everywhere the amount due is worked out — the dashboard
++     * outstanding total, an invoice's remaining balance and the client statement — so the discount and
++     * tax flow through consistently. Derived in {@link BigDecimal} at money scale (no float drift), the
++     * same derivation {@link GetInvoiceSummary} applies to the detail view.
+      */
+     public BigDecimal getTotal() {
+         BigDecimal base = amount == null ? BigDecimal.ZERO : amount;
+-        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
++        BigDecimal discountPercent = discountPct == null ? BigDecimal.ZERO : discountPct;
+         BigDecimal discount =
+-                base.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+-        return base.subtract(discount);
++                base.multiply(discountPercent).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        BigDecimal discounted = base.subtract(discount);
++        BigDecimal taxPercent = taxPct == null ? BigDecimal.ZERO : taxPct;
++        BigDecimal tax =
++                discounted.multiply(taxPercent).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
++        return discounted.add(tax);
+     }
+ 
+     /** Send this invoice — the DRAFT -> SENT transition the send action performs. */
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceSummaryView.java b/src/main/java/net/officefloor/hq/app/InvoiceSummaryView.java
+index bb39662..baa7938 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceSummaryView.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceSummaryView.java
+@@ -4,11 +4,12 @@ import java.math.BigDecimal;
+ 
+ /**
+  * What the API exposes for an invoice's money summary: the SUBTOTAL (the sum of its line items), the
+- * percentage DISCOUNT taken off it, the DISCOUNT amount that percentage works out to, and the final
+- * TOTAL (subtotal minus the discount). The derivation lives on the server, computed in
+- * {@link BigDecimal} so there is no float drift — the shape the invoice detail page renders into its
+- * subtotal / discount / total figures.
++ * percentage DISCOUNT taken off it and the DISCOUNT amount that works out to, the percentage sales
++ * TAX added on top and the TAX amount that works out to, and the final TOTAL. Tax is applied after
++ * the discount, so the total is the subtotal minus the discount, plus the tax on what is left. The
++ * derivation lives on the server, computed in {@link BigDecimal} so there is no float drift — the
++ * shape the invoice detail page renders into its subtotal / discount / tax / total figures.
+  */
+ public record InvoiceSummaryView(Long invoiceId, BigDecimal subtotal, BigDecimal discountPct,
+-        BigDecimal discount, BigDecimal total) {
++        BigDecimal discount, BigDecimal taxPct, BigDecimal tax, BigDecimal total) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 011f396..602b883 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -137,17 +137,24 @@ public class TestSupportController {
+             java.math.BigDecimal discountPct = inv.get("discountPct") != null
+                     ? new java.math.BigDecimal(inv.get("discountPct").toString())
+                     : java.math.BigDecimal.ZERO;
++            // taxPct is optional in the fixture — a spec that does not care about tax leaves it out,
++            // defaulting to 0 (the same state a fresh invoice gets until one is set,
++            // V30__invoice_tax.sql), so the final total adds nothing on top of the discounted amount.
++            java.math.BigDecimal taxPct = inv.get("taxPct") != null
++                    ? new java.math.BigDecimal(inv.get("taxPct").toString())
++                    : java.math.BigDecimal.ZERO;
+             jdbc.update(
+                     "INSERT INTO invoices"
+-                            + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
+-                            + " VALUES (?, ?, ?, ?, ?, ?, ?)",
++                            + " (id, project_id, amount, status, issued_date, due_date, discount_pct, tax_pct)"
++                            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     ((Number) inv.get("id")).longValue(),
+                     ((Number) inv.get("projectId")).longValue(),
+                     amount,
+                     status.toString(),
+                     java.sql.Date.valueOf(issued),
+                     java.sql.Date.valueOf(due),
+-                    discountPct);
++                    discountPct,
++                    taxPct);
+             // Insert the invoice's lines with their explicit fixture ids (the spec asserts rows by
+             // these ids), owned by this invoice.
+             for (Map<String, Object> li : lineItems) {
+diff --git a/src/main/resources/db/migration/V30__invoice_tax.sql b/src/main/resources/db/migration/V30__invoice_tax.sql
+new file mode 100644
+index 0000000..5b183c1
+--- /dev/null
++++ b/src/main/resources/db/migration/V30__invoice_tax.sql
+@@ -0,0 +1,8 @@
++-- An invoice can carry a percentage sales TAX, applied on top AFTER any discount: the subtotal is
++-- the sum of its line items, the discount is a percentage taken off that, and the tax is a
++-- percentage of what is left (subtotal minus discount). The final total is the discounted amount
++-- plus that tax. It is a percentage, so a fixed-scale DECIMAL between 0 and 100. NOT NULL
++-- defaulting to 0 — an invoice without a tax set simply adds nothing on, and existing invoices get
++-- 0 so their total is unchanged.
++ALTER TABLE invoices ADD COLUMN tax_pct DECIMAL(5, 2) NOT NULL DEFAULT 0
++    CHECK (tax_pct >= 0 AND tax_pct <= 100);
