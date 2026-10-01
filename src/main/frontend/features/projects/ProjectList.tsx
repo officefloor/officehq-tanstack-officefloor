@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { useProjects } from './projects';
 
 // The projects list. Reads server data straight from its query key and shows the client's NAME
@@ -19,6 +20,7 @@ export function ProjectList() {
         <tr>
           <th>Name</th>
           <th>Client</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -26,6 +28,15 @@ export function ProjectList() {
           <tr key={project.id} data-testid={`project-row-${project.id}`}>
             <td data-testid="project-name">{project.name}</td>
             <td data-testid="project-client">{project.clientName}</td>
+            <td>
+              <Link
+                to="/projects/$projectId"
+                params={{ projectId: String(project.id) }}
+                data-testid={`project-open-${project.id}`}
+              >
+                Open
+              </Link>
+            </td>
           </tr>
         ))}
       </tbody>

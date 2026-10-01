@@ -35,6 +35,7 @@ public class TestSupportController {
         // projects -> clients foreign key: H2 refuses TRUNCATE on a referenced table, so drop
         // referential integrity for the truncate and restore it immediately after.
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+        jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -59,6 +60,15 @@ public class TestSupportController {
                 jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
                         ((Number) project.get("id")).longValue(), project.get("name"),
                         ((Number) project.get("clientId")).longValue());
+            }
+        }
+        List<Map<String, Object>> invoices = (List<Map<String, Object>>) fixture.get("invoices");
+        if (invoices != null) {
+            for (Map<String, Object> invoice : invoices) {
+                jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
+                        ((Number) invoice.get("id")).longValue(),
+                        ((Number) invoice.get("projectId")).longValue(),
+                        new java.math.BigDecimal(invoice.get("amount").toString()));
             }
         }
     }
