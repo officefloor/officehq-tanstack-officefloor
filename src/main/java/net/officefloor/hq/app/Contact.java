@@ -32,6 +32,9 @@ public class Contact {
     @Column(name = "client_id", nullable = false)
     private Long clientId;
 
+    @Column(name = "is_primary", nullable = false)
+    private boolean primary;
+
     protected Contact() {
     }
 
@@ -60,5 +63,15 @@ public class Contact {
 
     public Long getClientId() {
         return clientId;
+    }
+
+    /** Whether this contact is the client's main contact. */
+    public boolean isPrimary() {
+        return primary;
+    }
+
+    /** Mark (or unmark) this contact as the client's main contact. */
+    public void setPrimary(boolean primary) {
+        this.primary = primary;
     }
 }

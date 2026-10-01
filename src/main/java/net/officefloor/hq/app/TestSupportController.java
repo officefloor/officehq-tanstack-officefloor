@@ -94,11 +94,14 @@ public class TestSupportController {
         List<Map<String, Object>> contacts =
                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());
         for (Map<String, Object> c : contacts) {
+            // primary is optional in the fixture — a spec that does not care leaves it out, so the
+            // contact defaults to not-primary (the same state a fresh contact gets, V26__contact_primary.sql).
+            boolean primary = Boolean.TRUE.equals(c.getOrDefault("primary", Boolean.FALSE));
             jdbc.update(
-                    "INSERT INTO contacts (id, name, email, contact_role, client_id)"
-                            + " VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO contacts (id, name, email, contact_role, client_id, is_primary)"
+                            + " VALUES (?, ?, ?, ?, ?, ?)",
                     ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"),
-                    c.get("role"), ((Number) c.get("clientId")).longValue());
+                    c.get("role"), ((Number) c.get("clientId")).longValue(), primary);
         }
         List<Map<String, Object>> invoices =
                 (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());

@@ -47,6 +47,7 @@ export type Contact = {
   email: string;
   role: string;
   clientId: number;
+  primary: boolean;
 };
 export type NewContact = { clientId: number; name: string; email: string; role: string };
 
@@ -58,6 +59,13 @@ export const listClientContacts = (clientId: number): Promise<Contact[]> =>
 
 export const createContact = (body: NewContact): Promise<Contact> =>
   postJson<Contact>('/api/clients/contacts', body);
+
+// Choose a client's main contact — marks the given contact primary server-side (clearing the flag
+// on its siblings so exactly one stays primary) and returns it. Callers invalidate
+// ['clients', clientId, 'contacts'] on success so every panel reading the contacts refetches and
+// the newly chosen main contact shows everywhere at once.
+export const setPrimaryContact = (id: number): Promise<Contact> =>
+  postJson<Contact>('/api/clients/contacts/primary', { id });
 
 // At-a-glance counts for one client: how many projects it owns and how many contacts it keeps.
 // Computed server-side (GET /api/clients/summary). The query key is scoped to the client under the
