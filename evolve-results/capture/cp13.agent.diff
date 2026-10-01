@@ -1,0 +1,282 @@
+diff --git a/src/main/frontend/features/invoices/api.ts b/src/main/frontend/features/invoices/api.ts
+index c725e79..f1b3b99 100644
+--- a/src/main/frontend/features/invoices/api.ts
++++ b/src/main/frontend/features/invoices/api.ts
+@@ -28,6 +28,11 @@ export const listInvoices = (projectId: number, sort: InvoiceSort = 'id'): Promi
+ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
+   postJson<Invoice>('/api/invoices', body);
+ 
++// Send an invoice — flips DRAFT -> SENT server-side and appends the audit record. Callers invalidate
++// ['invoices', projectId] on success so the invoices panel (and the row actions) refetch the status.
++export const sendInvoice = (id: number): Promise<Invoice> =>
++  postJson<Invoice>('/api/invoices/send', { id });
++
+ // Mark an invoice paid — flips its status server-side and appends the audit record. Callers
+ // invalidate ['invoices', projectId] on success so the invoices panel refetches the new status.
+ export const payInvoice = (id: number): Promise<Invoice> =>
+diff --git a/src/main/frontend/features/invoices/pay.slot.tsx b/src/main/frontend/features/invoices/pay.slot.tsx
+index 97d0ea5..3e3ca77 100644
+--- a/src/main/frontend/features/invoices/pay.slot.tsx
++++ b/src/main/frontend/features/invoices/pay.slot.tsx
+@@ -1,13 +1,20 @@
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { InvoiceRow } from '../../slots/defs/invoiceRow';
+-import { invoicesKey, payInvoice } from './api';
++import { invoicesKey, listInvoices, payInvoice, type Invoice } from './api';
+ 
+-// Mark an invoice paid — one new file filling the per-invoice-row action slot. The click is a
+-// useMutation (never a hand-rolled status flip in state); on success we invalidate the project's
+-// ['invoices', projectId] key so the invoices panel refetches the new status. The server also
+-// appends the audit record, so "keep a record every time" is handled where the side-effect lives.
++// Mark an invoice paid — one new file filling the per-invoice-row action slot. Payment is the last
++// step of the DRAFT -> SENT -> PAID lifecycle, so the button only appears once the invoice has been
++// SENT: the slot queries ['invoices', projectId] for its OWN row's status rather than being handed
++// it. The click is a useMutation (never a hand-rolled status flip in state); on success we invalidate
++// the project's ['invoices', projectId] key so the invoices panel refetches the new status. The
++// server also appends the audit record, so "keep a record every time" is handled where the
++// side-effect lives.
+ function PayInvoice({ invoiceId, projectId }: { invoiceId: number; projectId: number }) {
+   const queryClient = useQueryClient();
++  const { data: invoices } = useQuery({
++    queryKey: invoicesKey(projectId),
++    queryFn: () => listInvoices(projectId),
++  });
+   const mutation = useMutation({
+     mutationFn: () => payInvoice(invoiceId),
+     onSuccess: () => {
+@@ -15,6 +22,11 @@ function PayInvoice({ invoiceId, projectId }: { invoiceId: number; projectId: nu
+     },
+   });
+ 
++  const invoice = invoices?.find((i: Invoice) => i.id === invoiceId);
++  if (!invoice || invoice.status !== 'SENT') {
++    return null;
++  }
++
+   return (
+     <button
+       data-testid={`invoice-pay-${invoiceId}`}
+diff --git a/src/main/frontend/features/invoices/send.slot.tsx b/src/main/frontend/features/invoices/send.slot.tsx
+new file mode 100644
+index 0000000..571a30d
+--- /dev/null
++++ b/src/main/frontend/features/invoices/send.slot.tsx
+@@ -0,0 +1,41 @@
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { invoicesKey, listInvoices, sendInvoice, type Invoice } from './api';
++
++// Send a draft invoice — one new file filling the per-invoice-row action slot. The button only
++// appears while the invoice is a DRAFT (the first step of the DRAFT -> SENT -> PAID lifecycle): the
++// slot queries ['invoices', projectId] for its OWN row's status rather than being handed it, so it
++// stays in step through the shared key. The click is a useMutation; on success we invalidate that
++// key so the row's status and the pay control refetch. The server appends the audit record, so
++// "keep a record when I send one" is handled where the side-effect lives.
++function SendInvoice({ invoiceId, projectId }: { invoiceId: number; projectId: number }) {
++  const queryClient = useQueryClient();
++  const { data: invoices } = useQuery({
++    queryKey: invoicesKey(projectId),
++    queryFn: () => listInvoices(projectId),
++  });
++  const mutation = useMutation({
++    mutationFn: () => sendInvoice(invoiceId),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) });
++    },
++  });
++
++  const invoice = invoices?.find((i: Invoice) => i.id === invoiceId);
++  if (!invoice || invoice.status !== 'DRAFT') {
++    return null;
++  }
++
++  return (
++    <button
++      data-testid={`invoice-send-${invoiceId}`}
++      type="button"
++      disabled={mutation.isPending}
++      onClick={() => mutation.mutate()}
++    >
++      Send invoice
++    </button>
++  );
++}
++
++export const contribution = InvoiceRow.fill({ order: 10, Component: SendInvoice });
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index e26fa4a..7bf1b5b 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -28,7 +28,10 @@ public class Invoice {
+     @Column(nullable = false)
+     private BigDecimal amount;
+ 
+-    /** The lifecycle status of the invoice: UNPAID when raised, PAID once the user marks it paid. */
++    /**
++     * The lifecycle status of the invoice: DRAFT when raised, SENT once the user sends it, PAID once
++     * the user takes payment. Payment is only allowed after it has been sent.
++     */
+     @Column(nullable = false)
+     private String status;
+ 
+@@ -46,7 +49,7 @@ public class Invoice {
+     public Invoice(Long projectId, BigDecimal amount, LocalDate issuedDate, LocalDate dueDate) {
+         this.projectId = projectId;
+         this.amount = amount;
+-        this.status = "UNPAID";
++        this.status = "DRAFT";
+         this.issuedDate = issuedDate;
+         this.dueDate = dueDate;
+     }
+@@ -75,6 +78,16 @@ public class Invoice {
+         return dueDate;
+     }
+ 
++    /** Send this invoice — the DRAFT -> SENT transition the send action performs. */
++    public void markSent() {
++        this.status = "SENT";
++    }
++
++    /** Whether this invoice has been sent, and so may be paid. */
++    public boolean isSent() {
++        return "SENT".equals(this.status);
++    }
++
+     /** Mark this invoice paid — the status transition the pay action performs. */
+     public void markPaid() {
+         this.status = "PAID";
+diff --git a/src/main/java/net/officefloor/hq/app/PayInvoice.java b/src/main/java/net/officefloor/hq/app/PayInvoice.java
+index d595e06..0044216 100644
+--- a/src/main/java/net/officefloor/hq/app/PayInvoice.java
++++ b/src/main/java/net/officefloor/hq/app/PayInvoice.java
+@@ -12,6 +12,10 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * file through the {@link Audit} service ({@code INVOICE_PAID id=<id> amount=<amount>}) so the user
+  * can check back later — the record is the durable trail the UI can't show. We reject a missing or
+  * unknown invoice id before writing anything so a bad request neither changes state nor audits.
++ *
++ * Payment follows the lifecycle: an invoice can only be paid once it has been SENT. We reject a pay
++ * on an invoice that hasn't been sent so the DRAFT -> SENT -> PAID order holds server-side too, not
++ * just in the UI that hides the control.
+  */
+ public class PayInvoice {
+ 
+@@ -23,6 +27,9 @@ public class PayInvoice {
+         }
+         Invoice invoice = invoices.findById(id)
+                 .orElseThrow(() -> new IllegalArgumentException("A valid invoice is required"));
++        if (!invoice.isSent()) {
++            throw new IllegalArgumentException("An invoice can only be paid once it has been sent");
++        }
+         invoice.markPaid();
+         Invoice saved = invoices.save(invoice);
+         audit.record("INVOICE_PAID id=" + saved.getId() + " amount="
+diff --git a/src/main/java/net/officefloor/hq/app/SendInvoice.java b/src/main/java/net/officefloor/hq/app/SendInvoice.java
+new file mode 100644
+index 0000000..1806f75
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SendInvoice.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app;
++
++import java.math.RoundingMode;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/invoices/send — send an invoice: flip its status DRAFT -> SENT and return the updated
++ * row. Wired by officefloor/rest/api/invoices/send.POST.yml.
++ *
++ * Sending is an audited side-effect: alongside the status change we append one record to the audit
++ * file through the {@link Audit} service ({@code INVOICE_SENT id=<id> amount=<amount>}) so there is
++ * a durable record every time an invoice is sent — the trail the UI can't show. We reject a missing
++ * or unknown invoice id before writing anything so a bad request neither changes state nor audits.
++ */
++public class SendInvoice {
++
++    public void service(@RequestBody SendInvoiceForm form, InvoiceRepository invoices, Audit audit,
++            ObjectResponse<InvoiceView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("An invoice id is required");
++        }
++        Invoice invoice = invoices.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid invoice is required"));
++        invoice.markSent();
++        Invoice saved = invoices.save(invoice);
++        audit.record("INVOICE_SENT id=" + saved.getId() + " amount="
++                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
++        response.send(InvoiceView.of(saved));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/SendInvoiceForm.java b/src/main/java/net/officefloor/hq/app/SendInvoiceForm.java
+new file mode 100644
+index 0000000..218c6eb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SendInvoiceForm.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++/** The request body for sending an invoice: the id of the invoice to send. */
++public class SendInvoiceForm {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index aa85e48..f921565 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -65,7 +65,15 @@ public class TestSupportController {
+         List<Map<String, Object>> invoices =
+                 (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
+         for (Map<String, Object> inv : invoices) {
+-            Object status = inv.getOrDefault("status", "UNPAID");
++            Object status = inv.getOrDefault("status", "DRAFT");
++            // Dates are optional in the fixture — a spec that only cares about the lifecycle leaves
++            // them out, so default issued=today / due=+30 days (the same rule CreateInvoice applies).
++            java.time.LocalDate issued = inv.get("issuedDate") != null
++                    ? java.time.LocalDate.parse(inv.get("issuedDate").toString())
++                    : java.time.LocalDate.now();
++            java.time.LocalDate due = inv.get("dueDate") != null
++                    ? java.time.LocalDate.parse(inv.get("dueDate").toString())
++                    : issued.plusDays(30);
+             jdbc.update(
+                     "INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
+                             + " VALUES (?, ?, ?, ?, ?, ?)",
+@@ -73,8 +81,8 @@ public class TestSupportController {
+                     ((Number) inv.get("projectId")).longValue(),
+                     new java.math.BigDecimal(inv.get("amount").toString()),
+                     status.toString(),
+-                    java.sql.Date.valueOf(inv.get("issuedDate").toString()),
+-                    java.sql.Date.valueOf(inv.get("dueDate").toString()));
++                    java.sql.Date.valueOf(issued),
++                    java.sql.Date.valueOf(due));
+         }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V9__invoice_draft_status.sql b/src/main/resources/db/migration/V9__invoice_draft_status.sql
+new file mode 100644
+index 0000000..d6cf195
+--- /dev/null
++++ b/src/main/resources/db/migration/V9__invoice_draft_status.sql
+@@ -0,0 +1,4 @@
++-- An invoice now moves through a lifecycle: DRAFT -> SENT -> PAID. A freshly raised invoice starts
++-- as a DRAFT (it hasn't gone out yet), so the status column's default becomes 'DRAFT'. Additive: an
++-- ALTER of the existing column default, no data rewrite — rows carry whatever status they were given.
++ALTER TABLE invoices ALTER COLUMN status SET DEFAULT 'DRAFT';
+diff --git a/src/main/resources/officefloor/rest/api/invoices/send.POST.yml b/src/main/resources/officefloor/rest/api/invoices/send.POST.yml
+new file mode 100644
+index 0000000..6e0ea94
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/send.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.SendInvoice
