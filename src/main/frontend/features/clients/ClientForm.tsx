@@ -9,12 +9,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Add a client. The fields the user is typing live in useState (uncommitted input); the saved data
 // lives on the server. Before we call the API we require a proper email — a blank or malformed
 // address is refused in the UI (never reaching the server) and surfaced on its own error anchor.
-// On success we invalidate ['clients'] so the list refetches — we never hand-maintain the list.
+// A duplicate email can only be known server-side (another row may already hold it), so the server
+// rejects it and we surface that on the same anchor. On success we invalidate ['clients'] so the
+// list refetches — we never hand-maintain the list.
 export function ClientForm() {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: createClient,
@@ -23,15 +25,18 @@ export function ClientForm() {
       setEmail('');
       void queryClient.invalidateQueries({ queryKey: clientsKey });
     },
+    onError: () => {
+      setEmailError('That email is already in use.');
+    },
   });
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!EMAIL_RE.test(email.trim())) {
-      setEmailError(true);
+      setEmailError('Enter a valid email address.');
       return;
     }
-    setEmailError(false);
+    setEmailError(null);
     mutation.mutate({ name, email: email.trim() });
   };
 
@@ -50,13 +55,13 @@ export function ClientForm() {
         onChange={(e) => {
           setEmail(e.target.value);
           if (emailError) {
-            setEmailError(false);
+            setEmailError(null);
           }
         }}
       />
       {emailError && (
         <p data-testid="client-form-email-error" role="alert">
-          Enter a valid email address.
+          {emailError}
         </p>
       )}
       <button data-testid="client-form-submit" type="submit">
