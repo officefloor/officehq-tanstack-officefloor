@@ -1,0 +1,337 @@
+diff --git a/src/main/frontend/features/invoices/lineItemForm.slot.tsx b/src/main/frontend/features/invoices/lineItemForm.slot.tsx
+index b45883d..4755906 100644
+--- a/src/main/frontend/features/invoices/lineItemForm.slot.tsx
++++ b/src/main/frontend/features/invoices/lineItemForm.slot.tsx
+@@ -13,6 +13,7 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
+   const queryClient = useQueryClient();
+   const [description, setDescription] = useState('');
+   const [qty, setQty] = useState('');
++  const [unit, setUnit] = useState('');
+   const [unitPrice, setUnitPrice] = useState('');
+   const [error, setError] = useState('');
+ 
+@@ -21,6 +22,7 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
+     onSuccess: () => {
+       setDescription('');
+       setQty('');
++      setUnit('');
+       setUnitPrice('');
+       void queryClient.invalidateQueries({ queryKey: lineItemsKey(invoiceId) });
+       void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+@@ -49,6 +51,7 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
+       invoiceId,
+       description: description.trim(),
+       qty: qtyValue,
++      unit: unit.trim() === '' ? 'units' : unit.trim(),
+       unitPrice: priceValue,
+     });
+   };
+@@ -67,6 +70,12 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
+         value={qty}
+         onChange={(e) => setQty(e.target.value)}
+       />
++      <input
++        data-testid="lineitem-form-unit"
++        placeholder="Unit"
++        value={unit}
++        onChange={(e) => setUnit(e.target.value)}
++      />
+       <input
+         data-testid="lineitem-form-unitprice"
+         placeholder="Price each"
+diff --git a/src/main/frontend/features/invoices/lineItems.slot.tsx b/src/main/frontend/features/invoices/lineItems.slot.tsx
+index b4c90cd..9cd69a3 100644
+--- a/src/main/frontend/features/invoices/lineItems.slot.tsx
++++ b/src/main/frontend/features/invoices/lineItems.slot.tsx
+@@ -29,6 +29,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
+   const [editingId, setEditingId] = useState<number | null>(null);
+   const [description, setDescription] = useState('');
+   const [qty, setQty] = useState('');
++  const [unit, setUnit] = useState('');
+   const [unitPrice, setUnitPrice] = useState('');
+   const [error, setError] = useState('');
+ 
+@@ -59,6 +60,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
+     setEditingId(item.id);
+     setDescription(item.description);
+     setQty(String(item.qty));
++    setUnit(item.unit);
+     setUnitPrice(String(item.unitPrice));
+     setError('');
+   };
+@@ -83,7 +85,13 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
+       setError('Price each must be zero or more');
+       return;
+     }
+-    update.mutate({ id, description: description.trim(), qty: qtyValue, unitPrice: priceValue });
++    update.mutate({
++      id,
++      description: description.trim(),
++      qty: qtyValue,
++      unit: unit.trim() === '' ? 'units' : unit.trim(),
++      unitPrice: priceValue,
++    });
+   };
+ 
+   return (
+@@ -93,6 +101,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
+           <tr>
+             <th>Description</th>
+             <th>Qty</th>
++            <th>Unit</th>
+             <th>Unit price</th>
+             <th>Amount</th>
+             <th>Actions</th>
+@@ -116,6 +125,13 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
+                     onChange={(e) => setQty(e.target.value)}
+                   />
+                 </td>
++                <td>
++                  <input
++                    data-testid={`lineitem-edit-unit-${item.id}`}
++                    value={unit}
++                    onChange={(e) => setUnit(e.target.value)}
++                  />
++                </td>
+                 <td>
+                   <input
+                     data-testid={`lineitem-edit-unitprice-${item.id}`}
+@@ -147,6 +163,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
+               <tr key={item.id} data-testid={`lineitem-row-${item.id}`}>
+                 <td data-testid="lineitem-description">{item.description}</td>
+                 <td data-testid="lineitem-qty">{item.qty}</td>
++                <td data-testid="lineitem-unit">{item.unit}</td>
+                 <td data-testid="lineitem-unitprice">{formatMoney(item.unitPrice)}</td>
+                 <td data-testid="lineitem-amount">{formatMoney(lineAmount(item))}</td>
+                 <td>
+diff --git a/src/main/frontend/features/invoices/lineItemsApi.ts b/src/main/frontend/features/invoices/lineItemsApi.ts
+index 320a14b..4eb13e3 100644
+--- a/src/main/frontend/features/invoices/lineItemsApi.ts
++++ b/src/main/frontend/features/invoices/lineItemsApi.ts
+@@ -9,12 +9,14 @@ export type LineItem = {
+   invoiceId: number;
+   description: string;
+   qty: number;
++  unit: string;
+   unitPrice: number;
+ };
+ export type NewLineItem = {
+   invoiceId: number;
+   description: string;
+   qty: number;
++  unit: string;
+   unitPrice: number;
+ };
+ 
+@@ -35,6 +37,7 @@ export type EditLineItem = {
+   id: number;
+   description: string;
+   qty: number;
++  unit: string;
+   unitPrice: number;
+ };
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/CreateLineItem.java b/src/main/java/net/officefloor/hq/app/CreateLineItem.java
+index ff4b01c..7938e37 100644
+--- a/src/main/java/net/officefloor/hq/app/CreateLineItem.java
++++ b/src/main/java/net/officefloor/hq/app/CreateLineItem.java
+@@ -33,6 +33,9 @@ public class CreateLineItem {
+         if (qty == null || qty <= 0) {
+             throw new IllegalArgumentException("A line item quantity must be greater than zero");
+         }
++        // The unit is descriptive (hours, days, items); a blank one falls back to a neutral "units".
++        String unit = form.getUnit();
++        unit = unit == null || unit.isBlank() ? "units" : unit.trim();
+         BigDecimal unitPrice = form.getUnitPrice();
+         if (unitPrice == null) {
+             throw new IllegalArgumentException("A line item unit price is required");
+@@ -40,8 +43,8 @@ public class CreateLineItem {
+         if (unitPrice.signum() < 0) {
+             throw new IllegalArgumentException("A line item unit price cannot be negative");
+         }
+-        InvoiceLineItem saved =
+-                lineItems.save(new InvoiceLineItem(invoiceId, description.trim(), qty, unitPrice));
++        InvoiceLineItem saved = lineItems
++                .save(new InvoiceLineItem(invoiceId, description.trim(), qty, unit, unitPrice));
+ 
+         // The invoice amount is the sum of its lines — recompute and persist it so every view that
+         // reads the stored amount (the project's invoices list) stays in step with the lines.
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceLineItem.java b/src/main/java/net/officefloor/hq/app/InvoiceLineItem.java
+index 4c9d360..ab3bd15 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceLineItem.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceLineItem.java
+@@ -32,23 +32,29 @@ public class InvoiceLineItem {
+     @Column(nullable = false)
+     private int quantity;
+ 
++    @Column(nullable = false)
++    private String unit;
++
+     @Column(name = "unit_price", nullable = false)
+     private BigDecimal unitPrice;
+ 
+     protected InvoiceLineItem() {
+     }
+ 
+-    public InvoiceLineItem(Long invoiceId, String description, int quantity, BigDecimal unitPrice) {
++    public InvoiceLineItem(Long invoiceId, String description, int quantity, String unit,
++            BigDecimal unitPrice) {
+         this.invoiceId = invoiceId;
+         this.description = description;
+         this.quantity = quantity;
++        this.unit = unit;
+         this.unitPrice = unitPrice;
+     }
+ 
+-    /** Change what this line is for: a new description, how many, and the price each. */
+-    public void update(String description, int quantity, BigDecimal unitPrice) {
++    /** Change what this line is for: a new description, how many, the unit, and the price each. */
++    public void update(String description, int quantity, String unit, BigDecimal unitPrice) {
+         this.description = description;
+         this.quantity = quantity;
++        this.unit = unit;
+         this.unitPrice = unitPrice;
+     }
+ 
+@@ -68,6 +74,10 @@ public class InvoiceLineItem {
+         return quantity;
+     }
+ 
++    public String getUnit() {
++        return unit;
++    }
++
+     public BigDecimal getUnitPrice() {
+         return unitPrice;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/LineItemForm.java b/src/main/java/net/officefloor/hq/app/LineItemForm.java
+index 8e0e461..6e059a1 100644
+--- a/src/main/java/net/officefloor/hq/app/LineItemForm.java
++++ b/src/main/java/net/officefloor/hq/app/LineItemForm.java
+@@ -11,6 +11,7 @@ public class LineItemForm {
+     private Long invoiceId;
+     private String description;
+     private Integer qty;
++    private String unit;
+     private BigDecimal unitPrice;
+ 
+     public Long getInvoiceId() {
+@@ -37,6 +38,14 @@ public class LineItemForm {
+         this.qty = qty;
+     }
+ 
++    public String getUnit() {
++        return unit;
++    }
++
++    public void setUnit(String unit) {
++        this.unit = unit;
++    }
++
+     public BigDecimal getUnitPrice() {
+         return unitPrice;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/LineItemView.java b/src/main/java/net/officefloor/hq/app/LineItemView.java
+index 46480d9..9a80256 100644
+--- a/src/main/java/net/officefloor/hq/app/LineItemView.java
++++ b/src/main/java/net/officefloor/hq/app/LineItemView.java
+@@ -7,11 +7,11 @@ import java.math.BigDecimal;
+  * items table. The unit price keeps its scale (a {@link BigDecimal}) so the client formats money to
+  * two places; the client derives each line's amount and the invoice total from qty and unit price.
+  */
+-public record LineItemView(Long id, Long invoiceId, String description, int qty,
++public record LineItemView(Long id, Long invoiceId, String description, int qty, String unit,
+         BigDecimal unitPrice) {
+ 
+     public static LineItemView of(InvoiceLineItem item) {
+         return new LineItemView(item.getId(), item.getInvoiceId(), item.getDescription(),
+-                item.getQuantity(), item.getUnitPrice());
++                item.getQuantity(), item.getUnit(), item.getUnitPrice());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 026dbcb..07780d6 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -143,14 +143,18 @@ public class TestSupportController {
+             // Insert the invoice's lines with their explicit fixture ids (the spec asserts rows by
+             // these ids), owned by this invoice.
+             for (Map<String, Object> li : lineItems) {
++                // unit is optional in the fixture — a spec that does not care leaves it out, so the
++                // line defaults to a neutral "units" (the same fallback CreateLineItem applies).
++                Object unit = li.getOrDefault("unit", "units");
+                 jdbc.update(
+                         "INSERT INTO invoice_line_items"
+-                                + " (id, invoice_id, description, quantity, unit_price)"
+-                                + " VALUES (?, ?, ?, ?, ?)",
++                                + " (id, invoice_id, description, quantity, unit, unit_price)"
++                                + " VALUES (?, ?, ?, ?, ?, ?)",
+                         ((Number) li.get("id")).longValue(),
+                         ((Number) inv.get("id")).longValue(),
+                         li.get("description"),
+                         ((Number) li.get("qty")).intValue(),
++                        unit.toString(),
+                         new java.math.BigDecimal(li.get("unitPrice").toString()));
+             }
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/UpdateLineItem.java b/src/main/java/net/officefloor/hq/app/UpdateLineItem.java
+index 537123a..21fdfe3 100644
+--- a/src/main/java/net/officefloor/hq/app/UpdateLineItem.java
++++ b/src/main/java/net/officefloor/hq/app/UpdateLineItem.java
+@@ -34,6 +34,9 @@ public class UpdateLineItem {
+         if (qty == null || qty <= 0) {
+             throw new IllegalArgumentException("A line item quantity must be greater than zero");
+         }
++        // The unit is descriptive (hours, days, items); a blank one falls back to a neutral "units".
++        String unit = form.getUnit();
++        unit = unit == null || unit.isBlank() ? "units" : unit.trim();
+         BigDecimal unitPrice = form.getUnitPrice();
+         if (unitPrice == null) {
+             throw new IllegalArgumentException("A line item unit price is required");
+@@ -41,7 +44,7 @@ public class UpdateLineItem {
+         if (unitPrice.signum() < 0) {
+             throw new IllegalArgumentException("A line item unit price cannot be negative");
+         }
+-        item.update(description.trim(), qty, unitPrice);
++        item.update(description.trim(), qty, unit, unitPrice);
+         InvoiceLineItem saved = lineItems.save(item);
+ 
+         Long invoiceId = saved.getInvoiceId();
+diff --git a/src/main/java/net/officefloor/hq/app/UpdateLineItemForm.java b/src/main/java/net/officefloor/hq/app/UpdateLineItemForm.java
+index 3db7964..d89ffeb 100644
+--- a/src/main/java/net/officefloor/hq/app/UpdateLineItemForm.java
++++ b/src/main/java/net/officefloor/hq/app/UpdateLineItemForm.java
+@@ -11,6 +11,7 @@ public class UpdateLineItemForm {
+     private Long id;
+     private String description;
+     private Integer qty;
++    private String unit;
+     private BigDecimal unitPrice;
+ 
+     public Long getId() {
+@@ -37,6 +38,14 @@ public class UpdateLineItemForm {
+         this.qty = qty;
+     }
+ 
++    public String getUnit() {
++        return unit;
++    }
++
++    public void setUnit(String unit) {
++        this.unit = unit;
++    }
++
+     public BigDecimal getUnitPrice() {
+         return unitPrice;
+     }
+diff --git a/src/main/resources/db/migration/V28__invoice_line_item_unit.sql b/src/main/resources/db/migration/V28__invoice_line_item_unit.sql
+new file mode 100644
+index 0000000..e0107d9
+--- /dev/null
++++ b/src/main/resources/db/migration/V28__invoice_line_item_unit.sql
+@@ -0,0 +1,5 @@
++-- A charge line now records not just how many, but the UNIT that "how many" is counted in (hours,
++-- days, items, ...). This is descriptive text that rides alongside the quantity; the line's amount is
++-- still quantity times unit price regardless of the unit's name. Existing lines predate the unit, so
++-- default them to a neutral "units"; the column is NOT NULL so every line always names its unit.
++ALTER TABLE invoice_line_items ADD COLUMN unit VARCHAR(50) NOT NULL DEFAULT 'units';
