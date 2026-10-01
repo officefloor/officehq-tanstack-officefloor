@@ -6,6 +6,7 @@ public class ProjectForm {
     private String name;
     private Long clientId;
     private String status;
+    private String code;
 
     public String getName() {
         return name;
@@ -13,6 +14,14 @@ public class ProjectForm {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public Long getClientId() {

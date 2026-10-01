@@ -26,6 +26,11 @@ public class Project {
     @Column(name = "client_id", nullable = false)
     private Long clientId;
 
+    // The short reference code the user gives the project when creating it. Unique across projects
+    // (V32__project_code.sql); nullable only so projects created before codes existed stay valid.
+    @Column
+    private String code;
+
     // Whether the project has been archived (tucked away): an archived project is retained but drops
     // off the lists. New projects start not-archived (the column default, V16__project_archived.sql).
     @Column(nullable = false)
@@ -67,6 +72,16 @@ public class Project {
 
     public Long getClientId() {
         return clientId;
+    }
+
+    /** The short reference code for this project, or {@code null} if it predates codes. */
+    public String getCode() {
+        return code;
+    }
+
+    /** Set the short reference code for this project. */
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public boolean isArchived() {

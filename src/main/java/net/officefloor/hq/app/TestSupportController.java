@@ -85,11 +85,16 @@ public class TestSupportController {
             java.math.BigDecimal budget = p.get("budget") != null
                     ? new java.math.BigDecimal(p.get("budget").toString())
                     : null;
+            // code is optional in the fixture — a spec that does not care about the reference code
+            // leaves it out, so the column stays NULL (V32__project_code.sql permits that for rows
+            // predating codes); a spec asserting the code supplies it.
+            Object code = p.get("code");
             jdbc.update(
-                    "INSERT INTO projects (id, name, client_id, status, archived, budget)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO projects (id, name, client_id, status, archived, budget, code)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?)",
                     ((Number) p.get("id")).longValue(), p.get("name"),
-                    ((Number) p.get("clientId")).longValue(), status.toString(), archived, budget);
+                    ((Number) p.get("clientId")).longValue(), status.toString(), archived, budget,
+                    code != null ? code.toString() : null);
         }
         List<Map<String, Object>> contacts =
                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());

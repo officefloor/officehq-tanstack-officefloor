@@ -11,4 +11,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     /** How many projects one client owns — the figure the client detail badge surfaces. */
     long countByClientId(Long clientId);
+
+    /** Whether a project already holds this reference code — the uniqueness guard CreateProject enforces. */
+    boolean existsByCode(String code);
 }

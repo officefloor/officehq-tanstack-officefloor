@@ -21,6 +21,11 @@ export function ProjectForm() {
   // The lifecycle the new project starts in — uncommitted input like name/client, so it lives in
   // useState until submit. Defaults to ACTIVE, the state a fresh project gets.
   const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
+  // The reference code typed for the new project — uncommitted input, so it lives in useState until
+  // submit. Uniqueness can only be known server-side (another project may already hold it), so the
+  // server rejects a duplicate and we surface that on its own error anchor.
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: createProject,
@@ -28,16 +33,22 @@ export function ProjectForm() {
       setName('');
       setClientId('');
       setStatus('ACTIVE');
+      setCode('');
+      setCodeError(null);
       void queryClient.invalidateQueries({ queryKey: projectsKey });
+    },
+    onError: () => {
+      setCodeError('That code is already in use.');
     },
   });
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() === '' || clientId === '') {
+    if (name.trim() === '' || clientId === '' || code.trim() === '') {
       return;
     }
-    mutation.mutate({ name: name.trim(), clientId: Number(clientId), status });
+    setCodeError(null);
+    mutation.mutate({ name: name.trim(), clientId: Number(clientId), status, code: code.trim() });
   };
 
   return (
@@ -71,6 +82,22 @@ export function ProjectForm() {
           </option>
         ))}
       </select>
+      <input
+        data-testid="project-form-code"
+        placeholder="Code"
+        value={code}
+        onChange={(e) => {
+          setCode(e.target.value);
+          if (codeError) {
+            setCodeError(null);
+          }
+        }}
+      />
+      {codeError && (
+        <p data-testid="project-form-code-error" role="alert">
+          {codeError}
+        </p>
+      )}
       <button data-testid="project-form-submit" type="submit">
         Add job
       </button>

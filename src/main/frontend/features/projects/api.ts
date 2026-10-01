@@ -12,11 +12,19 @@ export type Project = {
   // Where the project sits in its lifecycle: ACTIVE, ON_HOLD or FINISHED. The row shows it; the
   // create form sets it.
   status: ProjectStatus;
+  // The short reference code set when the project was created — shown on the row. Unique across
+  // projects. Null only for projects that predate codes.
+  code: string | null;
   tagIds: number[];
 };
 export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'FINISHED';
 export const projectStatuses: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'FINISHED'];
-export type NewProject = { name: string; clientId: number; status: ProjectStatus };
+export type NewProject = {
+  name: string;
+  clientId: number;
+  status: ProjectStatus;
+  code: string;
+};
 
 export const projectsKey = ['projects'] as const;
 
