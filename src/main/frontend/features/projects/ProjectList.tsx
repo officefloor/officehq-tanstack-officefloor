@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { ProjectRow } from '../../slots/defs/projectRow';
 import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
-import { useSearchParam, asFlag } from '../../url/useSearchParam';
+import { useSearchParam, asFlag, asString } from '../../url/useSearchParam';
 import { useProjects } from './projects';
 
 // The projects list. Reads server data straight from its query key and shows the client's NAME
@@ -10,6 +10,9 @@ import { useProjects } from './projects';
 export function ProjectList() {
   const { data: projects } = useProjects();
   const [showArchived] = useSearchParam('showArchived', asFlag);
+  // Shared with the tag-filter toolbar control via the `projectTag` key (no import). When set, keep
+  // only projects carrying that tag; empty shows every tag.
+  const [tagFilter] = useSearchParam('projectTag', asString);
 
   if (!projects) {
     return null;
@@ -19,7 +22,10 @@ export function ProjectList() {
     return <p data-testid="projects-empty">No projects yet.</p>;
   }
 
-  const shown = showArchived ? projects : projects.filter((project) => !project.archived);
+  const tagId = tagFilter === '' ? undefined : Number(tagFilter);
+  const shown = projects
+    .filter((project) => showArchived || !project.archived)
+    .filter((project) => tagId === undefined || project.tagIds.includes(tagId));
 
   return (
     <>

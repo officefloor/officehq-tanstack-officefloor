@@ -9,6 +9,7 @@ export type Project = {
   clientId: number;
   clientName: string;
   archived: boolean;
+  tagIds: number[];
 };
 
 export const projectsKey = ['projects'] as const;

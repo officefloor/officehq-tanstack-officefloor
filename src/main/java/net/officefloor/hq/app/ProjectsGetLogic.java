@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -7,17 +8,22 @@ import net.officefloor.web.ObjectResponse;
 
 /**
  * {@code GET /api/projects} — list every project with the NAME of the client it is for (not just the
- * id), so the UI can show the join directly. Wired by {@code officefloor/rest/api/projects.GET.yml}.
+ * id), plus the ids of the tags it carries so the list can be filtered by label. Wired by
+ * {@code officefloor/rest/api/projects.GET.yml}.
  */
 public class ProjectsGetLogic {
 
     public void service(ProjectRepository projects, ClientRepository clients,
-            ObjectResponse<List<ProjectView>> response) {
+            ProjectTagRepository projectTags, ObjectResponse<List<ProjectView>> response) {
         Map<Long, String> nameByClient = clients.findAll().stream()
                 .collect(Collectors.toMap(Client::getId, Client::getName));
+        Map<Long, List<Long>> tagsByProject = projectTags.findAll().stream()
+                .collect(Collectors.groupingBy(ProjectTag::getProjectId,
+                        Collectors.mapping(ProjectTag::getTagId, Collectors.toList())));
         List<ProjectView> views = projects.findAll().stream()
                 .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
-                        nameByClient.get(p.getClientId()), p.isArchived()))
+                        nameByClient.get(p.getClientId()), p.isArchived(),
+                        tagsByProject.getOrDefault(p.getId(), new ArrayList<>())))
                 .collect(Collectors.toList());
         response.send(views);
     }
@@ -29,14 +35,16 @@ public class ProjectsGetLogic {
         private final Long clientId;
         private final String clientName;
         private final boolean archived;
+        private final List<Long> tagIds;
 
         public ProjectView(Long id, String name, Long clientId, String clientName,
-                boolean archived) {
+                boolean archived, List<Long> tagIds) {
             this.id = id;
             this.name = name;
             this.clientId = clientId;
             this.clientName = clientName;
             this.archived = archived;
+            this.tagIds = tagIds;
         }
 
         public Long getId() {
@@ -57,6 +65,10 @@ public class ProjectsGetLogic {
 
         public boolean isArchived() {
             return archived;
+        }
+
+        public List<Long> getTagIds() {
+            return tagIds;
         }
     }
 }
