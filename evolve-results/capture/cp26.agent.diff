@@ -1,0 +1,584 @@
+diff --git a/src/main/frontend/features/projects/tags.slot.tsx b/src/main/frontend/features/projects/tags.slot.tsx
+new file mode 100644
+index 0000000..6383e25
+--- /dev/null
++++ b/src/main/frontend/features/projects/tags.slot.tsx
+@@ -0,0 +1,97 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import {
++  tagsKey,
++  projectTagsKey,
++  listTags,
++  listProjectTags,
++  addProjectTag,
++  removeProjectTag,
++  type Tag,
++} from './tagsApi';
++
++// A project's tags, shown as chips with a remove control each, plus a select + button to add one —
++// one panel filling the project.detail region. Reads two server lists: the project's own tags under
++// ['projectTags', projectId] (the chips) and the full catalogue under ['tags'] (the add select, minus
++// the ones already on the project). Both add and remove are mutations that invalidate
++// ['projectTags', projectId] on success so this panel refetches; neither list is ever copied into
++// state. The only useState is the select's uncommitted choice — what the user has picked but not yet
++// submitted.
++function ProjectTags({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const [choice, setChoice] = useState('');
++
++  const { data: all } = useQuery({ queryKey: tagsKey, queryFn: listTags });
++  const { data: tags } = useQuery({
++    queryKey: projectTagsKey(projectId),
++    queryFn: () => listProjectTags(projectId),
++  });
++
++  const invalidate = () =>
++    queryClient.invalidateQueries({ queryKey: projectTagsKey(projectId) });
++
++  const add = useMutation({
++    mutationFn: (tagId: number) => addProjectTag(projectId, tagId),
++    onSuccess: () => {
++      setChoice('');
++      void invalidate();
++    },
++  });
++  const remove = useMutation({
++    mutationFn: (tagId: number) => removeProjectTag(projectId, tagId),
++    onSuccess: () => {
++      void invalidate();
++    },
++  });
++
++  if (!all || !tags) {
++    return null;
++  }
++
++  const onProject = new Set(tags.map((tag: Tag) => tag.id));
++  const available = all.filter((tag: Tag) => !onProject.has(tag.id));
++
++  return (
++    <section data-testid="project-tags">
++      <h2>Tags</h2>
++      <ul data-testid="project-tags-list">
++        {tags.map((tag: Tag) => (
++          <li key={tag.id}>
++            <span data-testid={`project-tag-${tag.id}`}>{tag.name}</span>
++            <button
++              type="button"
++              data-testid={`project-tag-remove-${tag.id}`}
++              disabled={remove.isPending}
++              onClick={() => remove.mutate(tag.id)}
++            >
++              Remove
++            </button>
++          </li>
++        ))}
++      </ul>
++      <select
++        data-testid="project-tag-add"
++        value={choice}
++        onChange={(e) => setChoice(e.target.value)}
++      >
++        <option value="">Choose a tag…</option>
++        {available.map((tag: Tag) => (
++          <option key={tag.id} value={tag.id}>
++            {tag.name}
++          </option>
++        ))}
++      </select>
++      <button
++        type="button"
++        data-testid="project-tag-add-submit"
++        disabled={!choice || add.isPending}
++        onClick={() => add.mutate(Number(choice))}
++      >
++        Add tag
++      </button>
++    </section>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 40, Component: ProjectTags });
+diff --git a/src/main/frontend/features/projects/tagsApi.ts b/src/main/frontend/features/projects/tagsApi.ts
+new file mode 100644
+index 0000000..8d8c679
+--- /dev/null
++++ b/src/main/frontend/features/projects/tagsApi.ts
+@@ -0,0 +1,23 @@
++import { getJson, postJson } from '../../api/http';
++
++// A tag as the API exposes it — a reusable label used to group projects. The catalogue of all tags
++// lives under ['tags'] (the add-tag select reads it); the tags ON one project live under
++// ['projectTags', projectId] (the chips read it, add/remove invalidate it), scoped so each project's
++// detail page refreshes only its own tags.
++export type Tag = { id: number; name: string };
++
++export const tagsKey = ['tags'] as const;
++export const projectTagsKey = (projectId: number) => ['projectTags', projectId] as const;
++
++export const listTags = (): Promise<Tag[]> => getJson<Tag[]>('/api/tags');
++
++export const listProjectTags = (projectId: number): Promise<Tag[]> =>
++  getJson<Tag[]>(`/api/projects/tags?projectId=${projectId}`);
++
++// Put a tag on a project / take it off — both return the project's tags after the change. Callers
++// invalidate ['projectTags', projectId] on success so the chips refetch.
++export const addProjectTag = (projectId: number, tagId: number): Promise<Tag[]> =>
++  postJson<Tag[]>('/api/projects/tags', { projectId, tagId });
++
++export const removeProjectTag = (projectId: number, tagId: number): Promise<Tag[]> =>
++  postJson<Tag[]>('/api/projects/tags/remove', { projectId, tagId });
+diff --git a/src/main/java/net/officefloor/hq/app/AddProjectTag.java b/src/main/java/net/officefloor/hq/app/AddProjectTag.java
+new file mode 100644
+index 0000000..77ee54c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/AddProjectTag.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/projects/tags — put a tag on a project (group the project under that label), returning the
++ * project's tags after the change. Wired by officefloor/rest/api/projects/tags.POST.yml.
++ *
++ * We reject a missing project/tag id, and an unknown project or tag, before writing anything so a bad
++ * request neither changes state nor returns a row. Adding a tag that is already on the project is a
++ * no-op (the (project, tag) pair is unique) — we just return the current tags.
++ */
++public class AddProjectTag {
++
++    public void service(@RequestBody ProjectTagForm form, ProjectRepository projects,
++            TagRepository tags, ProjectTagRepository projectTags,
++            ObjectResponse<List<TagView>> response) {
++        Long projectId = form.getProjectId();
++        Long tagId = form.getTagId();
++        if (projectId == null || tagId == null) {
++            throw new IllegalArgumentException("A project id and a tag id are required");
++        }
++        if (!projects.existsById(projectId)) {
++            throw new IllegalArgumentException("A valid project is required");
++        }
++        if (!tags.existsById(tagId)) {
++            throw new IllegalArgumentException("A valid tag is required");
++        }
++        if (!projectTags.existsById(new ProjectTagId(projectId, tagId))) {
++            projectTags.save(new ProjectTag(projectId, tagId));
++        }
++        List<TagView> view = projectTags.findByProjectIdOrderByTagIdAsc(projectId).stream()
++                .map(link -> tags.findById(link.getTagId()).orElse(null))
++                .filter(tag -> tag != null)
++                .map(TagView::of)
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListProjectTags.java b/src/main/java/net/officefloor/hq/app/ListProjectTags.java
+new file mode 100644
+index 0000000..109e760
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListProjectTags.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/projects/tags?projectId=&lt;id&gt; — the tags on one project, in tag-id order. Scoped to a
++ * project (the detail page lists ITS tags), so the project id arrives as a query parameter. Reads the
++ * {@code project_tags} join for this project, then resolves each link to its {@link Tag} so the chip
++ * can show the label. Wired by officefloor/rest/api/projects/tags.GET.yml.
++ */
++public class ListProjectTags {
++
++    public void service(@RequestParam("projectId") String projectId,
++            ProjectTagRepository projectTags, TagRepository tags,
++            ObjectResponse<List<TagView>> response) {
++        Long id = Long.valueOf(projectId);
++        List<TagView> view = projectTags.findByProjectIdOrderByTagIdAsc(id).stream()
++                .map(link -> tags.findById(link.getTagId()).orElse(null))
++                .filter(tag -> tag != null)
++                .map(TagView::of)
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListTags.java b/src/main/java/net/officefloor/hq/app/ListTags.java
+new file mode 100644
+index 0000000..b053347
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListTags.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/tags — every tag in the catalogue, in id order. The add-tag select on a project draws its
++ * options from this list (minus the ones already on the project, filtered client-side). Wired by
++ * officefloor/rest/api/tags.GET.yml.
++ */
++public class ListTags {
++
++    public void service(TagRepository tags, ObjectResponse<List<TagView>> response) {
++        List<TagView> view = tags.findAllByOrderByIdAsc().stream().map(TagView::of).toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectTag.java b/src/main/java/net/officefloor/hq/app/ProjectTag.java
+new file mode 100644
+index 0000000..f7f7a05
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectTag.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.Id;
++import jakarta.persistence.IdClass;
++import jakarta.persistence.Table;
++
++/**
++ * One label on one project: a row of the {@code project_tags} join (Flyway V17__project_tags.sql).
++ * Its identity IS the (projectId, tagId) pair ({@link ProjectTagId}), so a tag sits on a project at
++ * most once. Carries no data of its own beyond the two foreign keys.
++ */
++@Entity
++@Table(name = "project_tags")
++@IdClass(ProjectTagId.class)
++public class ProjectTag {
++
++    @Id
++    @Column(name = "project_id", nullable = false)
++    private Long projectId;
++
++    @Id
++    @Column(name = "tag_id", nullable = false)
++    private Long tagId;
++
++    protected ProjectTag() {
++    }
++
++    public ProjectTag(Long projectId, Long tagId) {
++        this.projectId = projectId;
++        this.tagId = tagId;
++    }
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public Long getTagId() {
++        return tagId;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectTagForm.java b/src/main/java/net/officefloor/hq/app/ProjectTagForm.java
+new file mode 100644
+index 0000000..66ef17f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectTagForm.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app;
++
++/** The request body for adding or removing a tag on a project: which project and which tag. */
++public class ProjectTagForm {
++
++    private Long projectId;
++    private Long tagId;
++
++    public Long getProjectId() {
++        return projectId;
++    }
++
++    public void setProjectId(Long projectId) {
++        this.projectId = projectId;
++    }
++
++    public Long getTagId() {
++        return tagId;
++    }
++
++    public void setTagId(Long tagId) {
++        this.tagId = tagId;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectTagId.java b/src/main/java/net/officefloor/hq/app/ProjectTagId.java
+new file mode 100644
+index 0000000..a26acda
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectTagId.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app;
++
++import java.io.Serializable;
++import java.util.Objects;
++
++/**
++ * The composite key of {@link ProjectTag}: the (projectId, tagId) pair. A plain id-class so JPA can
++ * address a join row by both columns — the field names mirror the {@code @Id} fields on ProjectTag.
++ */
++public class ProjectTagId implements Serializable {
++
++    private Long projectId;
++    private Long tagId;
++
++    public ProjectTagId() {
++    }
++
++    public ProjectTagId(Long projectId, Long tagId) {
++        this.projectId = projectId;
++        this.tagId = tagId;
++    }
++
++    @Override
++    public boolean equals(Object o) {
++        if (this == o) {
++            return true;
++        }
++        if (!(o instanceof ProjectTagId other)) {
++            return false;
++        }
++        return Objects.equals(projectId, other.projectId) && Objects.equals(tagId, other.tagId);
++    }
++
++    @Override
++    public int hashCode() {
++        return Objects.hash(projectId, tagId);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectTagRepository.java b/src/main/java/net/officefloor/hq/app/ProjectTagRepository.java
+new file mode 100644
+index 0000000..70c9f58
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectTagRepository.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/** Data access for {@link ProjectTag}. A Spring bean, injected into the OfficeFloor logic classes. */
++public interface ProjectTagRepository extends JpaRepository<ProjectTag, ProjectTagId> {
++
++    /** The links of one project, in tag-id order — which tags are on this project. */
++    List<ProjectTag> findByProjectIdOrderByTagIdAsc(Long projectId);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/RemoveProjectTag.java b/src/main/java/net/officefloor/hq/app/RemoveProjectTag.java
+new file mode 100644
+index 0000000..8cec949
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/RemoveProjectTag.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/projects/tags/remove — take a tag off a project (ungroup it from that label), returning
++ * the project's tags after the change. Wired by officefloor/rest/api/projects/tags/remove.POST.yml.
++ *
++ * We reject a missing project/tag id before writing anything. Removing a tag that is not on the
++ * project is a no-op — we just return the current tags.
++ */
++public class RemoveProjectTag {
++
++    public void service(@RequestBody ProjectTagForm form, TagRepository tags,
++            ProjectTagRepository projectTags, ObjectResponse<List<TagView>> response) {
++        Long projectId = form.getProjectId();
++        Long tagId = form.getTagId();
++        if (projectId == null || tagId == null) {
++            throw new IllegalArgumentException("A project id and a tag id are required");
++        }
++        ProjectTagId key = new ProjectTagId(projectId, tagId);
++        if (projectTags.existsById(key)) {
++            projectTags.deleteById(key);
++        }
++        List<TagView> view = projectTags.findByProjectIdOrderByTagIdAsc(projectId).stream()
++                .map(link -> tags.findById(link.getTagId()).orElse(null))
++                .filter(tag -> tag != null)
++                .map(TagView::of)
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Tag.java b/src/main/java/net/officefloor/hq/app/Tag.java
+new file mode 100644
+index 0000000..492edf9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/Tag.java
+@@ -0,0 +1,40 @@
++package net.officefloor.hq.app;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++/**
++ * A reusable label a user puts on projects to group them. Maps the {@code tags} table (Flyway
++ * V17__project_tags.sql); the id is IDENTITY-generated on create. Which projects carry a tag is
++ * recorded in the {@code project_tags} join ({@link ProjectTag}), not here.
++ */
++@Entity
++@Table(name = "tags")
++public class Tag {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(nullable = false)
++    private String name;
++
++    protected Tag() {
++    }
++
++    public Tag(String name) {
++        this.name = name;
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public String getName() {
++        return name;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TagRepository.java b/src/main/java/net/officefloor/hq/app/TagRepository.java
+new file mode 100644
+index 0000000..51ed272
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TagRepository.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++/** Data access for {@link Tag}. A Spring bean, injected into the OfficeFloor logic classes. */
++public interface TagRepository extends JpaRepository<Tag, Long> {
++
++    /** Every tag in the catalogue, in id order — the full list the add-tag select draws from. */
++    List<Tag> findAllByOrderByIdAsc();
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TagView.java b/src/main/java/net/officefloor/hq/app/TagView.java
+new file mode 100644
+index 0000000..6a47959
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/TagView.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app;
++
++/**
++ * What the API exposes for a tag: the shape the front-end renders as a chip (and as an option in the
++ * add-tag select). Just the id and the label.
++ */
++public record TagView(Long id, String name) {
++
++    public static TagView of(Tag tag) {
++        return new TagView(tag.getId(), tag.getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 525eb18..6bce61b 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -36,6 +36,8 @@ public class TestSupportController {
+         // the FK exists — drop referential integrity for the duration, truncate all, then restore.
+         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
+         try {
++            jdbc.execute("TRUNCATE TABLE project_tags RESTART IDENTITY");
++            jdbc.execute("TRUNCATE TABLE tags RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
+             jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
+@@ -136,5 +138,19 @@ public class TestSupportController {
+                     ((Number) t.get("projectId")).longValue(),
+                     t.get("title"), done);
+         }
++        List<Map<String, Object>> tags =
++                (List<Map<String, Object>>) fixture.getOrDefault("tags", List.of());
++        for (Map<String, Object> tag : tags) {
++            jdbc.update("INSERT INTO tags (id, name) VALUES (?, ?)",
++                    ((Number) tag.get("id")).longValue(), tag.get("name"));
++        }
++        // The many-to-many links: which seeded tag sits on which seeded project.
++        List<Map<String, Object>> projectTags =
++                (List<Map<String, Object>>) fixture.getOrDefault("projectTags", List.of());
++        for (Map<String, Object> pt : projectTags) {
++            jdbc.update("INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)",
++                    ((Number) pt.get("projectId")).longValue(),
++                    ((Number) pt.get("tagId")).longValue());
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V17__project_tags.sql b/src/main/resources/db/migration/V17__project_tags.sql
+new file mode 100644
+index 0000000..0bf2d45
+--- /dev/null
++++ b/src/main/resources/db/migration/V17__project_tags.sql
+@@ -0,0 +1,19 @@
++-- Fifth domain concept: labels (tags) a user puts on projects to group them. Two tables — the tag
++-- catalogue and the many-to-many join to projects.
++--
++-- tags: a reusable label, IDENTITY id so the app generates ids on create while the test seed inserts
++-- explicit ids (GENERATED BY DEFAULT lets a supplied id win).
++--
++-- project_tags: which tags are on which project. Its primary key is the (project_id, tag_id) pair, so
++-- the same label can sit on a project only once; both columns are FKs so a link always points at a
++-- real project and a real tag.
++CREATE TABLE tags (
++    id   BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++    name VARCHAR(255) NOT NULL
++);
++
++CREATE TABLE project_tags (
++    project_id BIGINT NOT NULL REFERENCES projects (id),
++    tag_id     BIGINT NOT NULL REFERENCES tags (id),
++    PRIMARY KEY (project_id, tag_id)
++);
+diff --git a/src/main/resources/officefloor/rest/api/projects/tags.GET.yml b/src/main/resources/officefloor/rest/api/projects/tags.GET.yml
+new file mode 100644
+index 0000000..b5150d1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/tags.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListProjectTags
+diff --git a/src/main/resources/officefloor/rest/api/projects/tags.POST.yml b/src/main/resources/officefloor/rest/api/projects/tags.POST.yml
+new file mode 100644
+index 0000000..9b50090
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/tags.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.AddProjectTag
+diff --git a/src/main/resources/officefloor/rest/api/projects/tags/remove.POST.yml b/src/main/resources/officefloor/rest/api/projects/tags/remove.POST.yml
+new file mode 100644
+index 0000000..1e96ccb
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/tags/remove.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.RemoveProjectTag
+diff --git a/src/main/resources/officefloor/rest/api/tags.GET.yml b/src/main/resources/officefloor/rest/api/tags.GET.yml
+new file mode 100644
+index 0000000..1b72ef0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/tags.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListTags
