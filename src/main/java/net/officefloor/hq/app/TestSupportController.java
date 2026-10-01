@@ -67,11 +67,18 @@ public class TestSupportController {
             for (Map<String, Object> invoice : invoices) {
                 // status is optional in a fixture; default to UNPAID (matching Flyway V5) when absent.
                 Object status = invoice.get("status");
-                jdbc.update("INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
+                // issuedDate/dueDate are optional; fall back to the Flyway V7 column defaults when absent.
+                Object issuedDate = invoice.get("issuedDate");
+                Object dueDate = invoice.get("dueDate");
+                jdbc.update("INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
+                        + " VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_DATE),"
+                        + " COALESCE(?, DATEADD('DAY', 30, CURRENT_DATE)))",
                         ((Number) invoice.get("id")).longValue(),
                         ((Number) invoice.get("projectId")).longValue(),
                         new java.math.BigDecimal(invoice.get("amount").toString()),
-                        status != null ? status.toString() : "UNPAID");
+                        status != null ? status.toString() : "UNPAID",
+                        issuedDate != null ? java.sql.Date.valueOf(issuedDate.toString()) : null,
+                        dueDate != null ? java.sql.Date.valueOf(dueDate.toString()) : null);
             }
         }
     }

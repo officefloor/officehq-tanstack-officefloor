@@ -3,7 +3,14 @@ import { getJson, postJson } from '../../api/http';
 
 // An invoice raised on a project. Everything that shows a project's invoices shares the key
 // ['invoices', projectId]; invalidating it after a write refreshes the list and its total together.
-export type Invoice = { id: number; projectId: number; amount: number; status: string };
+export type Invoice = {
+  id: number;
+  projectId: number;
+  amount: number;
+  status: string;
+  issuedDate: string;
+  dueDate: string;
+};
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
 

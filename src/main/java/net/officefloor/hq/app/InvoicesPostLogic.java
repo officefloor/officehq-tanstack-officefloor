@@ -24,7 +24,12 @@ public class InvoicesPostLogic {
         if (amount == null || amount.signum() <= 0) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "A positive amount is required");
         }
-        Invoice saved = invoices.save(new Invoice(projectId, amount));
+        Invoice invoice = new Invoice(projectId, amount);
+        // An invoice goes out today and is due 30 days later; the dates are shown on each row.
+        java.time.LocalDate issued = java.time.LocalDate.now();
+        invoice.setIssuedDate(issued);
+        invoice.setDueDate(issued.plusDays(30));
+        Invoice saved = invoices.save(invoice);
         response.send(saved);
     }
 

@@ -19,6 +19,8 @@ export function InvoiceList({ projectId }: { projectId: number }) {
       <thead>
         <tr>
           <th>Amount</th>
+          <th>Issued</th>
+          <th>Due</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -27,6 +29,8 @@ export function InvoiceList({ projectId }: { projectId: number }) {
         {invoices.map((invoice) => (
           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
             <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+            <td data-testid="invoice-issued">{invoice.issuedDate}</td>
+            <td data-testid="invoice-due">{invoice.dueDate}</td>
             <td data-testid="invoice-status">{invoice.status}</td>
             <td>
               {invoice.status !== 'PAID' && (

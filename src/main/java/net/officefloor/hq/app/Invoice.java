@@ -1,6 +1,7 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -28,6 +29,14 @@ public class Invoice {
 
     /** Payment status: UNPAID (default, matching Flyway V5) until the invoice is marked paid. */
     private String status = "UNPAID";
+
+    /** The date the invoice went out (Flyway V7). Serialized as an ISO date, e.g. "2026-01-05". */
+    @Column(name = "issued_date")
+    private LocalDate issuedDate;
+
+    /** The date the invoice is due (Flyway V7). Serialized as an ISO date, e.g. "2026-02-04". */
+    @Column(name = "due_date")
+    private LocalDate dueDate;
 
     public Invoice() {
     }
@@ -67,5 +76,21 @@ public class Invoice {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public LocalDate getIssuedDate() {
+        return issuedDate;
+    }
+
+    public void setIssuedDate(LocalDate issuedDate) {
+        this.issuedDate = issuedDate;
+    }
+
+    public LocalDate getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(LocalDate dueDate) {
+        this.dueDate = dueDate;
     }
 }
