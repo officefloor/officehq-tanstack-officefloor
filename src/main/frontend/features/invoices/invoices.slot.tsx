@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ProjectDetail } from '../../slots/defs/projectDetail';
 import { InvoiceRow } from '../../slots/defs/invoiceRow';
 import { invoicesKey, listInvoices, type Invoice } from './api';
+import { formatMoney } from '../../ui/money';
 
 // The project's invoices and what they add up to — one panel filling the project.detail region.
 // Reads server data under ['invoices', projectId] (never copied into state); the add form shares
@@ -32,7 +33,7 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
         <tbody>
           {invoices.map((invoice: Invoice) => (
             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-              <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
+              <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
               <td data-testid="invoice-status">{invoice.status}</td>
               <td>
                 <InvoiceRow.Slot invoiceId={invoice.id} projectId={projectId} />
@@ -41,7 +42,7 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
           ))}
         </tbody>
       </table>
-      <p data-testid="project-invoices-total">{total.toFixed(2)}</p>
+      <p data-testid="project-invoices-total">{formatMoney(total)}</p>
     </>
   );
 }

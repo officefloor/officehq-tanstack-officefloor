@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { dashboardKey, getDashboard } from './api';
+import { formatMoney } from '../../ui/money';
 
 // The home dashboard: three figures summarising the whole workspace. Reads server data under
 // ['dashboard'] (never copied into state); the figures are computed server-side so the page holds
@@ -18,7 +19,7 @@ export function Dashboard() {
       <dt>Projects</dt>
       <dd data-testid="dashboard-projects-count">{data.projects}</dd>
       <dt>Outstanding</dt>
-      <dd data-testid="dashboard-outstanding-total">{data.outstanding.toFixed(2)}</dd>
+      <dd data-testid="dashboard-outstanding-total">{formatMoney(data.outstanding)}</dd>
     </dl>
   );
 }
