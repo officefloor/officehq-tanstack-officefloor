@@ -1,3 +1,4 @@
+import { formatMoney } from '../../ui/money';
 import { useInvoices, usePayInvoice } from './invoices';
 
 // A project's invoices and what they add up to. Reads its own query key (scoped to the project) and
@@ -25,7 +26,7 @@ export function InvoiceList({ projectId }: { projectId: number }) {
       <tbody>
         {invoices.map((invoice) => (
           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-            <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
+            <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
             <td data-testid="invoice-status">{invoice.status}</td>
             <td>
               {invoice.status !== 'PAID' && (
@@ -44,7 +45,7 @@ export function InvoiceList({ projectId }: { projectId: number }) {
       </tbody>
       <tfoot>
         <tr>
-          <td data-testid="project-invoices-total">{total.toFixed(2)}</td>
+          <td data-testid="project-invoices-total">{formatMoney(total)}</td>
         </tr>
       </tfoot>
     </table>

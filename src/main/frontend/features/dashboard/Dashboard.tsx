@@ -1,3 +1,4 @@
+import { formatMoney } from '../../ui/money';
 import { useDashboard } from './dashboard';
 
 // The dashboard summary: counts of clients and projects, and how much money is still owed (the sum of
@@ -20,7 +21,7 @@ export function Dashboard() {
       <dt>Projects</dt>
       <dd data-testid="dashboard-projects-count">{data.projectsCount}</dd>
       <dt>Outstanding</dt>
-      <dd data-testid="dashboard-outstanding-total">{data.outstandingTotal.toFixed(2)}</dd>
+      <dd data-testid="dashboard-outstanding-total">{formatMoney(data.outstandingTotal)}</dd>
     </dl>
   );
 }
