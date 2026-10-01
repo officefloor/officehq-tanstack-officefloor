@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isValidEmail } from './email';
 import { useContacts, useCreateContact, type Contact } from './contacts';
 
 // The contacts panel on a client's page: the client's contacts in a table, and a form to add one.
@@ -11,6 +12,7 @@ export function ClientContacts({ clientId }: { clientId: number }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('');
+  const [emailError, setEmailError] = useState(false);
   const create = useCreateContact();
 
   const forClient: Contact[] = (contacts ?? []).filter((c) => c.clientId === clientId);
@@ -41,9 +43,14 @@ export function ClientContacts({ clientId }: { clientId: number }) {
         data-testid="contact-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!name.trim() || !email.trim() || !role.trim()) {
+          if (!name.trim() || !role.trim()) {
             return;
           }
+          if (!isValidEmail(email)) {
+            setEmailError(true);
+            return;
+          }
+          setEmailError(false);
           create.mutate(
             { clientId, name, email, role },
             {
@@ -66,8 +73,18 @@ export function ClientContacts({ clientId }: { clientId: number }) {
           data-testid="contact-form-email"
           placeholder="Email"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            if (emailError) {
+              setEmailError(false);
+            }
+          }}
         />
+        {emailError && (
+          <span data-testid="contact-form-email-error" role="alert">
+            Enter a valid email address.
+          </span>
+        )}
         <input
           data-testid="contact-form-role"
           placeholder="Role"

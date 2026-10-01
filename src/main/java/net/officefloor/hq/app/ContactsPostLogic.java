@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.util.regex.Pattern;
 import org.springframework.web.bind.annotation.RequestBody;
 import net.officefloor.server.http.HttpException;
 import net.officefloor.server.http.HttpStatus;
@@ -14,6 +15,9 @@ import net.officefloor.web.ObjectResponse;
  */
 public class ContactsPostLogic {
 
+    /** A proper email address: local part, @, and a domain with a dot — no whitespace. */
+    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
     public void service(@RequestBody NewContact newContact, ContactRepository contacts,
             ClientRepository clients, ObjectResponse<Contact> response) {
         Long clientId = newContact.getClientId();
@@ -26,8 +30,8 @@ public class ContactsPostLogic {
         if (name == null || name.trim().isEmpty()) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "A contact name is required");
         }
-        if (email == null || email.trim().isEmpty()) {
-            throw new HttpException(HttpStatus.BAD_REQUEST, "A contact email is required");
+        if (email == null || !EMAIL.matcher(email.trim()).matches()) {
+            throw new HttpException(HttpStatus.BAD_REQUEST, "A proper contact email address is required");
         }
         if (role == null || role.trim().isEmpty()) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "A contact role is required");
