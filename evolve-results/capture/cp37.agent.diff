@@ -1,0 +1,348 @@
+diff --git a/src/main/frontend/features/projects/budget.slot.tsx b/src/main/frontend/features/projects/budget.slot.tsx
+new file mode 100644
+index 0000000..0b11afc
+--- /dev/null
++++ b/src/main/frontend/features/projects/budget.slot.tsx
+@@ -0,0 +1,85 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import {
++  getProjectBudget,
++  projectBudgetKey,
++  setProjectBudget,
++} from './budgetApi';
++
++// Money shown with thousands grouping, like "$1,000.00". The shared formatMoney gives two places but
++// no grouping; a budget figure is large enough to want the commas, so this panel formats its own.
++function formatBudget(amount: number): string {
++  return `$${Number(amount).toLocaleString('en-US', {
++    minimumFractionDigits: 2,
++    maximumFractionDigits: 2,
++  })}`;
++}
++
++// A project's budget — one panel filling the project.detail region: the budget set against the
++// project, how much has been invoiced against it, and what is left, above a form to set (or change)
++// the budget. Server data is read under ['projects', projectId, 'budget'] (never copied into state):
++// the panel queries for itself and the server derives the invoiced / remaining figures. What the
++// user is typing into the set-budget field lives in useState (uncommitted input); on a successful
++// write we invalidate the same key so the figures refetch — no hand-maintained totals.
++function ProjectBudgetPanel({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const [amount, setAmount] = useState('');
++  const { data: budget } = useQuery({
++    queryKey: projectBudgetKey(projectId),
++    queryFn: () => getProjectBudget(projectId),
++  });
++  const mutation = useMutation({
++    mutationFn: setProjectBudget,
++    onSuccess: () => {
++      setAmount('');
++      void queryClient.invalidateQueries({ queryKey: projectBudgetKey(projectId) });
++    },
++  });
++
++  const submit = (e: React.FormEvent) => {
++    e.preventDefault();
++    const value = Number(amount);
++    if (amount.trim() === '' || Number.isNaN(value) || value < 0) {
++      return;
++    }
++    mutation.mutate({ id: projectId, budget: value });
++  };
++
++  if (!budget) {
++    return null;
++  }
++
++  return (
++    <section data-testid="project-budget-panel">
++      <dl>
++        <dt>Budget</dt>
++        <dd data-testid="project-budget">{formatBudget(budget.budget)}</dd>
++        <dt>Invoiced</dt>
++        <dd data-testid="project-invoiced">{formatBudget(budget.invoiced)}</dd>
++        <dt>Remaining</dt>
++        <dd data-testid="project-remaining">{formatBudget(budget.remaining)}</dd>
++      </dl>
++      <form onSubmit={submit}>
++        <input
++          data-testid="project-budget-input"
++          type="number"
++          min="0"
++          step="0.01"
++          placeholder="Set budget"
++          value={amount}
++          onChange={(e) => setAmount(e.target.value)}
++        />
++        <button
++          data-testid="project-budget-submit"
++          type="submit"
++          disabled={mutation.isPending}
++        >
++          Set budget
++        </button>
++      </form>
++    </section>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 15, Component: ProjectBudgetPanel });
+diff --git a/src/main/frontend/features/projects/budgetApi.ts b/src/main/frontend/features/projects/budgetApi.ts
+new file mode 100644
+index 0000000..9ed2ede
+--- /dev/null
++++ b/src/main/frontend/features/projects/budgetApi.ts
+@@ -0,0 +1,24 @@
++import { getJson, postJson } from '../../api/http';
++
++// A project's budget as the API exposes it: the planned spend set against it, how much has been
++// invoiced against it (the sum of the project's issued invoices), and what is left (budget minus
++// invoiced). The derivation lives on the server. The query key is scoped to the project and shares
++// the ['projects'] prefix — ['projects', projectId, 'budget'] — so each project's budget reads only
++// its own figures while a project write still refreshes it by prefix.
++export type ProjectBudget = {
++  projectId: number;
++  budget: number;
++  invoiced: number;
++  remaining: number;
++};
++
++export type SetBudget = { id: number; budget: number };
++
++export const projectBudgetKey = (projectId: number) =>
++  ['projects', projectId, 'budget'] as const;
++
++export const getProjectBudget = (projectId: number): Promise<ProjectBudget> =>
++  getJson<ProjectBudget>(`/api/projects/budget?projectId=${projectId}`);
++
++export const setProjectBudget = (body: SetBudget): Promise<ProjectBudget> =>
++  postJson<ProjectBudget>('/api/projects/budget', body);
+diff --git a/src/main/java/net/officefloor/hq/app/GetProjectBudget.java b/src/main/java/net/officefloor/hq/app/GetProjectBudget.java
+new file mode 100644
+index 0000000..4f54a2c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/GetProjectBudget.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/projects/budget?projectId=&lt;id&gt; — a project's budget, how much has been invoiced
++ * against it, and what is left. Scoped to one project, so the project id arrives as a query
++ * parameter. The budget is what the user set on the project (treated as zero until one is set);
++ * the invoiced figure is the sum of the amounts of the project's invoices that have gone out (SENT
++ * or PAID — a DRAFT has not been invoiced yet); what is left is budget minus invoiced. Derived on
++ * the server in {@link BigDecimal} so there is no float drift. Wired by
++ * officefloor/rest/api/projects/budget.GET.yml.
++ */
++public class GetProjectBudget {
++
++    public void service(@RequestParam("projectId") String projectId,
++            ProjectRepository projects, InvoiceRepository invoices,
++            ObjectResponse<ProjectBudgetView> response) {
++        Long id = Long.valueOf(projectId);
++        Project project = projects.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid project is required"));
++        BigDecimal budget = project.getBudget() == null ? BigDecimal.ZERO : project.getBudget();
++        BigDecimal invoiced = invoices.findByProjectIdOrderByIdAsc(id).stream()
++                .filter(invoice -> !"DRAFT".equals(invoice.getStatus()))
++                .map(Invoice::getAmount)
++                .reduce(BigDecimal.ZERO, BigDecimal::add);
++        BigDecimal remaining = budget.subtract(invoiced);
++        response.send(new ProjectBudgetView(id, budget, invoiced, remaining));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index d5852aa..b33c4ae 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app;
+ 
++import java.math.BigDecimal;
+ import jakarta.persistence.Column;
+ import jakarta.persistence.Entity;
+ import jakarta.persistence.GeneratedValue;
+@@ -36,6 +37,12 @@ public class Project {
+     @Column(nullable = false)
+     private String status = ProjectStatus.ACTIVE.name();
+ 
++    // The planned spend set against the project, compared on the detail page with how much has been
++    // invoiced. Money, so a {@link BigDecimal} (fixed scale, no float drift). Nullable: a budget is
++    // optional, and a project without one has not had a budget set yet (V23__project_budget.sql).
++    @Column
++    private BigDecimal budget;
++
+     protected Project() {
+     }
+ 
+@@ -70,6 +77,16 @@ public class Project {
+         return status;
+     }
+ 
++    /** The planned spend set against this project, or {@code null} if no budget has been set. */
++    public BigDecimal getBudget() {
++        return budget;
++    }
++
++    /** Set (or change) the planned spend for this project. */
++    public void setBudget(BigDecimal budget) {
++        this.budget = budget;
++    }
++
+     /** Tuck this project away so it drops off the lists while the row is kept. */
+     public void archive() {
+         this.archived = true;
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectBudgetView.java b/src/main/java/net/officefloor/hq/app/ProjectBudgetView.java
+new file mode 100644
+index 0000000..d6ab047
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ProjectBudgetView.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * What the API exposes for a project's budget: the planned spend set against it, how much has been
++ * INVOICED against it (the sum of the amounts of invoices raised against the project that have gone
++ * out), and what is LEFT (budget minus invoiced). The derivation lives on the server, computed in
++ * {@link BigDecimal} so there is no float drift — the shape the project detail page renders into its
++ * budget / invoiced / remaining figures.
++ */
++public record ProjectBudgetView(Long projectId, BigDecimal budget, BigDecimal invoiced,
++        BigDecimal remaining) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/SetProjectBudget.java b/src/main/java/net/officefloor/hq/app/SetProjectBudget.java
+new file mode 100644
+index 0000000..f1172e2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SetProjectBudget.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/projects/budget — set (or change) the planned spend on a project, returning the updated
++ * budget alongside how much has been invoiced against it and what is left. Wired by
++ * officefloor/rest/api/projects/budget.POST.yml.
++ *
++ * We reject a missing or unknown project id, and a missing or negative budget, before writing
++ * anything so a bad request never changes state. The invoiced / remaining figures are derived the
++ * same way {@link GetProjectBudget} derives them, so the write returns a view the panel can render
++ * directly.
++ */
++public class SetProjectBudget {
++
++    public void service(@RequestBody SetProjectBudgetForm form, ProjectRepository projects,
++            InvoiceRepository invoices, ObjectResponse<ProjectBudgetView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("A project id is required");
++        }
++        BigDecimal budget = form.getBudget();
++        if (budget == null || budget.signum() < 0) {
++            throw new IllegalArgumentException("A valid budget is required");
++        }
++        Project project = projects.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid project is required"));
++        project.setBudget(budget);
++        projects.save(project);
++        BigDecimal invoiced = invoices.findByProjectIdOrderByIdAsc(id).stream()
++                .filter(invoice -> !"DRAFT".equals(invoice.getStatus()))
++                .map(Invoice::getAmount)
++                .reduce(BigDecimal.ZERO, BigDecimal::add);
++        response.send(new ProjectBudgetView(id, budget, invoiced, budget.subtract(invoiced)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/SetProjectBudgetForm.java b/src/main/java/net/officefloor/hq/app/SetProjectBudgetForm.java
+new file mode 100644
+index 0000000..494e035
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/SetProjectBudgetForm.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/** The request body for setting a project's budget: which project, and the planned spend to set. */
++public class SetProjectBudgetForm {
++
++    private Long id;
++    private BigDecimal budget;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++
++    public BigDecimal getBudget() {
++        return budget;
++    }
++
++    public void setBudget(BigDecimal budget) {
++        this.budget = budget;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index cb426fb..9c40a14 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -71,10 +71,17 @@ public class TestSupportController {
+             // archived is optional too — a spec that only cares a project exists leaves it out,
+             // defaulting to not-archived (the same state a fresh project gets, V16__project_archived.sql).
+             boolean archived = Boolean.TRUE.equals(p.getOrDefault("archived", Boolean.FALSE));
++            // budget is optional in the fixture — a spec that does not care about the budget leaves
++            // it out, so the column stays NULL (the same state a fresh project gets until one is set,
++            // V23__project_budget.sql).
++            java.math.BigDecimal budget = p.get("budget") != null
++                    ? new java.math.BigDecimal(p.get("budget").toString())
++                    : null;
+             jdbc.update(
+-                    "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
++                    "INSERT INTO projects (id, name, client_id, status, archived, budget)"
++                            + " VALUES (?, ?, ?, ?, ?, ?)",
+                     ((Number) p.get("id")).longValue(), p.get("name"),
+-                    ((Number) p.get("clientId")).longValue(), status.toString(), archived);
++                    ((Number) p.get("clientId")).longValue(), status.toString(), archived, budget);
+         }
+         List<Map<String, Object>> contacts =
+                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());
+diff --git a/src/main/resources/db/migration/V23__project_budget.sql b/src/main/resources/db/migration/V23__project_budget.sql
+new file mode 100644
+index 0000000..abd365a
+--- /dev/null
++++ b/src/main/resources/db/migration/V23__project_budget.sql
+@@ -0,0 +1,5 @@
++-- A project can carry a BUDGET: the planned spend the user sets against it, which the detail page
++-- compares with how much has been invoiced. It is money, so a fixed-scale DECIMAL (two places)
++-- rather than a float. Nullable because a budget is optional — a project without one has not had a
++-- budget set yet, and existing projects keep NULL until the user sets one.
++ALTER TABLE projects ADD COLUMN budget DECIMAL(12, 2);
+diff --git a/src/main/resources/officefloor/rest/api/projects/budget.GET.yml b/src/main/resources/officefloor/rest/api/projects/budget.GET.yml
+new file mode 100644
+index 0000000..8290a9b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/budget.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.GetProjectBudget
+diff --git a/src/main/resources/officefloor/rest/api/projects/budget.POST.yml b/src/main/resources/officefloor/rest/api/projects/budget.POST.yml
+new file mode 100644
+index 0000000..01ba3f1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/budget.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.SetProjectBudget
