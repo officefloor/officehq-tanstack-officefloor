@@ -25,6 +25,12 @@ public class Client {
     @Column(nullable = false)
     private String email;
 
+    // Whether the client has been archived (tucked away): an archived client is retained but drops
+    // off the list and the search. New clients start not-archived (the column default,
+    // V19__client_archived.sql).
+    @Column(nullable = false)
+    private boolean archived;
+
     protected Client() {
     }
 
@@ -43,5 +49,14 @@ public class Client {
 
     public String getEmail() {
         return email;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    /** Tuck this client away so it drops off the list and the search while the row is kept. */
+    public void archive() {
+        this.archived = true;
     }
 }

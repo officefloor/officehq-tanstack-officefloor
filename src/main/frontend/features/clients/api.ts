@@ -12,6 +12,12 @@ export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clie
 export const createClient = (body: NewClient): Promise<Client> =>
   postJson<Client>('/api/clients', body);
 
+// Archive a client — tucks it away server-side (keeps the row, sets its archived flag) and returns
+// the updated client. Callers invalidate ['clients'] on success so the list refetches and the row
+// drops off both the list and the search.
+export const archiveClient = (id: number): Promise<Client> =>
+  postJson<Client>('/api/clients/archive', { id });
+
 // A project of one client as the API exposes it — the same shape the projects list renders, so the
 // client detail panel reuses the project-row-<id>/project-name anchors. The query key is scoped to
 // the client, ['clients', clientId, 'projects'], so each client's detail page reads only its own
