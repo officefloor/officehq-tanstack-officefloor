@@ -1,0 +1,149 @@
+diff --git a/src/main/frontend/features/invoices/AllInvoices.tsx b/src/main/frontend/features/invoices/AllInvoices.tsx
+index ad3302a..fd034d0 100644
+--- a/src/main/frontend/features/invoices/AllInvoices.tsx
++++ b/src/main/frontend/features/invoices/AllInvoices.tsx
+@@ -1,13 +1,32 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { allInvoicesKey, listAllInvoices, type AllInvoice } from './allInvoices';
+ import { formatMoney } from '../../ui/money';
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
+ 
+ // One place listing every invoice across all projects. Reads server data under ['invoices', 'all']
+ // (never copied into state); each row shows which PROJECT the invoice is for (the name the server
+ // joins on) and what STAGE it is at (its status). Amounts render with two decimals.
++//
++// The chosen stage lives in the URL under the shared `invoiceStatus` key — the filter control (its
++// own *.slot.tsx) writes it, this list reads it. It is part of the query key, so each stage caches
++// on its own and the server returns the rows already narrowed.
+ export function AllInvoices() {
+-  const { data: invoices } = useQuery({ queryKey: allInvoicesKey, queryFn: listAllInvoices });
++  const [status] = useSearchParam('invoiceStatus', asString);
++  const { data: invoices } = useQuery({
++    queryKey: [...allInvoicesKey, status],
++    queryFn: () => listAllInvoices(status),
++  });
+ 
++  return (
++    <>
++      <AllInvoicesToolbar.Slot />
++      <AllInvoicesList invoices={invoices} />
++    </>
++  );
++}
++
++function AllInvoicesList({ invoices }: { invoices: AllInvoice[] | undefined }) {
+   if (!invoices) {
+     return null;
+   }
+diff --git a/src/main/frontend/features/invoices/allInvoices.ts b/src/main/frontend/features/invoices/allInvoices.ts
+index c00aab8..7972549 100644
+--- a/src/main/frontend/features/invoices/allInvoices.ts
++++ b/src/main/frontend/features/invoices/allInvoices.ts
+@@ -15,5 +15,9 @@ export type AllInvoice = {
+ 
+ export const allInvoicesKey = ['invoices', 'all'] as const;
+ 
+-export const listAllInvoices = (): Promise<AllInvoice[]> =>
+-  getJson<AllInvoice[]>('/api/invoices/all');
++// A single lifecycle stage to narrow the list to ('' means every stage). The server reads the same
++// `status` key, so the narrowing is applied once, at the source, not re-filtered on the client. It
++// is appended to the query key below so each stage caches on its own, while a send/pay write still
++// invalidates ['invoices'] by prefix and refreshes whichever stage is on screen.
++export const listAllInvoices = (status = ''): Promise<AllInvoice[]> =>
++  getJson<AllInvoice[]>(`/api/invoices/all?status=${encodeURIComponent(status)}`);
+diff --git a/src/main/frontend/features/invoices/statusFilter.slot.tsx b/src/main/frontend/features/invoices/statusFilter.slot.tsx
+new file mode 100644
+index 0000000..b90c4ef
+--- /dev/null
++++ b/src/main/frontend/features/invoices/statusFilter.slot.tsx
+@@ -0,0 +1,28 @@
++import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++
++// A control over the all-invoices list — one new *.slot.tsx filling the invoices.toolbar region. It
++// owns the `invoiceStatus` URL key; the list reads the same key and asks the server for only that
++// stage. Nothing is passed between them: they stay in step through the shared search param. The
++// empty option clears the key, so the list falls back to showing every stage.
++const STAGES = ['DRAFT', 'SENT', 'PAID'] as const;
++
++function InvoiceStatusFilter() {
++  const [status, setStatus] = useSearchParam('invoiceStatus', asString);
++  return (
++    <select
++      data-testid="invoice-status-filter"
++      value={status}
++      onChange={(e) => setStatus(e.target.value)}
++    >
++      <option value="">All stages</option>
++      {STAGES.map((stage) => (
++        <option key={stage} value={stage}>
++          {stage}
++        </option>
++      ))}
++    </select>
++  );
++}
++
++export const contribution = AllInvoicesToolbar.fill({ order: 10, Component: InvoiceStatusFilter });
+diff --git a/src/main/frontend/slots/defs/allInvoicesToolbar.ts b/src/main/frontend/slots/defs/allInvoicesToolbar.ts
+new file mode 100644
+index 0000000..f9f7499
+--- /dev/null
++++ b/src/main/frontend/slots/defs/allInvoicesToolbar.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The toolbar above the all-invoices list. Features fill this region with controls that narrow or
++ * reorder the one cross-project list — a status filter, and whatever controls come later. The
++ * invoices page renders it; the page never lists what goes in it, so each control is a new
++ * *.slot.tsx file that owns its own URL key.
++ */
++export const AllInvoicesToolbar = defineSlot('invoices.toolbar');
+diff --git a/src/main/java/net/officefloor/hq/app/ListAllInvoices.java b/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
+index 3306a65..42d6b1e 100644
+--- a/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
++++ b/src/main/java/net/officefloor/hq/app/ListAllInvoices.java
+@@ -4,20 +4,25 @@ import java.util.List;
+ import java.util.Map;
+ import java.util.stream.Collectors;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * GET /api/invoices/all — every invoice across every project, in id order, each carrying the NAME of
+- * the project it is for and its lifecycle stage (status). One place listing all invoices, so it
+- * injects both repositories and joins the project name on the server. Wired by
+- * officefloor/rest/api/invoices/all.GET.yml.
++ * GET /api/invoices/all?status=&lt;stage&gt; — every invoice across every project, in id order, each
++ * carrying the NAME of the project it is for and its lifecycle stage (status). One place listing all
++ * invoices, so it injects both repositories and joins the project name on the server. The optional
++ * {@code status} narrows the list to a single stage (DRAFT, SENT, PAID); blank means every stage.
++ * Wired by officefloor/rest/api/invoices/all.GET.yml.
+  */
+ public class ListAllInvoices {
+ 
+-    public void service(InvoiceRepository invoices, ProjectRepository projects,
++    public void service(@RequestParam("status") String status,
++            InvoiceRepository invoices, ProjectRepository projects,
+             ObjectResponse<List<AllInvoiceView>> response) {
+         Map<Long, String> names = projects.findAll().stream()
+                 .collect(Collectors.toMap(Project::getId, Project::getName));
++        boolean all = status == null || status.isBlank();
+         List<AllInvoiceView> view = invoices.findAll().stream()
++                .filter(inv -> all || status.equals(inv.getStatus()))
+                 .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
+                 .map(inv -> AllInvoiceView.of(inv, names.getOrDefault(inv.getProjectId(), "")))
+                 .toList();
+diff --git a/src/main/resources/db/migration/V10__invoice_status_index.sql b/src/main/resources/db/migration/V10__invoice_status_index.sql
+new file mode 100644
+index 0000000..9d44ba7
+--- /dev/null
++++ b/src/main/resources/db/migration/V10__invoice_status_index.sql
+@@ -0,0 +1,5 @@
++-- Narrowing the all-invoices list to a single stage is now a first-class read path (the invoices
++-- page offers a status filter). Index the status column so filtering to one stage (DRAFT, SENT,
++-- PAID) is served from an index rather than a full scan as invoices accumulate. Additive and
++-- idempotent.
++CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices (status);
