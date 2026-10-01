@@ -8,4 +8,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     /** The invoices of one project, in id order — the shape the project detail page lists. */
     List<Invoice> findByProjectIdOrderByIdAsc(Long projectId);
+
+    /** The invoices of one project, earliest due date first (ties broken by id for a stable order). */
+    List<Invoice> findByProjectIdOrderByDueDateAscIdAsc(Long projectId);
 }
