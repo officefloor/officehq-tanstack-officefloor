@@ -1,0 +1,106 @@
+diff --git a/src/main/frontend/features/clients/ClientForm.tsx b/src/main/frontend/features/clients/ClientForm.tsx
+index bd34215..f6ade79 100644
+--- a/src/main/frontend/features/clients/ClientForm.tsx
++++ b/src/main/frontend/features/clients/ClientForm.tsx
+@@ -9,12 +9,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+ // Add a client. The fields the user is typing live in useState (uncommitted input); the saved data
+ // lives on the server. Before we call the API we require a proper email — a blank or malformed
+ // address is refused in the UI (never reaching the server) and surfaced on its own error anchor.
+-// On success we invalidate ['clients'] so the list refetches — we never hand-maintain the list.
++// A duplicate email can only be known server-side (another row may already hold it), so the server
++// rejects it and we surface that on the same anchor. On success we invalidate ['clients'] so the
++// list refetches — we never hand-maintain the list.
+ export function ClientForm() {
+   const queryClient = useQueryClient();
+   const [name, setName] = useState('');
+   const [email, setEmail] = useState('');
+-  const [emailError, setEmailError] = useState(false);
++  const [emailError, setEmailError] = useState<string | null>(null);
+ 
+   const mutation = useMutation({
+     mutationFn: createClient,
+@@ -23,15 +25,18 @@ export function ClientForm() {
+       setEmail('');
+       void queryClient.invalidateQueries({ queryKey: clientsKey });
+     },
++    onError: () => {
++      setEmailError('That email is already in use.');
++    },
+   });
+ 
+   const submit = (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!EMAIL_RE.test(email.trim())) {
+-      setEmailError(true);
++      setEmailError('Enter a valid email address.');
+       return;
+     }
+-    setEmailError(false);
++    setEmailError(null);
+     mutation.mutate({ name, email: email.trim() });
+   };
+ 
+@@ -50,13 +55,13 @@ export function ClientForm() {
+         onChange={(e) => {
+           setEmail(e.target.value);
+           if (emailError) {
+-            setEmailError(false);
++            setEmailError(null);
+           }
+         }}
+       />
+       {emailError && (
+         <p data-testid="client-form-email-error" role="alert">
+-          Enter a valid email address.
++          {emailError}
+         </p>
+       )}
+       <button data-testid="client-form-submit" type="submit">
+diff --git a/src/main/java/net/officefloor/hq/app/ClientRepository.java b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+index c9d01d8..e21cbc8 100644
+--- a/src/main/java/net/officefloor/hq/app/ClientRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ClientRepository.java
+@@ -4,4 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ /** Data access for {@link Client}. A Spring bean, injected into the OfficeFloor logic classes. */
+ public interface ClientRepository extends JpaRepository<Client, Long> {
++
++    /** Whether a client already holds this email — the uniqueness guard CreateClient enforces. */
++    boolean existsByEmail(String email);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/CreateClient.java b/src/main/java/net/officefloor/hq/app/CreateClient.java
+index 3a35108..e39e398 100644
+--- a/src/main/java/net/officefloor/hq/app/CreateClient.java
++++ b/src/main/java/net/officefloor/hq/app/CreateClient.java
+@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
+  * A client must have a proper email address: we reject a blank or malformed email before persisting
+  * so a bad row can never be saved, mirroring the UI check in ClientForm.tsx (the DB CHECK constraint
+  * in V2__client_email_format.sql is the final guard).
++ *
++ * An email must also be unique across clients: we reject one already in use before persisting (the
++ * UNIQUE constraint in V27__client_email_unique.sql is the final guard).
+  */
+ public class CreateClient {
+ 
+@@ -22,6 +25,9 @@ public class CreateClient {
+         if (!EMAIL.matcher(email).matches()) {
+             throw new IllegalArgumentException("A valid email address is required");
+         }
++        if (clients.existsByEmail(email)) {
++            throw new IllegalArgumentException("A client with this email already exists");
++        }
+         Client saved = clients.save(new Client(form.getName(), email));
+         response.send(ClientView.of(saved));
+     }
+diff --git a/src/main/resources/db/migration/V27__client_email_unique.sql b/src/main/resources/db/migration/V27__client_email_unique.sql
+new file mode 100644
+index 0000000..2d0f96e
+--- /dev/null
++++ b/src/main/resources/db/migration/V27__client_email_unique.sql
+@@ -0,0 +1,6 @@
++-- Two clients cannot share an email. The column was already NOT NULL and format-checked
++-- (V2__client_email_format.sql); this adds the uniqueness guard at the data layer so a duplicate
++-- email can never be persisted, matching the server check in CreateClient.java. This is the final
++-- line of defence behind the app-level existsByEmail check.
++ALTER TABLE clients
++    ADD CONSTRAINT clients_email_unique UNIQUE (email);
