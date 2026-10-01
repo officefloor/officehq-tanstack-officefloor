@@ -10,6 +10,8 @@ export type Invoice = {
   status: string;
   issuedDate: string;
   dueDate: string;
+  // The currency the invoice's client is billed in — the amount is shown in it (a short ISO code).
+  currency: string;
 };
 export type NewInvoice = { projectId: number; amount: number };
 

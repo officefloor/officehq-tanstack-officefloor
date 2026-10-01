@@ -16,14 +16,21 @@ public class ListInvoices {
     public void service(@RequestParam("projectId") String projectId,
             @RequestParam("sort") String sort,
             InvoiceRepository invoices, InvoicePaymentRepository payments,
+            ProjectRepository projects, ClientRepository clients,
             ObjectResponse<List<InvoiceView>> response) {
         Long id = Long.valueOf(projectId);
         List<Invoice> rows = "due".equals(sort)
                 ? invoices.findByProjectIdOrderByDueDateAscIdAsc(id)
                 : invoices.findByProjectIdOrderByIdAsc(id);
+        // Every invoice of this project belongs to the project's client, so they all share the
+        // client's currency — the money is shown in it.
+        String currency = projects.findById(id)
+                .flatMap(project -> clients.findById(project.getClientId()))
+                .map(Client::getCurrency)
+                .orElse("USD");
         // Each row's status is worked out from what has been paid against it, not a stored flag.
         List<InvoiceView> view = rows.stream()
-                .map(inv -> InvoiceView.ofDerived(inv, paidSum(payments, inv.getId())))
+                .map(inv -> InvoiceView.ofDerived(inv, paidSum(payments, inv.getId()), currency))
                 .toList();
         response.send(view);
     }

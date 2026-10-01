@@ -25,6 +25,9 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
   }
 
   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+  // Every invoice of this project belongs to the same client, so they share one currency — show the
+  // amounts (and the total) in it.
+  const currency = invoices[0]?.currency ?? 'USD';
 
   return (
     <>
@@ -41,7 +44,7 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
         <tbody>
           {invoices.map((invoice: Invoice) => (
             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-              <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+              <td data-testid="invoice-amount">{formatMoney(invoice.amount, invoice.currency)}</td>
               <td data-testid="invoice-status">{invoice.status}</td>
               <td data-testid="invoice-issued">{invoice.issuedDate}</td>
               <td data-testid="invoice-due">{invoice.dueDate}</td>
@@ -52,7 +55,7 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
           ))}
         </tbody>
       </table>
-      <p data-testid="project-invoices-total">{formatMoney(total)}</p>
+      <p data-testid="project-invoices-total">{formatMoney(total, currency)}</p>
     </>
   );
 }

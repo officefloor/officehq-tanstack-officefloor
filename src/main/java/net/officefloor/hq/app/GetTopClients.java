@@ -23,7 +23,7 @@ public class GetTopClients {
         List<DashboardTopClientView> ranked = clients.findAll().stream()
                 .filter(client -> !client.isArchived())
                 .map(client -> new DashboardTopClientView(client.getId(), client.getName(),
-                        owedBy(client, projects, invoices, payments)))
+                        owedBy(client, projects, invoices, payments), client.getCurrency()))
                 .filter(row -> row.amount().signum() > 0)
                 .sorted(Comparator.comparing(DashboardTopClientView::amount).reversed()
                         .thenComparing(DashboardTopClientView::clientId))

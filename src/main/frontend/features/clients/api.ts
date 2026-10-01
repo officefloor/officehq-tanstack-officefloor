@@ -2,7 +2,15 @@ import { getJson, postJson } from '../../api/http';
 
 // A client as the API exposes it. The query key ['clients'] is the shared handle: the list reads
 // it, the create form invalidates it, and any future feature showing clients joins by reusing it.
-export type Client = { id: number; name: string; email: string; archived: boolean };
+export type Client = {
+  id: number;
+  name: string;
+  email: string;
+  archived: boolean;
+  // The currency this client is billed in — their money is shown in it everywhere (a short ISO
+  // code: USD, EUR, GBP).
+  currency: string;
+};
 export type NewClient = { name: string; email: string };
 
 export const clientsKey = ['clients'] as const;
@@ -28,6 +36,18 @@ export type ClientEdit = { id: number; name: string; email: string };
 
 export const updateClient = (body: ClientEdit): Promise<Client> =>
   postJson<Client>('/api/clients/update', body);
+
+// The currencies a client can be billed in — the set the server and the DB CHECK allow. The select
+// offers these; anything the user picks is one of them.
+export const CURRENCIES = ['USD', 'EUR', 'GBP'] as const;
+
+// Set a client's billing currency, returning the updated row. Callers invalidate ['clients'] on
+// success so every panel showing the client's money refetches and shows it in the new currency at
+// once — and ['dashboard'], so the home figures regroup by currency.
+export type ClientCurrencyEdit = { id: number; currency: string };
+
+export const setClientCurrency = (body: ClientCurrencyEdit): Promise<Client> =>
+  postJson<Client>('/api/clients/currency', body);
 
 // Archive a client — tucks it away server-side (keeps the row, sets its archived flag) and returns
 // the updated client. Callers invalidate ['clients'] on success so the list refetches and the row

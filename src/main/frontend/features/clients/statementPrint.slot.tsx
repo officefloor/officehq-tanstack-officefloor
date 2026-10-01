@@ -45,7 +45,7 @@ function StatementPrint({ clientId }: { clientId: number }) {
                 <td data-testid="statement-print-invoice-id">{invoice.id}</td>
                 <td data-testid="statement-print-project-name">{project.name}</td>
                 <td data-testid="statement-print-invoice-status">{invoice.status}</td>
-                <td data-testid="statement-print-invoice-due">{formatMoney(invoice.amountDue)}</td>
+                <td data-testid="statement-print-invoice-due">{formatMoney(invoice.amountDue, statement.currency)}</td>
               </tr>
             )),
           )}
@@ -54,7 +54,7 @@ function StatementPrint({ clientId }: { clientId: number }) {
       <p>
         Grand total owed:{' '}
         <strong data-testid="statement-grand-total">
-          {formatMoney(statement.outstandingTotal)}
+          {formatMoney(statement.outstandingTotal, statement.currency)}
         </strong>
       </p>
     </section>

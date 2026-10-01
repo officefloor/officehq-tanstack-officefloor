@@ -25,6 +25,8 @@ export type ClientStatement = {
   invoices: StatementInvoice[];
   projects: StatementProject[];
   outstandingTotal: number;
+  // The currency this client is billed in — every figure on the statement is shown in it.
+  currency: string;
 };
 
 export const clientStatementKey = (clientId: number) =>

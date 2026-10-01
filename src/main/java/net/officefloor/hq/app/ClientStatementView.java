@@ -13,5 +13,5 @@ import java.util.List;
  * job without stitching the groups together — the group subtotals sum to the outstanding total.
  */
 public record ClientStatementView(Long clientId, List<StatementInvoiceView> invoices,
-        List<StatementProjectView> projects, BigDecimal outstandingTotal) {
+        List<StatementProjectView> projects, BigDecimal outstandingTotal, String currency) {
 }

@@ -7,5 +7,6 @@ import java.math.BigDecimal;
  * (the sum of what is still due across every invoice the client's projects hold — the same figure
  * the client statement totals). The shape the dashboard renders into each ranked row.
  */
-public record DashboardTopClientView(Long clientId, String name, BigDecimal amount) {
+public record DashboardTopClientView(Long clientId, String name, BigDecimal amount,
+        String currency) {
 }

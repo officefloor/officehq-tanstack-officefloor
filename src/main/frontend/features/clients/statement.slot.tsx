@@ -48,8 +48,8 @@ function ClientStatement({ clientId }: { clientId: number }) {
                 <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
                   <td data-testid="statement-invoice-id">{invoice.id}</td>
                   <td data-testid="statement-invoice-status">{invoice.status}</td>
-                  <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
-                  <td data-testid="statement-invoice-due">{formatMoney(invoice.amountDue)}</td>
+                  <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount, statement.currency)}</td>
+                  <td data-testid="statement-invoice-due">{formatMoney(invoice.amountDue, statement.currency)}</td>
                 </tr>
               ))}
             </tbody>
@@ -57,7 +57,7 @@ function ClientStatement({ clientId }: { clientId: number }) {
           <p>
             Subtotal:{' '}
             <span data-testid="statement-project-subtotal">
-              {formatMoney(project.subtotal)}
+              {formatMoney(project.subtotal, statement.currency)}
             </span>
           </p>
         </section>
@@ -65,7 +65,7 @@ function ClientStatement({ clientId }: { clientId: number }) {
       <p>
         Total owed:{' '}
         <span data-testid="client-outstanding-total">
-          {formatMoney(statement.outstandingTotal)}
+          {formatMoney(statement.outstandingTotal, statement.currency)}
         </span>
       </p>
     </section>

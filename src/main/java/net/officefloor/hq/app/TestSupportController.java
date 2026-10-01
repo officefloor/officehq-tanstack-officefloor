@@ -71,8 +71,14 @@ public class TestSupportController {
             // to not-archived (the same state a fresh client gets, V19__client_archived.sql); a spec
             // that seeds a tucked-away client to restore supplies it.
             boolean archived = Boolean.TRUE.equals(c.getOrDefault("archived", Boolean.FALSE));
-            jdbc.update("INSERT INTO clients (id, name, email, archived) VALUES (?, ?, ?, ?)",
-                    ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"), archived);
+            // currency is optional — a spec that does not care leaves it out, defaulting to USD (the
+            // same state a fresh client gets, V33__client_currency.sql); a spec asserting a client's
+            // money in another currency supplies it.
+            Object currency = c.getOrDefault("currency", "USD");
+            jdbc.update(
+                    "INSERT INTO clients (id, name, email, archived, currency) VALUES (?, ?, ?, ?, ?)",
+                    ((Number) c.get("id")).longValue(), c.get("name"), c.get("email"), archived,
+                    currency.toString());
         }
         List<Map<String, Object>> projects =
                 (List<Map<String, Object>>) fixture.getOrDefault("projects", List.of());

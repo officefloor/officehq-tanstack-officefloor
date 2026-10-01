@@ -18,10 +18,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class GetClientStatement {
 
     public void service(@RequestParam("clientId") String clientId,
-            ProjectRepository projects, InvoiceRepository invoices,
+            ClientRepository clients, ProjectRepository projects, InvoiceRepository invoices,
             InvoicePaymentRepository payments,
             ObjectResponse<ClientStatementView> response) {
         Long id = Long.valueOf(clientId);
+        // The statement is for one client, so every figure on it is shown in that client's currency.
+        String currency = clients.findById(id).map(Client::getCurrency).orElse("USD");
         List<StatementInvoiceView> rows = new ArrayList<>();
         List<StatementProjectView> groups = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
@@ -47,6 +49,6 @@ public class GetClientStatement {
                     projectRows));
         }
         rows.sort((a, b) -> Long.compare(a.id(), b.id()));
-        response.send(new ClientStatementView(id, rows, groups, total));
+        response.send(new ClientStatementView(id, rows, groups, total, currency));
     }
 }

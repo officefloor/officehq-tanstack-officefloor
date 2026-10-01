@@ -8,6 +8,8 @@ export type TopClient = {
   clientId: number;
   name: string;
   amount: number;
+  // The currency this client is billed in — their figure is shown in it (a short ISO code).
+  currency: string;
 };
 
 export const topClientsKey = ['dashboard', 'top-clients'] as const;

@@ -31,6 +31,12 @@ public class Client {
     @Column(nullable = false)
     private boolean archived;
 
+    // The currency this client is billed in — their money is shown in it everywhere the user sees it.
+    // A short ISO code (USD, EUR, GBP); new clients start USD (the column default,
+    // V33__client_currency.sql) until the user sets it.
+    @Column(nullable = false)
+    private String currency = "USD";
+
     protected Client() {
     }
 
@@ -53,6 +59,16 @@ public class Client {
 
     public boolean isArchived() {
         return archived;
+    }
+
+    /** The currency this client is billed in (a short ISO code: USD, EUR, GBP). */
+    public String getCurrency() {
+        return currency;
+    }
+
+    /** Set the currency this client is billed in — the currency their money is shown in everywhere. */
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     /** Tuck this client away so it drops off the list and the search while the row is kept. */
