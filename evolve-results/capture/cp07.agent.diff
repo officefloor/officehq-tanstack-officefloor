@@ -1,0 +1,244 @@
+diff --git a/src/main/frontend/features/clients/ClientsList.tsx b/src/main/frontend/features/clients/ClientsList.tsx
+index 9a4a64a..91afc6c 100644
+--- a/src/main/frontend/features/clients/ClientsList.tsx
++++ b/src/main/frontend/features/clients/ClientsList.tsx
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { useSearchParam, asString } from '../../url/useSearchParam';
+ import { clientsKey, listClients, type Client } from './api';
++import { ClientRow } from '../../slots/defs/clientRow';
+ 
+ // The clients list. Reads server data under ['clients'] (never copied into state); the create form
+ // shares the key, so a successful create refreshes this list with no import between them.
+@@ -39,6 +40,7 @@ export function ClientsList() {
+             <tr>
+               <th>Name</th>
+               <th>Email</th>
++              <th></th>
+             </tr>
+           </thead>
+           <tbody>
+@@ -46,6 +48,9 @@ export function ClientsList() {
+               <tr key={client.id} data-testid={`client-row-${client.id}`}>
+                 <td data-testid="client-name">{client.name}</td>
+                 <td data-testid="client-email">{client.email}</td>
++                <td>
++                  <ClientRow.Slot clientId={client.id} />
++                </td>
+               </tr>
+             ))}
+           </tbody>
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+index be3c8bd..df87d31 100644
+--- a/src/main/frontend/features/clients/api.ts
++++ b/src/main/frontend/features/clients/api.ts
+@@ -11,3 +11,15 @@ export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clie
+ 
+ export const createClient = (body: NewClient): Promise<Client> =>
+   postJson<Client>('/api/clients', body);
++
++// A project of one client as the API exposes it — the same shape the projects list renders, so the
++// client detail panel reuses the project-row-<id>/project-name anchors. The query key is scoped to
++// the client, ['clients', clientId, 'projects'], so each client's detail page reads only its own
++// projects; sharing the ['clients'] prefix means a client write can invalidate it too.
++export type ClientProject = { id: number; name: string; clientId: number; clientName: string };
++
++export const clientProjectsKey = (clientId: number) =>
++  ['clients', clientId, 'projects'] as const;
++
++export const listClientProjects = (clientId: number): Promise<ClientProject[]> =>
++  getJson<ClientProject[]>(`/api/clients/projects?clientId=${clientId}`);
+diff --git a/src/main/frontend/features/clients/clientProjects.slot.tsx b/src/main/frontend/features/clients/clientProjects.slot.tsx
+new file mode 100644
+index 0000000..be25701
+--- /dev/null
++++ b/src/main/frontend/features/clients/clientProjects.slot.tsx
+@@ -0,0 +1,41 @@
++import { useQuery } from '@tanstack/react-query';
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { clientProjectsKey, listClientProjects, type ClientProject } from './api';
++
++// The projects a client owns — one panel filling the client.detail region. Reads server data under
++// ['clients', clientId, 'projects'] (never copied into state); the server scopes to this client, so
++// only its projects arrive. Rows reuse the project-row-<id>/project-name anchors — the projects
++// listing rendered in the client context.
++function ClientProjects({ clientId }: { clientId: number }) {
++  const { data: projects } = useQuery({
++    queryKey: clientProjectsKey(clientId),
++    queryFn: () => listClientProjects(clientId),
++  });
++
++  if (!projects) {
++    return null;
++  }
++
++  if (projects.length === 0) {
++    return <p data-testid="client-projects-empty">No projects yet.</p>;
++  }
++
++  return (
++    <table data-testid="client-projects-table">
++      <thead>
++        <tr>
++          <th>Name</th>
++        </tr>
++      </thead>
++      <tbody>
++        {projects.map((project: ClientProject) => (
++          <tr key={project.id} data-testid={`project-row-${project.id}`}>
++            <td data-testid="project-name">{project.name}</td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 20, Component: ClientProjects });
+diff --git a/src/main/frontend/features/clients/open.slot.tsx b/src/main/frontend/features/clients/open.slot.tsx
+new file mode 100644
+index 0000000..2c8e934
+--- /dev/null
++++ b/src/main/frontend/features/clients/open.slot.tsx
+@@ -0,0 +1,18 @@
++import { Link } from '@tanstack/react-router';
++import { ClientRow } from '../../slots/defs/clientRow';
++
++// The link that opens a client's detail page — one new file filling the clients-row action slot.
++// Drilling in is a child route (routes/clients.$clientId.tsx), never a flag, so this is a plain
++// navigation to that route. Its testid is client-open-<id> (the test contract; CLAUDE.md).
++export const contribution = ClientRow.fill({
++  order: 0,
++  Component: ({ clientId }: { clientId: number }) => (
++    <Link
++      to="/clients/$clientId"
++      params={{ clientId: String(clientId) }}
++      data-testid={`client-open-${clientId}`}
++    >
++      Open
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/routes/clients.$clientId.tsx b/src/main/frontend/routes/clients.$clientId.tsx
+new file mode 100644
+index 0000000..e41a3eb
+--- /dev/null
++++ b/src/main/frontend/routes/clients.$clientId.tsx
+@@ -0,0 +1,20 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { ClientDetail } from '../slots/defs/clientDetail';
++
++// A client's detail page: a new file under routes/, reached by client-open-<id>. It holds no data
++// and no state — it renders the client.detail region with the client id from the URL, and each
++// panel (the client's projects, and whatever later joins) is its own *.slot.tsx that queries for
++// itself.
++export const Route = createFileRoute('/clients/$clientId')({
++  component: ClientDetailPage,
++});
++
++function ClientDetailPage() {
++  const { clientId } = Route.useParams();
++  return (
++    <section data-testid="client-page">
++      <h1>Client</h1>
++      <ClientDetail.Slot clientId={Number(clientId)} />
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/clients.tsx b/src/main/frontend/routes/clients.tsx
+new file mode 100644
+index 0000000..a6af4a2
+--- /dev/null
++++ b/src/main/frontend/routes/clients.tsx
+@@ -0,0 +1,8 @@
++import { createFileRoute, Outlet } from '@tanstack/react-router';
++
++// The clients section layout: the one-line route that lets clients have detail views beside the
++// list. It renders only <Outlet /> — the list (clients.index.tsx) and a client's detail page
++// (clients.$clientId.tsx) are its children, each its own file.
++export const Route = createFileRoute('/clients')({
++  component: () => <Outlet />,
++});
+diff --git a/src/main/frontend/slots/defs/clientDetail.ts b/src/main/frontend/slots/defs/clientDetail.ts
+new file mode 100644
+index 0000000..9d9a2e0
+--- /dev/null
++++ b/src/main/frontend/slots/defs/clientDetail.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * A client's detail page. Features fill this region with panels about one client (the projects it
++ * owns, and whatever else later joins by the client id). The detail route renders it with the
++ * client id as context; the page never lists what goes in it, so each panel is a new *.slot.tsx.
++ */
++export const ClientDetail = defineSlot<{ clientId: number }>('client.detail');
+diff --git a/src/main/frontend/slots/defs/clientRow.ts b/src/main/frontend/slots/defs/clientRow.ts
+new file mode 100644
+index 0000000..6df487e
+--- /dev/null
++++ b/src/main/frontend/slots/defs/clientRow.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * A row action on the clients list — a per-client control rendered in the row's last cell (the
++ * Slot is a Fragment, so it is valid inside a <td>). Features add actions here as new *.slot.tsx
++ * files; the list never lists them. First use: the link that opens a client's detail page.
++ */
++export const ClientRow = defineSlot<{ clientId: number }>('client.row');
+diff --git a/src/main/java/net/officefloor/hq/app/ListClientProjects.java b/src/main/java/net/officefloor/hq/app/ListClientProjects.java
+new file mode 100644
+index 0000000..05150cd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ListClientProjects.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * GET /api/clients/projects?clientId=&lt;id&gt; — the projects of one client, in id order, each
++ * carrying its client's NAME so the row reuses the same {@link ProjectView} shape the projects
++ * list renders. Scoped to a client (the client detail page lists ITS projects), so the client id
++ * arrives as a query parameter. Wired by officefloor/rest/api/clients/projects.GET.yml.
++ */
++public class ListClientProjects {
++
++    public void service(@RequestParam("clientId") String clientId,
++            ProjectRepository projects, ClientRepository clients,
++            ObjectResponse<List<ProjectView>> response) {
++        Long id = Long.valueOf(clientId);
++        String clientName = clients.findById(id).map(Client::getName).orElse("");
++        List<ProjectView> view = projects.findByClientIdOrderByIdAsc(id).stream()
++                .map(p -> ProjectView.of(p, clientName))
++                .toList();
++        response.send(view);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index bd2f400..0723a09 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -1,7 +1,11 @@
+ package net.officefloor.hq.app;
+ 
++import java.util.List;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ /** Data access for {@link Project}. A Spring bean, injected into the OfficeFloor logic classes. */
+ public interface ProjectRepository extends JpaRepository<Project, Long> {
++
++    /** The projects of one client, in id order — the shape a client's detail page lists. */
++    List<Project> findByClientIdOrderByIdAsc(Long clientId);
+ }
+diff --git a/src/main/resources/officefloor/rest/api/clients/projects.GET.yml b/src/main/resources/officefloor/rest/api/clients/projects.GET.yml
+new file mode 100644
+index 0000000..fd2cbda
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/projects.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ListClientProjects
