@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { projectsKey, listProjects, type Project } from './api';
 import { ProjectRow } from '../../slots/defs/projectRow';
 import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
-import { useSearchParam, asFlag, asNumber } from '../../url/useSearchParam';
+import { useSearchParam, asFlag, asNumber, asString } from '../../url/useSearchParam';
 
 // The projects list. Reads server data under ['projects'] (never copied into state); the create form
 // shares the key, so a successful create refreshes this list with no import between them. Each row
@@ -17,6 +17,10 @@ export function ProjectsList() {
   // only the projects carrying that tag, so they stay in step through the shared search param with
   // nothing passed between them. Unset clears the key, so the list falls back to every project.
   const [tagFilter] = useSearchParam('projectTag', asNumber);
+  // The status filter control (its own *.slot.tsx) owns this key; the list reads the same key and
+  // keeps only the projects at that lifecycle status, so they stay in step through the shared
+  // search param with nothing passed between them. An empty key means every status.
+  const [statusFilter] = useSearchParam('projectStatus', asString);
   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: listProjects });
 
   if (!projects) {
@@ -26,7 +30,8 @@ export function ProjectsList() {
   const visible = projects.filter(
     (project: Project) =>
       (showArchived || !project.archived) &&
-      (tagFilter === undefined || project.tagIds.includes(tagFilter)),
+      (tagFilter === undefined || project.tagIds.includes(tagFilter)) &&
+      (statusFilter === '' || project.status === statusFilter),
   );
 
   return (
