@@ -1,0 +1,183 @@
+diff --git a/src/main/frontend/features/dashboard/TopClients.tsx b/src/main/frontend/features/dashboard/TopClients.tsx
+new file mode 100644
+index 0000000..64b028d
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/TopClients.tsx
+@@ -0,0 +1,29 @@
++import { useQuery } from '@tanstack/react-query';
++import { topClientsKey, getTopClients } from './topClientsApi';
++import { formatMoney } from '../../ui/money';
++
++// The home screen's "top clients" panel: the five clients that owe the most, ranked by how much
++// they owe. Reads server data under ['dashboard', 'top-clients'] (never copied into state); the
++// ranking and the cap live on the server, so this just renders the rows in the order they arrive.
++// Each amount is money, shown with two decimal places.
++export function TopClients() {
++  const { data } = useQuery({ queryKey: topClientsKey, queryFn: getTopClients });
++
++  if (!data) {
++    return null;
++  }
++
++  return (
++    <section data-testid="dashboard-top-clients">
++      <h2>Top clients</h2>
++      <ol>
++        {data.map((client) => (
++          <li key={client.clientId} data-testid={`top-client-row-${client.clientId}`}>
++            <span data-testid="top-client-name">{client.name}</span>
++            <span data-testid="top-client-amount">{formatMoney(client.amount)}</span>
++          </li>
++        ))}
++      </ol>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/dashboard/topClients.slot.tsx b/src/main/frontend/features/dashboard/topClients.slot.tsx
+new file mode 100644
+index 0000000..7da3799
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/topClients.slot.tsx
+@@ -0,0 +1,7 @@
++import { DashboardMain } from '../../slots/defs/dashboardMain';
++import { TopClients } from './TopClients';
++
++// The "top clients" panel's presence on the dashboard — one new file filling the dashboard.main
++// region, the page is not touched to put it there (see features/home/nav.slot.tsx for the worked
++// example of the mechanism).
++export const contribution = DashboardMain.fill({ order: 10, Component: TopClients });
+diff --git a/src/main/frontend/features/dashboard/topClientsApi.ts b/src/main/frontend/features/dashboard/topClientsApi.ts
+new file mode 100644
+index 0000000..d98f0ed
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/topClientsApi.ts
+@@ -0,0 +1,16 @@
++import { getJson } from '../../api/http';
++
++// The home screen's "top clients" leaderboard as the API exposes it: each client and how much that
++// client still owes, already ranked (most owed first) and capped at five by the server. The query
++// key ['dashboard', 'top-clients'] sits under the shared ['dashboard'] handle — any feature that
++// writes clients, projects, invoices or payments can invalidate ['dashboard'] to refresh it.
++export type TopClient = {
++  clientId: number;
++  name: string;
++  amount: number;
++};
++
++export const topClientsKey = ['dashboard', 'top-clients'] as const;
++
++export const getTopClients = (): Promise<TopClient[]> =>
++  getJson<TopClient[]>('/api/dashboard/top-clients');
+diff --git a/src/main/frontend/routes/dashboard.tsx b/src/main/frontend/routes/dashboard.tsx
+index 484faba..cfecf00 100644
+--- a/src/main/frontend/routes/dashboard.tsx
++++ b/src/main/frontend/routes/dashboard.tsx
+@@ -1,5 +1,6 @@
+ import { createFileRoute } from '@tanstack/react-router';
+ import { Dashboard } from '../features/dashboard/Dashboard';
++import { DashboardMain } from '../slots/defs/dashboardMain';
+ 
+ // The dashboard page: one new file under routes/. A leaf page with no detail views, so it is a flat
+ // route composing its own feature's summary, which queries for itself.
+@@ -12,6 +13,7 @@ function DashboardPage() {
+     <section data-testid="dashboard-page">
+       <h1>Dashboard</h1>
+       <Dashboard />
++      <DashboardMain.Slot />
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/slots/defs/dashboardMain.ts b/src/main/frontend/slots/defs/dashboardMain.ts
+new file mode 100644
+index 0000000..4e645d3
+--- /dev/null
++++ b/src/main/frontend/slots/defs/dashboardMain.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The dashboard page's main region, below the summary figures. Features fill it with whatever
++ * belongs on the home screen (a ranked panel, a tile); the page never lists what goes in it, so each
++ * addition is a new *.slot.tsx. Rendered by routes/dashboard.tsx.
++ */
++export const DashboardMain = defineSlot('dashboard.main');
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardTopClientView.java b/src/main/java/net/officefloor/hq/app/DashboardTopClientView.java
+new file mode 100644
+index 0000000..49ddcf5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DashboardTopClientView.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * One row of the home dashboard's "top clients" panel: a client and how much that client still owes
++ * (the sum of what is still due across every invoice the client's projects hold — the same figure
++ * the client statement totals). The shape the dashboard renders into each ranked row.
++ */
++public record DashboardTopClientView(Long clientId, String name, BigDecimal amount) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/GetTopClients.java b/src/main/java/net/officefloor/hq/app/GetTopClients.java
+new file mode 100644
+index 0000000..7288be4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/GetTopClients.java
+@@ -0,0 +1,49 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/dashboard/top-clients — the home screen's leaderboard: the clients that owe the most,
++ * ranked by how much they owe, capped at the top five. What a client owes is the sum of what is
++ * still DUE across every invoice their projects hold (each invoice's total minus what has been paid
++ * against it) — the same derivation {@link GetClientStatement} totals, so the ranking agrees with
++ * each client's statement. Clients that owe nothing are left off (there is nothing to rank), and
++ * archived clients drop off here just as they drop off the client list. Ties are broken by client
++ * id so the order is stable. A cross-entity aggregate read, so it injects the repositories it needs.
++ * Wired by officefloor/rest/api/dashboard/top-clients.GET.yml.
++ */
++public class GetTopClients {
++
++    public void service(ClientRepository clients, ProjectRepository projects,
++            InvoiceRepository invoices, InvoicePaymentRepository payments,
++            ObjectResponse<List<DashboardTopClientView>> response) {
++        List<DashboardTopClientView> ranked = clients.findAll().stream()
++                .filter(client -> !client.isArchived())
++                .map(client -> new DashboardTopClientView(client.getId(), client.getName(),
++                        owedBy(client, projects, invoices, payments)))
++                .filter(row -> row.amount().signum() > 0)
++                .sorted(Comparator.comparing(DashboardTopClientView::amount).reversed()
++                        .thenComparing(DashboardTopClientView::clientId))
++                .limit(5)
++                .toList();
++        response.send(ranked);
++    }
++
++    /** What one client still owes: the due balance summed across all its projects' invoices. */
++    private static BigDecimal owedBy(Client client, ProjectRepository projects,
++            InvoiceRepository invoices, InvoicePaymentRepository payments) {
++        BigDecimal owed = BigDecimal.ZERO;
++        for (Project project : projects.findByClientIdOrderByIdAsc(client.getId())) {
++            for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(project.getId())) {
++                BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoice.getId()).stream()
++                        .map(InvoicePayment::getAmount)
++                        .reduce(BigDecimal.ZERO, BigDecimal::add);
++                owed = owed.add(invoice.getTotal().subtract(paid));
++            }
++        }
++        return owed;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/dashboard/top-clients.GET.yml b/src/main/resources/officefloor/rest/api/dashboard/top-clients.GET.yml
+new file mode 100644
+index 0000000..8a370b2
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/dashboard/top-clients.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.GetTopClients
