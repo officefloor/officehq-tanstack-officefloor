@@ -1,0 +1,186 @@
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+index ba123b9..14deab6 100644
+--- a/src/main/frontend/features/clients/api.ts
++++ b/src/main/frontend/features/clients/api.ts
+@@ -12,6 +12,12 @@ export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clie
+ export const createClient = (body: NewClient): Promise<Client> =>
+   postJson<Client>('/api/clients', body);
+ 
++// Archive a client — tucks it away server-side (keeps the row, sets its archived flag) and returns
++// the updated client. Callers invalidate ['clients'] on success so the list refetches and the row
++// drops off both the list and the search.
++export const archiveClient = (id: number): Promise<Client> =>
++  postJson<Client>('/api/clients/archive', { id });
++
+ // A project of one client as the API exposes it — the same shape the projects list renders, so the
+ // client detail panel reuses the project-row-<id>/project-name anchors. The query key is scoped to
+ // the client, ['clients', clientId, 'projects'], so each client's detail page reads only its own
+diff --git a/src/main/frontend/features/clients/archive.slot.tsx b/src/main/frontend/features/clients/archive.slot.tsx
+new file mode 100644
+index 0000000..bd95616
+--- /dev/null
++++ b/src/main/frontend/features/clients/archive.slot.tsx
+@@ -0,0 +1,32 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { ClientRow } from '../../slots/defs/clientRow';
++import { archiveClient, clientsKey } from './api';
++
++// Archive a client — one new file filling the per-client-row action slot. Rather than delete, the
++// click tucks the client away: a useMutation (never a hand-rolled list edit in state) that, on
++// success, invalidates the shared ['clients'] key so the list refetches and the archived row drops
++// off the list and the search. The server flips the flag and appends the audit record, so "note it
++// when I do" is handled where the side-effect lives. Its testid is client-archive-<id> (the test
++// contract; CLAUDE.md).
++function ArchiveClient({ clientId }: { clientId: number }) {
++  const queryClient = useQueryClient();
++  const mutation = useMutation({
++    mutationFn: () => archiveClient(clientId),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: clientsKey });
++    },
++  });
++
++  return (
++    <button
++      data-testid={`client-archive-${clientId}`}
++      type="button"
++      disabled={mutation.isPending}
++      onClick={() => mutation.mutate()}
++    >
++      Archive
++    </button>
++  );
++}
++
++export const contribution = ClientRow.fill({ order: 20, Component: ArchiveClient });
+diff --git a/src/main/java/net/officefloor/hq/app/ArchiveClient.java b/src/main/java/net/officefloor/hq/app/ArchiveClient.java
+new file mode 100644
+index 0000000..436a1ad
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ArchiveClient.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/clients/archive — tuck a client away rather than delete it, returning the updated row.
++ * Wired by officefloor/rest/api/clients/archive.POST.yml.
++ *
++ * Archiving keeps the client (and everything hanging off it): it only sets the client's archived
++ * flag so it drops off the list and the search, which show the not-archived rows. Like deleting, it
++ * is an audited side-effect — alongside the change we append one record through the {@link Audit}
++ * service ({@code CLIENT_ARCHIVED id=<id>}) so there is a durable note every time a client is tucked
++ * away. We reject a missing or unknown client id before writing anything so a bad request neither
++ * changes state nor audits.
++ */
++public class ArchiveClient {
++
++    public void service(@RequestBody ArchiveClientForm form, ClientRepository clients, Audit audit,
++            ObjectResponse<ClientView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("A client id is required");
++        }
++        Client client = clients.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid client is required"));
++        client.archive();
++        clients.save(client);
++        audit.record("CLIENT_ARCHIVED id=" + id);
++        response.send(ClientView.of(client));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ArchiveClientForm.java b/src/main/java/net/officefloor/hq/app/ArchiveClientForm.java
+new file mode 100644
+index 0000000..e45fac9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ArchiveClientForm.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++/** The request body for archiving a client: which client to tuck away. */
++public class ArchiveClientForm {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Client.java b/src/main/java/net/officefloor/hq/app/Client.java
+index 5691179..7c96607 100644
+--- a/src/main/java/net/officefloor/hq/app/Client.java
++++ b/src/main/java/net/officefloor/hq/app/Client.java
+@@ -25,6 +25,12 @@ public class Client {
+     @Column(nullable = false)
+     private String email;
+ 
++    // Whether the client has been archived (tucked away): an archived client is retained but drops
++    // off the list and the search. New clients start not-archived (the column default,
++    // V19__client_archived.sql).
++    @Column(nullable = false)
++    private boolean archived;
++
+     protected Client() {
+     }
+ 
+@@ -44,4 +50,13 @@ public class Client {
+     public String getEmail() {
+         return email;
+     }
++
++    public boolean isArchived() {
++        return archived;
++    }
++
++    /** Tuck this client away so it drops off the list and the search while the row is kept. */
++    public void archive() {
++        this.archived = true;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ListClients.java b/src/main/java/net/officefloor/hq/app/ListClients.java
+index 5d6eb3e..14e8a19 100644
+--- a/src/main/java/net/officefloor/hq/app/ListClients.java
++++ b/src/main/java/net/officefloor/hq/app/ListClients.java
+@@ -4,13 +4,16 @@ import java.util.List;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+- * GET /api/clients — every client, in id order, as the list the front-end renders.
++ * GET /api/clients — every client the user still works with, in id order, as the list the front-end
++ * renders. Archived (tucked-away) clients are retained but excluded here, so they drop off both the
++ * list and the search (which filters the same list) without being lost.
+  * Wired by officefloor/rest/api/clients.GET.yml.
+  */
+ public class ListClients {
+ 
+     public void service(ClientRepository clients, ObjectResponse<List<ClientView>> response) {
+         List<ClientView> view = clients.findAll().stream()
++                .filter(client -> !client.isArchived())
+                 .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
+                 .map(ClientView::of)
+                 .toList();
+diff --git a/src/main/resources/db/migration/V19__client_archived.sql b/src/main/resources/db/migration/V19__client_archived.sql
+new file mode 100644
+index 0000000..0c23a8f
+--- /dev/null
++++ b/src/main/resources/db/migration/V19__client_archived.sql
+@@ -0,0 +1,5 @@
++-- Archiving (not deleting) a client: a client can be tucked away so it drops off the list and the
++-- search while its row — and everything hanging off it — is kept. A boolean flag on the client
++-- carries that state; existing clients default to not-archived, so the list is unchanged until one
++-- is archived.
++ALTER TABLE clients ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/clients/archive.POST.yml b/src/main/resources/officefloor/rest/api/clients/archive.POST.yml
+new file mode 100644
+index 0000000..bc9b53a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/clients/archive.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ArchiveClient
