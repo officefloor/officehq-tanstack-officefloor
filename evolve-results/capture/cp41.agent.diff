@@ -1,0 +1,178 @@
+diff --git a/src/main/frontend/features/invoices/api.ts b/src/main/frontend/features/invoices/api.ts
+index bedfe6c..2fbb56a 100644
+--- a/src/main/frontend/features/invoices/api.ts
++++ b/src/main/frontend/features/invoices/api.ts
+@@ -37,3 +37,9 @@ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
+ // ['invoices', projectId] on success so the invoices panel (and the row actions) refetch the status.
+ export const sendInvoice = (id: number): Promise<Invoice> =>
+   postJson<Invoice>('/api/invoices/send', { id });
++
++// Cancel an invoice sent by mistake — flips it to VOID server-side and appends the audit record. A
++// VOID invoice stops counting towards what is owed. Callers invalidate ['invoices', projectId] (and
++// ['dashboard']) on success so the invoices panel and the home figures refetch.
++export const cancelInvoice = (id: number): Promise<Invoice> =>
++  postJson<Invoice>('/api/invoices/cancel', { id });
+diff --git a/src/main/frontend/features/invoices/cancel.slot.tsx b/src/main/frontend/features/invoices/cancel.slot.tsx
+new file mode 100644
+index 0000000..86b88bf
+--- /dev/null
++++ b/src/main/frontend/features/invoices/cancel.slot.tsx
+@@ -0,0 +1,44 @@
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { InvoiceRow } from '../../slots/defs/invoiceRow';
++import { dashboardKey } from '../dashboard/api';
++import { cancelInvoice, invoicesKey, listInvoices, type Invoice } from './api';
++
++// Cancel an invoice that was sent by mistake — one new file filling the per-invoice-row action slot.
++// The button only appears while the invoice is SENT (a sent-by-mistake invoice): the slot queries
++// ['invoices', projectId] for its OWN row's status rather than being handed it, so it stays in step
++// through the shared key. The click is a useMutation; on success we invalidate that key so the row's
++// status and the sibling actions refetch, and ['dashboard'] so the outstanding total drops the voided
++// amount. The server appends the audit record and stops the invoice counting towards what is owed, so
++// "note it / stop counting it" is handled where the side-effect lives.
++function CancelInvoice({ invoiceId, projectId }: { invoiceId: number; projectId: number }) {
++  const queryClient = useQueryClient();
++  const { data: invoices } = useQuery({
++    queryKey: invoicesKey(projectId),
++    queryFn: () => listInvoices(projectId),
++  });
++  const mutation = useMutation({
++    mutationFn: () => cancelInvoice(invoiceId),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) });
++      void queryClient.invalidateQueries({ queryKey: dashboardKey });
++    },
++  });
++
++  const invoice = invoices?.find((i: Invoice) => i.id === invoiceId);
++  if (!invoice || invoice.status !== 'SENT') {
++    return null;
++  }
++
++  return (
++    <button
++      data-testid={`invoice-cancel-${invoiceId}`}
++      type="button"
++      disabled={mutation.isPending}
++      onClick={() => mutation.mutate()}
++    >
++      Cancel invoice
++    </button>
++  );
++}
++
++export const contribution = InvoiceRow.fill({ order: 20, Component: CancelInvoice });
+diff --git a/src/main/java/net/officefloor/hq/app/CancelInvoice.java b/src/main/java/net/officefloor/hq/app/CancelInvoice.java
+new file mode 100644
+index 0000000..4794996
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CancelInvoice.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app;
++
++import java.math.RoundingMode;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/invoices/cancel — cancel an invoice sent by mistake: flip its status to VOID and return
++ * the updated row. Wired by officefloor/rest/api/invoices/cancel.POST.yml.
++ *
++ * A VOID invoice is terminal and no longer counts towards what is owed (the dashboard's outstanding
++ * total and overdue count only ever sum SENT invoices, so a voided one drops out of both). Cancelling
++ * is an audited side-effect: alongside the status change we append one record to the audit file
++ * through the {@link Audit} service ({@code INVOICE_VOIDED id=<id> amount=<amount>}) so there is a
++ * durable record every time an invoice is voided — the trail the UI can't show. We reject a missing
++ * or unknown invoice id before writing anything so a bad request neither changes state nor audits.
++ */
++public class CancelInvoice {
++
++    public void service(@RequestBody CancelInvoiceForm form, InvoiceRepository invoices, Audit audit,
++            ObjectResponse<InvoiceView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("An invoice id is required");
++        }
++        Invoice invoice = invoices.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid invoice is required"));
++        invoice.markVoid();
++        Invoice saved = invoices.save(invoice);
++        audit.record("INVOICE_VOIDED id=" + saved.getId() + " amount="
++                + saved.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
++        response.send(InvoiceView.of(saved));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/CancelInvoiceForm.java b/src/main/java/net/officefloor/hq/app/CancelInvoiceForm.java
+new file mode 100644
+index 0000000..0a16c3a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/CancelInvoiceForm.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++/** The request body for cancelling an invoice: the id of the invoice to void. */
++public class CancelInvoiceForm {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/Invoice.java b/src/main/java/net/officefloor/hq/app/Invoice.java
+index 6e5b49c..7ebdc18 100644
+--- a/src/main/java/net/officefloor/hq/app/Invoice.java
++++ b/src/main/java/net/officefloor/hq/app/Invoice.java
+@@ -100,4 +100,12 @@ public class Invoice {
+     public void markPaid() {
+         this.status = "PAID";
+     }
++
++    /**
++     * Void this invoice — the terminal transition the cancel action performs when an invoice was
++     * sent by mistake. A VOID invoice no longer counts towards what is owed.
++     */
++    public void markVoid() {
++        this.status = "VOID";
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceView.java b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+index 4b11cef..a9d660d 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceView.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceView.java
+@@ -32,6 +32,10 @@ public record InvoiceView(Long id, Long projectId, BigDecimal amount, String sta
+      * (DRAFT before it goes out, SENT once it has). A zero-amount invoice is never PAID off nothing.
+      */
+     static String deriveStatus(Invoice invoice, java.math.BigDecimal paidSum) {
++        // VOID is terminal: a cancelled invoice stays VOID regardless of any payments against it.
++        if ("VOID".equals(invoice.getStatus())) {
++            return "VOID";
++        }
+         if (paidSum != null && paidSum.signum() > 0) {
+             java.math.BigDecimal amount = invoice.getAmount();
+             if (amount != null && amount.signum() > 0 && paidSum.compareTo(amount) >= 0) {
+diff --git a/src/main/resources/db/migration/V25__invoice_void_status.sql b/src/main/resources/db/migration/V25__invoice_void_status.sql
+new file mode 100644
+index 0000000..6f1dddd
+--- /dev/null
++++ b/src/main/resources/db/migration/V25__invoice_void_status.sql
+@@ -0,0 +1,7 @@
++-- An invoice can now be cancelled when it was sent by mistake: the lifecycle gains a terminal VOID
++-- state (DRAFT -> SENT -> PAID, or VOID once cancelled). A VOID invoice no longer counts towards what
++-- is owed. The status column is a free VARCHAR(16) with no value constraint, so VOID needs no
++-- structural change; this records the new state on the column so the schema documents the full
++-- lifecycle. Additive and idempotent.
++COMMENT ON COLUMN invoices.status IS
++    'Invoice lifecycle: DRAFT -> SENT -> PAID, or VOID once cancelled (a mistaken send).';
+diff --git a/src/main/resources/officefloor/rest/api/invoices/cancel.POST.yml b/src/main/resources/officefloor/rest/api/invoices/cancel.POST.yml
+new file mode 100644
+index 0000000..146d902
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/invoices/cancel.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.CancelInvoice
