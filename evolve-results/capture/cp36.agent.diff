@@ -1,0 +1,134 @@
+diff --git a/src/main/frontend/features/clients/api.ts b/src/main/frontend/features/clients/api.ts
+index 14deab6..e69246f 100644
+--- a/src/main/frontend/features/clients/api.ts
++++ b/src/main/frontend/features/clients/api.ts
+@@ -22,7 +22,14 @@ export const archiveClient = (id: number): Promise<Client> =>
+ // client detail panel reuses the project-row-<id>/project-name anchors. The query key is scoped to
+ // the client, ['clients', clientId, 'projects'], so each client's detail page reads only its own
+ // projects; sharing the ['clients'] prefix means a client write can invalidate it too.
+-export type ClientProject = { id: number; name: string; clientId: number; clientName: string };
++export type ClientProject = {
++  id: number;
++  name: string;
++  clientId: number;
++  clientName: string;
++  status: string;
++  archived: boolean;
++};
+ 
+ export const clientProjectsKey = (clientId: number) =>
+   ['clients', clientId, 'projects'] as const;
+diff --git a/src/main/frontend/features/clients/clientProjects.slot.tsx b/src/main/frontend/features/clients/clientProjects.slot.tsx
+index be25701..82e5f20 100644
+--- a/src/main/frontend/features/clients/clientProjects.slot.tsx
++++ b/src/main/frontend/features/clients/clientProjects.slot.tsx
+@@ -1,12 +1,19 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { ClientDetail } from '../../slots/defs/clientDetail';
+ import { clientProjectsKey, listClientProjects, type ClientProject } from './api';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
+ 
+ // The projects a client owns — one panel filling the client.detail region. Reads server data under
+ // ['clients', clientId, 'projects'] (never copied into state); the server scopes to this client, so
+-// only its projects arrive. Rows reuse the project-row-<id>/project-name anchors — the projects
++// all its projects arrive. Rows reuse the project-row-<id>/project-name anchors — the projects
+ // listing rendered in the client context.
++//
++// By default only the ACTIVE projects show (status ACTIVE and not tucked away); the finished and
++// hidden (archived) ones drop off until the `clientProjectsAll` URL key is on. The toggle control
++// (its own *.slot.tsx) owns that key; this panel reads the same key and filters, so they stay in
++// step through the shared search param with nothing passed between them.
+ function ClientProjects({ clientId }: { clientId: number }) {
++  const [showAll] = useSearchParam('clientProjectsAll', asFlag);
+   const { data: projects } = useQuery({
+     queryKey: clientProjectsKey(clientId),
+     queryFn: () => listClientProjects(clientId),
+@@ -16,7 +23,11 @@ function ClientProjects({ clientId }: { clientId: number }) {
+     return null;
+   }
+ 
+-  if (projects.length === 0) {
++  const visible = projects.filter(
++    (project: ClientProject) => showAll || (project.status === 'ACTIVE' && !project.archived),
++  );
++
++  if (visible.length === 0) {
+     return <p data-testid="client-projects-empty">No projects yet.</p>;
+   }
+ 
+@@ -28,7 +39,7 @@ function ClientProjects({ clientId }: { clientId: number }) {
+         </tr>
+       </thead>
+       <tbody>
+-        {projects.map((project: ClientProject) => (
++        {visible.map((project: ClientProject) => (
+           <tr key={project.id} data-testid={`project-row-${project.id}`}>
+             <td data-testid="project-name">{project.name}</td>
+           </tr>
+diff --git a/src/main/frontend/features/clients/clientProjectsShowAll.slot.tsx b/src/main/frontend/features/clients/clientProjectsShowAll.slot.tsx
+new file mode 100644
+index 0000000..9356f88
+--- /dev/null
++++ b/src/main/frontend/features/clients/clientProjectsShowAll.slot.tsx
+@@ -0,0 +1,23 @@
++import { ClientDetail } from '../../slots/defs/clientDetail';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++
++// A control over the client's projects panel — one new *.slot.tsx filling the client.detail region
++// (ordered just above the projects table). It owns the `clientProjectsAll` URL key; the projects
++// panel reads the same key and reveals the finished and hidden (archived) projects when it is on.
++// Nothing is passed between them: they stay in step through the shared search param. Off clears the
++// key, so the panel falls back to showing only the active projects.
++function ClientProjectsShowAll() {
++  const [showAll, setShowAll] = useSearchParam('clientProjectsAll', asFlag);
++  return (
++    <button
++      data-testid="client-projects-show-all"
++      type="button"
++      aria-pressed={showAll}
++      onClick={() => setShowAll(showAll ? undefined : true)}
++    >
++      {showAll ? 'Show active only' : 'Show all projects'}
++    </button>
++  );
++}
++
++export const contribution = ClientDetail.fill({ order: 15, Component: ClientProjectsShowAll });
+diff --git a/src/main/java/net/officefloor/hq/app/ListClientProjects.java b/src/main/java/net/officefloor/hq/app/ListClientProjects.java
+index 0e4fea7..bc55340 100644
+--- a/src/main/java/net/officefloor/hq/app/ListClientProjects.java
++++ b/src/main/java/net/officefloor/hq/app/ListClientProjects.java
+@@ -17,10 +17,10 @@ public class ListClientProjects {
+             ObjectResponse<List<ProjectView>> response) {
+         Long id = Long.valueOf(clientId);
+         String clientName = clients.findById(id).map(Client::getName).orElse("");
+-        // Archived projects are tucked away — they drop off the client's list too, keeping the row
+-        // in the table only while it is active.
++        // Every project the client owns, each carrying its status and archived flag — the client
++        // detail panel shows only the active ones by default and reveals the finished and hidden
++        // (archived) ones on demand, filtering client-side on those fields (as the projects list does).
+         List<ProjectView> view = projects.findByClientIdOrderByIdAsc(id).stream()
+-                .filter(p -> !p.isArchived())
+                 .map(p -> ProjectView.of(p, clientName))
+                 .toList();
+         response.send(view);
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 43458ae..cb426fb 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -68,9 +68,13 @@ public class TestSupportController {
+             // status is optional in the fixture — a spec that only cares a project exists leaves it
+             // out, defaulting to ACTIVE (the same state a fresh project gets, V22__project_status.sql).
+             Object status = p.getOrDefault("status", "ACTIVE");
+-            jdbc.update("INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
++            // archived is optional too — a spec that only cares a project exists leaves it out,
++            // defaulting to not-archived (the same state a fresh project gets, V16__project_archived.sql).
++            boolean archived = Boolean.TRUE.equals(p.getOrDefault("archived", Boolean.FALSE));
++            jdbc.update(
++                    "INSERT INTO projects (id, name, client_id, status, archived) VALUES (?, ?, ?, ?, ?)",
+                     ((Number) p.get("id")).longValue(), p.get("name"),
+-                    ((Number) p.get("clientId")).longValue(), status.toString());
++                    ((Number) p.get("clientId")).longValue(), status.toString(), archived);
+         }
+         List<Map<String, Object>> contacts =
+                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());
