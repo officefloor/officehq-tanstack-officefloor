@@ -9,6 +9,15 @@ export const clientsKey = ['clients'] as const;
 
 export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clients');
 
+// How to order the clients list: by name, by how much each client owes ('outstanding'), or the
+// default id order (anything else, including the empty default). The server reads the same `sort`
+// key and applies the order once, at the source — the list never re-sorts on the client. The sort
+// control owns the matching `clientSort` URL key; the list reads it and asks for that order.
+export type ClientSort = 'name' | 'outstanding';
+
+export const listClientsSorted = (sort: string): Promise<Client[]> =>
+  getJson<Client[]>(`/api/clients/sorted?sort=${encodeURIComponent(sort)}`);
+
 export const createClient = (body: NewClient): Promise<Client> =>
   postJson<Client>('/api/clients', body);
 

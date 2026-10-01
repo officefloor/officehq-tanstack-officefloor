@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParam, asString } from '../../url/useSearchParam';
-import { clientsKey, listClients, type Client } from './api';
+import { clientsKey, listClientsSorted, type Client } from './api';
 import { ClientRow } from '../../slots/defs/clientRow';
+import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
 
 // The clients list. Reads server data under ['clients'] (never copied into state); the create form
 // shares the key, so a successful create refreshes this list with no import between them.
@@ -11,7 +12,14 @@ import { ClientRow } from '../../slots/defs/clientRow';
 // read the same key. Matching is a case-insensitive substring on the client name; an empty box
 // shows every client.
 export function ClientsList() {
-  const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: listClients });
+  // The ordering lives in the URL under the shared `clientSort` key — the sort control writes it,
+  // this list reads it. It is part of the query key, so each ordering caches on its own, and the
+  // server returns the rows already sorted (by name, by amount owed, or the default id order).
+  const [sort] = useSearchParam('clientSort', asString);
+  const { data: clients } = useQuery({
+    queryKey: [...clientsKey, 'sorted', sort],
+    queryFn: () => listClientsSorted(sort),
+  });
   const [query, setQuery] = useSearchParam('q', asString);
 
   if (!clients) {
@@ -32,6 +40,7 @@ export function ClientsList() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      <ClientsToolbar.Slot />
       {clients.length === 0 ? (
         <p data-testid="clients-empty">No clients yet.</p>
       ) : (
