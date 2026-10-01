@@ -27,12 +27,17 @@ public class Invoice {
     @Column(nullable = false)
     private BigDecimal amount;
 
+    /** The lifecycle status of the invoice: UNPAID when raised, PAID once the user marks it paid. */
+    @Column(nullable = false)
+    private String status;
+
     protected Invoice() {
     }
 
     public Invoice(Long projectId, BigDecimal amount) {
         this.projectId = projectId;
         this.amount = amount;
+        this.status = "UNPAID";
     }
 
     public Long getId() {
@@ -45,5 +50,14 @@ public class Invoice {
 
     public BigDecimal getAmount() {
         return amount;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    /** Mark this invoice paid — the status transition the pay action performs. */
+    public void markPaid() {
+        this.status = "PAID";
     }
 }

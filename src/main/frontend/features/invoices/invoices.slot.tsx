@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ProjectDetail } from '../../slots/defs/projectDetail';
+import { InvoiceRow } from '../../slots/defs/invoiceRow';
 import { invoicesKey, listInvoices, type Invoice } from './api';
 
 // The project's invoices and what they add up to — one panel filling the project.detail region.
@@ -24,12 +25,18 @@ function ProjectInvoices({ projectId }: { projectId: number }) {
         <thead>
           <tr>
             <th>Amount</th>
+            <th>Status</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {invoices.map((invoice: Invoice) => (
             <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
               <td data-testid="invoice-amount">{Number(invoice.amount).toFixed(2)}</td>
+              <td data-testid="invoice-status">{invoice.status}</td>
+              <td>
+                <InvoiceRow.Slot invoiceId={invoice.id} projectId={projectId} />
+              </td>
             </tr>
           ))}
         </tbody>

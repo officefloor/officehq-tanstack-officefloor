@@ -65,10 +65,12 @@ public class TestSupportController {
         List<Map<String, Object>> invoices =
                 (List<Map<String, Object>>) fixture.getOrDefault("invoices", List.of());
         for (Map<String, Object> inv : invoices) {
-            jdbc.update("INSERT INTO invoices (id, project_id, amount) VALUES (?, ?, ?)",
+            Object status = inv.getOrDefault("status", "UNPAID");
+            jdbc.update("INSERT INTO invoices (id, project_id, amount, status) VALUES (?, ?, ?, ?)",
                     ((Number) inv.get("id")).longValue(),
                     ((Number) inv.get("projectId")).longValue(),
-                    new java.math.BigDecimal(inv.get("amount").toString()));
+                    new java.math.BigDecimal(inv.get("amount").toString()),
+                    status.toString());
         }
     }
 }
