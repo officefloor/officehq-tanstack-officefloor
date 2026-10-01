@@ -7,4 +7,10 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     /** Whether a client already holds this email — the uniqueness guard CreateClient enforces. */
     boolean existsByEmail(String email);
+
+    /**
+     * Whether ANOTHER client (one with a different id) already holds this email — the uniqueness
+     * guard UpdateClient enforces, so a client keeping its own email on edit is not rejected.
+     */
+    boolean existsByEmailAndIdNot(String email, Long id);
 }

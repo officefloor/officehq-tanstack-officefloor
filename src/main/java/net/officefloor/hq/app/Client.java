@@ -59,4 +59,10 @@ public class Client {
     public void archive() {
         this.archived = true;
     }
+
+    /** Correct this client's details — its name and email — in place. */
+    public void update(String name, String email) {
+        this.name = name;
+        this.email = email;
+    }
 }

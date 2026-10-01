@@ -1,0 +1,33 @@
+package net.officefloor.hq.app;
+
+/** The request body for correcting a client: which client, and the name + email to save. */
+public class UpdateClientForm {
+
+    private Long id;
+    private String name;
+    private String email;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+}

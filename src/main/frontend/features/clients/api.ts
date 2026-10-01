@@ -12,6 +12,14 @@ export const listClients = (): Promise<Client[]> => getJson<Client[]>('/api/clie
 export const createClient = (body: NewClient): Promise<Client> =>
   postJson<Client>('/api/clients', body);
 
+// Correct a client's name and/or email, returning the updated row. Callers invalidate ['clients']
+// on success so the list refetches and the corrected row shows everywhere at once — we never
+// hand-maintain the list.
+export type ClientEdit = { id: number; name: string; email: string };
+
+export const updateClient = (body: ClientEdit): Promise<Client> =>
+  postJson<Client>('/api/clients/update', body);
+
 // Archive a client — tucks it away server-side (keeps the row, sets its archived flag) and returns
 // the updated client. Callers invalidate ['clients'] on success so the list refetches and the row
 // drops off both the list and the search.
