@@ -1,0 +1,21 @@
+import { getJson, postJson } from '../../api/http';
+
+// A project as the API exposes it — it carries its client's NAME (the cross-entity join done on the
+// server) so the list shows the client without a second lookup. The query key ['projects'] is the
+// shared handle: the list reads it, the create form invalidates it.
+export type Project = { id: number; name: string; clientId: number; clientName: string };
+export type NewProject = { name: string; clientId: number };
+
+export const projectsKey = ['projects'] as const;
+
+export const listProjects = (): Promise<Project[]> => getJson<Project[]>('/api/projects');
+
+export const createProject = (body: NewProject): Promise<Project> =>
+  postJson<Project>('/api/projects', body);
+
+// The client options the form's select needs: shared with the clients feature by the ['clients']
+// KEY (not an import), so adding a client refreshes this select too.
+export type ClientOption = { id: number; name: string };
+export const clientsKey = ['clients'] as const;
+export const listClientOptions = (): Promise<ClientOption[]> =>
+  getJson<ClientOption[]>('/api/clients');
