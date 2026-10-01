@@ -1,0 +1,129 @@
+diff --git a/src/main/frontend/features/invoices/notes.slot.tsx b/src/main/frontend/features/invoices/notes.slot.tsx
+new file mode 100644
+index 0000000..4bb4218
+--- /dev/null
++++ b/src/main/frontend/features/invoices/notes.slot.tsx
+@@ -0,0 +1,61 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { InvoiceDetail } from '../../slots/defs/invoiceDetail';
++import { createNote, listNotes, notesKey, type Note } from './notesApi';
++
++// Notes the user writes on an invoice — one panel filling the invoice.detail region: the list of
++// notes (newest first) above a form to add one. Mirrors the project notes panel against the same
++// generic notes endpoint, scoped with targetType 'invoice'. Reads server data under
++// ['notes', 'invoice', id] (never copied into state); the server returns the rows already
++// newest-first, so the list renders them in order. What the user is currently typing lives in
++// useState (uncommitted input); on a successful write we invalidate the same key so the list
++// refetches with the new note on top — no hand-maintained list, no import between list and form.
++function InvoiceNotes({ invoiceId }: { invoiceId: number }) {
++  const targetType = 'invoice';
++  const queryClient = useQueryClient();
++  const [text, setText] = useState('');
++  const { data: notes } = useQuery({
++    queryKey: notesKey(targetType, invoiceId),
++    queryFn: () => listNotes(targetType, invoiceId),
++  });
++  const mutation = useMutation({
++    mutationFn: createNote,
++    onSuccess: () => {
++      setText('');
++      void queryClient.invalidateQueries({ queryKey: notesKey(targetType, invoiceId) });
++    },
++  });
++
++  const submit = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (text.trim() === '') {
++      return;
++    }
++    mutation.mutate({ targetType, targetId: invoiceId, text: text.trim() });
++  };
++
++  return (
++    <section data-testid="invoice-notes">
++      <ul data-testid="invoice-notes-list">
++        {(notes ?? []).map((note: Note) => (
++          <li key={note.id} data-testid={`note-row-${note.id}`}>
++            <span data-testid="note-text">{note.text}</span>
++          </li>
++        ))}
++      </ul>
++      <form onSubmit={submit}>
++        <input
++          data-testid="note-form-text"
++          placeholder="Write a note"
++          value={text}
++          onChange={(e) => setText(e.target.value)}
++        />
++        <button data-testid="note-form-submit" type="submit" disabled={mutation.isPending}>
++          Add note
++        </button>
++      </form>
++    </section>
++  );
++}
++
++export const contribution = InvoiceDetail.fill({ order: 50, Component: InvoiceNotes });
+diff --git a/src/main/frontend/features/invoices/notesApi.ts b/src/main/frontend/features/invoices/notesApi.ts
+new file mode 100644
+index 0000000..63cc992
+--- /dev/null
++++ b/src/main/frontend/features/invoices/notesApi.ts
+@@ -0,0 +1,27 @@
++import { getJson, postJson } from '../../api/http';
++
++// Notes written against an invoice, as the API exposes them. The notes endpoint is generic over a
++// target (type + id), so this reuses it with targetType 'invoice'. Features never import each other,
++// so the invoices feature keeps its own tiny client here; it stays in step with any other notes
++// surface by sharing the KEY ['notes', targetType, targetId] (never an import): the list reads the
++// key, the add form invalidates it. The server returns a target's notes newest-first.
++export type Note = {
++  id: number;
++  targetType: string;
++  targetId: number;
++  text: string;
++  at: string;
++};
++export type NewNote = {
++  targetType: string;
++  targetId: number;
++  text: string;
++};
++
++export const notesKey = (targetType: string, targetId: number) =>
++  ['notes', targetType, targetId] as const;
++
++export const listNotes = (targetType: string, targetId: number): Promise<Note[]> =>
++  getJson<Note[]>(`/api/notes?targetType=${targetType}&targetId=${targetId}`);
++
++export const createNote = (body: NewNote): Promise<Note> => postJson<Note>('/api/notes', body);
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index eeeb3f2..9612d42 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -225,9 +225,21 @@ public class TestSupportController {
+                 (List<Map<String, Object>>) fixture.getOrDefault("notes", List.of());
+         long maxNoteId = 0;
+         for (Map<String, Object> n : notes) {
+-            java.time.OffsetDateTime at = n.get("at") != null
+-                    ? java.time.OffsetDateTime.parse(n.get("at").toString())
+-                    : java.time.OffsetDateTime.now();
++            // `at` may be a full timestamp (2026-02-01T09:00Z) or a plain date (2026-02-01); a
++            // date-only value pins the note to the start of that day in UTC so the newest-first
++            // order stays deterministic.
++            java.time.OffsetDateTime at;
++            if (n.get("at") == null) {
++                at = java.time.OffsetDateTime.now();
++            } else {
++                String atRaw = n.get("at").toString();
++                try {
++                    at = java.time.OffsetDateTime.parse(atRaw);
++                } catch (java.time.format.DateTimeParseException e) {
++                    at = java.time.LocalDate.parse(atRaw).atStartOfDay()
++                            .atOffset(java.time.ZoneOffset.UTC);
++                }
++            }
+             long noteId = ((Number) n.get("id")).longValue();
+             jdbc.update(
+                     "INSERT INTO notes (id, target_type, target_id, text, created_at)"
