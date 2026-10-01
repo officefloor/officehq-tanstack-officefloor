@@ -225,9 +225,21 @@ public class TestSupportController {
                 (List<Map<String, Object>>) fixture.getOrDefault("notes", List.of());
         long maxNoteId = 0;
         for (Map<String, Object> n : notes) {
-            java.time.OffsetDateTime at = n.get("at") != null
-                    ? java.time.OffsetDateTime.parse(n.get("at").toString())
-                    : java.time.OffsetDateTime.now();
+            // `at` may be a full timestamp (2026-02-01T09:00Z) or a plain date (2026-02-01); a
+            // date-only value pins the note to the start of that day in UTC so the newest-first
+            // order stays deterministic.
+            java.time.OffsetDateTime at;
+            if (n.get("at") == null) {
+                at = java.time.OffsetDateTime.now();
+            } else {
+                String atRaw = n.get("at").toString();
+                try {
+                    at = java.time.OffsetDateTime.parse(atRaw);
+                } catch (java.time.format.DateTimeParseException e) {
+                    at = java.time.LocalDate.parse(atRaw).atStartOfDay()
+                            .atOffset(java.time.ZoneOffset.UTC);
+                }
+            }
             long noteId = ((Number) n.get("id")).longValue();
             jdbc.update(
                     "INSERT INTO notes (id, target_type, target_id, text, created_at)"
