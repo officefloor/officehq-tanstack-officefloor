@@ -1,0 +1,282 @@
+diff --git a/src/main/frontend/features/projects/ProjectForm.tsx b/src/main/frontend/features/projects/ProjectForm.tsx
+index 9cacc1c..17d745c 100644
+--- a/src/main/frontend/features/projects/ProjectForm.tsx
++++ b/src/main/frontend/features/projects/ProjectForm.tsx
+@@ -21,6 +21,11 @@ export function ProjectForm() {
+   // The lifecycle the new project starts in — uncommitted input like name/client, so it lives in
+   // useState until submit. Defaults to ACTIVE, the state a fresh project gets.
+   const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
++  // The reference code typed for the new project — uncommitted input, so it lives in useState until
++  // submit. Uniqueness can only be known server-side (another project may already hold it), so the
++  // server rejects a duplicate and we surface that on its own error anchor.
++  const [code, setCode] = useState('');
++  const [codeError, setCodeError] = useState<string | null>(null);
+ 
+   const mutation = useMutation({
+     mutationFn: createProject,
+@@ -28,16 +33,22 @@ export function ProjectForm() {
+       setName('');
+       setClientId('');
+       setStatus('ACTIVE');
++      setCode('');
++      setCodeError(null);
+       void queryClient.invalidateQueries({ queryKey: projectsKey });
+     },
++    onError: () => {
++      setCodeError('That code is already in use.');
++    },
+   });
+ 
+   const submit = (e: React.FormEvent) => {
+     e.preventDefault();
+-    if (name.trim() === '' || clientId === '') {
++    if (name.trim() === '' || clientId === '' || code.trim() === '') {
+       return;
+     }
+-    mutation.mutate({ name: name.trim(), clientId: Number(clientId), status });
++    setCodeError(null);
++    mutation.mutate({ name: name.trim(), clientId: Number(clientId), status, code: code.trim() });
+   };
+ 
+   return (
+@@ -71,6 +82,22 @@ export function ProjectForm() {
+           </option>
+         ))}
+       </select>
++      <input
++        data-testid="project-form-code"
++        placeholder="Code"
++        value={code}
++        onChange={(e) => {
++          setCode(e.target.value);
++          if (codeError) {
++            setCodeError(null);
++          }
++        }}
++      />
++      {codeError && (
++        <p data-testid="project-form-code-error" role="alert">
++          {codeError}
++        </p>
++      )}
+       <button data-testid="project-form-submit" type="submit">
+         Add job
+       </button>
+diff --git a/src/main/frontend/features/projects/api.ts b/src/main/frontend/features/projects/api.ts
+index 1947860..faa8b0f 100644
+--- a/src/main/frontend/features/projects/api.ts
++++ b/src/main/frontend/features/projects/api.ts
+@@ -12,11 +12,19 @@ export type Project = {
+   // Where the project sits in its lifecycle: ACTIVE, ON_HOLD or FINISHED. The row shows it; the
+   // create form sets it.
+   status: ProjectStatus;
++  // The short reference code set when the project was created — shown on the row. Unique across
++  // projects. Null only for projects that predate codes.
++  code: string | null;
+   tagIds: number[];
+ };
+ export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'FINISHED';
+ export const projectStatuses: ProjectStatus[] = ['ACTIVE', 'ON_HOLD', 'FINISHED'];
+-export type NewProject = { name: string; clientId: number; status: ProjectStatus };
++export type NewProject = {
++  name: string;
++  clientId: number;
++  status: ProjectStatus;
++  code: string;
++};
+ 
+ export const projectsKey = ['projects'] as const;
+ 
+diff --git a/src/main/frontend/features/projects/code.slot.tsx b/src/main/frontend/features/projects/code.slot.tsx
+new file mode 100644
+index 0000000..c502ab5
+--- /dev/null
++++ b/src/main/frontend/features/projects/code.slot.tsx
+@@ -0,0 +1,20 @@
++import { useQuery } from '@tanstack/react-query';
++import { ProjectRow } from '../../slots/defs/projectRow';
++import { projectsKey, listProjects, type Project } from './api';
++
++// A project's reference code, shown on its row — one new file filling the per-project-row slot. Like
++// the status cell, it reads the same ['projects'] query the list does (never a second fetch, never a
++// prop passed down): it finds its row in that shared cache by id and renders the code. Ordered ahead
++// of the row's actions. Its testid is project-code (the test contract).
++function ProjectCodeCell({ projectId }: { projectId: number }) {
++  const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: listProjects });
++  const project = projects?.find((p: Project) => p.id === projectId);
++
++  if (!project) {
++    return null;
++  }
++
++  return <span data-testid="project-code">{project.code}</span>;
++}
++
++export const contribution = ProjectRow.fill({ order: -5, Component: ProjectCodeCell });
+diff --git a/src/main/java/net/officefloor/hq/app/CreateProject.java b/src/main/java/net/officefloor/hq/app/CreateProject.java
+index c6aeb39..accfd84 100644
+--- a/src/main/java/net/officefloor/hq/app/CreateProject.java
++++ b/src/main/java/net/officefloor/hq/app/CreateProject.java
+@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.RequestBody;
+  *
+  * A project must name a real client: we reject a blank name or an unknown/absent client id before
+  * persisting so a bad row can never be saved.
++ *
++ * A project also carries a short reference code that must be unique across projects: we reject a
++ * blank code or one already in use before persisting (the UNIQUE constraint in V32__project_code.sql
++ * is the final guard).
+  */
+ public class CreateProject {
+ 
+@@ -24,8 +28,17 @@ public class CreateProject {
+         if (client == null) {
+             throw new IllegalArgumentException("A valid client is required");
+         }
++        String code = form.getCode() == null ? "" : form.getCode().trim();
++        if (code.isEmpty()) {
++            throw new IllegalArgumentException("A project code is required");
++        }
++        if (projects.existsByCode(code)) {
++            throw new IllegalArgumentException("A project with this code already exists");
++        }
+         ProjectStatus status = ProjectStatus.parse(form.getStatus());
+-        Project saved = projects.save(new Project(name, clientId, status));
++        Project project = new Project(name, clientId, status);
++        project.setCode(code);
++        Project saved = projects.save(project);
+         response.send(ProjectView.of(saved, client.getName()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index b33c4ae..775777c 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -26,6 +26,11 @@ public class Project {
+     @Column(name = "client_id", nullable = false)
+     private Long clientId;
+ 
++    // The short reference code the user gives the project when creating it. Unique across projects
++    // (V32__project_code.sql); nullable only so projects created before codes existed stay valid.
++    @Column
++    private String code;
++
+     // Whether the project has been archived (tucked away): an archived project is retained but drops
+     // off the lists. New projects start not-archived (the column default, V16__project_archived.sql).
+     @Column(nullable = false)
+@@ -69,6 +74,16 @@ public class Project {
+         return clientId;
+     }
+ 
++    /** The short reference code for this project, or {@code null} if it predates codes. */
++    public String getCode() {
++        return code;
++    }
++
++    /** Set the short reference code for this project. */
++    public void setCode(String code) {
++        this.code = code;
++    }
++
+     public boolean isArchived() {
+         return archived;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectForm.java b/src/main/java/net/officefloor/hq/app/ProjectForm.java
+index 22d0159..9c4f504 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectForm.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectForm.java
+@@ -6,6 +6,7 @@ public class ProjectForm {
+     private String name;
+     private Long clientId;
+     private String status;
++    private String code;
+ 
+     public String getName() {
+         return name;
+@@ -15,6 +16,14 @@ public class ProjectForm {
+         this.name = name;
+     }
+ 
++    public String getCode() {
++        return code;
++    }
++
++    public void setCode(String code) {
++        this.code = code;
++    }
++
+     public Long getClientId() {
+         return clientId;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectRepository.java b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+index ca1c45e..a51fcf5 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectRepository.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectRepository.java
+@@ -11,4 +11,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
+ 
+     /** How many projects one client owns — the figure the client detail badge surfaces. */
+     long countByClientId(Long clientId);
++
++    /** Whether a project already holds this reference code — the uniqueness guard CreateProject enforces. */
++    boolean existsByCode(String code);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index dc84de3..a734512 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -9,7 +9,7 @@ import java.util.List;
+  * filtered by tag without a second lookup per row.
+  */
+ public record ProjectView(Long id, String name, Long clientId, String clientName,
+-        boolean archived, String status, List<Long> tagIds) {
++        boolean archived, String status, String code, List<Long> tagIds) {
+ 
+     public static ProjectView of(Project project, String clientName) {
+         return of(project, clientName, List.of());
+@@ -17,6 +17,6 @@ public record ProjectView(Long id, String name, Long clientId, String clientName
+ 
+     public static ProjectView of(Project project, String clientName, List<Long> tagIds) {
+         return new ProjectView(project.getId(), project.getName(), project.getClientId(),
+-                clientName, project.isArchived(), project.getStatus(), tagIds);
++                clientName, project.isArchived(), project.getStatus(), project.getCode(), tagIds);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/TestSupportController.java b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+index 602b883..eeeb3f2 100644
+--- a/src/main/java/net/officefloor/hq/app/TestSupportController.java
++++ b/src/main/java/net/officefloor/hq/app/TestSupportController.java
+@@ -85,11 +85,16 @@ public class TestSupportController {
+             java.math.BigDecimal budget = p.get("budget") != null
+                     ? new java.math.BigDecimal(p.get("budget").toString())
+                     : null;
++            // code is optional in the fixture — a spec that does not care about the reference code
++            // leaves it out, so the column stays NULL (V32__project_code.sql permits that for rows
++            // predating codes); a spec asserting the code supplies it.
++            Object code = p.get("code");
+             jdbc.update(
+-                    "INSERT INTO projects (id, name, client_id, status, archived, budget)"
+-                            + " VALUES (?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO projects (id, name, client_id, status, archived, budget, code)"
++                            + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     ((Number) p.get("id")).longValue(), p.get("name"),
+-                    ((Number) p.get("clientId")).longValue(), status.toString(), archived, budget);
++                    ((Number) p.get("clientId")).longValue(), status.toString(), archived, budget,
++                    code != null ? code.toString() : null);
+         }
+         List<Map<String, Object>> contacts =
+                 (List<Map<String, Object>>) fixture.getOrDefault("contacts", List.of());
+diff --git a/src/main/resources/db/migration/V32__project_code.sql b/src/main/resources/db/migration/V32__project_code.sql
+new file mode 100644
+index 0000000..1fc199d
+--- /dev/null
++++ b/src/main/resources/db/migration/V32__project_code.sql
+@@ -0,0 +1,10 @@
++-- Each project carries a short reference code, set when the project is created, and no two projects
++-- may share one. The column is nullable so projects seeded before a code existed stay valid (and
++-- H2's UNIQUE permits multiple NULLs); every project created through the app gets a non-blank code,
++-- rejected as a duplicate server-side (CreateProject.java) before it reaches here. This UNIQUE
++-- constraint is the final line of defence behind the app-level existsByCode check.
++ALTER TABLE projects
++    ADD COLUMN code VARCHAR(64);
++
++ALTER TABLE projects
++    ADD CONSTRAINT projects_code_unique UNIQUE (code);
