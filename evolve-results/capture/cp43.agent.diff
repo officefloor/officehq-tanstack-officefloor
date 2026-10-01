@@ -1,0 +1,134 @@
+diff --git a/src/main/frontend/features/search/GlobalSearch.tsx b/src/main/frontend/features/search/GlobalSearch.tsx
+new file mode 100644
+index 0000000..af2458d
+--- /dev/null
++++ b/src/main/frontend/features/search/GlobalSearch.tsx
+@@ -0,0 +1,57 @@
++import { useQuery } from '@tanstack/react-query';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++import {
++  clientsKey,
++  projectsKey,
++  listClients,
++  listProjects,
++  type SearchClient,
++  type SearchProject,
++} from './api';
++
++// One search box that looks across BOTH clients and projects. The committed term lives in the URL
++// under 'q' (not useState — it outlives the click and is shareable/back-button friendly), so the box
++// owns the key and the results read the same key. Each kind queries for itself under its shared key
++// (['clients'], ['projects']) — nothing is imported from those features. Matching is a
++// case-insensitive substring on the name; an empty box shows nothing until the user types.
++export function GlobalSearch() {
++  const [query, setQuery] = useSearchParam('q', asString);
++  const { data: clients } = useQuery({ queryKey: clientsKey, queryFn: listClients });
++  const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: listProjects });
++
++  const needle = query.trim().toLowerCase();
++  const clientMatches = needle
++    ? (clients ?? []).filter((c: SearchClient) => c.name.toLowerCase().includes(needle))
++    : [];
++  const projectMatches = needle
++    ? (projects ?? []).filter((p: SearchProject) => p.name.toLowerCase().includes(needle))
++    : [];
++
++  return (
++    <section data-testid="global-search-panel">
++      <input
++        data-testid="global-search"
++        type="search"
++        placeholder="Search clients and projects"
++        value={query}
++        onChange={(e) => setQuery(e.target.value)}
++      />
++      <div data-testid="search-clients">
++        <h2>Clients</h2>
++        {clientMatches.map((c: SearchClient) => (
++          <div key={c.id} data-testid={`client-row-${c.id}`}>
++            <span data-testid="client-name">{c.name}</span>
++          </div>
++        ))}
++      </div>
++      <div data-testid="search-projects">
++        <h2>Projects</h2>
++        {projectMatches.map((p: SearchProject) => (
++          <div key={p.id} data-testid={`project-row-${p.id}`}>
++            <span data-testid="project-name">{p.name}</span>
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/search/api.ts b/src/main/frontend/features/search/api.ts
+new file mode 100644
+index 0000000..b66acaa
+--- /dev/null
++++ b/src/main/frontend/features/search/api.ts
+@@ -0,0 +1,14 @@
++import { getJson } from '../../api/http';
++
++// The global search reads the SAME server data the clients and projects lists read — it joins them
++// by KEY, never by importing another feature. ['clients'] and ['projects'] are the shared handles:
++// a create or archive elsewhere invalidates them and the search refreshes with no import between us.
++export type SearchClient = { id: number; name: string };
++export type SearchProject = { id: number; name: string };
++
++export const clientsKey = ['clients'] as const;
++export const projectsKey = ['projects'] as const;
++
++export const listClients = (): Promise<SearchClient[]> => getJson<SearchClient[]>('/api/clients');
++export const listProjects = (): Promise<SearchProject[]> =>
++  getJson<SearchProject[]>('/api/projects');
+diff --git a/src/main/frontend/features/search/home.slot.tsx b/src/main/frontend/features/search/home.slot.tsx
+new file mode 100644
+index 0000000..158a1da
+--- /dev/null
++++ b/src/main/frontend/features/search/home.slot.tsx
+@@ -0,0 +1,6 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { GlobalSearch } from './GlobalSearch';
++
++// The global search is the home page's content — it fills the home.main region, so routes/index.tsx
++// never lists it. This file is the whole of search's presence on the landing page.
++export const contribution = HomeMain.fill({ order: 0, Component: GlobalSearch });
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 1766a8a..0c968b8 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,18 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { HomeMain } from '../slots/defs/homeMain';
+ 
+-// The base home page: nothing here until a feature adds itself. A page is ONE new file under
+-// routes/ — `createFileRoute('<its url>')` — plus its nav link under features/.
++// The base home page. Its body is the home.main region: features fill it (features/**/*.slot.tsx)
++// and this page never lists them. A page is ONE new file under routes/ — `createFileRoute('<its
++// url>')` — plus its nav link under features/.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  return (
++    <section data-testid="home-page">
++      <p data-testid="home-empty">Nothing here yet.</p>
++      <HomeMain.Slot />
++    </section>
++  );
+ }
+diff --git a/src/main/frontend/slots/defs/homeMain.ts b/src/main/frontend/slots/defs/homeMain.ts
+new file mode 100644
+index 0000000..59c2161
+--- /dev/null
++++ b/src/main/frontend/slots/defs/homeMain.ts
+@@ -0,0 +1,7 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The home page's main region. Features fill it with whatever belongs on the landing page; the page
++ * never lists what goes in it, so each addition is a new *.slot.tsx. Rendered by routes/index.tsx.
++ */
++export const HomeMain = defineSlot('home.main');
