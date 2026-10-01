@@ -1,7 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { ClientDetail } from '../../slots/defs/clientDetail';
 import { useSearchParam, asFlag } from '../../url/useSearchParam';
-import { clientStatementKey, getClientStatement, type StatementInvoice } from './statementApi';
+import {
+  clientStatementKey,
+  getClientStatement,
+  type StatementInvoice,
+  type StatementProject,
+} from './statementApi';
 import { formatMoney } from '../../ui/money';
 
 // A client's statement — one panel filling the client.detail region: all of the client's invoices
@@ -23,26 +28,40 @@ function ClientStatement({ clientId }: { clientId: number }) {
 
   return (
     <section data-testid="client-statement">
-      <table data-testid="client-statement-table">
-        <thead>
-          <tr>
-            <th>Invoice</th>
-            <th>Status</th>
-            <th>Amount</th>
-            <th>Due</th>
-          </tr>
-        </thead>
-        <tbody>
-          {statement.invoices.map((invoice: StatementInvoice) => (
-            <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
-              <td data-testid="statement-invoice-id">{invoice.id}</td>
-              <td data-testid="statement-invoice-status">{invoice.status}</td>
-              <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
-              <td data-testid="statement-invoice-due">{formatMoney(invoice.amountDue)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {statement.projects.map((project: StatementProject) => (
+        <section
+          key={project.projectId}
+          data-testid={`statement-project-${project.projectId}`}
+        >
+          <h4 data-testid="statement-project-name">{project.name}</h4>
+          <table data-testid="client-statement-table">
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {project.invoices.map((invoice: StatementInvoice) => (
+                <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
+                  <td data-testid="statement-invoice-id">{invoice.id}</td>
+                  <td data-testid="statement-invoice-status">{invoice.status}</td>
+                  <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
+                  <td data-testid="statement-invoice-due">{formatMoney(invoice.amountDue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>
+            Subtotal:{' '}
+            <span data-testid="statement-project-subtotal">
+              {formatMoney(project.subtotal)}
+            </span>
+          </p>
+        </section>
+      ))}
       <p>
         Total owed:{' '}
         <span data-testid="client-outstanding-total">

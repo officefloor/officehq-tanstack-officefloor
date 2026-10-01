@@ -23,21 +23,30 @@ public class GetClientStatement {
             ObjectResponse<ClientStatementView> response) {
         Long id = Long.valueOf(clientId);
         List<StatementInvoiceView> rows = new ArrayList<>();
+        List<StatementProjectView> groups = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         // The client owns projects; each project owns invoices. Walk the client's projects (id order)
-        // and collect every invoice, so the statement puts them all in one place.
+        // and collect every invoice, so the statement puts them all in one place AND groups them by
+        // job — each group carrying its own subtotal (the sum of its invoices' dues).
         for (Project project : projects.findByClientIdOrderByIdAsc(id)) {
+            List<StatementInvoiceView> projectRows = new ArrayList<>();
+            BigDecimal subtotal = BigDecimal.ZERO;
             for (Invoice invoice : invoices.findByProjectIdOrderByIdAsc(project.getId())) {
                 BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoice.getId()).stream()
                         .map(InvoicePayment::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 BigDecimal due = invoice.getTotal().subtract(paid);
-                rows.add(new StatementInvoiceView(invoice.getId(), invoice.getProjectId(),
-                        invoice.getStatus(), invoice.getAmount(), due));
+                StatementInvoiceView row = new StatementInvoiceView(invoice.getId(),
+                        invoice.getProjectId(), invoice.getStatus(), invoice.getAmount(), due);
+                rows.add(row);
+                projectRows.add(row);
+                subtotal = subtotal.add(due);
                 total = total.add(due);
             }
+            groups.add(new StatementProjectView(project.getId(), project.getName(), subtotal,
+                    projectRows));
         }
         rows.sort((a, b) -> Long.compare(a.id(), b.id()));
-        response.send(new ClientStatementView(id, rows, total));
+        response.send(new ClientStatementView(id, rows, groups, total));
     }
 }
