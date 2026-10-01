@@ -1,0 +1,137 @@
+diff --git a/src/main/frontend/features/invoices/api.ts b/src/main/frontend/features/invoices/api.ts
+index 3030c09..c725e79 100644
+--- a/src/main/frontend/features/invoices/api.ts
++++ b/src/main/frontend/features/invoices/api.ts
+@@ -13,10 +13,17 @@ export type Invoice = {
+ };
+ export type NewInvoice = { projectId: number; amount: number };
+ 
++// The base key for a project's invoices. The list query appends its current sort below it, so the
++// 'id' and 'due' orderings cache separately — while a write still invalidates ['invoices', id] and,
++// by prefix, refreshes whichever ordering is on screen.
+ export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;
+ 
+-export const listInvoices = (projectId: number): Promise<Invoice[]> =>
+-  getJson<Invoice[]>(`/api/invoices?projectId=${projectId}`);
++// How to order the list: earliest-due-first ('due') or id order (the default). The server reads the
++// same `sort` key, so the ordering is applied once, at the source, not re-sorted on the client.
++export type InvoiceSort = 'id' | 'due';
++
++export const listInvoices = (projectId: number, sort: InvoiceSort = 'id'): Promise<Invoice[]> =>
++  getJson<Invoice[]>(`/api/invoices?projectId=${projectId}&sort=${sort}`);
+ 
+ export const createInvoice = (body: NewInvoice): Promise<Invoice> =>
+   postJson<Invoice>('/api/invoices', body);
+diff --git a/src/main/frontend/features/invoices/invoices.slot.tsx b/src/main/frontend/features/invoices/invoices.slot.tsx
+index e40954b..9e0c409 100644
+--- a/src/main/frontend/features/invoices/invoices.slot.tsx
++++ b/src/main/frontend/features/invoices/invoices.slot.tsx
+@@ -1,17 +1,23 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { ProjectDetail } from '../../slots/defs/projectDetail';
+ import { InvoiceRow } from '../../slots/defs/invoiceRow';
+-import { invoicesKey, listInvoices, type Invoice } from './api';
++import { invoicesKey, listInvoices, type Invoice, type InvoiceSort } from './api';
+ import { formatMoney } from '../../ui/money';
++import { useSearchParam, asString } from '../../url/useSearchParam';
+ 
+ // The project's invoices and what they add up to — one panel filling the project.detail region.
+ // Reads server data under ['invoices', projectId] (never copied into state); the add form shares
+ // the key, so a successful add refreshes this with no import between them. The total is DERIVED
+ // from the same query (never stored), and amounts render with two decimals.
+ function ProjectInvoices({ projectId }: { projectId: number }) {
++  // The ordering lives in the URL under the shared `invoiceSort` key — the sort control writes it,
++  // this list reads it. It is part of the query key, so each ordering caches on its own and the
++  // server returns the rows already sorted.
++  const [sortParam] = useSearchParam('invoiceSort', asString);
++  const sort: InvoiceSort = sortParam === 'due' ? 'due' : 'id';
+   const { data: invoices } = useQuery({
+-    queryKey: invoicesKey(projectId),
+-    queryFn: () => listInvoices(projectId),
++    queryKey: [...invoicesKey(projectId), sort],
++    queryFn: () => listInvoices(projectId, sort),
+   });
+ 
+   if (!invoices) {
+diff --git a/src/main/frontend/features/invoices/sortDue.slot.tsx b/src/main/frontend/features/invoices/sortDue.slot.tsx
+new file mode 100644
+index 0000000..5f13a35
+--- /dev/null
++++ b/src/main/frontend/features/invoices/sortDue.slot.tsx
+@@ -0,0 +1,22 @@
++import { ProjectDetail } from '../../slots/defs/projectDetail';
++import { useSearchParam, asString } from '../../url/useSearchParam';
++
++// A toolbar control over the project's invoices table — one new *.slot.tsx filling the project.detail
++// region. It owns the `invoiceSort` URL key; the invoices list reads the same key and asks the server
++// for that order. Nothing is passed between them: they stay in step through the shared search param.
++function SortInvoicesByDue() {
++  const [sort, setSort] = useSearchParam('invoiceSort', asString);
++  const active = sort === 'due';
++  return (
++    <button
++      data-testid="invoice-sort-due"
++      type="button"
++      aria-pressed={active}
++      onClick={() => setSort(active ? undefined : 'due')}
++    >
++      Sort by due date
++    </button>
++  );
++}
++
++export const contribution = ProjectDetail.fill({ order: 15, Component: SortInvoicesByDue });
+diff --git a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+index 04d4d53..3aade07 100644
+--- a/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
++++ b/src/main/java/net/officefloor/hq/app/InvoiceRepository.java
+@@ -8,4 +8,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+ 
+     /** The invoices of one project, in id order — the shape the project detail page lists. */
+     List<Invoice> findByProjectIdOrderByIdAsc(Long projectId);
++
++    /** The invoices of one project, earliest due date first (ties broken by id for a stable order). */
++    List<Invoice> findByProjectIdOrderByDueDateAscIdAsc(Long projectId);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ListInvoices.java b/src/main/java/net/officefloor/hq/app/ListInvoices.java
+index 1359e02..a5baa19 100644
+--- a/src/main/java/net/officefloor/hq/app/ListInvoices.java
++++ b/src/main/java/net/officefloor/hq/app/ListInvoices.java
+@@ -5,18 +5,21 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * GET /api/invoices?projectId=&lt;id&gt; — the invoices of one project, in id order. Scoped to a
+- * project (the detail page lists ITS invoices), so the project id arrives as a query parameter.
+- * Wired by officefloor/rest/api/invoices.GET.yml.
++ * GET /api/invoices?projectId=&lt;id&gt;&amp;sort=&lt;key&gt; — the invoices of one project. Scoped to a
++ * project (the detail page lists ITS invoices), so the project id arrives as a query parameter. The
++ * optional {@code sort} key chooses the order: {@code due} is earliest-due-first, anything else (and
++ * the default) is id order. Wired by officefloor/rest/api/invoices.GET.yml.
+  */
+ public class ListInvoices {
+ 
+     public void service(@RequestParam("projectId") String projectId,
++            @RequestParam("sort") String sort,
+             InvoiceRepository invoices, ObjectResponse<List<InvoiceView>> response) {
+         Long id = Long.valueOf(projectId);
+-        List<InvoiceView> view = invoices.findByProjectIdOrderByIdAsc(id).stream()
+-                .map(InvoiceView::of)
+-                .toList();
++        List<Invoice> rows = "due".equals(sort)
++                ? invoices.findByProjectIdOrderByDueDateAscIdAsc(id)
++                : invoices.findByProjectIdOrderByIdAsc(id);
++        List<InvoiceView> view = rows.stream().map(InvoiceView::of).toList();
+         response.send(view);
+     }
+ }
+diff --git a/src/main/resources/db/migration/V8__invoice_due_date_index.sql b/src/main/resources/db/migration/V8__invoice_due_date_index.sql
+new file mode 100644
+index 0000000..6327147
+--- /dev/null
++++ b/src/main/resources/db/migration/V8__invoice_due_date_index.sql
+@@ -0,0 +1,4 @@
++-- Sorting a project's invoices by due date is now a first-class read path (the detail page offers a
++-- "sort by due date" control). Index the due_date column so the earliest-due-first ordering is served
++-- from an index rather than a full scan as a project accumulates invoices. Additive and idempotent.
++CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices (due_date);
