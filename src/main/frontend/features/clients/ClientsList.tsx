@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParam, asString } from '../../url/useSearchParam';
 import { clientsKey, listClients, type Client } from './api';
+import { ClientRow } from '../../slots/defs/clientRow';
 
 // The clients list. Reads server data under ['clients'] (never copied into state); the create form
 // shares the key, so a successful create refreshes this list with no import between them.
@@ -39,6 +40,7 @@ export function ClientsList() {
             <tr>
               <th>Name</th>
               <th>Email</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -46,6 +48,9 @@ export function ClientsList() {
               <tr key={client.id} data-testid={`client-row-${client.id}`}>
                 <td data-testid="client-name">{client.name}</td>
                 <td data-testid="client-email">{client.email}</td>
+                <td>
+                  <ClientRow.Slot clientId={client.id} />
+                </td>
               </tr>
             ))}
           </tbody>
