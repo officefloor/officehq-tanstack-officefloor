@@ -1,0 +1,301 @@
+diff --git a/src/main/frontend/features/projects/ProjectsList.tsx b/src/main/frontend/features/projects/ProjectsList.tsx
+index cbde54f..b5f928e 100644
+--- a/src/main/frontend/features/projects/ProjectsList.tsx
++++ b/src/main/frontend/features/projects/ProjectsList.tsx
+@@ -1,21 +1,39 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { projectsKey, listProjects, type Project } from './api';
+ import { ProjectRow } from '../../slots/defs/projectRow';
++import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
+ 
+ // The projects list. Reads server data under ['projects'] (never copied into state); the create form
+ // shares the key, so a successful create refreshes this list with no import between them. Each row
+ // shows the client's NAME, which the server joins onto the project.
++//
++// Archived projects are tucked away: they drop off the list unless the `showArchived` URL key is on.
++// The toggle control (its own *.slot.tsx) owns that key; this list reads the same key and filters,
++// so they stay in step through the shared search param with nothing passed between them.
+ export function ProjectsList() {
++  const [showArchived] = useSearchParam('showArchived', asFlag);
+   const { data: projects } = useQuery({ queryKey: projectsKey, queryFn: listProjects });
+ 
+   if (!projects) {
+     return null;
+   }
+ 
+-  if (projects.length === 0) {
+-    return <p data-testid="projects-empty">No projects yet.</p>;
+-  }
++  const visible = projects.filter((project: Project) => showArchived || !project.archived);
++
++  return (
++    <>
++      <ProjectsToolbar.Slot />
++      {visible.length === 0 ? (
++        <p data-testid="projects-empty">No projects yet.</p>
++      ) : (
++        <ProjectsTable projects={visible} />
++      )}
++    </>
++  );
++}
+ 
++function ProjectsTable({ projects }: { projects: Project[] }) {
+   return (
+     <table data-testid="projects-table">
+       <thead>
+diff --git a/src/main/frontend/features/projects/api.ts b/src/main/frontend/features/projects/api.ts
+index 4da5076..f5a86d3 100644
+--- a/src/main/frontend/features/projects/api.ts
++++ b/src/main/frontend/features/projects/api.ts
+@@ -3,7 +3,13 @@ import { getJson, postJson } from '../../api/http';
+ // A project as the API exposes it — it carries its client's NAME (the cross-entity join done on the
+ // server) so the list shows the client without a second lookup. The query key ['projects'] is the
+ // shared handle: the list reads it, the create form invalidates it.
+-export type Project = { id: number; name: string; clientId: number; clientName: string };
++export type Project = {
++  id: number;
++  name: string;
++  clientId: number;
++  clientName: string;
++  archived: boolean;
++};
+ export type NewProject = { name: string; clientId: number };
+ 
+ export const projectsKey = ['projects'] as const;
+@@ -13,6 +19,12 @@ export const listProjects = (): Promise<Project[]> => getJson<Project[]>('/api/p
+ export const createProject = (body: NewProject): Promise<Project> =>
+   postJson<Project>('/api/projects', body);
+ 
++// Archive a project — tucks it away server-side (keeps the row, sets its archived flag) and returns
++// the updated project. Callers invalidate ['projects'] on success so the list refetches and the row
++// drops off, unless the archived ones are being shown.
++export const archiveProject = (id: number): Promise<Project> =>
++  postJson<Project>('/api/projects/archive', { id });
++
+ // The client options the form's select needs: shared with the clients feature by the ['clients']
+ // KEY (not an import), so adding a client refreshes this select too.
+ export type ClientOption = { id: number; name: string };
+diff --git a/src/main/frontend/features/projects/archive.slot.tsx b/src/main/frontend/features/projects/archive.slot.tsx
+new file mode 100644
+index 0000000..9e2a7a5
+--- /dev/null
++++ b/src/main/frontend/features/projects/archive.slot.tsx
+@@ -0,0 +1,31 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { ProjectRow } from '../../slots/defs/projectRow';
++import { archiveProject, projectsKey } from './api';
++
++// Archive a project — one new file filling the per-project-row action slot. Rather than delete, the
++// click tucks the project away: a useMutation (never a hand-rolled list edit in state) that, on
++// success, invalidates the shared ['projects'] key so the list refetches and the archived row drops
++// off. The server flips the flag and appends the audit record, so "note it when I do" is handled
++// where the side-effect lives. Its testid is project-archive-<id> (the test contract; CLAUDE.md).
++function ArchiveProject({ projectId }: { projectId: number }) {
++  const queryClient = useQueryClient();
++  const mutation = useMutation({
++    mutationFn: () => archiveProject(projectId),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: projectsKey });
++    },
++  });
++
++  return (
++    <button
++      data-testid={`project-archive-${projectId}`}
++      type="button"
++      disabled={mutation.isPending}
++      onClick={() => mutation.mutate()}
++    >
++      Archive
++    </button>
++  );
++}
++
++export const contribution = ProjectRow.fill({ order: 20, Component: ArchiveProject });
+diff --git a/src/main/frontend/features/projects/showArchived.slot.tsx b/src/main/frontend/features/projects/showArchived.slot.tsx
+new file mode 100644
+index 0000000..71360f4
+--- /dev/null
++++ b/src/main/frontend/features/projects/showArchived.slot.tsx
+@@ -0,0 +1,22 @@
++import { ProjectsToolbar } from '../../slots/defs/projectsToolbar';
++import { useSearchParam, asFlag } from '../../url/useSearchParam';
++
++// A control over the projects list — one new *.slot.tsx filling the projects.toolbar region. It owns
++// the `showArchived` URL key; the list reads the same key and reveals the tucked-away projects when
++// it is on. Nothing is passed between them: they stay in step through the shared search param. Off
++// clears the key, so the list falls back to showing only the active projects.
++function ShowArchivedToggle() {
++  const [showArchived, setShowArchived] = useSearchParam('showArchived', asFlag);
++  return (
++    <button
++      data-testid="projects-show-archived"
++      type="button"
++      aria-pressed={showArchived}
++      onClick={() => setShowArchived(showArchived ? undefined : true)}
++    >
++      {showArchived ? 'Hide archived' : 'Show archived'}
++    </button>
++  );
++}
++
++export const contribution = ProjectsToolbar.fill({ order: 10, Component: ShowArchivedToggle });
+diff --git a/src/main/frontend/slots/defs/projectsToolbar.ts b/src/main/frontend/slots/defs/projectsToolbar.ts
+new file mode 100644
+index 0000000..f2b07e5
+--- /dev/null
++++ b/src/main/frontend/slots/defs/projectsToolbar.ts
+@@ -0,0 +1,9 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The toolbar above the projects list. Features fill this region with controls that narrow or widen
++ * the one projects list — the show-archived toggle, and whatever controls come later. The projects
++ * list renders it; it never lists what goes in it, so each control is a new *.slot.tsx file that
++ * owns its own URL key.
++ */
++export const ProjectsToolbar = defineSlot('projects.toolbar');
+diff --git a/src/main/java/net/officefloor/hq/app/ArchiveProject.java b/src/main/java/net/officefloor/hq/app/ArchiveProject.java
+new file mode 100644
+index 0000000..fb114ff
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ArchiveProject.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * POST /api/projects/archive — tuck a project away rather than delete it, returning the updated
++ * row. Wired by officefloor/rest/api/projects/archive.POST.yml.
++ *
++ * Archiving keeps the project (and everything hanging off it): it only sets the project's archived
++ * flag so it drops off the lists, which default to the not-archived rows. Like deleting, it is an
++ * audited side-effect — alongside the change we append one record through the {@link Audit} service
++ * ({@code PROJECT_ARCHIVED id=<id>}) so there is a durable note every time a project is tucked away.
++ * We reject a missing or unknown project id before writing anything so a bad request neither changes
++ * state nor audits.
++ */
++public class ArchiveProject {
++
++    public void service(@RequestBody ArchiveProjectForm form, ProjectRepository projects,
++            ClientRepository clients, Audit audit, ObjectResponse<ProjectView> response) {
++        Long id = form.getId();
++        if (id == null) {
++            throw new IllegalArgumentException("A project id is required");
++        }
++        Project project = projects.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("A valid project is required"));
++        project.archive();
++        projects.save(project);
++        String clientName = clients.findById(project.getClientId())
++                .map(Client::getName).orElse("");
++        audit.record("PROJECT_ARCHIVED id=" + id);
++        response.send(ProjectView.of(project, clientName));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ArchiveProjectForm.java b/src/main/java/net/officefloor/hq/app/ArchiveProjectForm.java
+new file mode 100644
+index 0000000..88fd041
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/ArchiveProjectForm.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app;
++
++/** The request body for archiving a project: which project to tuck away. */
++public class ArchiveProjectForm {
++
++    private Long id;
++
++    public Long getId() {
++        return id;
++    }
++
++    public void setId(Long id) {
++        this.id = id;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/ListClientProjects.java b/src/main/java/net/officefloor/hq/app/ListClientProjects.java
+index 05150cd..0e4fea7 100644
+--- a/src/main/java/net/officefloor/hq/app/ListClientProjects.java
++++ b/src/main/java/net/officefloor/hq/app/ListClientProjects.java
+@@ -17,7 +17,10 @@ public class ListClientProjects {
+             ObjectResponse<List<ProjectView>> response) {
+         Long id = Long.valueOf(clientId);
+         String clientName = clients.findById(id).map(Client::getName).orElse("");
++        // Archived projects are tucked away — they drop off the client's list too, keeping the row
++        // in the table only while it is active.
+         List<ProjectView> view = projects.findByClientIdOrderByIdAsc(id).stream()
++                .filter(p -> !p.isArchived())
+                 .map(p -> ProjectView.of(p, clientName))
+                 .toList();
+         response.send(view);
+diff --git a/src/main/java/net/officefloor/hq/app/Project.java b/src/main/java/net/officefloor/hq/app/Project.java
+index 294c920..5e8f79d 100644
+--- a/src/main/java/net/officefloor/hq/app/Project.java
++++ b/src/main/java/net/officefloor/hq/app/Project.java
+@@ -25,6 +25,11 @@ public class Project {
+     @Column(name = "client_id", nullable = false)
+     private Long clientId;
+ 
++    // Whether the project has been archived (tucked away): an archived project is retained but drops
++    // off the lists. New projects start not-archived (the column default, V16__project_archived.sql).
++    @Column(nullable = false)
++    private boolean archived;
++
+     protected Project() {
+     }
+ 
+@@ -44,4 +49,13 @@ public class Project {
+     public Long getClientId() {
+         return clientId;
+     }
++
++    public boolean isArchived() {
++        return archived;
++    }
++
++    /** Tuck this project away so it drops off the lists while the row is kept. */
++    public void archive() {
++        this.archived = true;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/ProjectView.java b/src/main/java/net/officefloor/hq/app/ProjectView.java
+index dbb3abd..d4e2ab2 100644
+--- a/src/main/java/net/officefloor/hq/app/ProjectView.java
++++ b/src/main/java/net/officefloor/hq/app/ProjectView.java
+@@ -5,9 +5,11 @@ package net.officefloor.hq.app;
+  * cross-entity join lives here — the project carries its client's NAME (not just the id) so the list
+  * can show the client without a second lookup.
+  */
+-public record ProjectView(Long id, String name, Long clientId, String clientName) {
++public record ProjectView(Long id, String name, Long clientId, String clientName,
++        boolean archived) {
+ 
+     public static ProjectView of(Project project, String clientName) {
+-        return new ProjectView(project.getId(), project.getName(), project.getClientId(), clientName);
++        return new ProjectView(project.getId(), project.getName(), project.getClientId(),
++                clientName, project.isArchived());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V16__project_archived.sql b/src/main/resources/db/migration/V16__project_archived.sql
+new file mode 100644
+index 0000000..7c05d8c
+--- /dev/null
++++ b/src/main/resources/db/migration/V16__project_archived.sql
+@@ -0,0 +1,4 @@
++-- Archiving (not deleting) a project: a project can be tucked away so it drops off the lists while
++-- its row — and everything hanging off it — is kept. A boolean flag on the project carries that
++-- state; existing projects default to not-archived, so the lists are unchanged until one is archived.
++ALTER TABLE projects ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/projects/archive.POST.yml b/src/main/resources/officefloor/rest/api/projects/archive.POST.yml
+new file mode 100644
+index 0000000..0840101
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/projects/archive.POST.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.ArchiveProject
