@@ -1,0 +1,140 @@
+diff --git a/src/main/frontend/features/dashboard/Dashboard.tsx b/src/main/frontend/features/dashboard/Dashboard.tsx
+new file mode 100644
+index 0000000..f490c62
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/Dashboard.tsx
+@@ -0,0 +1,24 @@
++import { useQuery } from '@tanstack/react-query';
++import { dashboardKey, getDashboard } from './api';
++
++// The home dashboard: three figures summarising the whole workspace. Reads server data under
++// ['dashboard'] (never copied into state); the figures are computed server-side so the page holds
++// no arithmetic — it just renders. The outstanding total is money, shown with two decimal places.
++export function Dashboard() {
++  const { data } = useQuery({ queryKey: dashboardKey, queryFn: getDashboard });
++
++  if (!data) {
++    return null;
++  }
++
++  return (
++    <dl data-testid="dashboard">
++      <dt>Clients</dt>
++      <dd data-testid="dashboard-clients-count">{data.clients}</dd>
++      <dt>Projects</dt>
++      <dd data-testid="dashboard-projects-count">{data.projects}</dd>
++      <dt>Outstanding</dt>
++      <dd data-testid="dashboard-outstanding-total">{data.outstanding.toFixed(2)}</dd>
++    </dl>
++  );
++}
+diff --git a/src/main/frontend/features/dashboard/api.ts b/src/main/frontend/features/dashboard/api.ts
+new file mode 100644
+index 0000000..5719207
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/api.ts
+@@ -0,0 +1,10 @@
++import { getJson } from '../../api/http';
++
++// The home dashboard summary as the API exposes it: the two counts and the outstanding total (sum
++// of UNPAID invoice amounts). The query key ['dashboard'] is the shared handle — any feature that
++// writes clients, projects or invoices can invalidate it to refresh the home figures.
++export type Dashboard = { clients: number; projects: number; outstanding: number };
++
++export const dashboardKey = ['dashboard'] as const;
++
++export const getDashboard = (): Promise<Dashboard> => getJson<Dashboard>('/api/dashboard');
+diff --git a/src/main/frontend/features/dashboard/nav.slot.tsx b/src/main/frontend/features/dashboard/nav.slot.tsx
+new file mode 100644
+index 0000000..efba0f6
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/nav.slot.tsx
+@@ -0,0 +1,13 @@
++import { Link } from '@tanstack/react-router';
++import { AppNav } from '../../slots/defs/appNav';
++
++// The dashboard's presence in the nav bar — one new file, the shell is not touched (see
++// features/home/nav.slot.tsx for the worked example).
++export const contribution = AppNav.fill({
++  order: 5,
++  Component: () => (
++    <Link to="/dashboard" data-testid="nav-dashboard">
++      Dashboard
++    </Link>
++  ),
++});
+diff --git a/src/main/frontend/routes/dashboard.tsx b/src/main/frontend/routes/dashboard.tsx
+new file mode 100644
+index 0000000..484faba
+--- /dev/null
++++ b/src/main/frontend/routes/dashboard.tsx
+@@ -0,0 +1,17 @@
++import { createFileRoute } from '@tanstack/react-router';
++import { Dashboard } from '../features/dashboard/Dashboard';
++
++// The dashboard page: one new file under routes/. A leaf page with no detail views, so it is a flat
++// route composing its own feature's summary, which queries for itself.
++export const Route = createFileRoute('/dashboard')({
++  component: DashboardPage,
++});
++
++function DashboardPage() {
++  return (
++    <section data-testid="dashboard-page">
++      <h1>Dashboard</h1>
++      <Dashboard />
++    </section>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/DashboardView.java b/src/main/java/net/officefloor/hq/app/DashboardView.java
+new file mode 100644
+index 0000000..9654955
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/DashboardView.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++
++/**
++ * The home dashboard summary the API exposes: how many clients and projects exist, and the total
++ * still owed (the sum of UNPAID invoice amounts across all projects). The shape the home page
++ * renders into its three tiles.
++ */
++public record DashboardView(long clients, long projects, BigDecimal outstanding) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/GetDashboard.java b/src/main/java/net/officefloor/hq/app/GetDashboard.java
+new file mode 100644
+index 0000000..ecc28de
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/GetDashboard.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app;
++
++import java.math.BigDecimal;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * GET /api/dashboard — the home summary: the client count, the project count, and the outstanding
++ * total (the sum of every UNPAID invoice amount). A cross-entity aggregate read, so it injects all
++ * three repositories. Wired by officefloor/rest/api/dashboard.GET.yml.
++ */
++public class GetDashboard {
++
++    public void service(ClientRepository clients, ProjectRepository projects,
++            InvoiceRepository invoices, ObjectResponse<DashboardView> response) {
++        BigDecimal outstanding = invoices.findAll().stream()
++                .filter(invoice -> "UNPAID".equals(invoice.getStatus()))
++                .map(Invoice::getAmount)
++                .reduce(BigDecimal.ZERO, BigDecimal::add);
++        response.send(new DashboardView(clients.count(), projects.count(), outstanding));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/dashboard.GET.yml b/src/main/resources/officefloor/rest/api/dashboard.GET.yml
+new file mode 100644
+index 0000000..29d710b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/dashboard.GET.yml
+@@ -0,0 +1,2 @@
++service:
++  class: net.officefloor.hq.app.GetDashboard
