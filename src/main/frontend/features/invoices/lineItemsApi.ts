@@ -28,6 +28,22 @@ export const listLineItems = (invoiceId: number): Promise<LineItem[]> =>
 export const createLineItem = (body: NewLineItem): Promise<LineItem> =>
   postJson<LineItem>('/api/invoices/lineitems', body);
 
+// Changing a line sends its id alongside the new description, qty and unit price; removing one sends
+// just its id. Both are POSTs that invalidate the same ['invoice-lineitems', invoiceId] key the list
+// reads, so the list + derived total refetch, plus ['invoices'] so the project's amount keeps step.
+export type EditLineItem = {
+  id: number;
+  description: string;
+  qty: number;
+  unitPrice: number;
+};
+
+export const updateLineItem = (body: EditLineItem): Promise<LineItem> =>
+  postJson<LineItem>('/api/invoices/lineitems/update', body);
+
+export const removeLineItem = (id: number): Promise<LineItem> =>
+  postJson<LineItem>('/api/invoices/lineitems/remove', { id });
+
 // A line's own amount, and the whole invoice's amount — both DERIVED from qty and unit price, never
 // stored on the client. The project's invoices list shows the same figure (the server keeps the
 // invoice's stored amount in step as its lines change).

@@ -45,6 +45,13 @@ public class InvoiceLineItem {
         this.unitPrice = unitPrice;
     }
 
+    /** Change what this line is for: a new description, how many, and the price each. */
+    public void update(String description, int quantity, BigDecimal unitPrice) {
+        this.description = description;
+        this.quantity = quantity;
+        this.unitPrice = unitPrice;
+    }
+
     public Long getId() {
         return id;
     }
