@@ -53,6 +53,15 @@ public class Invoice {
     @Column(name = "discount_pct", nullable = false)
     private BigDecimal discountPct = BigDecimal.ZERO;
 
+    /**
+     * The percentage sales tax added on top of the invoice (0–100), applied AFTER the discount. The
+     * tax is that percentage of the discounted amount (subtotal minus discount), and the final total
+     * is the discounted amount plus that tax. Defaults to zero — no tax set adds nothing on
+     * (V30__invoice_tax.sql).
+     */
+    @Column(name = "tax_pct", nullable = false)
+    private BigDecimal taxPct = BigDecimal.ZERO;
+
     protected Invoice() {
     }
 
@@ -101,19 +110,29 @@ public class Invoice {
         return discountPct;
     }
 
+    /** The percentage sales tax added on top of this invoice (0–100, zero when none is set). */
+    public BigDecimal getTaxPct() {
+        return taxPct;
+    }
+
     /**
      * The final total owed on this invoice: the subtotal ({@link #getAmount()}) minus the percentage
-     * discount taken off it. This is the figure that counts as money owed everywhere the amount due is
-     * worked out — the dashboard outstanding total, an invoice's remaining balance and the client
-     * statement — so the discount flows through consistently. Derived in {@link BigDecimal} at money
-     * scale (no float drift), the same derivation {@link GetInvoiceSummary} applies to the detail view.
+     * discount taken off it, then the percentage sales tax added on top of what is left. This is the
+     * figure that counts as money owed everywhere the amount due is worked out — the dashboard
+     * outstanding total, an invoice's remaining balance and the client statement — so the discount and
+     * tax flow through consistently. Derived in {@link BigDecimal} at money scale (no float drift), the
+     * same derivation {@link GetInvoiceSummary} applies to the detail view.
      */
     public BigDecimal getTotal() {
         BigDecimal base = amount == null ? BigDecimal.ZERO : amount;
-        BigDecimal pct = discountPct == null ? BigDecimal.ZERO : discountPct;
+        BigDecimal discountPercent = discountPct == null ? BigDecimal.ZERO : discountPct;
         BigDecimal discount =
-                base.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        return base.subtract(discount);
+                base.multiply(discountPercent).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal discounted = base.subtract(discount);
+        BigDecimal taxPercent = taxPct == null ? BigDecimal.ZERO : taxPct;
+        BigDecimal tax =
+                discounted.multiply(taxPercent).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        return discounted.add(tax);
     }
 
     /** Send this invoice — the DRAFT -> SENT transition the send action performs. */

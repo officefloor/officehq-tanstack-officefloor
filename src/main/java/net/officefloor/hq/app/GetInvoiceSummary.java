@@ -7,10 +7,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * GET /api/invoices/summary?invoiceId=&lt;id&gt; — an invoice's money summary: its SUBTOTAL (the sum
- * of its line items' amounts), the percentage DISCOUNT set on it, the DISCOUNT amount that works out
- * to, and the final TOTAL (subtotal minus the discount). Scoped to one invoice, so the invoice id
- * arrives as a query parameter. Derived on the server in {@link BigDecimal} (money scale, no float
- * drift). Wired by officefloor/rest/api/invoices/summary.GET.yml.
+ * of its line items' amounts), the percentage DISCOUNT set on it and the DISCOUNT amount that works
+ * out to, the percentage sales TAX set on it and the TAX amount that works out to, and the final
+ * TOTAL. Tax is applied after the discount, so the total is the subtotal minus the discount, plus the
+ * tax on what is left. Scoped to one invoice, so the invoice id arrives as a query parameter. Derived
+ * on the server in {@link BigDecimal} (money scale, no float drift). Wired by
+ * officefloor/rest/api/invoices/summary.GET.yml.
  */
 public class GetInvoiceSummary {
 
@@ -27,7 +29,11 @@ public class GetInvoiceSummary {
                 invoice.getDiscountPct() == null ? BigDecimal.ZERO : invoice.getDiscountPct();
         BigDecimal discount = subtotal.multiply(discountPct)
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal total = subtotal.subtract(discount);
-        response.send(new InvoiceSummaryView(id, subtotal, discountPct, discount, total));
+        BigDecimal discounted = subtotal.subtract(discount);
+        BigDecimal taxPct = invoice.getTaxPct() == null ? BigDecimal.ZERO : invoice.getTaxPct();
+        BigDecimal tax = discounted.multiply(taxPct)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal total = discounted.add(tax);
+        response.send(new InvoiceSummaryView(id, subtotal, discountPct, discount, taxPct, tax, total));
     }
 }
