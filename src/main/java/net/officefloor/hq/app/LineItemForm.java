@@ -11,6 +11,7 @@ public class LineItemForm {
     private Long invoiceId;
     private String description;
     private Integer qty;
+    private String unit;
     private BigDecimal unitPrice;
 
     public Long getInvoiceId() {
@@ -35,6 +36,14 @@ public class LineItemForm {
 
     public void setQty(Integer qty) {
         this.qty = qty;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
     }
 
     public BigDecimal getUnitPrice() {

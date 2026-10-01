@@ -13,6 +13,7 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
   const queryClient = useQueryClient();
   const [description, setDescription] = useState('');
   const [qty, setQty] = useState('');
+  const [unit, setUnit] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
   const [error, setError] = useState('');
 
@@ -21,6 +22,7 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
     onSuccess: () => {
       setDescription('');
       setQty('');
+      setUnit('');
       setUnitPrice('');
       void queryClient.invalidateQueries({ queryKey: lineItemsKey(invoiceId) });
       void queryClient.invalidateQueries({ queryKey: ['invoices'] });
@@ -49,6 +51,7 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
       invoiceId,
       description: description.trim(),
       qty: qtyValue,
+      unit: unit.trim() === '' ? 'units' : unit.trim(),
       unitPrice: priceValue,
     });
   };
@@ -66,6 +69,12 @@ function LineItemForm({ invoiceId }: { invoiceId: number }) {
         placeholder="Qty"
         value={qty}
         onChange={(e) => setQty(e.target.value)}
+      />
+      <input
+        data-testid="lineitem-form-unit"
+        placeholder="Unit"
+        value={unit}
+        onChange={(e) => setUnit(e.target.value)}
       />
       <input
         data-testid="lineitem-form-unitprice"

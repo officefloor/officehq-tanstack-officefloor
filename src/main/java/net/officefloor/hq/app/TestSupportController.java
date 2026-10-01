@@ -143,14 +143,18 @@ public class TestSupportController {
             // Insert the invoice's lines with their explicit fixture ids (the spec asserts rows by
             // these ids), owned by this invoice.
             for (Map<String, Object> li : lineItems) {
+                // unit is optional in the fixture — a spec that does not care leaves it out, so the
+                // line defaults to a neutral "units" (the same fallback CreateLineItem applies).
+                Object unit = li.getOrDefault("unit", "units");
                 jdbc.update(
                         "INSERT INTO invoice_line_items"
-                                + " (id, invoice_id, description, quantity, unit_price)"
-                                + " VALUES (?, ?, ?, ?, ?)",
+                                + " (id, invoice_id, description, quantity, unit, unit_price)"
+                                + " VALUES (?, ?, ?, ?, ?, ?)",
                         ((Number) li.get("id")).longValue(),
                         ((Number) inv.get("id")).longValue(),
                         li.get("description"),
                         ((Number) li.get("qty")).intValue(),
+                        unit.toString(),
                         new java.math.BigDecimal(li.get("unitPrice").toString()));
             }
         }

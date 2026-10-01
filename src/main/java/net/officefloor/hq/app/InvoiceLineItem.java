@@ -32,23 +32,29 @@ public class InvoiceLineItem {
     @Column(nullable = false)
     private int quantity;
 
+    @Column(nullable = false)
+    private String unit;
+
     @Column(name = "unit_price", nullable = false)
     private BigDecimal unitPrice;
 
     protected InvoiceLineItem() {
     }
 
-    public InvoiceLineItem(Long invoiceId, String description, int quantity, BigDecimal unitPrice) {
+    public InvoiceLineItem(Long invoiceId, String description, int quantity, String unit,
+            BigDecimal unitPrice) {
         this.invoiceId = invoiceId;
         this.description = description;
         this.quantity = quantity;
+        this.unit = unit;
         this.unitPrice = unitPrice;
     }
 
-    /** Change what this line is for: a new description, how many, and the price each. */
-    public void update(String description, int quantity, BigDecimal unitPrice) {
+    /** Change what this line is for: a new description, how many, the unit, and the price each. */
+    public void update(String description, int quantity, String unit, BigDecimal unitPrice) {
         this.description = description;
         this.quantity = quantity;
+        this.unit = unit;
         this.unitPrice = unitPrice;
     }
 
@@ -66,6 +72,10 @@ public class InvoiceLineItem {
 
     public int getQuantity() {
         return quantity;
+    }
+
+    public String getUnit() {
+        return unit;
     }
 
     public BigDecimal getUnitPrice() {

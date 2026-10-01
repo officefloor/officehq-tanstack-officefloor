@@ -34,6 +34,9 @@ public class UpdateLineItem {
         if (qty == null || qty <= 0) {
             throw new IllegalArgumentException("A line item quantity must be greater than zero");
         }
+        // The unit is descriptive (hours, days, items); a blank one falls back to a neutral "units".
+        String unit = form.getUnit();
+        unit = unit == null || unit.isBlank() ? "units" : unit.trim();
         BigDecimal unitPrice = form.getUnitPrice();
         if (unitPrice == null) {
             throw new IllegalArgumentException("A line item unit price is required");
@@ -41,7 +44,7 @@ public class UpdateLineItem {
         if (unitPrice.signum() < 0) {
             throw new IllegalArgumentException("A line item unit price cannot be negative");
         }
-        item.update(description.trim(), qty, unitPrice);
+        item.update(description.trim(), qty, unit, unitPrice);
         InvoiceLineItem saved = lineItems.save(item);
 
         Long invoiceId = saved.getInvoiceId();

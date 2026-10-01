@@ -33,6 +33,9 @@ public class CreateLineItem {
         if (qty == null || qty <= 0) {
             throw new IllegalArgumentException("A line item quantity must be greater than zero");
         }
+        // The unit is descriptive (hours, days, items); a blank one falls back to a neutral "units".
+        String unit = form.getUnit();
+        unit = unit == null || unit.isBlank() ? "units" : unit.trim();
         BigDecimal unitPrice = form.getUnitPrice();
         if (unitPrice == null) {
             throw new IllegalArgumentException("A line item unit price is required");
@@ -40,8 +43,8 @@ public class CreateLineItem {
         if (unitPrice.signum() < 0) {
             throw new IllegalArgumentException("A line item unit price cannot be negative");
         }
-        InvoiceLineItem saved =
-                lineItems.save(new InvoiceLineItem(invoiceId, description.trim(), qty, unitPrice));
+        InvoiceLineItem saved = lineItems
+                .save(new InvoiceLineItem(invoiceId, description.trim(), qty, unit, unitPrice));
 
         // The invoice amount is the sum of its lines — recompute and persist it so every view that
         // reads the stored amount (the project's invoices list) stays in step with the lines.

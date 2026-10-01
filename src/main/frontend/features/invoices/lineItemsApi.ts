@@ -9,12 +9,14 @@ export type LineItem = {
   invoiceId: number;
   description: string;
   qty: number;
+  unit: string;
   unitPrice: number;
 };
 export type NewLineItem = {
   invoiceId: number;
   description: string;
   qty: number;
+  unit: string;
   unitPrice: number;
 };
 
@@ -35,6 +37,7 @@ export type EditLineItem = {
   id: number;
   description: string;
   qty: number;
+  unit: string;
   unitPrice: number;
 };
 

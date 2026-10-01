@@ -29,6 +29,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [qty, setQty] = useState('');
+  const [unit, setUnit] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
   const [error, setError] = useState('');
 
@@ -59,6 +60,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
     setEditingId(item.id);
     setDescription(item.description);
     setQty(String(item.qty));
+    setUnit(item.unit);
     setUnitPrice(String(item.unitPrice));
     setError('');
   };
@@ -83,7 +85,13 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
       setError('Price each must be zero or more');
       return;
     }
-    update.mutate({ id, description: description.trim(), qty: qtyValue, unitPrice: priceValue });
+    update.mutate({
+      id,
+      description: description.trim(),
+      qty: qtyValue,
+      unit: unit.trim() === '' ? 'units' : unit.trim(),
+      unitPrice: priceValue,
+    });
   };
 
   return (
@@ -93,6 +101,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
           <tr>
             <th>Description</th>
             <th>Qty</th>
+            <th>Unit</th>
             <th>Unit price</th>
             <th>Amount</th>
             <th>Actions</th>
@@ -114,6 +123,13 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
                     data-testid={`lineitem-edit-qty-${item.id}`}
                     value={qty}
                     onChange={(e) => setQty(e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    data-testid={`lineitem-edit-unit-${item.id}`}
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
                   />
                 </td>
                 <td>
@@ -147,6 +163,7 @@ function InvoiceLineItems({ invoiceId }: { invoiceId: number }) {
               <tr key={item.id} data-testid={`lineitem-row-${item.id}`}>
                 <td data-testid="lineitem-description">{item.description}</td>
                 <td data-testid="lineitem-qty">{item.qty}</td>
+                <td data-testid="lineitem-unit">{item.unit}</td>
                 <td data-testid="lineitem-unitprice">{formatMoney(item.unitPrice)}</td>
                 <td data-testid="lineitem-amount">{formatMoney(lineAmount(item))}</td>
                 <td>
