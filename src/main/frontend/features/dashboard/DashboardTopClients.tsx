@@ -20,7 +20,9 @@ export function DashboardTopClients() {
         {data.map((client) => (
           <li key={client.clientId} data-testid={`top-client-row-${client.clientId}`}>
             <span data-testid="top-client-name">{client.name}</span>
-            <span data-testid="top-client-amount">{formatMoney(client.outstanding)}</span>
+            <span data-testid="top-client-amount">
+              {formatMoney(client.outstanding, client.currency)}
+            </span>
           </li>
         ))}
       </ol>

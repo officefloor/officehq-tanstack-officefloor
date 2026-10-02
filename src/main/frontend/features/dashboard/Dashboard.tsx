@@ -1,9 +1,12 @@
+import { Fragment } from 'react';
 import { formatMoney } from '../../ui/money';
 import { useDashboard } from './dashboard';
 
-// The dashboard summary: counts of clients and projects, and how much money is still owed (the sum of
-// UNPAID invoice amounts). Each value carries the data-testid the test reads; the outstanding total is
-// rendered to two decimals to match a money amount.
+// The dashboard summary: counts of clients and projects, and how much money is still owed. Clients
+// are billed in different currencies (Flyway V31), so the outstanding figure is kept SEPARATE per
+// currency and the currencies are never added together — one `dashboard-outstanding-<CUR>` row per
+// currency, each shown in that currency. There is deliberately no single combined total. Each value
+// carries the data-testid the test reads.
 export function Dashboard() {
   const { data, isPending, isError } = useDashboard();
 
@@ -20,8 +23,14 @@ export function Dashboard() {
       <dd data-testid="dashboard-clients-count">{data.clientsCount}</dd>
       <dt>Jobs</dt>
       <dd data-testid="dashboard-projects-count">{data.projectsCount}</dd>
-      <dt>Outstanding</dt>
-      <dd data-testid="dashboard-outstanding-total">{formatMoney(data.outstandingTotal)}</dd>
+      {data.outstanding.map((row) => (
+        <Fragment key={row.currency}>
+          <dt>Outstanding ({row.currency})</dt>
+          <dd data-testid={`dashboard-outstanding-${row.currency}`}>
+            {formatMoney(row.amount, row.currency)}
+          </dd>
+        </Fragment>
+      ))}
     </dl>
   );
 }

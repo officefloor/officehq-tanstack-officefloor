@@ -10,6 +10,8 @@ export type Invoice = {
   status: string;
   issuedDate: string;
   dueDate: string;
+  // The currency the owning client is billed in (Flyway V31), so the amount is shown in it.
+  currency: string;
 };
 
 export const invoicesKey = (projectId: number) => ['invoices', projectId] as const;

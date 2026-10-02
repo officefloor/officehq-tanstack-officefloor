@@ -19,7 +19,15 @@ public class InvoicesGetLogic {
 
     public void service(@RequestParam("projectId") Long projectId,
             @RequestParam(value = "sort", required = false) String sort, InvoiceRepository invoices,
-            PaymentRepository payments, ObjectResponse<List<InvoiceView>> response) {
+            PaymentRepository payments, ProjectRepository projects, ClientRepository clients,
+            ObjectResponse<List<InvoiceView>> response) {
+        // The money is shown in the owning client's currency (invoice -> project -> client). Every
+        // invoice in this list belongs to the one project, so the currency is resolved once.
+        String currency = projects.findById(projectId)
+                .map(Project::getClientId)
+                .flatMap(clients::findById)
+                .map(Client::getCurrency)
+                .orElse("USD");
         List<Invoice> rows = "due".equals(sort)
                 ? invoices.findByProjectIdOrderByDueDateAscIdAsc(projectId)
                 : invoices.findByProjectIdOrderByIdAsc(projectId);
@@ -28,7 +36,7 @@ public class InvoicesGetLogic {
                     .map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
             String status = InvoiceStatus.derive(invoice.getStatus(), invoice.getAmount(), paid);
             return new InvoiceView(invoice.getId(), invoice.getProjectId(), invoice.getAmount(),
-                    status, invoice.getIssuedDate(), invoice.getDueDate());
+                    status, invoice.getIssuedDate(), invoice.getDueDate(), currency);
         }).collect(Collectors.toList());
         response.send(views);
     }
@@ -41,15 +49,17 @@ public class InvoicesGetLogic {
         private final String status;
         private final LocalDate issuedDate;
         private final LocalDate dueDate;
+        private final String currency;
 
         public InvoiceView(Long id, Long projectId, BigDecimal amount, String status,
-                LocalDate issuedDate, LocalDate dueDate) {
+                LocalDate issuedDate, LocalDate dueDate, String currency) {
             this.id = id;
             this.projectId = projectId;
             this.amount = amount;
             this.status = status;
             this.issuedDate = issuedDate;
             this.dueDate = dueDate;
+            this.currency = currency;
         }
 
         public Long getId() {
@@ -74,6 +84,10 @@ public class InvoicesGetLogic {
 
         public LocalDate getDueDate() {
             return dueDate;
+        }
+
+        public String getCurrency() {
+            return currency;
         }
     }
 }

@@ -21,8 +21,10 @@ import net.officefloor.web.ObjectResponse;
 public class ClientStatementGetLogic {
 
     public void service(@RequestParam("clientId") Long clientId, ProjectRepository projects,
-            InvoiceRepository invoices, PaymentRepository payments,
+            InvoiceRepository invoices, PaymentRepository payments, ClientRepository clients,
             ObjectResponse<ClientStatementView> response) {
+        // The whole statement is shown in the client's own currency (Flyway V31).
+        String currency = clients.findById(clientId).map(Client::getCurrency).orElse("USD");
         // The client's projects are the ones its invoices hang off (invoice -> project -> client).
         List<Project> clientProjects = projects.findAll().stream()
                 .filter(p -> clientId.equals(p.getClientId()))
@@ -58,7 +60,7 @@ public class ClientStatementGetLogic {
                     projectNames.getOrDefault(id, ""))).add(row);
         }
         List<StatementProjectView> groups = new ArrayList<>(byProject.values());
-        response.send(new ClientStatementView(clientId, rows, groups, outstanding));
+        response.send(new ClientStatementView(clientId, rows, groups, outstanding, currency));
     }
 
     /** A client's statement: its invoices, grouped by job with subtotals, and the total still owed. */
@@ -67,17 +69,23 @@ public class ClientStatementGetLogic {
         private final List<StatementInvoiceView> invoices;
         private final List<StatementProjectView> projects;
         private final BigDecimal outstandingTotal;
+        private final String currency;
 
         public ClientStatementView(long clientId, List<StatementInvoiceView> invoices,
-                List<StatementProjectView> projects, BigDecimal outstandingTotal) {
+                List<StatementProjectView> projects, BigDecimal outstandingTotal, String currency) {
             this.clientId = clientId;
             this.invoices = invoices;
             this.projects = projects;
             this.outstandingTotal = outstandingTotal;
+            this.currency = currency;
         }
 
         public long getClientId() {
             return clientId;
+        }
+
+        public String getCurrency() {
+            return currency;
         }
 
         public List<StatementInvoiceView> getInvoices() {

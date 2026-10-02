@@ -25,6 +25,8 @@ export type ClientStatement = {
   invoices: StatementInvoice[];
   projects: StatementProject[];
   outstandingTotal: number;
+  // The client's own currency (Flyway V31); the whole statement is shown in it.
+  currency: string;
 };
 
 export function useClientStatement(clientId: number) {

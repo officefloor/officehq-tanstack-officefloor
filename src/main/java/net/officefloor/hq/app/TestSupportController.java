@@ -67,11 +67,16 @@ public class TestSupportController {
             for (Map<String, Object> client : clients) {
                 // archived is optional; default to false (active, matching Flyway V18) when absent.
                 Object archived = client.get("archived");
+                // currency is optional; default to USD (matching Flyway V31) when absent.
+                Object currency = client.get("currency");
                 // Explicit fixture id (JPA save() would ignore it on an IDENTITY column).
-                jdbc.update("INSERT INTO clients (id, name, email, archived) VALUES (?, ?, ?, ?)",
+                jdbc.update(
+                        "INSERT INTO clients (id, name, email, archived, currency)"
+                                + " VALUES (?, ?, ?, ?, ?)",
                         ((Number) client.get("id")).longValue(), client.get("name"),
                         client.get("email"),
-                        archived != null && Boolean.parseBoolean(archived.toString()));
+                        archived != null && Boolean.parseBoolean(archived.toString()),
+                        currency != null ? currency.toString() : "USD");
             }
         }
         List<Map<String, Object>> projects = (List<Map<String, Object>>) fixture.get("projects");

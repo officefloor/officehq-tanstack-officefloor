@@ -27,6 +27,11 @@ public class Client {
     // Defaults to active (false); matches Flyway V18's column default for existing rows.
     private boolean archived = false;
 
+    // The currency the client is billed in (an ISO code, e.g. "USD", "EUR"). Their money is shown in
+    // this currency everywhere it appears. Defaults to USD, matching Flyway V31's column default for
+    // existing rows.
+    private String currency = "USD";
+
     public Client() {
     }
 
@@ -65,5 +70,13 @@ public class Client {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 }

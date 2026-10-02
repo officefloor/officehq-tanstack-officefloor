@@ -40,7 +40,8 @@ public class DashboardTopClientsGetLogic {
                                 return netTotal.subtract(paid);
                             })
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    return new TopClientView(client.getId(), client.getName(), outstanding);
+                    return new TopClientView(client.getId(), client.getName(), outstanding,
+                            client.getCurrency());
                 })
                 // Only clients that actually owe something are "top clients".
                 .filter(row -> row.getOutstanding().compareTo(BigDecimal.ZERO) > 0)
@@ -56,11 +57,13 @@ public class DashboardTopClientsGetLogic {
         private final long clientId;
         private final String name;
         private final BigDecimal outstanding;
+        private final String currency;
 
-        public TopClientView(long clientId, String name, BigDecimal outstanding) {
+        public TopClientView(long clientId, String name, BigDecimal outstanding, String currency) {
             this.clientId = clientId;
             this.name = name;
             this.outstanding = outstanding;
+            this.currency = currency;
         }
 
         public long getClientId() {
@@ -73,6 +76,10 @@ public class DashboardTopClientsGetLogic {
 
         public BigDecimal getOutstanding() {
             return outstanding;
+        }
+
+        public String getCurrency() {
+            return currency;
         }
     }
 }

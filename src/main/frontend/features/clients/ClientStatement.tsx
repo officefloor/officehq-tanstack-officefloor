@@ -56,9 +56,15 @@ export function ClientStatement({ clientId }: { clientId: number }) {
               {project.invoices.map((invoice) => (
                 <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
                   <td data-testid="statement-invoice-id">{invoice.id}</td>
-                  <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
-                  <td data-testid="statement-invoice-paid">{formatMoney(invoice.paid)}</td>
-                  <td data-testid="statement-invoice-due">{formatMoney(invoice.due)}</td>
+                  <td data-testid="statement-invoice-amount">
+                    {formatMoney(invoice.amount, data.currency)}
+                  </td>
+                  <td data-testid="statement-invoice-paid">
+                    {formatMoney(invoice.paid, data.currency)}
+                  </td>
+                  <td data-testid="statement-invoice-due">
+                    {formatMoney(invoice.due, data.currency)}
+                  </td>
                   <td data-testid="statement-invoice-status">{invoice.status}</td>
                 </tr>
               ))}
@@ -66,14 +72,16 @@ export function ClientStatement({ clientId }: { clientId: number }) {
           </table>
           <p>
             Subtotal:{' '}
-            <strong data-testid="statement-project-subtotal">{formatMoney(project.subtotal)}</strong>
+            <strong data-testid="statement-project-subtotal">
+              {formatMoney(project.subtotal, data.currency)}
+            </strong>
           </p>
         </div>
       ))}
       <p>
         Total owed:{' '}
         <strong data-testid="client-outstanding-total">
-          {formatMoney(data.outstandingTotal)}
+          {formatMoney(data.outstandingTotal, data.currency)}
         </strong>
       </p>
       </section>
@@ -81,7 +89,7 @@ export function ClientStatement({ clientId }: { clientId: number }) {
         <p className="statement-grand-total-line">
           Grand total owed:{' '}
           <strong data-testid="statement-grand-total">
-            {formatMoney(data.outstandingTotal)}
+            {formatMoney(data.outstandingTotal, data.currency)}
           </strong>
         </p>
       </footer>

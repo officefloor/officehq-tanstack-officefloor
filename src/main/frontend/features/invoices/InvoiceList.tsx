@@ -22,6 +22,8 @@ export function InvoiceList({ projectId }: { projectId: number }) {
   }
 
   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+  // Every invoice here belongs to the one project — and so to one client billed in one currency.
+  const currency = invoices[0]?.currency ?? 'USD';
 
   return (
     <>
@@ -40,7 +42,7 @@ export function InvoiceList({ projectId }: { projectId: number }) {
       <tbody>
         {invoices.map((invoice) => (
           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-            <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
+            <td data-testid="invoice-amount">{formatMoney(invoice.amount, invoice.currency)}</td>
             <td data-testid="invoice-issued">{invoice.issuedDate}</td>
             <td data-testid="invoice-due">{invoice.dueDate}</td>
             <td>
@@ -71,7 +73,7 @@ export function InvoiceList({ projectId }: { projectId: number }) {
       </tbody>
       <tfoot>
         <tr>
-          <td data-testid="project-invoices-total">{formatMoney(total)}</td>
+          <td data-testid="project-invoices-total">{formatMoney(total, currency)}</td>
         </tr>
       </tfoot>
     </table>

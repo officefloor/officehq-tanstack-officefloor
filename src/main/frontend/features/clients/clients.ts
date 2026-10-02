@@ -3,7 +3,13 @@ import { getJson, postJson } from '../../api/http';
 
 // The shape the server returns and the query key everything that shows clients shares. Two features
 // stay in step by invalidating ['clients']; nothing imports a sibling to refresh it.
-export type Client = { id: number; name: string; email: string; archived: boolean };
+export type Client = {
+  id: number;
+  name: string;
+  email: string;
+  archived: boolean;
+  currency: string;
+};
 
 export const clientsKey = ['clients'] as const;
 
@@ -33,6 +39,24 @@ export function useUpdateClient() {
     mutationFn: (input: { id: number; name: string; email: string }) =>
       postJson<Client>('/api/clients/update', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: clientsKey }),
+  });
+}
+
+// Set the currency a client is billed in: POSTs {id, currency} and returns the saved row. The server
+// (ClientsCurrencyLogic) records the change to the audit file. Changing a client's currency changes
+// how their money reads everywhere, so this invalidates ['clients'] (the detail panel, the list),
+// ['invoices'] (their project invoices) and ['dashboard'] (the per-currency outstanding totals and
+// the top clients list) — each re-reads under its shared key with no hand-maintained copy (rule 5).
+export function useSetClientCurrency() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: number; currency: string }) =>
+      postJson<Client>('/api/clients/currency', input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: clientsKey });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
   });
 }
 
