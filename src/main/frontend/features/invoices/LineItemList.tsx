@@ -1,6 +1,7 @@
 import { formatMoney } from '../../ui/money';
 import { InvoiceLineItemRow } from '../../slots/defs/invoiceLineItemRow';
 import { useLineItems } from './lineItems';
+import { useInvoiceSummary } from './invoiceSummary';
 
 // An invoice's line items and what they add up to. Reads its own query key (scoped to the invoice)
 // and derives the invoice amount from the rows — the total is never stored on the client, so it
@@ -9,15 +10,20 @@ import { useLineItems } from './lineItems';
 // yet still shows the region (and a $0.00 total) ready for the first line to be added.
 export function LineItemList({ invoiceId }: { invoiceId: number }) {
   const { data: lineItems } = useLineItems(invoiceId);
+  const { data: summary } = useInvoiceSummary(invoiceId);
 
   if (!lineItems) {
     return null;
   }
 
-  const total = lineItems.reduce(
+  // The lines sum to the subtotal; the invoice's amount is that less any discount, worked out on the
+  // server (see the summary panel). Fall back to the subtotal while the summary loads — an invoice
+  // with no discount bills its full subtotal.
+  const subtotal = lineItems.reduce(
     (sum, line) => sum + Number(line.qty) * Number(line.unitPrice),
     0,
   );
+  const total = summary ? Number(summary.total) : subtotal;
 
   return (
     <table data-testid="invoice-lineitems-table">

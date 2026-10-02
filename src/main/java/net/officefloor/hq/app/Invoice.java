@@ -27,6 +27,14 @@ public class Invoice {
 
     private BigDecimal amount;
 
+    /**
+     * Percentage taken off the subtotal as a discount (Flyway V27), 0-100. Defaults to zero, so an
+     * invoice with no discount set bills its full subtotal. The final total is worked out from this
+     * and the amount on the server (see {@link InvoiceSummaryGetLogic}), never typed.
+     */
+    @Column(name = "discount_pct")
+    private BigDecimal discountPct = BigDecimal.ZERO;
+
     /** Lifecycle status: DRAFT (default, matching Flyway V9) -> SENT (once sent) -> PAID (once paid). */
     private String status = "DRAFT";
 
@@ -68,6 +76,14 @@ public class Invoice {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public BigDecimal getDiscountPct() {
+        return discountPct;
+    }
+
+    public void setDiscountPct(BigDecimal discountPct) {
+        this.discountPct = discountPct;
     }
 
     public String getStatus() {

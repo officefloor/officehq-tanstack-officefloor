@@ -161,6 +161,8 @@ public class TestSupportController {
                 // issuedDate/dueDate are optional; fall back to the Flyway V7 column defaults when absent.
                 Object issuedDate = invoice.get("issuedDate");
                 Object dueDate = invoice.get("dueDate");
+                // discountPct is optional; default to 0 (no discount, matching Flyway V27) when absent.
+                Object discountPct = invoice.get("discountPct");
                 // An invoice is built from line items (Flyway V13). Its amount is the worked-out sum
                 // of qty * unitPrice across them (zero when there are none yet) — a fixture no longer
                 // types a figure, it lists what is charged. (An explicit `amount` still wins if a
@@ -180,15 +182,18 @@ public class TestSupportController {
                     amount = new java.math.BigDecimal(invoice.get("amount").toString());
                 }
                 long invoiceId = ((Number) invoice.get("id")).longValue();
-                jdbc.update("INSERT INTO invoices (id, project_id, amount, status, issued_date, due_date)"
+                jdbc.update("INSERT INTO invoices"
+                        + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
                         + " VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_DATE),"
-                        + " COALESCE(?, DATEADD('DAY', 30, CURRENT_DATE)))",
+                        + " COALESCE(?, DATEADD('DAY', 30, CURRENT_DATE)), ?)",
                         invoiceId,
                         ((Number) invoice.get("projectId")).longValue(),
                         amount,
                         status != null ? status.toString() : "UNPAID",
                         issuedDate != null ? java.sql.Date.valueOf(issuedDate.toString()) : null,
-                        dueDate != null ? java.sql.Date.valueOf(dueDate.toString()) : null);
+                        dueDate != null ? java.sql.Date.valueOf(dueDate.toString()) : null,
+                        discountPct != null ? new java.math.BigDecimal(discountPct.toString())
+                                : java.math.BigDecimal.ZERO);
                 if (lineItems != null) {
                     for (Map<String, Object> line : lineItems) {
                         // unit is optional in a fixture; default to "units" (matching Flyway V26).
