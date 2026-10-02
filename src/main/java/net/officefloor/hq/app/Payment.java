@@ -33,13 +33,25 @@ public class Payment {
     @Column(name = "paid_date")
     private LocalDate date;
 
+    /**
+     * Ties together the shares of one lump-sum payment split across several invoices (Flyway V30).
+     * Null for a payment recorded against a single invoice on its own.
+     */
+    @Column(name = "batch_ref")
+    private String batchRef;
+
     public Payment() {
     }
 
     public Payment(Long invoiceId, BigDecimal amount, LocalDate date) {
+        this(invoiceId, amount, date, null);
+    }
+
+    public Payment(Long invoiceId, BigDecimal amount, LocalDate date, String batchRef) {
         this.invoiceId = invoiceId;
         this.amount = amount;
         this.date = date;
+        this.batchRef = batchRef;
     }
 
     public Long getId() {
@@ -72,5 +84,13 @@ public class Payment {
 
     public void setDate(LocalDate date) {
         this.date = date;
+    }
+
+    public String getBatchRef() {
+        return batchRef;
+    }
+
+    public void setBatchRef(String batchRef) {
+        this.batchRef = batchRef;
     }
 }
