@@ -34,7 +34,8 @@ public class ClientStatementGetLogic {
                     // What is owed is the net total after any discount (Flyway V27), worked out the
                     // one-place way (InvoiceMoney) so the statement agrees with the dashboard and the
                     // invoice detail. The due — and the status derived from it — follow that total.
-                    BigDecimal netTotal = InvoiceMoney.netTotal(i.getAmount(), i.getDiscountPct());
+                    BigDecimal netTotal = InvoiceMoney.netTotal(i.getAmount(), i.getDiscountPct(),
+                            i.getTaxPct());
                     BigDecimal due = netTotal.subtract(paid);
                     String status = InvoiceStatus.derive(i.getStatus(), netTotal, paid);
                     return new StatementInvoiceView(i.getId(), i.getProjectId(), netTotal,

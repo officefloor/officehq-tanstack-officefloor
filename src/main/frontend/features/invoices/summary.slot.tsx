@@ -23,6 +23,8 @@ function InvoiceSummary({ invoiceId }: { invoiceId: number }) {
         <dd data-testid="invoice-subtotal">{formatMoney(summary.subtotal)}</dd>
         <dt>Discount ({Number(summary.discountPct)}%)</dt>
         <dd data-testid="invoice-discount">{formatMoney(summary.discount)}</dd>
+        <dt>Tax ({Number(summary.taxPct)}%)</dt>
+        <dd data-testid="invoice-tax">{formatMoney(summary.tax)}</dd>
         <dt>Total</dt>
         <dd data-testid="invoice-total">{formatMoney(summary.total)}</dd>
       </dl>

@@ -35,6 +35,15 @@ public class Invoice {
     @Column(name = "discount_pct")
     private BigDecimal discountPct = BigDecimal.ZERO;
 
+    /**
+     * Percentage sales tax added on top of the net total — the subtotal less any discount (Flyway
+     * V28), 0-100. Defaults to zero, so an invoice with no tax set bills just its net total. The
+     * final amount is worked out from this, the discount and the amount on the server (see
+     * {@link InvoiceMoney}), never typed.
+     */
+    @Column(name = "tax_pct")
+    private BigDecimal taxPct = BigDecimal.ZERO;
+
     /** Lifecycle status: DRAFT (default, matching Flyway V9) -> SENT (once sent) -> PAID (once paid). */
     private String status = "DRAFT";
 
@@ -84,6 +93,14 @@ public class Invoice {
 
     public void setDiscountPct(BigDecimal discountPct) {
         this.discountPct = discountPct;
+    }
+
+    public BigDecimal getTaxPct() {
+        return taxPct;
+    }
+
+    public void setTaxPct(BigDecimal taxPct) {
+        this.taxPct = taxPct;
     }
 
     public String getStatus() {

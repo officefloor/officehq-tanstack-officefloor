@@ -17,7 +17,7 @@ public class DashboardGetLogic {
         // (InvoiceMoney) so the home figure agrees with the invoice detail and the client statement.
         BigDecimal outstanding = invoices.findAll().stream()
                 .filter(i -> "SENT".equals(i.getStatus()))
-                .map(i -> InvoiceMoney.netTotal(i.getAmount(), i.getDiscountPct()))
+                .map(i -> InvoiceMoney.netTotal(i.getAmount(), i.getDiscountPct(), i.getTaxPct()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         response.send(new DashboardView(clients.count(), projects.count(), outstanding));
     }

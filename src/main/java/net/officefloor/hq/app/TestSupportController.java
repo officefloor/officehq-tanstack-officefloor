@@ -163,6 +163,8 @@ public class TestSupportController {
                 Object dueDate = invoice.get("dueDate");
                 // discountPct is optional; default to 0 (no discount, matching Flyway V27) when absent.
                 Object discountPct = invoice.get("discountPct");
+                // taxPct is optional; default to 0 (no tax, matching Flyway V28) when absent.
+                Object taxPct = invoice.get("taxPct");
                 // An invoice is built from line items (Flyway V13). Its amount is the worked-out sum
                 // of qty * unitPrice across them (zero when there are none yet) — a fixture no longer
                 // types a figure, it lists what is charged. (An explicit `amount` still wins if a
@@ -183,9 +185,10 @@ public class TestSupportController {
                 }
                 long invoiceId = ((Number) invoice.get("id")).longValue();
                 jdbc.update("INSERT INTO invoices"
-                        + " (id, project_id, amount, status, issued_date, due_date, discount_pct)"
+                        + " (id, project_id, amount, status, issued_date, due_date, discount_pct,"
+                        + " tax_pct)"
                         + " VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_DATE),"
-                        + " COALESCE(?, DATEADD('DAY', 30, CURRENT_DATE)), ?)",
+                        + " COALESCE(?, DATEADD('DAY', 30, CURRENT_DATE)), ?, ?)",
                         invoiceId,
                         ((Number) invoice.get("projectId")).longValue(),
                         amount,
@@ -193,6 +196,8 @@ public class TestSupportController {
                         issuedDate != null ? java.sql.Date.valueOf(issuedDate.toString()) : null,
                         dueDate != null ? java.sql.Date.valueOf(dueDate.toString()) : null,
                         discountPct != null ? new java.math.BigDecimal(discountPct.toString())
+                                : java.math.BigDecimal.ZERO,
+                        taxPct != null ? new java.math.BigDecimal(taxPct.toString())
                                 : java.math.BigDecimal.ZERO);
                 if (lineItems != null) {
                     for (Map<String, Object> line : lineItems) {

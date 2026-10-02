@@ -17,10 +17,12 @@ public class InvoiceDueGetLogic {
             PaymentRepository payments, ObjectResponse<InvoiceDueView> response) {
         Invoice invoice = invoices.findById(invoiceId).orElse(null);
         BigDecimal subtotal = invoice != null ? invoice.getAmount() : BigDecimal.ZERO;
-        // What is owed is the net total after any discount (Flyway V27), worked out the one-place
-        // way (InvoiceMoney) so the detail figure agrees with the dashboard and the statement.
+        // What is owed is the net total after any discount (Flyway V27) with tax added on top (Flyway
+        // V28), worked out the one-place way (InvoiceMoney) so the detail figure agrees with the
+        // dashboard and the statement.
         BigDecimal amount = InvoiceMoney.netTotal(subtotal,
-                invoice != null ? invoice.getDiscountPct() : null);
+                invoice != null ? invoice.getDiscountPct() : null,
+                invoice != null ? invoice.getTaxPct() : null);
         BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoiceId).stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
