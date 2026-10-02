@@ -2,6 +2,7 @@ import { AllInvoicesToolbar } from '../../slots/defs/allInvoicesToolbar';
 import { useSearchParam, asString } from '../../url/useSearchParam';
 import { formatMoney } from '../../ui/money';
 import { useAllInvoices } from './allInvoices';
+import { INVOICE_PAGE_SIZE, useInvoicePage } from './pagination';
 
 // One place listing every invoice from every project. Reads its own query key and shows, per row,
 // which project the invoice is for and what stage (status) it is at. When the shared `invoiceStatus`
@@ -9,6 +10,7 @@ import { useAllInvoices } from './allInvoices';
 export function AllInvoiceList() {
   const { data: invoices } = useAllInvoices();
   const [status] = useSearchParam('invoiceStatus', asString);
+  const [page] = useInvoicePage();
 
   if (!invoices) {
     return null;
@@ -19,6 +21,9 @@ export function AllInvoiceList() {
   }
 
   const shown = status ? invoices.filter((invoice) => invoice.status === status) : invoices;
+  // One page at a time: the pager owns the `invoicePage` key, we show only that window of rows.
+  const start = (page - 1) * INVOICE_PAGE_SIZE;
+  const pageRows = shown.slice(start, start + INVOICE_PAGE_SIZE);
 
   return (
     <>
@@ -32,7 +37,7 @@ export function AllInvoiceList() {
         </tr>
       </thead>
       <tbody>
-        {shown.map((invoice) => (
+        {pageRows.map((invoice) => (
           <tr key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
             <td data-testid="invoice-project">{invoice.projectName}</td>
             <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
