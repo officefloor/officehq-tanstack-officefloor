@@ -23,28 +23,37 @@ export function ClientStatement({ clientId }: { clientId: number }) {
 
   return (
     <section data-testid="client-statement">
-      <table data-testid="client-statement-table">
-        <thead>
-          <tr>
-            <th>Invoice</th>
-            <th>Amount</th>
-            <th>Paid</th>
-            <th>Due</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.invoices.map((invoice) => (
-            <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
-              <td data-testid="statement-invoice-id">{invoice.id}</td>
-              <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
-              <td data-testid="statement-invoice-paid">{formatMoney(invoice.paid)}</td>
-              <td data-testid="statement-invoice-due">{formatMoney(invoice.due)}</td>
-              <td data-testid="statement-invoice-status">{invoice.status}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {data.projects.map((project) => (
+        <div key={project.projectId} data-testid={`statement-project-${project.projectId}`}>
+          <h3 data-testid="statement-project-name">{project.name}</h3>
+          <table data-testid="client-statement-table">
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Amount</th>
+                <th>Paid</th>
+                <th>Due</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {project.invoices.map((invoice) => (
+                <tr key={invoice.id} data-testid={`statement-invoice-row-${invoice.id}`}>
+                  <td data-testid="statement-invoice-id">{invoice.id}</td>
+                  <td data-testid="statement-invoice-amount">{formatMoney(invoice.amount)}</td>
+                  <td data-testid="statement-invoice-paid">{formatMoney(invoice.paid)}</td>
+                  <td data-testid="statement-invoice-due">{formatMoney(invoice.due)}</td>
+                  <td data-testid="statement-invoice-status">{invoice.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>
+            Subtotal:{' '}
+            <strong data-testid="statement-project-subtotal">{formatMoney(project.subtotal)}</strong>
+          </p>
+        </div>
+      ))}
       <p>
         Total owed:{' '}
         <strong data-testid="client-outstanding-total">

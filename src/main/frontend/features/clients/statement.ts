@@ -13,9 +13,17 @@ export type StatementInvoice = {
   status: string;
 };
 
+export type StatementProject = {
+  projectId: number;
+  name: string;
+  invoices: StatementInvoice[];
+  subtotal: number;
+};
+
 export type ClientStatement = {
   clientId: number;
   invoices: StatementInvoice[];
+  projects: StatementProject[];
   outstandingTotal: number;
 };
 
