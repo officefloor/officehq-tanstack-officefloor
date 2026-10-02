@@ -1,7 +1,6 @@
 package net.officefloor.hq.app;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import org.springframework.web.bind.annotation.RequestParam;
 import net.officefloor.web.ObjectResponse;
 
@@ -23,9 +22,8 @@ public class InvoiceSummaryGetLogic {
                 ? invoice.getDiscountPct()
                 : BigDecimal.ZERO;
         // Discount in money, rounded to whole cents; the final total is the subtotal less that.
-        BigDecimal discount = subtotal.multiply(discountPct)
-                .divide(BigDecimal.valueOf(100))
-                .setScale(2, RoundingMode.HALF_UP);
+        // The same one-place rule the dashboard, statement and due figures use (see InvoiceMoney).
+        BigDecimal discount = InvoiceMoney.discount(subtotal, discountPct);
         BigDecimal total = subtotal.subtract(discount);
         response.send(new InvoiceSummaryView(invoiceId, subtotal, discountPct, discount, total));
     }

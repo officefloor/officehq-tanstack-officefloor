@@ -13,9 +13,11 @@ public class DashboardGetLogic {
 
     public void service(ClientRepository clients, ProjectRepository projects,
             InvoiceRepository invoices, ObjectResponse<DashboardView> response) {
+        // "Owed" is the net total after any discount (Flyway V27), worked out the one-place way
+        // (InvoiceMoney) so the home figure agrees with the invoice detail and the client statement.
         BigDecimal outstanding = invoices.findAll().stream()
                 .filter(i -> "SENT".equals(i.getStatus()))
-                .map(Invoice::getAmount)
+                .map(i -> InvoiceMoney.netTotal(i.getAmount(), i.getDiscountPct()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         response.send(new DashboardView(clients.count(), projects.count(), outstanding));
     }

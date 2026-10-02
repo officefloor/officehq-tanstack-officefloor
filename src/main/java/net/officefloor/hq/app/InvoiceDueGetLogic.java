@@ -16,12 +16,17 @@ public class InvoiceDueGetLogic {
     public void service(@RequestParam("invoiceId") Long invoiceId, InvoiceRepository invoices,
             PaymentRepository payments, ObjectResponse<InvoiceDueView> response) {
         Invoice invoice = invoices.findById(invoiceId).orElse(null);
-        BigDecimal amount = invoice != null ? invoice.getAmount() : BigDecimal.ZERO;
+        BigDecimal subtotal = invoice != null ? invoice.getAmount() : BigDecimal.ZERO;
+        // What is owed is the net total after any discount (Flyway V27), worked out the one-place
+        // way (InvoiceMoney) so the detail figure agrees with the dashboard and the statement.
+        BigDecimal amount = InvoiceMoney.netTotal(subtotal,
+                invoice != null ? invoice.getDiscountPct() : null);
         BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoiceId).stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         // The status is worked out from the payments too (see InvoiceStatus), so the detail page
-        // reads the same one-place rule as the list — no hand-set paid flag.
+        // reads the same one-place rule as the list — no hand-set paid flag. It compares against the
+        // discounted total, so an invoice is PAID once the payments cover what is actually owed.
         String status = InvoiceStatus.derive(invoice != null ? invoice.getStatus() : null, amount,
                 paid);
         response.send(new InvoiceDueView(invoiceId, amount, paid, amount.subtract(paid), status));
