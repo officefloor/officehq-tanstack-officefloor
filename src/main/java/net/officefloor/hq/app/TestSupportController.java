@@ -130,7 +130,7 @@ public class TestSupportController {
                         id, note.get("targetType"),
                         ((Number) note.get("targetId")).longValue(), note.get("text"),
                         java.time.OffsetDateTime.ofInstant(
-                                java.time.Instant.parse(note.get("at").toString()),
+                                parseInstant(note.get("at").toString()),
                                 java.time.ZoneOffset.UTC));
             }
             // Explicit-id inserts don't advance H2's IDENTITY counter, so a later JPA save() would
@@ -237,6 +237,20 @@ public class TestSupportController {
             if (maxId > 0) {
                 jdbc.execute("ALTER TABLE payments ALTER COLUMN id RESTART WITH " + (maxId + 1));
             }
+        }
+    }
+
+    /**
+     * Parse a fixture's `at` value to an instant. A full ISO instant ("2026-01-05T09:00:00Z") is
+     * used as-is; a date-only value ("2026-02-01") is taken at the start of that day in UTC, so a
+     * spec can stamp a note with just a date.
+     */
+    private static java.time.Instant parseInstant(String at) {
+        try {
+            return java.time.Instant.parse(at);
+        } catch (java.time.format.DateTimeParseException dateOnly) {
+            return java.time.LocalDate.parse(at)
+                    .atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
         }
     }
 }
