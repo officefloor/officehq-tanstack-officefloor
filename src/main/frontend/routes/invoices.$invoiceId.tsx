@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { LineItemForm } from '../features/invoices/LineItemForm';
 import { LineItemList } from '../features/invoices/LineItemList';
+import { InvoiceDetail } from '../slots/defs/invoiceDetail';
 
 // Drilling into an invoice is its own route — a new file, not a flag on the list (CLAUDE.md rule 2).
 // The detail page lists the invoice's line items (what is being charged for), their worked-out
@@ -19,6 +20,7 @@ function InvoiceDetailPage() {
       <h1>Invoice</h1>
       <LineItemList invoiceId={id} />
       <LineItemForm invoiceId={id} />
+      <InvoiceDetail.Slot invoiceId={id} />
     </section>
   );
 }

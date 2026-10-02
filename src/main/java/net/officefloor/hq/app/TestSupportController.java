@@ -39,6 +39,7 @@ public class TestSupportController {
         jdbc.execute("TRUNCATE TABLE tags RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE notes RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE tasks RESTART IDENTITY");
+        jdbc.execute("TRUNCATE TABLE payments RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoice_line_items RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE invoices RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE contacts RESTART IDENTITY");
@@ -174,6 +175,26 @@ public class TestSupportController {
                                 new java.math.BigDecimal(line.get("unitPrice").toString()));
                     }
                 }
+            }
+        }
+        List<Map<String, Object>> payments = (List<Map<String, Object>>) fixture.get("payments");
+        if (payments != null) {
+            long maxId = 0;
+            for (Map<String, Object> payment : payments) {
+                long id = ((Number) payment.get("id")).longValue();
+                maxId = Math.max(maxId, id);
+                // Explicit fixture id (JPA save() would ignore it on an IDENTITY column).
+                jdbc.update("INSERT INTO payments (id, invoice_id, amount, paid_date)"
+                        + " VALUES (?, ?, ?, ?)",
+                        id,
+                        ((Number) payment.get("invoiceId")).longValue(),
+                        new java.math.BigDecimal(payment.get("amount").toString()),
+                        java.sql.Date.valueOf(payment.get("date").toString()));
+            }
+            // Explicit-id inserts don't advance H2's IDENTITY counter, so a later JPA save() would
+            // regenerate a seeded id and collide. Restart the counter past the seeded ids.
+            if (maxId > 0) {
+                jdbc.execute("ALTER TABLE payments ALTER COLUMN id RESTART WITH " + (maxId + 1));
             }
         }
     }
