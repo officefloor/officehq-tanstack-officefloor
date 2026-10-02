@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Dashboard } from '../features/dashboard/Dashboard';
+import { DashboardSummary } from '../slots/defs/dashboardSummary';
 
 // The Dashboard page: one new file under routes/. The route table is generated from this directory.
 export const Route = createFileRoute('/dashboard')({
@@ -11,6 +12,7 @@ function DashboardPage() {
     <section data-testid="dashboard-page">
       <h1>Dashboard</h1>
       <Dashboard />
+      <DashboardSummary.Slot />
     </section>
   );
 }

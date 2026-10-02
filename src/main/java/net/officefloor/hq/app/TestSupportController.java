@@ -46,12 +46,22 @@ public class TestSupportController {
         jdbc.execute("TRUNCATE TABLE projects RESTART IDENTITY");
         jdbc.execute("TRUNCATE TABLE clients RESTART IDENTITY");
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
+        // The dashboard's fixed "as of" reference date (Flyway V23) — nothing references it, so a
+        // plain truncate clears the single row each spec seeds.
+        jdbc.execute("TRUNCATE TABLE app_clock");
     }
 
     /** Insert the fixture a spec needs; the payload shape evolves with the schema. */
     @PostMapping("/seed")
     @SuppressWarnings("unchecked")
     public void seed(@RequestBody Map<String, Object> fixture) {
+        // asOf is the fixed reference date the dashboard measures "overdue" against (Flyway V23). A
+        // spec seeds one so the overdue count is deterministic; stored as the single app_clock row.
+        Object asOf = fixture.get("asOf");
+        if (asOf != null) {
+            jdbc.update("INSERT INTO app_clock (id, as_of) VALUES (1, ?)",
+                    java.sql.Date.valueOf(asOf.toString()));
+        }
         List<Map<String, Object>> clients = (List<Map<String, Object>>) fixture.get("clients");
         if (clients != null) {
             for (Map<String, Object> client : clients) {
