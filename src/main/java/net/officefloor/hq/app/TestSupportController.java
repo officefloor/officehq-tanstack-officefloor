@@ -68,12 +68,15 @@ public class TestSupportController {
                 Object status = project.get("status");
                 // archived is optional; default to false (matching Flyway V15) when absent.
                 Object archived = project.get("archived");
-                jdbc.update("INSERT INTO projects (id, name, client_id, status, archived)"
-                        + " VALUES (?, ?, ?, ?, ?)",
+                // budget is optional; a project without one has no budget set (NULL, Flyway V22).
+                Object budget = project.get("budget");
+                jdbc.update("INSERT INTO projects (id, name, client_id, status, archived, budget)"
+                        + " VALUES (?, ?, ?, ?, ?, ?)",
                         ((Number) project.get("id")).longValue(), project.get("name"),
                         ((Number) project.get("clientId")).longValue(),
                         status != null ? status.toString() : "ACTIVE",
-                        archived != null && Boolean.parseBoolean(archived.toString()));
+                        archived != null && Boolean.parseBoolean(archived.toString()),
+                        budget != null ? new java.math.BigDecimal(budget.toString()) : null);
             }
         }
         List<Map<String, Object>> contacts = (List<Map<String, Object>>) fixture.get("contacts");

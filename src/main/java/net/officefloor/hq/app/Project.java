@@ -1,5 +1,6 @@
 package net.officefloor.hq.app;
 
+import java.math.BigDecimal;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -30,6 +31,10 @@ public class Project {
 
     // Lifecycle status: ACTIVE, ON_HOLD or FINISHED. Defaults to ACTIVE (Flyway V21).
     private String status = "ACTIVE";
+
+    // The agreed spend for this project, against which invoiced-so-far is measured. Nullable: a
+    // project may have no budget set (Flyway V22).
+    private BigDecimal budget;
 
     public Project() {
     }
@@ -77,5 +82,13 @@ public class Project {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public BigDecimal getBudget() {
+        return budget;
+    }
+
+    public void setBudget(BigDecimal budget) {
+        this.budget = budget;
     }
 }
