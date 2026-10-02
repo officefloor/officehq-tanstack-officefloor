@@ -35,8 +35,20 @@ public class ProjectsPostLogic {
         if (!STATUSES.contains(status)) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "An unknown project status");
         }
+        // A reference code is set at creation and must be unique across projects (Flyway V29): a
+        // blank code, or one already in use by another project, is rejected with 400 before saving
+        // (the DB UNIQUE constraint is the matching last line of defence).
+        String code = newProject.getCode();
+        if (code == null || code.trim().isEmpty()) {
+            throw new HttpException(HttpStatus.BAD_REQUEST, "A project code is required");
+        }
+        String normalisedCode = code.trim();
+        if (projects.existsByCode(normalisedCode)) {
+            throw new HttpException(HttpStatus.BAD_REQUEST, "That project code is already in use");
+        }
         Project project = new Project(name.trim(), clientId);
         project.setStatus(status);
+        project.setCode(normalisedCode);
         Project saved = projects.save(project);
         response.send(saved);
     }
@@ -46,6 +58,7 @@ public class ProjectsPostLogic {
         private String name;
         private Long clientId;
         private String status;
+        private String code;
 
         public String getName() {
             return name;
@@ -69,6 +82,14 @@ public class ProjectsPostLogic {
 
         public void setStatus(String status) {
             this.status = status;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String code) {
+            this.code = code;
         }
     }
 }

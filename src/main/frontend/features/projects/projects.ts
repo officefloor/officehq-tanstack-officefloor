@@ -14,6 +14,7 @@ export type Project = {
   archived: boolean;
   status: ProjectStatus;
   tagIds: number[];
+  code: string | null;
 };
 
 export const projectsKey = ['projects'] as const;
@@ -28,7 +29,7 @@ export function useProjects() {
 export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; clientId: number; status: ProjectStatus }) =>
+    mutationFn: (input: { name: string; clientId: number; status: ProjectStatus; code: string }) =>
       postJson<Project>('/api/projects', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectsKey }),
   });

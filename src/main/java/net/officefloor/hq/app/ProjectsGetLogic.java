@@ -23,7 +23,7 @@ public class ProjectsGetLogic {
         List<ProjectView> views = projects.findAll().stream()
                 .map(p -> new ProjectView(p.getId(), p.getName(), p.getClientId(),
                         nameByClient.get(p.getClientId()), p.isArchived(), p.getStatus(),
-                        tagsByProject.getOrDefault(p.getId(), new ArrayList<>())))
+                        tagsByProject.getOrDefault(p.getId(), new ArrayList<>()), p.getCode()))
                 .collect(Collectors.toList());
         response.send(views);
     }
@@ -37,9 +37,10 @@ public class ProjectsGetLogic {
         private final boolean archived;
         private final String status;
         private final List<Long> tagIds;
+        private final String code;
 
         public ProjectView(Long id, String name, Long clientId, String clientName,
-                boolean archived, String status, List<Long> tagIds) {
+                boolean archived, String status, List<Long> tagIds, String code) {
             this.id = id;
             this.name = name;
             this.clientId = clientId;
@@ -47,6 +48,7 @@ public class ProjectsGetLogic {
             this.archived = archived;
             this.status = status;
             this.tagIds = tagIds;
+            this.code = code;
         }
 
         public Long getId() {
@@ -75,6 +77,10 @@ public class ProjectsGetLogic {
 
         public List<Long> getTagIds() {
             return tagIds;
+        }
+
+        public String getCode() {
+            return code;
         }
     }
 }

@@ -36,6 +36,9 @@ public class Project {
     // project may have no budget set (Flyway V22).
     private BigDecimal budget;
 
+    // A short reference code set when the job is created, unique across projects (Flyway V29).
+    private String code;
+
     public Project() {
     }
 
@@ -90,5 +93,13 @@ public class Project {
 
     public void setBudget(BigDecimal budget) {
         this.budget = budget;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
     }
 }
