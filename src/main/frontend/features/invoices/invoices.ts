@@ -44,14 +44,3 @@ export function useSendInvoice(projectId: number) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) }),
   });
 }
-
-// Mark an invoice paid: POSTs {id} and invalidates ['invoices', projectId] so the list reflects the
-// new status from the server. The server also keeps an audit record of every payment.
-export function usePayInvoice(projectId: number) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { id: number }) =>
-      postJson<Invoice>('/api/invoices/pay', { id: input.id }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: invoicesKey(projectId) }),
-  });
-}

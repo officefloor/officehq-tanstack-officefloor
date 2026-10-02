@@ -15,26 +15,36 @@ public class InvoiceDueGetLogic {
 
     public void service(@RequestParam("invoiceId") Long invoiceId, InvoiceRepository invoices,
             PaymentRepository payments, ObjectResponse<InvoiceDueView> response) {
-        BigDecimal amount = invoices.findById(invoiceId).map(Invoice::getAmount)
-                .orElse(BigDecimal.ZERO);
+        Invoice invoice = invoices.findById(invoiceId).orElse(null);
+        BigDecimal amount = invoice != null ? invoice.getAmount() : BigDecimal.ZERO;
         BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(invoiceId).stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        response.send(new InvoiceDueView(invoiceId, amount, paid, amount.subtract(paid)));
+        // The status is worked out from the payments too (see InvoiceStatus), so the detail page
+        // reads the same one-place rule as the list — no hand-set paid flag.
+        String status = InvoiceStatus.derive(invoice != null ? invoice.getStatus() : null, amount,
+                paid);
+        response.send(new InvoiceDueView(invoiceId, amount, paid, amount.subtract(paid), status));
     }
 
-    /** What is left to pay on one invoice: its amount, what has been paid, and the difference. */
+    /**
+     * What is left to pay on one invoice: its amount, what has been paid, the difference, and the
+     * status worked out from the payments (SENT / PARTIAL / PAID).
+     */
     public static class InvoiceDueView {
         private final long invoiceId;
         private final BigDecimal amount;
         private final BigDecimal paid;
         private final BigDecimal due;
+        private final String status;
 
-        public InvoiceDueView(long invoiceId, BigDecimal amount, BigDecimal paid, BigDecimal due) {
+        public InvoiceDueView(long invoiceId, BigDecimal amount, BigDecimal paid, BigDecimal due,
+                String status) {
             this.invoiceId = invoiceId;
             this.amount = amount;
             this.paid = paid;
             this.due = due;
+            this.status = status;
         }
 
         public long getInvoiceId() {
@@ -51,6 +61,10 @@ public class InvoiceDueGetLogic {
 
         public BigDecimal getDue() {
             return due;
+        }
+
+        public String getStatus() {
+            return status;
         }
     }
 }

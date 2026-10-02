@@ -10,6 +10,8 @@ export type InvoiceDue = {
   amount: number;
   paid: number;
   due: number;
+  // Worked out from the payments on the server (SENT / PARTIAL / PAID), not a hand-set flag.
+  status: string;
 };
 
 export const invoiceDueKey = (invoiceId: number) => ['invoices', 'due', invoiceId] as const;

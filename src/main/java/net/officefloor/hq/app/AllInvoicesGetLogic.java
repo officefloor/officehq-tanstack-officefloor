@@ -16,13 +16,18 @@ import net.officefloor.web.ObjectResponse;
 public class AllInvoicesGetLogic {
 
     public void service(InvoiceRepository invoices, ProjectRepository projects,
-            ObjectResponse<List<InvoiceView>> response) {
+            PaymentRepository payments, ObjectResponse<List<InvoiceView>> response) {
         Map<Long, String> nameByProject = projects.findAll().stream()
                 .collect(Collectors.toMap(Project::getId, Project::getName));
         List<InvoiceView> views = invoices.findAll().stream()
                 .sorted(Comparator.comparing(Invoice::getId))
-                .map(i -> new InvoiceView(i.getId(), i.getProjectId(),
-                        nameByProject.get(i.getProjectId()), i.getAmount(), i.getStatus()))
+                .map(i -> {
+                    BigDecimal paid = payments.findByInvoiceIdOrderByIdAsc(i.getId()).stream()
+                            .map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    String status = InvoiceStatus.derive(i.getStatus(), i.getAmount(), paid);
+                    return new InvoiceView(i.getId(), i.getProjectId(),
+                            nameByProject.get(i.getProjectId()), i.getAmount(), status);
+                })
                 .collect(Collectors.toList());
         response.send(views);
     }
