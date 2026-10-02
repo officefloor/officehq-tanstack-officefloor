@@ -2,7 +2,9 @@ import { Link } from '@tanstack/react-router';
 import { ClientRow } from '../../slots/defs/clientRow';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientSearch } from './ClientSearch';
+import { ClientSort } from './ClientSort';
 import { useClients } from './clients';
+import { useClientOutstanding } from './outstanding';
 
 // The clients list. Reads server data straight from its query key — never copied into state, never
 // handed down from a parent. The name filter lives in the URL (`clientSearch`), read directly here;
@@ -10,7 +12,9 @@ import { useClients } from './clients';
 // Archived clients are tucked away: they drop off the list and search but are retained server-side.
 export function ClientList() {
   const { data: clients } = useClients();
+  const { data: outstanding } = useClientOutstanding();
   const [query] = useSearchParam('clientSearch', asString);
+  const [sort] = useSearchParam('clientSort', asString);
 
   if (!clients) {
     return null;
@@ -20,6 +24,7 @@ export function ClientList() {
     return (
       <>
         <ClientSearch />
+        <ClientSort />
         <p data-testid="clients-empty">No clients yet.</p>
       </>
     );
@@ -27,13 +32,23 @@ export function ClientList() {
 
   const active = clients.filter((client) => !client.archived);
   const needle = query.trim().toLowerCase();
-  const visible = needle
+  const filtered = needle
     ? active.filter((client) => client.name.toLowerCase().includes(needle))
     : active;
+
+  // Sort by how much each client owes (most first) when asked; otherwise by name. The owed figures
+  // come from the shared outstanding query; a client with no figure yet sorts as owing nothing.
+  const owed = new Map((outstanding ?? []).map((o) => [o.clientId, o.outstanding]));
+  const visible = [...filtered].sort((a, b) =>
+    sort === 'outstanding'
+      ? (owed.get(b.id) ?? 0) - (owed.get(a.id) ?? 0)
+      : a.name.localeCompare(b.name),
+  );
 
   return (
     <>
       <ClientSearch />
+      <ClientSort />
       <table data-testid="clients-table">
       <thead>
         <tr>
