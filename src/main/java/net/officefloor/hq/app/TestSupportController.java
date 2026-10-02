@@ -92,11 +92,14 @@ public class TestSupportController {
         List<Map<String, Object>> contacts = (List<Map<String, Object>>) fixture.get("contacts");
         if (contacts != null) {
             for (Map<String, Object> contact : contacts) {
-                jdbc.update("INSERT INTO contacts (id, client_id, name, email, contact_role)"
-                        + " VALUES (?, ?, ?, ?, ?)",
+                // primary is optional; default to false (not the main contact, matching Flyway V24).
+                Object primary = contact.get("primary");
+                jdbc.update("INSERT INTO contacts (id, client_id, name, email, contact_role, is_primary)"
+                        + " VALUES (?, ?, ?, ?, ?, ?)",
                         ((Number) contact.get("id")).longValue(),
                         ((Number) contact.get("clientId")).longValue(), contact.get("name"),
-                        contact.get("email"), contact.get("role"));
+                        contact.get("email"), contact.get("role"),
+                        primary != null && Boolean.parseBoolean(primary.toString()));
             }
         }
         List<Map<String, Object>> tasks = (List<Map<String, Object>>) fixture.get("tasks");

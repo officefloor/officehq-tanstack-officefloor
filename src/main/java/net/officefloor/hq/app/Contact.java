@@ -31,6 +31,10 @@ public class Contact {
     @Column(name = "contact_role")
     private String role;
 
+    /** Whether this contact is the client's one main (primary) contact. Maps to is_primary (V24). */
+    @Column(name = "is_primary")
+    private boolean primary;
+
     public Contact() {
     }
 
@@ -79,5 +83,13 @@ public class Contact {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public boolean isPrimary() {
+        return primary;
+    }
+
+    public void setPrimary(boolean primary) {
+        this.primary = primary;
     }
 }
