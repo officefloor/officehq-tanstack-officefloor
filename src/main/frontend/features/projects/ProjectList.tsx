@@ -22,7 +22,7 @@ export function ProjectList() {
   }
 
   if (projects.length === 0) {
-    return <p data-testid="projects-empty">No projects yet.</p>;
+    return <p data-testid="projects-empty">No jobs yet.</p>;
   }
 
   const tagId = tagFilter === '' ? undefined : Number(tagFilter);

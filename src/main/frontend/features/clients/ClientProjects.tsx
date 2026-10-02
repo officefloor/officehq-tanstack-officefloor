@@ -46,10 +46,10 @@ export function ClientProjects({ clientId }: { clientId: number }) {
         aria-pressed={showAll}
         onClick={() => setShowAll(showAll ? undefined : true)}
       >
-        {showAll ? 'Show active only' : 'Show all projects'}
+        {showAll ? 'Show active only' : 'Show all jobs'}
       </button>
       {owned.length === 0 ? (
-        <p data-testid="client-projects-empty">No projects for this client yet.</p>
+        <p data-testid="client-projects-empty">No jobs for this client yet.</p>
       ) : (
         // Reuse the project-row-<id>/project-name anchors inside the client-context table.
         <table data-testid="client-projects-table">

@@ -60,7 +60,7 @@ export function ProjectForm() {
         <option value="FINISHED">Finished</option>
       </select>
       <button data-testid="project-form-submit" type="submit">
-        Add project
+        Add job
       </button>
     </form>
   );

@@ -17,7 +17,7 @@ function ProjectDetailPage() {
 
   return (
     <section data-testid="project-detail-page">
-      <h1>Project</h1>
+      <h1>Job</h1>
       <ProjectDetail.Slot projectId={id} />
       <InvoiceForm projectId={id} />
       <InvoiceList projectId={id} />

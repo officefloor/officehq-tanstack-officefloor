@@ -23,7 +23,7 @@ export function GlobalSearch() {
       <input
         data-testid="global-search"
         type="search"
-        placeholder="Search clients and projects"
+        placeholder="Search clients and jobs"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
@@ -52,7 +52,7 @@ export function GlobalSearch() {
       <table data-testid="search-projects">
         <thead>
           <tr>
-            <th>Project</th>
+            <th>Job</th>
             <th>Client</th>
           </tr>
         </thead>
