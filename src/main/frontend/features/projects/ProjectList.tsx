@@ -13,6 +13,9 @@ export function ProjectList() {
   // Shared with the tag-filter toolbar control via the `projectTag` key (no import). When set, keep
   // only projects carrying that tag; empty shows every tag.
   const [tagFilter] = useSearchParam('projectTag', asString);
+  // Shared with the status-filter toolbar control via the `projectStatus` key (no import). When set,
+  // keep only projects at that lifecycle status; empty shows every status.
+  const [statusFilter] = useSearchParam('projectStatus', asString);
 
   if (!projects) {
     return null;
@@ -25,7 +28,8 @@ export function ProjectList() {
   const tagId = tagFilter === '' ? undefined : Number(tagFilter);
   const shown = projects
     .filter((project) => showArchived || !project.archived)
-    .filter((project) => tagId === undefined || project.tagIds.includes(tagId));
+    .filter((project) => tagId === undefined || project.tagIds.includes(tagId))
+    .filter((project) => statusFilter === '' || project.status === statusFilter);
 
   return (
     <>
