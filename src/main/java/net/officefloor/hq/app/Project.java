@@ -28,6 +28,9 @@ public class Project {
     // Archived projects are tucked away: kept in the table but dropped off the lists (Flyway V15).
     private boolean archived;
 
+    // Lifecycle status: ACTIVE, ON_HOLD or FINISHED. Defaults to ACTIVE (Flyway V21).
+    private String status = "ACTIVE";
+
     public Project() {
     }
 
@@ -66,5 +69,13 @@ public class Project {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }

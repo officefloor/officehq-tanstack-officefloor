@@ -3,12 +3,16 @@ import { getJson, postJson } from '../../api/http';
 
 // The shape the server returns (a project joined to its client's name) and the query key everything
 // that shows projects shares. Invalidating ['projects'] refreshes every view of projects.
+// The lifecycle statuses a project can be marked with — shown on its row.
+export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'FINISHED';
+
 export type Project = {
   id: number;
   name: string;
   clientId: number;
   clientName: string;
   archived: boolean;
+  status: ProjectStatus;
   tagIds: number[];
 };
 
@@ -24,7 +28,7 @@ export function useProjects() {
 export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; clientId: number }) =>
+    mutationFn: (input: { name: string; clientId: number; status: ProjectStatus }) =>
       postJson<Project>('/api/projects', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectsKey }),
   });

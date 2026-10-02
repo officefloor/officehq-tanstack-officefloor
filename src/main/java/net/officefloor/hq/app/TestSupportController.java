@@ -64,9 +64,12 @@ public class TestSupportController {
         List<Map<String, Object>> projects = (List<Map<String, Object>>) fixture.get("projects");
         if (projects != null) {
             for (Map<String, Object> project : projects) {
-                jdbc.update("INSERT INTO projects (id, name, client_id) VALUES (?, ?, ?)",
+                // status is optional in a fixture; default to ACTIVE (matching Flyway V21) when absent.
+                Object status = project.get("status");
+                jdbc.update("INSERT INTO projects (id, name, client_id, status) VALUES (?, ?, ?, ?)",
                         ((Number) project.get("id")).longValue(), project.get("name"),
-                        ((Number) project.get("clientId")).longValue());
+                        ((Number) project.get("clientId")).longValue(),
+                        status != null ? status.toString() : "ACTIVE");
             }
         }
         List<Map<String, Object>> contacts = (List<Map<String, Object>>) fixture.get("contacts");

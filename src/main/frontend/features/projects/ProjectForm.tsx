@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { useClientOptions, useCreateProject } from './projects';
+import { useClientOptions, useCreateProject, type ProjectStatus } from './projects';
 
-// Add-a-project form. useState holds only what the user is currently entering: the name and the
-// chosen client id. On submit it POSTs {name, clientId} and invalidates the ['projects'] key. The
-// client select's option values are client ids (what the test selects by).
+// Add-a-project form. useState holds only what the user is currently entering: the name, the chosen
+// client id, and the lifecycle status to start the project in. On submit it POSTs
+// {name, clientId, status} and invalidates the ['projects'] key. The client select's option values
+// are client ids and the status select's values are the status codes (what the test selects by).
 export function ProjectForm() {
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
+  const [status, setStatus] = useState<ProjectStatus>('ACTIVE');
   const { data: clients } = useClientOptions();
   const create = useCreateProject();
 
@@ -19,11 +21,12 @@ export function ProjectForm() {
           return;
         }
         create.mutate(
-          { name, clientId: Number(clientId) },
+          { name, clientId: Number(clientId), status },
           {
             onSuccess: () => {
               setName('');
               setClientId('');
+              setStatus('ACTIVE');
             },
           },
         );
@@ -46,6 +49,15 @@ export function ProjectForm() {
             {client.name}
           </option>
         ))}
+      </select>
+      <select
+        data-testid="project-form-status"
+        value={status}
+        onChange={(event) => setStatus(event.target.value as ProjectStatus)}
+      >
+        <option value="ACTIVE">Active</option>
+        <option value="ON_HOLD">On hold</option>
+        <option value="FINISHED">Finished</option>
       </select>
       <button data-testid="project-form-submit" type="submit">
         Add project
