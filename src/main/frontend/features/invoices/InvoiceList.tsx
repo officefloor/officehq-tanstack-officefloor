@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { InvoiceListToolbar } from '../../slots/defs/invoiceListToolbar';
+import { InvoiceRow } from '../../slots/defs/invoiceRow';
 import { useSearchParam, asString } from '../../url/useSearchParam';
 import { formatMoney } from '../../ui/money';
 import { useInvoices, usePayInvoice, useSendInvoice } from './invoices';
@@ -31,6 +32,7 @@ export function InvoiceList({ projectId }: { projectId: number }) {
           <th>Amount</th>
           <th>Issued</th>
           <th>Due</th>
+          <th>Left to pay</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -41,6 +43,9 @@ export function InvoiceList({ projectId }: { projectId: number }) {
             <td data-testid="invoice-amount">{formatMoney(invoice.amount)}</td>
             <td data-testid="invoice-issued">{invoice.issuedDate}</td>
             <td data-testid="invoice-due">{invoice.dueDate}</td>
+            <td>
+              <InvoiceRow.Slot invoice={invoice} />
+            </td>
             <td data-testid="invoice-status">{invoice.status}</td>
             <td>
               <Link
