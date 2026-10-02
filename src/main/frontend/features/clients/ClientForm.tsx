@@ -4,11 +4,13 @@ import { useCreateClient } from './clients';
 
 // Add-a-client form. useState holds only what the user is currently typing; on submit it validates
 // the email, and only a proper address POSTs and invalidates the ['clients'] key. A blank or
-// malformed email surfaces client-form-email-error and never creates a row.
+// malformed email surfaces client-form-email-error and never creates a row. A well-formed email that
+// is already in use is rejected by the server (ClientsPostLogic): the mutation errors and the same
+// client-form-email-error is shown, so no duplicate row is added.
 export function ClientForm() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const create = useCreateClient();
 
   return (
@@ -17,10 +19,10 @@ export function ClientForm() {
       onSubmit={(event) => {
         event.preventDefault();
         if (!isValidEmail(email)) {
-          setEmailError(true);
+          setEmailError('Enter a valid email address.');
           return;
         }
-        setEmailError(false);
+        setEmailError(null);
         create.mutate(
           { name, email },
           {
@@ -28,6 +30,7 @@ export function ClientForm() {
               setName('');
               setEmail('');
             },
+            onError: () => setEmailError('That email is already in use.'),
           },
         );
       }}
@@ -45,13 +48,13 @@ export function ClientForm() {
         onChange={(event) => {
           setEmail(event.target.value);
           if (emailError) {
-            setEmailError(false);
+            setEmailError(null);
           }
         }}
       />
       {emailError && (
         <span data-testid="client-form-email-error" role="alert">
-          Enter a valid email address.
+          {emailError}
         </span>
       )}
       <button data-testid="client-form-submit" type="submit">

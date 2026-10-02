@@ -10,7 +10,9 @@ import net.officefloor.web.ObjectResponse;
  * {@code POST /api/clients} — create a client from a {name, email} body and return the saved row
  * (with its generated id). Wired by {@code officefloor/rest/api/clients.POST.yml}. A client is never
  * saved without a proper email address: the email is validated here and rejected with 400 before it
- * reaches the repository (the DB CHECK in Flyway V2 is the matching last line of defence).
+ * reaches the repository (the DB CHECK in Flyway V2 is the matching last line of defence). An email
+ * already in use by another client (active or archived) is likewise rejected with 400 before saving,
+ * matching the UNIQUE constraint in Flyway V25 — two clients can never share an email.
  */
 public class ClientsPostLogic {
 
@@ -23,7 +25,11 @@ public class ClientsPostLogic {
         if (email == null || !EMAIL.matcher(email.trim()).matches()) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "A proper email address is required");
         }
-        Client saved = repository.save(new Client(newClient.getName(), email.trim()));
+        String normalised = email.trim();
+        if (repository.existsByEmail(normalised)) {
+            throw new HttpException(HttpStatus.BAD_REQUEST, "That email is already in use");
+        }
+        Client saved = repository.save(new Client(newClient.getName(), normalised));
         response.send(saved);
     }
 
