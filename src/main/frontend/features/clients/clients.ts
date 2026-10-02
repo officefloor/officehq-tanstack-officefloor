@@ -47,3 +47,15 @@ export function useArchiveClient() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: clientsKey }),
   });
 }
+
+// Restore an archived client so they return to the main list: POSTs {id} and returns the id
+// restored. The mirror of archiving — the server clears the archived flag and keeps the row's id;
+// invalidating ['clients'] re-reads every view so the row returns to the list and search with no
+// hand-maintained list (CLAUDE.md rule 5). The audit record is written server-side.
+export function useRestoreClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => postJson<{ id: number }>('/api/clients/restore', { id }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: clientsKey }),
+  });
+}

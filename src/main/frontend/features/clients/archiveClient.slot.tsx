@@ -9,6 +9,9 @@ import { useArchiveClient } from './clients';
 // and records the archiving to the audit file.
 function ArchiveClient({ client }: { client: Client }) {
   const archive = useArchiveClient();
+  if (client.archived) {
+    return null;
+  }
   return (
     <button
       type="button"

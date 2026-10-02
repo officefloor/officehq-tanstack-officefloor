@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { ClientRow } from '../../slots/defs/clientRow';
-import { asString, useSearchParam } from '../../url/useSearchParam';
+import { ClientsToolbar } from '../../slots/defs/clientsToolbar';
+import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 import { ClientSearch } from './ClientSearch';
 import { ClientSort } from './ClientSort';
 import { useClients } from './clients';
@@ -15,6 +16,9 @@ export function ClientList() {
   const { data: outstanding } = useClientOutstanding();
   const [query] = useSearchParam('clientSearch', asString);
   const [sort] = useSearchParam('clientSort', asString);
+  // Shared with the "show archived" toolbar control via the `clientsShowArchived` key (no import).
+  // Archived clients are tucked away by default; when it is on, they are revealed too.
+  const [showArchived] = useSearchParam('clientsShowArchived', asFlag);
 
   if (!clients) {
     return null;
@@ -25,12 +29,13 @@ export function ClientList() {
       <>
         <ClientSearch />
         <ClientSort />
+        <ClientsToolbar.Slot />
         <p data-testid="clients-empty">No clients yet.</p>
       </>
     );
   }
 
-  const active = clients.filter((client) => !client.archived);
+  const active = clients.filter((client) => showArchived || !client.archived);
   const needle = query.trim().toLowerCase();
   const filtered = needle
     ? active.filter((client) => client.name.toLowerCase().includes(needle))
@@ -49,6 +54,7 @@ export function ClientList() {
     <>
       <ClientSearch />
       <ClientSort />
+      <ClientsToolbar.Slot />
       <table data-testid="clients-table">
       <thead>
         <tr>
