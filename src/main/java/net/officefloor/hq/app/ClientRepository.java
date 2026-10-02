@@ -7,4 +7,7 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     /** Whether any client (active or archived) already uses this email — the uniqueness check. */
     boolean existsByEmail(String email);
+
+    /** Whether any OTHER client already uses this email — the uniqueness check when editing a row. */
+    boolean existsByEmailAndIdNot(String email, Long id);
 }
