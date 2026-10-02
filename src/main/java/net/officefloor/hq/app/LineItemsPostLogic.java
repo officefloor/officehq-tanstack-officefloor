@@ -36,8 +36,12 @@ public class LineItemsPostLogic {
         if (unitPrice == null || unitPrice.signum() <= 0) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "A positive unit price is required");
         }
+        // The unit a line is measured in (e.g. "hours"); optional, defaulting to "units" when blank.
+        String unit = body.getUnit();
+        unit = (unit == null || unit.isBlank()) ? "units" : unit.trim();
 
-        LineItem saved = lineItems.save(new LineItem(invoiceId, description.trim(), qty, unitPrice));
+        LineItem saved =
+                lineItems.save(new LineItem(invoiceId, description.trim(), qty, unit, unitPrice));
 
         // Re-work the invoice's amount from its lines and store it, so the figure is derived.
         Invoice invoice = invoices.findById(invoiceId)
@@ -56,6 +60,7 @@ public class LineItemsPostLogic {
         private Long invoiceId;
         private String description;
         private Integer qty;
+        private String unit;
         private BigDecimal unitPrice;
 
         public Long getInvoiceId() {
@@ -80,6 +85,14 @@ public class LineItemsPostLogic {
 
         public void setQty(Integer qty) {
             this.qty = qty;
+        }
+
+        public String getUnit() {
+            return unit;
+        }
+
+        public void setUnit(String unit) {
+            this.unit = unit;
         }
 
         public BigDecimal getUnitPrice() {

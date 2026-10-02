@@ -191,10 +191,14 @@ public class TestSupportController {
                         dueDate != null ? java.sql.Date.valueOf(dueDate.toString()) : null);
                 if (lineItems != null) {
                     for (Map<String, Object> line : lineItems) {
+                        // unit is optional in a fixture; default to "units" (matching Flyway V26).
+                        Object unit = line.get("unit");
                         jdbc.update("INSERT INTO invoice_line_items"
-                                + " (id, invoice_id, description, qty, unit_price) VALUES (?, ?, ?, ?, ?)",
+                                + " (id, invoice_id, description, qty, unit, unit_price)"
+                                + " VALUES (?, ?, ?, ?, ?, ?)",
                                 ((Number) line.get("id")).longValue(), invoiceId,
                                 line.get("description"), ((Number) line.get("qty")).intValue(),
+                                unit != null ? unit.toString() : "units",
                                 new java.math.BigDecimal(line.get("unitPrice").toString()));
                     }
                 }

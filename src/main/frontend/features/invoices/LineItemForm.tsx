@@ -10,6 +10,7 @@ import { useAddLineItem } from './lineItems';
 export function LineItemForm({ invoiceId }: { invoiceId: number }) {
   const [description, setDescription] = useState('');
   const [qty, setQty] = useState('');
+  const [unit, setUnit] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
   const [error, setError] = useState('');
   const add = useAddLineItem(invoiceId);
@@ -35,11 +36,17 @@ export function LineItemForm({ invoiceId }: { invoiceId: number }) {
         }
         setError('');
         add.mutate(
-          { description: description.trim(), qty: qtyValue, unitPrice: priceValue },
+          {
+            description: description.trim(),
+            qty: qtyValue,
+            unit: unit.trim() || 'units',
+            unitPrice: priceValue,
+          },
           {
             onSuccess: () => {
               setDescription('');
               setQty('');
+              setUnit('');
               setUnitPrice('');
             },
           },
@@ -61,6 +68,15 @@ export function LineItemForm({ invoiceId }: { invoiceId: number }) {
         value={qty}
         onChange={(event) => {
           setQty(event.target.value);
+          setError('');
+        }}
+      />
+      <input
+        data-testid="lineitem-form-unit"
+        placeholder="Unit"
+        value={unit}
+        onChange={(event) => {
+          setUnit(event.target.value);
           setError('');
         }}
       />

@@ -9,6 +9,7 @@ export type LineItem = {
   invoiceId: number;
   description: string;
   qty: number;
+  unit: string;
   unitPrice: number;
 };
 
@@ -28,7 +29,7 @@ export function useLineItems(invoiceId: number) {
 export function useAddLineItem(invoiceId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { description: string; qty: number; unitPrice: number }) =>
+    mutationFn: (input: { description: string; qty: number; unit: string; unitPrice: number }) =>
       postJson<LineItem>('/api/lineitems', { invoiceId, ...input }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: lineItemsKey(invoiceId) });
