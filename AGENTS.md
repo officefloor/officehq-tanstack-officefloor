@@ -13,6 +13,12 @@ database schema, the server, and the front end.
 
 ---
 
+*TanStack's own documentation is vendored in this repo under `docs/tanstack/`: the official
+`llms.txt` index for TanStack Router (`router.llms.txt`) and TanStack Query (`query.llms.txt`).
+Consult it when working with TanStack Router or Query.*
+
+---
+
 *The following is OfficeFloor's own agent guidance for this stack, included verbatim
 from <https://officefloor.net/AGENTS.md>. It is part of the OfficeFloor architecture.*
 
