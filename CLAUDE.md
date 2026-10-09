@@ -19,6 +19,16 @@ Consult it when working with TanStack Router or Query.*
 
 ---
 
+## OfficeFloor REST endpoints — routes MUST live under `rest/api/`
+
+Put every domain REST route under `src/main/resources/officefloor/rest/api/` so its path starts
+with `/api/`: `SpaConfig` only lets `/api/*` reach the backend, and a non-`/api/` route is swallowed
+by the SPA deep-link fallback (it returns `index.html`, not your endpoint). The reference below uses
+non-`/api/` example paths for brevity — in this app the `/api/` prefix is required. See
+`src/main/resources/officefloor/README.md`.
+
+---
+
 *The following is OfficeFloor's own agent guidance for this stack, included verbatim
 from <https://officefloor.net/AGENTS.md>. It is part of the OfficeFloor architecture.*
 
