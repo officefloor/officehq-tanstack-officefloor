@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
-import { usePeriodOf } from '../periods/periods';
+import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
 import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
@@ -33,6 +34,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
   const rateOf = usePersonRate();
   const periodOf = usePeriodOf();
+  const closedOf = useClosedPeriodOf();
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
@@ -51,6 +53,7 @@ function PersonClaims({ personId }: { personId: number }) {
     onError: async (_e, { claim, action }) => {
       refuse(claim.id, `This claim cannot be ${DONE[action]}.`);
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
     },
   });
 
@@ -58,6 +61,11 @@ function PersonClaims({ personId }: { personId: number }) {
     clearClaimError(claim.id);
     if (!canTake(claim, action)) {
       refuse(claim.id, `A ${claim.status} claim cannot be ${DONE[action]}.`);
+      return;
+    }
+    const closed = closedOf(claim.date);
+    if (closed) {
+      refuse(claim.id, `The claim is dated inside the closed period ${closed.name}.`);
       return;
     }
     if (selfSettle(claim, user, action)) {
@@ -75,7 +83,12 @@ function PersonClaims({ personId }: { personId: number }) {
       setEditing(undefined);
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
     },
-    onError: () => setError('The claim could not be saved: the amount must be 0.00 or more, with up to two decimals.'),
+    onError: async (e) => {
+      setError(e instanceof HttpError && e.status === 409
+        ? 'The claim could not be saved: it is dated inside a closed period.'
+        : 'The claim could not be saved: the amount must be 0.00 or more, with up to two decimals.');
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
+    },
   });
 
   const change = (patch: Partial<ClaimInput>) => {
@@ -101,6 +114,12 @@ function PersonClaims({ personId }: { personId: number }) {
     setError('');
     if (!AMOUNT.test(form.amount.trim())) {
       setError('The amount must be a number of 0.00 or more, with up to two decimals.');
+      return;
+    }
+    const edited = editing !== undefined ? claims.find((c) => c.id === editing) : undefined;
+    const closed = (edited && closedOf(edited.date)) || (form.date !== '' ? closedOf(form.date) : undefined);
+    if (closed) {
+      setError(`The claim is dated inside the closed period ${closed.name}.`);
       return;
     }
     once(() => save.mutateAsync({ amount: form.amount.trim(), date: form.date, note: form.note }));
