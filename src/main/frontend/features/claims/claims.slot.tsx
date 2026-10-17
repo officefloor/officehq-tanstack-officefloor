@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { NA, dueCents, show, usePersonRate } from '../rates/rates';
 import { AMOUNT, addClaim, claimsKey, total, updateClaim, useClaims } from './claims';
 import type { Claim, ClaimInput } from './claims';
 
@@ -24,6 +25,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
+  const rate = usePersonRate()(personId);
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
@@ -107,6 +109,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-due">{rate === undefined ? NA : show(dueCents(c.amount, rate))}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
