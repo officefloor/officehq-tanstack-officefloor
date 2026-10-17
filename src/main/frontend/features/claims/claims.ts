@@ -4,7 +4,8 @@ import { useCurrentSheet } from '../session/session';
 
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
 // floating-point error shows.
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
 export type ClaimInput = { amount: string; date: string; note: string };
 
 /** 0.00 or more, with up to two decimals. */
@@ -29,13 +30,26 @@ export const addClaim = (sheet: string, user: string, personId: number, input: C
 export const updateClaim = (sheet: string, user: string, id: number, input: ClaimInput) =>
   putJson<Claim>(`${base(sheet)}/claims/${id}`, input, user);
 
+// A claim starts DRAFT; it can be opened, then settled; a DRAFT or OPEN claim can be voided.
+// SETTLED and VOID are final. The server refuses a change not allowed; the screen refuses it first.
+export type ClaimAction = 'open' | 'settle' | 'void';
+export const CLAIM_ACTIONS: ClaimAction[] = ['open', 'settle', 'void'];
+const ALLOWED: Record<ClaimAction, ClaimStatus[]> = { open: ['DRAFT'], settle: ['OPEN'], void: ['DRAFT', 'OPEN'] };
+export const canTake = (claim: Claim, action: ClaimAction) => ALLOWED[action].includes(claim.status);
+
+export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction) =>
+  postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, {}, user);
+
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
+export const counts = (claim: Claim) => claim.status === 'OPEN' || claim.status === 'SETTLED';
+
 const cents = (amount: string) => {
   const [whole, frac = ''] = amount.split('.');
   return Number(whole) * 100 + Number((frac + '00').slice(0, 2));
 };
 
-/** The amounts added up, shown with two decimals. */
+/** The amounts of the claims that count (OPEN and SETTLED) added up, shown with two decimals. */
 export function total(claims: Claim[]): string {
-  const sum = claims.reduce((n, c) => n + cents(c.amount), 0);
+  const sum = claims.filter(counts).reduce((n, c) => n + cents(c.amount), 0);
   return `${Math.floor(sum / 100)}.${String(sum % 100).padStart(2, '0')}`;
 }

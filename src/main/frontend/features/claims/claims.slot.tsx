@@ -5,10 +5,12 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { NA, dueCents, show, usePersonRate } from '../rates/rates';
-import { AMOUNT, addClaim, claimsKey, total, updateClaim, useClaims } from './claims';
-import type { Claim, ClaimInput } from './claims';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, total, updateClaim, useClaims } from './claims';
+import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+const LABEL: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void' };
+const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided' };
 
 function ClaimColumns() {
   return (
@@ -20,7 +22,8 @@ function ClaimColumns() {
 }
 
 // A person's claimed total, and their claims: a form that adds a claim or, once a claim's edit is
-// pressed, edits it; and the claims listed newest first. An empty date means the sheet's today.
+// pressed, edits it; and the claims listed newest first, each with its status and the buttons that
+// change it. An empty date means the sheet's today. A refused status change shows on its claim.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -29,7 +32,31 @@ function PersonClaims({ personId }: { personId: number }) {
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
+  const [claimErrors, setClaimErrors] = useState<Record<number, string>>({});
   const queryClient = useQueryClient();
+
+  const clearClaimError = (id: number) =>
+    setClaimErrors(({ [id]: _, ...rest }) => rest);
+  const refuse = (id: number, message: string) => setClaimErrors((e) => ({ ...e, [id]: message }));
+
+  const act = useMutation({
+    mutationFn: ({ claim, action }: { claim: Claim; action: ClaimAction }) =>
+      claimAction(sheet!, user, claim.id, action),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) }),
+    onError: async (_e, { claim, action }) => {
+      refuse(claim.id, `This claim cannot be ${DONE[action]}.`);
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+    },
+  });
+
+  const take = (claim: Claim, action: ClaimAction) => {
+    clearClaimError(claim.id);
+    if (!canTake(claim, action)) {
+      refuse(claim.id, `A ${claim.status} claim cannot be ${DONE[action]}.`);
+      return;
+    }
+    act.mutate({ claim, action });
+  };
 
   const save = useMutation({
     mutationFn: (input: ClaimInput) =>
@@ -48,6 +75,7 @@ function PersonClaims({ personId }: { personId: number }) {
   };
 
   const open = (claim: Claim) => {
+    clearClaimError(claim.id);
     setEditing(claim.id);
     setForm({ amount: claim.amount, date: claim.date, note: claim.note });
     setError('');
@@ -110,9 +138,16 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{rate === undefined ? NA : show(dueCents(c.amount, rate))}</span>{' '}
+              <span data-testid="claim-status">{c.status}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
+              {CLAIM_ACTIONS.map((a) => (
+                <button key={a} type="button" data-testid={`claim-${a}`} onClick={() => take(c, a)}>
+                  {LABEL[a]}
+                </button>
+              ))}
+              {claimErrors[c.id] && <span data-testid="claim-error">{claimErrors[c.id]}</span>}
             </li>
           ))}
         </ul>
@@ -121,7 +156,7 @@ function PersonClaims({ personId }: { personId: number }) {
   );
 }
 
-// The sheet's claimed-total: everyone's claimed added up.
+// The sheet's claimed-total: everyone's claimed added up (only OPEN and SETTLED claims count).
 function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
   const claims = useClaims();
