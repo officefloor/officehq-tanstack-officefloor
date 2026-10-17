@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /** A claim a person on a sheet has made: an amount (0.00 or more), a date, a note (may be empty) and a
- *  status (starting DRAFT). */
+ *  status (starting DRAFT) and, once opened, its number on the sheet. */
 @Entity
 @Table(name = "claim")
 public class Claim {
@@ -39,6 +39,10 @@ public class Claim {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private ClaimStatus status = ClaimStatus.DRAFT;
+
+    /** Given when opened, the next on its sheet; none while a draft, cleared when voided. */
+    @Column(name = "claim_number")
+    private Integer number;
 
     protected Claim() {
     }
@@ -90,5 +94,13 @@ public class Claim {
 
     public void setStatus(ClaimStatus status) {
         this.status = status;
+    }
+
+    public Integer getNumber() {
+        return number;
+    }
+
+    public void setNumber(Integer number) {
+        this.number = number;
     }
 }

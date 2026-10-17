@@ -6,10 +6,13 @@ final class ClaimTransition {
     }
 
     static void to(Claim claim, ClaimStatus to) throws InvalidClaimStatusException {
-        if (!claim.getStatus().canBecome(to)) {
-            throw new InvalidClaimStatusException(
-                    "A " + claim.getStatus() + " claim cannot become " + to + ".");
-        }
+        check(claim.getStatus(), to);
         claim.setStatus(to);
+    }
+
+    static void check(ClaimStatus from, ClaimStatus to) throws InvalidClaimStatusException {
+        if (!from.canBecome(to)) {
+            throw new InvalidClaimStatusException("A " + from + " claim cannot become " + to + ".");
+        }
     }
 }

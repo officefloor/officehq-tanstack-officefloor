@@ -5,7 +5,9 @@ import { useCurrentSheet } from '../session/session';
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
 // floating-point error shows.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+  /** Given when opened, the next on the sheet; null for a draft or a voided claim. */
+  number: number | null };
 export type ClaimInput = { amount: string; date: string; note: string };
 
 /** 0.00 or more, with up to two decimals. */

@@ -139,6 +139,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{rate === undefined ? NA : show(dueCents(c.amount, rate))}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>

@@ -5,10 +5,11 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.HttpHeaderParameter;
 
-/** Records CLAIM_VOIDED once the claim is saved; the signed-in user arrives as X-User. */
+/** Records CLAIM_VOIDED once the claim is saved, with the number it had; the signed-in user arrives
+ *  as X-User. */
 public class AuditClaimVoided {
-    public void audit(@Val Claim claim, @HttpHeaderParameter("X-User") String user,
+    public void audit(@Val Claim claim, @Val VoidedNumber voided, @HttpHeaderParameter("X-User") String user,
             PersonRepository people, Audit audit) {
-        audit.record(ClaimAudit.line("CLAIM_VOIDED", claim, user, people));
+        audit.record(ClaimAudit.line("CLAIM_VOIDED", claim, voided.value(), user, people));
     }
 }
