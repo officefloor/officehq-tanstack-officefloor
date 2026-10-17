@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
 import { AppSession } from '../../slots/defs/appSession';
-import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
-import type { Sheet } from './session';
+import { loadSheet, sheetKey, useCurrentSheet, useCurrentUser } from './session';
 
 function SheetPicker() {
   const [user] = useCurrentUser();
@@ -14,8 +12,7 @@ function SheetPicker() {
   const queryClient = useQueryClient();
 
   const load = useMutation({
-    mutationFn: (sheetId: string) =>
-      postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/load`, {}),
+    mutationFn: (sheetId: string) => loadSheet(sheetId),
     onSuccess: async (loaded) => {
       queryClient.setQueryData(sheetKey(loaded.id), loaded);
       // Re-loading a sheet re-reads everything kept under it from the store.
