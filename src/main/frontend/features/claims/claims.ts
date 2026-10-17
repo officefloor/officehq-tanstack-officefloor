@@ -33,6 +33,11 @@ export function useClaims() {
 export const addClaim = (sheet: string, user: string, personId: number, input: ClaimInput) =>
   postJson<Claim>(`${base(sheet)}/people/${personId}/claims`, input, user);
 
+/** The quick-add bar: a DRAFT claim dated the sheet's today with an empty note, for the named person
+ *  (created with grade A when not on the sheet). */
+export const quickAddClaim = (sheet: string, user: string, input: { name: string; amount: string }) =>
+  postJson<Claim>(`${base(sheet)}/quick-claims`, input, user);
+
 export const updateClaim = (sheet: string, user: string, id: number, input: ClaimInput) =>
   putJson<Claim>(`${base(sheet)}/claims/${id}`, input, user);
 

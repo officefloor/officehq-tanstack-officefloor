@@ -4,6 +4,7 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
+import { PeopleBar } from '../../slots/defs/peopleBar';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, addPerson, peopleKey, updatePerson, useEditingPerson, usePeople } from './people';
@@ -104,6 +105,7 @@ function People() {
         )}
         {error && <span data-testid="person-form-error">{error}</span>}
       </form>
+      <PeopleBar.Slot />
       <table data-testid="people-list">
         <thead>
           <tr>
