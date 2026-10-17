@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
+import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet } from '../session/session';
 import { GRADES, addPerson, peopleKey, updatePerson, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
@@ -94,6 +95,7 @@ function People() {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <PersonColumns.Slot />
             <th />
           </tr>
         </thead>
@@ -102,6 +104,7 @@ function People() {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <PersonCells.Slot personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                   Edit
