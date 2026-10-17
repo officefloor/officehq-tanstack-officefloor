@@ -40,7 +40,7 @@ public class Claim {
     @Column(name = "status", nullable = false)
     private ClaimStatus status = ClaimStatus.DRAFT;
 
-    /** Given when opened, the next on its sheet; none while a draft, cleared when voided. */
+    /** Given when opened, the next on its sheet; none while a draft, kept when voided. */
     @Column(name = "claim_number")
     private Integer number;
 

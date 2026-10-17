@@ -8,7 +8,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
-import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
@@ -27,7 +27,8 @@ function ClaimColumns() {
 
 // A person's claimed total, and their claims: a form that adds a claim or, once a claim's edit is
 // pressed, edits it; and the claims listed newest first, each with its status and the buttons that
-// change it. An empty date means the sheet's today. A refused status change shows on its claim.
+// change it. An empty date means the sheet's today. A refused status change, or the edit of a claim
+// that is not a DRAFT, shows on its claim.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -75,6 +76,8 @@ function PersonClaims({ personId }: { personId: number }) {
     act.mutate({ claim, action });
   };
 
+  const notDraft = (id: number) => refuse(id, 'Only a DRAFT claim can be edited; void it and add a new one.');
+
   const save = useMutation({
     mutationFn: (input: ClaimInput) =>
       editing !== undefined ? updateClaim(sheet!, user, editing, input) : addClaim(sheet!, user, personId, input),
@@ -84,6 +87,14 @@ function PersonClaims({ personId }: { personId: number }) {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
     },
     onError: async (e) => {
+      // Another user opened (or voided) the claim since it was shown: the edit is refused on the claim.
+      if (editing !== undefined && e instanceof HttpError && (e.body as { reason?: string } | undefined)?.reason === 'status') {
+        notDraft(editing);
+        setEditing(undefined);
+        setForm(EMPTY);
+        await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+        return;
+      }
       setError(e instanceof HttpError && e.status === 409
         ? 'The claim could not be saved: it is dated inside a closed period.'
         : 'The claim could not be saved: the amount must be 0.00 or more, with up to two decimals.');
@@ -98,6 +109,10 @@ function PersonClaims({ personId }: { personId: number }) {
 
   const open = (claim: Claim) => {
     clearClaimError(claim.id);
+    if (!canEdit(claim)) {
+      notDraft(claim.id);
+      return;
+    }
     setEditing(claim.id);
     setForm({ amount: claim.amount, date: claim.date, note: claim.note });
     setError('');

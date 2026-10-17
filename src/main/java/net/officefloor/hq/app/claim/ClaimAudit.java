@@ -9,10 +9,7 @@ final class ClaimAudit {
     }
 
     static String line(String event, Claim claim, String user, PersonRepository people) {
-        return line(event, claim, claim.getNumber(), user, people);
-    }
-
-    static String line(String event, Claim claim, Integer number, String user, PersonRepository people) {
+        Integer number = claim.getNumber();
         String person = people.findById(claim.getPersonId()).orElseThrow().getName();
         ClaimResponse shown = ClaimResponse.from(claim);
         return event + " sheet=" + claim.getSheetId() + " by=" + (user == null ? "" : user.trim())

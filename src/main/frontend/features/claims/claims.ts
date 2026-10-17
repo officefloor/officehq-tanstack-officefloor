@@ -6,7 +6,7 @@ import { useCurrentSheet } from '../session/session';
 // floating-point error shows.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
-  /** Given when opened, the next on the sheet; null for a draft or a voided claim. */
+  /** Given when opened, the next on the sheet; null for a draft; a voided claim keeps it. */
   number: number | null;
   /** Fixed when settled (two decimals); null while live, or when no rate applied at settling. */
   settledDue: string | null;
@@ -47,6 +47,9 @@ export type ClaimAction = 'open' | 'settle' | 'void';
 export const CLAIM_ACTIONS: ClaimAction[] = ['open', 'settle', 'void'];
 const ALLOWED: Record<ClaimAction, ClaimStatus[]> = { open: ['DRAFT'], settle: ['OPEN'], void: ['DRAFT', 'OPEN'] };
 export const canTake = (claim: Claim, action: ClaimAction) => ALLOWED[action].includes(claim.status);
+
+/** Only a DRAFT can be edited; to change an OPEN claim, void it and add a new one. */
+export const canEdit = (claim: Claim) => claim.status === 'DRAFT';
 
 /** Four eyes: the user who opened a claim cannot settle it. */
 export const selfSettle = (claim: Claim, user: string, action: ClaimAction) =>
