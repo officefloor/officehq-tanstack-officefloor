@@ -8,7 +8,7 @@ import { useCurrentSheet, useSheetToday } from '../session/session';
 // beginning of time); a grade may have several. A date uses the rate whose from-date is the latest on
 // or before it; a date before every rate of its grade, or a grade with no rate, has none (n/a).
 // Due is worked out in whole cents and hundredths of a percent with BigInt, so no floating-point
-// error shows: amount × rate / 100, rounded half up (away from zero) to two decimals.
+// error shows: amount × rate / 100, rounded half to even to two decimals.
 export type Rate = { grade: string; rate: string; from: string | null };
 export type RateInput = { grade: string; rate: string; from: string };
 
@@ -46,11 +46,15 @@ export const show = (n: bigint): string => {
   return `${sign}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
 };
 
-/** The due on an amount at a rate, in cents: amount × rate / 100, rounded half up. */
+/** The due on an amount at a rate, in cents: amount × rate / 100, rounded half to even. */
 export function dueCents(amount: string, rate: string): bigint {
   const product = hundredths(amount) * hundredths(rate); // cents × hundredths of a percent
   const sign = product < 0n ? -1n : 1n;
-  return sign * ((sign * product + 5000n) / 10000n);
+  const abs = sign * product;
+  const whole = abs / 10000n;
+  const rest = abs % 10000n;
+  const up = rest > 5000n || (rest === 5000n && whole % 2n === 1n);
+  return sign * (up ? whole + 1n : whole);
 }
 
 /** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft

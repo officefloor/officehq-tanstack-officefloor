@@ -3,10 +3,10 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { total, useClaims } from '../claims/claims';
+import { counts, useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { NA, PERCENT, dueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
+import { NA, PERCENT, claimDueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
 import type { RateInput } from './rates';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -129,18 +129,23 @@ function DueColumn() {
   return <th>Due</th>;
 }
 
-/** A person's due-total in cents (their claimed × their grade's rate / 100), or undefined for n/a. */
+/** A person's due-total in cents: the already-rounded figures of their claims that count added up
+ *  (0 when none counts). Undefined for n/a: their grade has no rate today and no settled claim keeps
+ *  a figure. */
 function useDueTotal() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
   return (personId: number) => {
-    const rate = rateOf(personId);
-    if (rate === undefined) return undefined;
-    return dueCents(total(claims.filter((c) => c.personId === personId)), rate);
+    const figures = claims
+      .filter((c) => c.personId === personId && counts(c))
+      .map((c) => ({ claim: c, due: claimDueCents(c, rateOf(personId, c.date)) }));
+    const kept = figures.some((f) => f.claim.status === 'SETTLED' && f.due !== undefined);
+    if (rateOf(personId) === undefined && !kept) return undefined;
+    return figures.reduce((n, f) => n + (f.due ?? 0n), 0n);
   };
 }
 
-// A person's due-total: n/a when their grade has no rate.
+// A person's due-total: n/a when their grade has no rate today, unless a settled claim keeps a figure.
 function PersonDueTotal({ personId }: { personId: number }) {
   const due = useDueTotal()(personId);
   return <td data-testid="person-due-total">{due === undefined ? NA : show(due)}</td>;
