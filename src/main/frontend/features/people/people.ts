@@ -21,10 +21,11 @@ export function usePeople() {
   });
 }
 
-export const addPerson = (sheet: string, input: PersonInput) => postJson<Person>(base(sheet), input);
+export const addPerson = (sheet: string, user: string, input: PersonInput) =>
+  postJson<Person>(base(sheet), input, user);
 
-export const updatePerson = (sheet: string, id: number, input: PersonInput) =>
-  putJson<Person>(`${base(sheet)}/${id}`, input);
+export const updatePerson = (sheet: string, user: string, id: number, input: PersonInput) =>
+  putJson<Person>(`${base(sheet)}/${id}`, input, user);
 
 /** The person open in the editor (by id), kept in the URL. */
 export const useEditingPerson = () => useSearchParam('editPerson', asString);

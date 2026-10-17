@@ -23,11 +23,11 @@ export function useClaims() {
   });
 }
 
-export const addClaim = (sheet: string, personId: number, input: ClaimInput) =>
-  postJson<Claim>(`${base(sheet)}/people/${personId}/claims`, input);
+export const addClaim = (sheet: string, user: string, personId: number, input: ClaimInput) =>
+  postJson<Claim>(`${base(sheet)}/people/${personId}/claims`, input, user);
 
-export const updateClaim = (sheet: string, id: number, input: ClaimInput) =>
-  putJson<Claim>(`${base(sheet)}/claims/${id}`, input);
+export const updateClaim = (sheet: string, user: string, id: number, input: ClaimInput) =>
+  putJson<Claim>(`${base(sheet)}/claims/${id}`, input, user);
 
 const cents = (amount: string) => {
   const [whole, frac = ''] = amount.split('.');

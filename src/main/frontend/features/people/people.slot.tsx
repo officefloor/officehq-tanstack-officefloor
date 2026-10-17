@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { useCurrentSheet } from '../session/session';
+import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, addPerson, peopleKey, updatePerson, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
 
@@ -13,6 +13,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A' };
 // and the list of people in the order they were added.
 function People() {
   const [sheet] = useCurrentSheet();
+  const [user] = useCurrentUser();
   const people = usePeople();
   const [editing, setEditing] = useEditingPerson();
   const [form, setForm] = useState<PersonInput>(EMPTY);
@@ -21,7 +22,7 @@ function People() {
 
   const save = useMutation({
     mutationFn: (input: PersonInput) =>
-      editing ? updatePerson(sheet!, Number(editing), input) : addPerson(sheet!, input),
+      editing ? updatePerson(sheet!, user, Number(editing), input) : addPerson(sheet!, user, input),
     onSuccess: async () => {
       setForm(EMPTY);
       setEditing(undefined);

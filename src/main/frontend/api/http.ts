@@ -12,18 +12,24 @@ export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
 }
 
-export function postJson<T>(path: string, body: unknown): Promise<T> {
+// `user` is the signed-in name, sent as X-User so the server can record who made a change.
+const headers = (user?: string): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(user ? { 'X-User': user } : {}),
+});
+
+export function postJson<T>(path: string, body: unknown, user?: string): Promise<T> {
   return send<T>(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers(user),
     body: JSON.stringify(body),
   });
 }
 
-export function putJson<T>(path: string, body: unknown): Promise<T> {
+export function putJson<T>(path: string, body: unknown, user?: string): Promise<T> {
   return send<T>(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers(user),
     body: JSON.stringify(body),
   });
 }

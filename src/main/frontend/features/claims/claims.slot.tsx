@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { useCurrentSheet } from '../session/session';
+import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { AMOUNT, addClaim, claimsKey, total, updateClaim, useClaims } from './claims';
 import type { Claim, ClaimInput } from './claims';
 
@@ -22,6 +22,7 @@ function ClaimColumns() {
 // pressed, edits it; and the claims listed newest first. An empty date means the sheet's today.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
+  const [user] = useCurrentUser();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
@@ -30,7 +31,7 @@ function PersonClaims({ personId }: { personId: number }) {
 
   const save = useMutation({
     mutationFn: (input: ClaimInput) =>
-      editing !== undefined ? updateClaim(sheet!, editing, input) : addClaim(sheet!, personId, input),
+      editing !== undefined ? updateClaim(sheet!, user, editing, input) : addClaim(sheet!, user, personId, input),
     onSuccess: async () => {
       setForm(EMPTY);
       setEditing(undefined);
