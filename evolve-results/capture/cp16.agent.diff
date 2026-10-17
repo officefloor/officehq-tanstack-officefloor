@@ -1,0 +1,214 @@
+diff --git a/src/main/frontend/features/people/import.slot.tsx b/src/main/frontend/features/people/import.slot.tsx
+index e469378..154781d 100644
+--- a/src/main/frontend/features/people/import.slot.tsx
++++ b/src/main/frontend/features/people/import.slot.tsx
+@@ -9,7 +9,8 @@ import { importPeople, peopleKey } from './people';
+ import type { ImportResult } from './people';
+ 
+ // Import people pasted as lines of name,grade. The server checks every line first; when any is bad
+-// nothing is imported and each bad line is marked by its number, otherwise the count added is shown.
++// nothing is imported and each bad line is marked by its number, otherwise the counts added and
++// updated (a name already on the sheet updates that person's grade) are shown.
+ function ImportPeople() {
+   const [sheet] = useCurrentSheet();
+   const [user] = useCurrentUser();
+@@ -28,7 +29,7 @@ function ImportPeople() {
+     },
+     onError: (e) => {
+       const body = e instanceof HttpError ? (e.body as ImportResult | undefined) : undefined;
+-      if (body && Array.isArray(body.errors)) setResult({ added: 0, errors: body.errors });
++      if (body && Array.isArray(body.errors)) setResult({ added: 0, updated: 0, errors: body.errors });
+       else setFailed(true);
+     },
+   });
+@@ -66,7 +67,8 @@ function ImportPeople() {
+       </form>
+       {result && (
+         <p>
+-          Added <span data-testid="import-added">{result.added}</span>
++          Added <span data-testid="import-added">{result.added}</span>, updated{' '}
++          <span data-testid="import-updated">{result.updated}</span>
+           {result.errors.length > 0 && <> — nothing was imported; fix these lines:</>}
+         </p>
+       )}
+@@ -74,7 +76,7 @@ function ImportPeople() {
+         <ul>
+           {result.errors.map((n) => (
+             <li key={n} data-testid={`import-error-${n}`}>
+-              Line {n}: a name is required, unique on the sheet and in the paste, with a grade of A, B or C.
++              Line {n}: a name is required, not repeated in the paste, with a grade of A, B or C.
+             </li>
+           ))}
+         </ul>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index ca5b00c..55786e9 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -29,8 +29,9 @@ export const addPerson = (sheet: string, user: string, input: PersonInput) =>
+ export const updatePerson = (sheet: string, user: string, id: number, input: PersonInput) =>
+   putJson<Person>(`${base(sheet)}/${id}`, input, user);
+ 
+-/** The outcome of an import: the count added, or the numbers of the lines refused (nothing added). */
+-export type ImportResult = { added: number; errors: number[] };
++/** The outcome of an import: the counts added and updated, or the numbers of the lines refused
++ *  (nothing imported). */
++export type ImportResult = { added: number; updated: number; errors: number[] };
+ 
+ /** Imports people pasted as lines of name,grade; a refusal (400) carries the bad line numbers. */
+ export const importPeople = (sheet: string, user: string, text: string) =>
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditImport.java b/src/main/java/net/officefloor/hq/app/person/AuditImport.java
+index 99d7452..f834c28 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditImport.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditImport.java
+@@ -4,9 +4,10 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.HttpHeaderParameter;
+ 
+-/** Records PERSON_ADDED for each imported person, in order, once all are saved. */
++/** Records PERSON_ADDED or PERSON_EDITED for each imported person, in paste order, once all are saved. */
+ public class AuditImport {
+     public void audit(@Val ImportedPeople imported, @HttpHeaderParameter("X-User") String user, Audit audit) {
+-        imported.people().forEach((person) -> audit.record(PersonAudit.line("PERSON_ADDED", person, user)));
++        imported.people().forEach((person) -> audit.record(
++                PersonAudit.line(imported.isUpdated(person) ? "PERSON_EDITED" : "PERSON_ADDED", person, user)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckImport.java b/src/main/java/net/officefloor/hq/app/person/CheckImport.java
+index 95b960d..f17a5cb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/CheckImport.java
++++ b/src/main/java/net/officefloor/hq/app/person/CheckImport.java
+@@ -1,9 +1,11 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.Map;
+ import java.util.Set;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -11,8 +13,9 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+  * Reads the pasted lines (name,grade) and checks each with the form's rules: a name, a grade of A, B
+- * or C, and a name not already on the sheet nor repeated in the paste (ignoring case; names are
+- * trimmed). Blank lines are skipped. Any bad line refuses the whole import.
++ * or C, and a name not repeated in the paste (ignoring case; names are trimmed). A name already on
++ * the sheet updates that person's grade; any other name adds a person. Blank lines are skipped. Any
++ * bad line refuses the whole import.
+  */
+ public class CheckImport {
+ 
+@@ -21,10 +24,13 @@ public class CheckImport {
+     public void check(@PathVariable("sheetId") String sheetId, @RequestBody ImportRequest request,
+             PersonRepository repository, Out<ImportedPeople> importedOut) throws InvalidImportException {
+         String sheet = sheetId.trim();
+-        Set<String> taken = new HashSet<>();
+-        repository.findBySheetIdOrderByIdAsc(sheet).forEach((p) -> taken.add(key(p.getName())));
++        Map<String, Person> existing = new HashMap<>();
++        repository.findBySheetIdOrderByIdAsc(sheet).forEach((p) -> existing.putIfAbsent(key(p.getName()), p));
++        Set<String> seen = new HashSet<>();
+         String[] lines = request == null || request.text() == null ? new String[0] : request.text().split("\\R", -1);
+         List<Person> people = new ArrayList<>();
++        List<Person> updated = new ArrayList<>();
++        List<String> grades = new ArrayList<>();
+         List<Integer> errors = new ArrayList<>();
+         for (int i = 0; i < lines.length; i++) {
+             String line = lines[i];
+@@ -34,19 +40,28 @@ public class CheckImport {
+             int comma = line.indexOf(',');
+             String name = (comma < 0 ? line : line.substring(0, comma)).trim();
+             String grade = comma < 0 ? "" : line.substring(comma + 1).trim();
+-            if (name.isEmpty() || !GRADES.contains(grade) || !taken.add(key(name))) {
++            if (name.isEmpty() || !GRADES.contains(grade) || !seen.add(key(name))) {
+                 errors.add(i + 1);
+                 continue;
+             }
+-            Person person = new Person(sheet);
+-            person.setName(name);
+-            person.setGrade(grade);
++            Person person = existing.get(key(name));
++            if (person != null) {
++                updated.add(person);
++            } else {
++                person = new Person(sheet);
++                person.setName(name);
++            }
+             people.add(person);
++            grades.add(grade);
+         }
+         if (!errors.isEmpty()) {
+             throw new InvalidImportException(errors);
+         }
+-        importedOut.set(new ImportedPeople(people));
++        // Only now set the grades, so a refused import leaves the sheet's people untouched.
++        for (int i = 0; i < people.size(); i++) {
++            people.get(i).setGrade(grades.get(i));
++        }
++        importedOut.set(new ImportedPeople(people, updated));
+     }
+ 
+     private static String key(String name) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java b/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java
+index 715e069..25239f5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java
++++ b/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java
+@@ -7,6 +7,6 @@ import org.springframework.http.ResponseEntity;
+ 
+ public class HandleInvalidImport {
+     public void handle(@Parameter InvalidImportException ex, ObjectResponse<ResponseEntity<ImportResponse>> response) {
+-        response.send(new ResponseEntity<>(new ImportResponse(0, ex.getLines()), HttpStatus.BAD_REQUEST));
++        response.send(new ResponseEntity<>(new ImportResponse(0, 0, ex.getLines()), HttpStatus.BAD_REQUEST));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportResponse.java b/src/main/java/net/officefloor/hq/app/person/ImportResponse.java
+index 029ff9b..66560f4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ImportResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/ImportResponse.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
+ 
+-/** The outcome of an import: the count added, or the (1-based) numbers of the lines refused. */
+-public record ImportResponse(int added, List<Integer> errors) {
++/** The outcome of an import: the counts added and updated, or the (1-based) numbers of the lines refused. */
++public record ImportResponse(int added, int updated, List<Integer> errors) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java b/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java
+index bd51737..5d6c74b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java
+@@ -2,6 +2,17 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
+ 
+-/** The people of an import that passed its checks, in the order they were pasted. */
+-public record ImportedPeople(List<Person> people) {
++/**
++ * The people of an import that passed its checks, in the order they were pasted; those already on
++ * the sheet (whose grade the import updates) are also listed in {@code updated}.
++ */
++public record ImportedPeople(List<Person> people, List<Person> updated) {
++
++    public boolean isUpdated(Person person) {
++        return updated.stream().anyMatch((p) -> p == person);
++    }
++
++    public int addedCount() {
++        return people.size() - updated.size();
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java b/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java
+index 6e15018..f83e112 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java
+@@ -6,6 +6,6 @@ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithImport {
+     public void respond(@Val ImportedPeople imported, ObjectResponse<ImportResponse> response) {
+-        response.send(new ImportResponse(imported.people().size(), List.of()));
++        response.send(new ImportResponse(imported.addedCount(), imported.updated().size(), List.of()));
+     }
+ }
