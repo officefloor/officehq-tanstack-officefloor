@@ -1,0 +1,308 @@
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+new file mode 100644
+index 0000000..074fbd5
+--- /dev/null
++++ b/src/main/frontend/features/session/session.ts
+@@ -0,0 +1,9 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The session lives in the URL: `user` is the signed-in name (no password), `sheet` the active
++// sheet id. Every feature that works per sheet or records who did something reads these.
++export const useCurrentUser = () => useSearchParam('user', asString);
++export const useCurrentSheet = () => useSearchParam('sheet', asString);
++
++export type Sheet = { id: string };
++export const sheetKey = (id: string) => ['sheet', id] as const;
+diff --git a/src/main/frontend/features/session/sheet.slot.tsx b/src/main/frontend/features/session/sheet.slot.tsx
+new file mode 100644
+index 0000000..fa5b2e4
+--- /dev/null
++++ b/src/main/frontend/features/session/sheet.slot.tsx
+@@ -0,0 +1,67 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { AppSession } from '../../slots/defs/appSession';
++import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
++import type { Sheet } from './session';
++
++function SheetPicker() {
++  const [user] = useCurrentUser();
++  const [sheet, setSheet] = useCurrentSheet();
++  const [id, setId] = useState('');
++  const [error, setError] = useState('');
++  const queryClient = useQueryClient();
++
++  const load = useMutation({
++    mutationFn: (sheetId: string) =>
++      postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/load`, {}),
++    onSuccess: async (loaded) => {
++      queryClient.setQueryData(sheetKey(loaded.id), loaded);
++      // Re-loading a sheet re-reads everything kept under it from the store.
++      await queryClient.invalidateQueries({
++        predicate: (q) => q.queryKey[0] === 'sheet' && q.queryKey[1] === loaded.id && q.queryKey.length > 2,
++      });
++      setSheet(loaded.id);
++    },
++    onError: () => setError('The sheet could not be loaded.'),
++  });
++
++  if (!user) return null;
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = id.trim();
++    setError('');
++    if (!trimmed) {
++      setError('Type a sheet id to load.');
++      return;
++    }
++    load.mutate(trimmed);
++  };
++
++  return (
++    <form data-testid="sheet-form" onSubmit={submit}>
++      <input
++        data-testid="sheet-id-input"
++        placeholder="Sheet id"
++        value={id}
++        onChange={(e) => {
++          setId(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="sheet-load" disabled={load.isPending}>
++        Load
++      </button>
++      {error && <span data-testid="sheet-load-error">{error}</span>}
++      {sheet && (
++        <span>
++          Sheet <strong data-testid="sheet-current-id">{sheet}</strong>
++        </span>
++      )}
++    </form>
++  );
++}
++
++export const contribution = AppSession.fill({ order: 10, Component: SheetPicker });
+diff --git a/src/main/frontend/features/session/signin.slot.tsx b/src/main/frontend/features/session/signin.slot.tsx
+new file mode 100644
+index 0000000..fc8356c
+--- /dev/null
++++ b/src/main/frontend/features/session/signin.slot.tsx
+@@ -0,0 +1,48 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { AppSession } from '../../slots/defs/appSession';
++import { useCurrentUser } from './session';
++
++function SignIn() {
++  const [user, setUser] = useCurrentUser();
++  const [name, setName] = useState('');
++  const [error, setError] = useState('');
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = name.trim();
++    if (!trimmed) {
++      setError('Type a name to sign in.');
++      return;
++    }
++    setError('');
++    setUser(trimmed);
++  };
++
++  if (user) {
++    return (
++      <span data-testid="signed-in">
++        Signed in as <strong data-testid="current-user">{user}</strong>
++      </span>
++    );
++  }
++  return (
++    <form data-testid="signin-form" onSubmit={submit}>
++      <input
++        data-testid="signin-name"
++        placeholder="Your name"
++        value={name}
++        onChange={(e) => {
++          setName(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++      {error && <span data-testid="signin-error">{error}</span>}
++    </form>
++  );
++}
++
++export const contribution = AppSession.fill({ order: 0, Component: SignIn });
+diff --git a/src/main/frontend/routes/__root.tsx b/src/main/frontend/routes/__root.tsx
+index f1bac63..5ca4929 100644
+--- a/src/main/frontend/routes/__root.tsx
++++ b/src/main/frontend/routes/__root.tsx
+@@ -1,6 +1,7 @@
+ import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
+ import type { QueryClient } from '@tanstack/react-query';
+ import { AppNav } from '../slots/defs/appNav';
++import { AppSession } from '../slots/defs/appSession';
+ 
+ // The shell. It renders the nav region (filled from app.nav) and the matched route's component
+ // (from routes/); it reads no page list and holds no view state — URL search params carry what is
+@@ -18,6 +19,9 @@ function AppShell() {
+       <nav data-testid="app-nav">
+         <AppNav.Slot />
+       </nav>
++      <header data-testid="app-session">
++        <AppSession.Slot />
++      </header>
+       <main data-testid="app-home">
+         <Outlet />
+       </main>
+diff --git a/src/main/frontend/slots/defs/appSession.ts b/src/main/frontend/slots/defs/appSession.ts
+new file mode 100644
+index 0000000..452890d
+--- /dev/null
++++ b/src/main/frontend/slots/defs/appSession.ts
+@@ -0,0 +1,7 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The shell's session bar: who is signed in and which sheet is active. Filled by
++ * features/session/ — the sign-in form, then the sheet picker once someone is signed in.
++ */
++export const AppSession = defineSlot('app.session');
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+new file mode 100644
+index 0000000..ec012e3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Finds the sheet, starting an empty one when the id was never used. */
++public class LoadSheet {
++    public void load(@PathVariable("sheetId") String sheetId, SheetRepository repository, Out<Sheet> sheetOut) {
++        String id = sheetId.trim();
++        Sheet sheet = repository.findById(id).orElseGet(() -> new Sheet(id));
++        sheet.markLoaded();
++        sheetOut.set(repository.save(sheet));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 0000000..a4173be
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSheet {
++    public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
++        response.send(SheetResponse.from(sheet));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+new file mode 100644
+index 0000000..fe4da05
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++import java.time.Instant;
++
++/** A sheet: the unit everything else in the app is kept under. */
++@Entity
++@Table(name = "sheet")
++public class Sheet {
++
++    @Id
++    private String id;
++
++    @Column(name = "loaded_at", nullable = false)
++    private Instant loadedAt;
++
++    protected Sheet() {
++    }
++
++    public Sheet(String id) {
++        this.id = id;
++        this.loadedAt = Instant.now();
++    }
++
++    public String getId() {
++        return id;
++    }
++
++    public Instant getLoadedAt() {
++        return loadedAt;
++    }
++
++    public void markLoaded() {
++        this.loadedAt = Instant.now();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+new file mode 100644
+index 0000000..f185178
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.data.jpa.repository.JpaRepository;
++
++public interface SheetRepository extends JpaRepository<Sheet, String> {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+new file mode 100644
+index 0000000..c0d120f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.sheet;
++
++public record SheetResponse(String id) {
++
++    public static SheetResponse from(Sheet sheet) {
++        return new SheetResponse(sheet.getId());
++    }
++}
+diff --git a/src/main/resources/db/migration/V1__sheet.sql b/src/main/resources/db/migration/V1__sheet.sql
+new file mode 100644
+index 0000000..0f4aeda
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__sheet.sql
+@@ -0,0 +1,5 @@
++-- A sheet: everything else in the app is kept per sheet, keyed by its id.
++CREATE TABLE sheet (
++    id        VARCHAR(100) PRIMARY KEY,
++    loaded_at TIMESTAMP    NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/load.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/load.POST.yml
+new file mode 100644
+index 0000000..6456bcf
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/load.POST.yml
+@@ -0,0 +1,7 @@
++# Load a sheet by id: a never-used id starts an empty sheet; a known id is re-read from the store.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
