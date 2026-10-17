@@ -1,0 +1,256 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 5c292d0..a218024 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -8,7 +8,7 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
+ import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
+-import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
++import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
+ import type { Claim, ClaimAction, ClaimInput } from './claims';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+@@ -27,7 +27,8 @@ function ClaimColumns() {
+ 
+ // A person's claimed total, and their claims: a form that adds a claim or, once a claim's edit is
+ // pressed, edits it; and the claims listed newest first, each with its status and the buttons that
+-// change it. An empty date means the sheet's today. A refused status change shows on its claim.
++// change it. An empty date means the sheet's today. A refused status change, or the edit of a claim
++// that is not a DRAFT, shows on its claim.
+ function PersonClaims({ personId }: { personId: number }) {
+   const [sheet] = useCurrentSheet();
+   const [user] = useCurrentUser();
+@@ -75,6 +76,8 @@ function PersonClaims({ personId }: { personId: number }) {
+     act.mutate({ claim, action });
+   };
+ 
++  const notDraft = (id: number) => refuse(id, 'Only a DRAFT claim can be edited; void it and add a new one.');
++
+   const save = useMutation({
+     mutationFn: (input: ClaimInput) =>
+       editing !== undefined ? updateClaim(sheet!, user, editing, input) : addClaim(sheet!, user, personId, input),
+@@ -84,6 +87,14 @@ function PersonClaims({ personId }: { personId: number }) {
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+     },
+     onError: async (e) => {
++      // Another user opened (or voided) the claim since it was shown: the edit is refused on the claim.
++      if (editing !== undefined && e instanceof HttpError && (e.body as { reason?: string } | undefined)?.reason === 'status') {
++        notDraft(editing);
++        setEditing(undefined);
++        setForm(EMPTY);
++        await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
++        return;
++      }
+       setError(e instanceof HttpError && e.status === 409
+         ? 'The claim could not be saved: it is dated inside a closed period.'
+         : 'The claim could not be saved: the amount must be 0.00 or more, with up to two decimals.');
+@@ -98,6 +109,10 @@ function PersonClaims({ personId }: { personId: number }) {
+ 
+   const open = (claim: Claim) => {
+     clearClaimError(claim.id);
++    if (!canEdit(claim)) {
++      notDraft(claim.id);
++      return;
++    }
+     setEditing(claim.id);
+     setForm({ amount: claim.amount, date: claim.date, note: claim.note });
+     setError('');
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index c7cd5a0..656bc0a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -6,7 +6,7 @@ import { useCurrentSheet } from '../session/session';
+ // floating-point error shows.
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+-  /** Given when opened, the next on the sheet; null for a draft or a voided claim. */
++  /** Given when opened, the next on the sheet; null for a draft; a voided claim keeps it. */
+   number: number | null;
+   /** Fixed when settled (two decimals); null while live, or when no rate applied at settling. */
+   settledDue: string | null;
+@@ -48,6 +48,9 @@ export const CLAIM_ACTIONS: ClaimAction[] = ['open', 'settle', 'void'];
+ const ALLOWED: Record<ClaimAction, ClaimStatus[]> = { open: ['DRAFT'], settle: ['OPEN'], void: ['DRAFT', 'OPEN'] };
+ export const canTake = (claim: Claim, action: ClaimAction) => ALLOWED[action].includes(claim.status);
+ 
++/** Only a DRAFT can be edited; to change an OPEN claim, void it and add a new one. */
++export const canEdit = (claim: Claim) => claim.status === 'DRAFT';
++
+ /** Four eyes: the user who opened a claim cannot settle it. */
+ export const selfSettle = (claim: Claim, user: string, action: ClaimAction) =>
+   action === 'settle' && claim.openedBy != null && claim.openedBy === user.trim();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimVoided.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimVoided.java
+index c7aa206..5d64c97 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimVoided.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimVoided.java
+@@ -5,11 +5,11 @@ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.HttpHeaderParameter;
+ 
+-/** Records CLAIM_VOIDED once the claim is saved, with the number it had; the signed-in user arrives
++/** Records CLAIM_VOIDED once the claim is saved, with the number it keeps; the signed-in user arrives
+  *  as X-User. */
+ public class AuditClaimVoided {
+-    public void audit(@Val Claim claim, @Val VoidedNumber voided, @HttpHeaderParameter("X-User") String user,
++    public void audit(@Val Claim claim, @HttpHeaderParameter("X-User") String user,
+             PersonRepository people, Audit audit) {
+-        audit.record(ClaimAudit.line("CLAIM_VOIDED", claim, voided.value(), user, people));
++        audit.record(ClaimAudit.line("CLAIM_VOIDED", claim, user, people));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimEditable.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimEditable.java
+new file mode 100644
+index 0000000..510cf04
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimEditable.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses the edit unless the claim is a DRAFT, as loaded and as stored now (an open of it that got
++ *  there first has committed by then). An OPEN claim is changed by voiding it and adding a new one. */
++public class CheckClaimEditable {
++    public void check(@Val Claim claim, ClaimRepository repository) throws ClaimNotEditableException {
++        if (claim.getStatus() != ClaimStatus.DRAFT
++                || ClaimStatus.valueOf(repository.storedStatus(claim.getId())) != ClaimStatus.DRAFT) {
++            throw new ClaimNotEditableException("Only a DRAFT claim can be edited; void it and add a new one.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 13a5590..9211d7e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -40,7 +40,7 @@ public class Claim {
+     @Column(name = "status", nullable = false)
+     private ClaimStatus status = ClaimStatus.DRAFT;
+ 
+-    /** Given when opened, the next on its sheet; none while a draft, cleared when voided. */
++    /** Given when opened, the next on its sheet; none while a draft, kept when voided. */
+     @Column(name = "claim_number")
+     private Integer number;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+index c77eed0..f9ed368 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+@@ -9,10 +9,7 @@ final class ClaimAudit {
+     }
+ 
+     static String line(String event, Claim claim, String user, PersonRepository people) {
+-        return line(event, claim, claim.getNumber(), user, people);
+-    }
+-
+-    static String line(String event, Claim claim, Integer number, String user, PersonRepository people) {
++        Integer number = claim.getNumber();
+         String person = people.findById(claim.getPersonId()).orElseThrow().getName();
+         ClaimResponse shown = ClaimResponse.from(claim);
+         return event + " sheet=" + claim.getSheetId() + " by=" + (user == null ? "" : user.trim())
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNotEditableException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNotEditableException.java
+new file mode 100644
+index 0000000..83091a9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNotEditableException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++/** The claim is no longer a DRAFT, so it cannot be edited (void it and add a new one); nothing is changed. */
++public class ClaimNotEditableException extends Exception {
++    public ClaimNotEditableException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRefusal.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRefusal.java
+new file mode 100644
+index 0000000..dcdd972
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRefusal.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Why a claim change was refused, so the screen can tell one 409 from another. */
++public record ClaimRefusal(String reason, String message) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotEditable.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotEditable.java
+new file mode 100644
+index 0000000..84c2657
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotEditable.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimNotEditable {
++    public void handle(@Parameter ClaimNotEditableException ex, ObjectResponse<ResponseEntity<ClaimRefusal>> response) {
++        response.send(new ResponseEntity<>(new ClaimRefusal("status", ex.getMessage()), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java b/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java
+index a455f82..c95be49 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/VoidClaim.java
+@@ -1,14 +1,11 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Moves the claim to VOID, refusing it when its status does not allow that, and clears its number
+- *  (the number is not given to anyone else). */
++/** Moves the claim to VOID, refusing it when its status does not allow that. It keeps its number (the
++ *  number is still never given to anyone else). */
+ public class VoidClaim {
+-    public void apply(@Val Claim claim, Out<VoidedNumber> voided) throws InvalidClaimStatusException {
++    public void apply(@Val Claim claim) throws InvalidClaimStatusException {
+         ClaimTransition.to(claim, ClaimStatus.VOID);
+-        voided.set(new VoidedNumber(claim.getNumber()));
+-        claim.setNumber(null);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/VoidedNumber.java b/src/main/java/net/officefloor/hq/app/claim/VoidedNumber.java
+deleted file mode 100644
+index c1263f4..0000000
+--- a/src/main/java/net/officefloor/hq/app/claim/VoidedNumber.java
++++ /dev/null
+@@ -1,5 +0,0 @@
+-package net.officefloor.hq.app.claim;
+-
+-/** The number a claim had before it was voided (null when it had none), for its audit line. */
+-public record VoidedNumber(Integer value) {
+-}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotEditableException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotEditableException.yml
+new file mode 100644
+index 0000000..6cddd46
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotEditableException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimNotEditable
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 4420064..30d31e1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,4 @@
+-# Edit a claim's amount, date and note. Validate before Load so an invalid body is a 400, not masked
++# Edit a DRAFT claim's amount, date and note. Validate before Load so an invalid body is a 400, not masked
+ # by a 404.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+@@ -6,6 +6,12 @@ validate:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: editable
++# Only a DRAFT can be edited: any other status is refused (409) and writes nothing. To change an OPEN
++# claim, void it and add a new one.
++editable:
++  class: net.officefloor.hq.app.claim.CheckClaimEditable
++  govern: [ transaction ]
+   next: check
+ # A claim dated inside a closed period, before or after the edit, is refused (409) and writes nothing.
+ check:
