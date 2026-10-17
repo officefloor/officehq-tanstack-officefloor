@@ -6,17 +6,21 @@ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { total, useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { NA, PERCENT, dueCents, ratesKey, setRate, show, useGradeRate, usePersonRate } from './rates';
+import { NA, PERCENT, dueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
 import type { RateInput } from './rates';
 
-const EMPTY: RateInput = { grade: 'A', rate: '' };
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-// The sheet's rates: a form that sets a grade's rate (replacing any it had), and each grade's
-// current rate (n/a when it has none).
+const EMPTY: RateInput = { grade: 'A', rate: '', from: '' };
+
+// The sheet's rates: a form that sets a grade's rate from a from-date (none: from the beginning of
+// time), replacing any rate it had for that from-date; each grade's rate in force on the sheet's today
+// (n/a when none applies); and every rate set, by grade then from-date.
 function Rates() {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const rateOf = useGradeRate();
+  const rates = useRates().data ?? [];
   const [form, setForm] = useState<RateInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -24,10 +28,11 @@ function Rates() {
   const save = useMutation({
     mutationFn: (input: RateInput) => setRate(sheet!, user, input),
     onSuccess: async () => {
-      setForm((f) => ({ ...f, rate: '' }));
+      setForm((f) => ({ ...f, rate: '', from: '' }));
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet!) });
     },
-    onError: () => setError('The rate could not be set: it must be a percent of 0.00 or more, with up to two decimals.'),
+    onError: () =>
+      setError('The rate could not be set: it must be a percent of 0.00 or more, with up to two decimals, and a date if from is given.'),
   });
 
   if (!sheet) return null;
@@ -44,7 +49,12 @@ function Rates() {
       setError('The rate must be a percent of 0.00 or more, with up to two decimals.');
       return;
     }
-    save.mutate({ grade: form.grade, rate: form.rate.trim() });
+    const from = form.from.trim();
+    if (from !== '' && !DATE.test(from)) {
+      setError('The from-date must be a date (yyyy-mm-dd).');
+      return;
+    }
+    save.mutate({ grade: form.grade, rate: form.rate.trim(), from });
   };
 
   return (
@@ -65,6 +75,13 @@ function Rates() {
           value={form.rate}
           onChange={(e) => change({ rate: e.target.value })}
         />
+        <input
+          data-testid="rate-form-from"
+          type="date"
+          placeholder="From (yyyy-mm-dd)"
+          value={form.from}
+          onChange={(e) => change({ from: e.target.value })}
+        />
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -74,21 +91,34 @@ function Rates() {
         <thead>
           <tr>
             <th>Grade</th>
+            <th>Rate today (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              <td data-testid={`rate-current-${g}`}>{rateOf(g) ?? NA}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="rate-history">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>From</th>
             <th>Rate (%)</th>
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
-            const rate = rateOf(g);
-            return (
-              <tr key={g} data-testid={rate !== undefined ? `rate-row-${g}-start` : undefined}>
-                <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>
-                  {rate !== undefined ? <span data-testid="rate-pct">{rate}</span> : NA}
-                </td>
-              </tr>
-            );
-          })}
+          {rates.map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td data-testid="rate-pct">{r.rate}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>

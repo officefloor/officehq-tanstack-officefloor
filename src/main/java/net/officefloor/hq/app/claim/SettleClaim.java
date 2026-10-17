@@ -8,13 +8,13 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to SETTLED, refusing it when its status does not allow that, and fixes its due at the
- *  rate its person's grade has now: amount × rate / 100, rounded half up (none when the grade has no rate). */
+ *  rate its person's grade has in force on the claim's date: amount × rate / 100, rounded half up (none when no rate applies). */
 public class SettleClaim {
     public void apply(@Val Claim claim, PersonRepository people, RateRepository rates)
             throws InvalidClaimStatusException {
         ClaimTransition.to(claim, ClaimStatus.SETTLED);
         Person person = people.findById(claim.getPersonId()).orElseThrow();
-        claim.setSettledDue(rates.findBySheetIdAndGrade(claim.getSheetId(), person.getGrade())
+        claim.setSettledDue(rates.findInForce(claim.getSheetId(), person.getGrade(), claim.getDate())
                 .map((r) -> claim.getAmount().multiply(r.getRate())
                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
                 .orElse(null));

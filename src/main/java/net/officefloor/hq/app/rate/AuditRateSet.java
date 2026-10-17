@@ -8,6 +8,7 @@ import net.officefloor.web.HttpHeaderParameter;
 public class AuditRateSet {
     public void audit(@Val Rate rate, @HttpHeaderParameter("X-User") String user, Audit audit) {
         audit.record("RATE_SET sheet=" + rate.getSheetId() + " by=" + (user == null ? "" : user.trim())
-                + " grade=" + rate.getGrade() + " rate=" + rate.getRate().setScale(2).toPlainString());
+                + " grade=" + rate.getGrade() + " rate=" + rate.getRate().setScale(2).toPlainString()
+                + (rate.getFromDate() == null ? "" : " from=" + rate.getFromDate()));
     }
 }

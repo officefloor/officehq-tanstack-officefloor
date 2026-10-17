@@ -29,7 +29,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
-  const rate = usePersonRate()(personId);
+  const rateOf = usePersonRate();
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
@@ -138,7 +138,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{showDue(claimDueCents(c, rate))}</span>{' '}
+              <span data-testid="claim-due">{showDue(claimDueCents(c, rateOf(personId, c.date)))}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
