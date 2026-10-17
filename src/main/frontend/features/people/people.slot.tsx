@@ -26,7 +26,7 @@ function People() {
       setEditing(undefined);
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
     },
-    onError: () => setError('The person could not be saved: a name is required.'),
+    onError: () => setError('The person could not be saved: a name is required and must not already be in use.'),
   });
 
   if (!sheet) return null;
