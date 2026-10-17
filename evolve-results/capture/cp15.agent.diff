@@ -1,0 +1,356 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 03c3e79..64c7e55 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -2,7 +2,7 @@
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
+ /** A non-2xx answer; `status` lets a caller tell one refusal from another (e.g. 409 Conflict). */
+ export class HttpError extends Error {
+-  constructor(message: string, readonly status: number) {
++  constructor(message: string, readonly status: number, readonly body?: unknown) {
+     super(message);
+   }
+ }
+@@ -10,7 +10,9 @@ export class HttpError extends Error {
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const res = await fetch(path, init);
+   if (!res.ok) {
+-    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
++    // A refusal may explain itself in a JSON body (e.g. which lines of an import were bad).
++    const body: unknown = await res.json().catch(() => undefined);
++    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status, body);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+diff --git a/src/main/frontend/features/people/import.slot.tsx b/src/main/frontend/features/people/import.slot.tsx
+new file mode 100644
+index 0000000..e469378
+--- /dev/null
++++ b/src/main/frontend/features/people/import.slot.tsx
+@@ -0,0 +1,87 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { HttpError } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { importPeople, peopleKey } from './people';
++import type { ImportResult } from './people';
++
++// Import people pasted as lines of name,grade. The server checks every line first; when any is bad
++// nothing is imported and each bad line is marked by its number, otherwise the count added is shown.
++function ImportPeople() {
++  const [sheet] = useCurrentSheet();
++  const [user] = useCurrentUser();
++  const [text, setText] = useState('');
++  const [result, setResult] = useState<ImportResult | null>(null);
++  const [failed, setFailed] = useState(false);
++  const queryClient = useQueryClient();
++  const once = useSubmitOnce();
++
++  const run = useMutation({
++    mutationFn: (input: string) => importPeople(sheet!, user, input),
++    onSuccess: async (r) => {
++      setResult(r);
++      setText('');
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
++    },
++    onError: (e) => {
++      const body = e instanceof HttpError ? (e.body as ImportResult | undefined) : undefined;
++      if (body && Array.isArray(body.errors)) setResult({ added: 0, errors: body.errors });
++      else setFailed(true);
++    },
++  });
++
++  if (!sheet) return null;
++
++  const clear = () => {
++    setResult(null);
++    setFailed(false);
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    clear();
++    once(() => run.mutateAsync(text));
++  };
++
++  return (
++    <section data-testid="import">
++      <h2>Import people</h2>
++      <form data-testid="import-form" onSubmit={submit}>
++        <textarea
++          data-testid="import-text"
++          placeholder="name,grade — one person per line"
++          rows={4}
++          value={text}
++          onChange={(e) => {
++            setText(e.target.value);
++            clear();
++          }}
++        />
++        <button type="submit" data-testid="import-submit" disabled={run.isPending}>
++          Import
++        </button>
++      </form>
++      {result && (
++        <p>
++          Added <span data-testid="import-added">{result.added}</span>
++          {result.errors.length > 0 && <> — nothing was imported; fix these lines:</>}
++        </p>
++      )}
++      {result && result.errors.length > 0 && (
++        <ul>
++          {result.errors.map((n) => (
++            <li key={n} data-testid={`import-error-${n}`}>
++              Line {n}: a name is required, unique on the sheet and in the paste, with a grade of A, B or C.
++            </li>
++          ))}
++        </ul>
++      )}
++      {failed && <span data-testid="import-failed">The import could not be made.</span>}
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 15, Component: ImportPeople });
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index d4d62b9..ca5b00c 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -29,5 +29,12 @@ export const addPerson = (sheet: string, user: string, input: PersonInput) =>
+ export const updatePerson = (sheet: string, user: string, id: number, input: PersonInput) =>
+   putJson<Person>(`${base(sheet)}/${id}`, input, user);
+ 
++/** The outcome of an import: the count added, or the numbers of the lines refused (nothing added). */
++export type ImportResult = { added: number; errors: number[] };
++
++/** Imports people pasted as lines of name,grade; a refusal (400) carries the bad line numbers. */
++export const importPeople = (sheet: string, user: string, text: string) =>
++  postJson<ImportResult>(`${base(sheet)}/import`, { text }, user);
++
+ /** The person open in the editor (by id), kept in the URL. */
+ export const useEditingPerson = () => useSearchParam('editPerson', asString);
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditImport.java b/src/main/java/net/officefloor/hq/app/person/AuditImport.java
+new file mode 100644
+index 0000000..99d7452
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditImport.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.HttpHeaderParameter;
++
++/** Records PERSON_ADDED for each imported person, in order, once all are saved. */
++public class AuditImport {
++    public void audit(@Val ImportedPeople imported, @HttpHeaderParameter("X-User") String user, Audit audit) {
++        imported.people().forEach((person) -> audit.record(PersonAudit.line("PERSON_ADDED", person, user)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckImport.java b/src/main/java/net/officefloor/hq/app/person/CheckImport.java
+new file mode 100644
+index 0000000..95b960d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CheckImport.java
+@@ -0,0 +1,55 @@
++package net.officefloor.hq.app.person;
++
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Locale;
++import java.util.Set;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * Reads the pasted lines (name,grade) and checks each with the form's rules: a name, a grade of A, B
++ * or C, and a name not already on the sheet nor repeated in the paste (ignoring case; names are
++ * trimmed). Blank lines are skipped. Any bad line refuses the whole import.
++ */
++public class CheckImport {
++
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void check(@PathVariable("sheetId") String sheetId, @RequestBody ImportRequest request,
++            PersonRepository repository, Out<ImportedPeople> importedOut) throws InvalidImportException {
++        String sheet = sheetId.trim();
++        Set<String> taken = new HashSet<>();
++        repository.findBySheetIdOrderByIdAsc(sheet).forEach((p) -> taken.add(key(p.getName())));
++        String[] lines = request == null || request.text() == null ? new String[0] : request.text().split("\\R", -1);
++        List<Person> people = new ArrayList<>();
++        List<Integer> errors = new ArrayList<>();
++        for (int i = 0; i < lines.length; i++) {
++            String line = lines[i];
++            if (line.isBlank()) {
++                continue;
++            }
++            int comma = line.indexOf(',');
++            String name = (comma < 0 ? line : line.substring(0, comma)).trim();
++            String grade = comma < 0 ? "" : line.substring(comma + 1).trim();
++            if (name.isEmpty() || !GRADES.contains(grade) || !taken.add(key(name))) {
++                errors.add(i + 1);
++                continue;
++            }
++            Person person = new Person(sheet);
++            person.setName(name);
++            person.setGrade(grade);
++            people.add(person);
++        }
++        if (!errors.isEmpty()) {
++            throw new InvalidImportException(errors);
++        }
++        importedOut.set(new ImportedPeople(people));
++    }
++
++    private static String key(String name) {
++        return name.trim().toLowerCase(Locale.ROOT);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java b/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java
+new file mode 100644
+index 0000000..715e069
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandleInvalidImport.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidImport {
++    public void handle(@Parameter InvalidImportException ex, ObjectResponse<ResponseEntity<ImportResponse>> response) {
++        response.send(new ResponseEntity<>(new ImportResponse(0, ex.getLines()), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportRequest.java b/src/main/java/net/officefloor/hq/app/person/ImportRequest.java
+new file mode 100644
+index 0000000..982fcde
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ImportRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The body of an import: pasted text, one person per line as name,grade. */
++public record ImportRequest(String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportResponse.java b/src/main/java/net/officefloor/hq/app/person/ImportResponse.java
+new file mode 100644
+index 0000000..029ff9b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ImportResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/** The outcome of an import: the count added, or the (1-based) numbers of the lines refused. */
++public record ImportResponse(int added, List<Integer> errors) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java b/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java
+new file mode 100644
+index 0000000..bd51737
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ImportedPeople.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/** The people of an import that passed its checks, in the order they were pasted. */
++public record ImportedPeople(List<Person> people) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidImportException.java b/src/main/java/net/officefloor/hq/app/person/InvalidImportException.java
+new file mode 100644
+index 0000000..288ad84
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidImportException.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/** Some lines of an import are not valid people; nothing is imported. */
++public class InvalidImportException extends Exception {
++
++    private final List<Integer> lines;
++
++    public InvalidImportException(List<Integer> lines) {
++        super("Lines " + lines + " are not valid people.");
++        this.lines = List.copyOf(lines);
++    }
++
++    public List<Integer> getLines() {
++        return lines;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java b/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java
+new file mode 100644
+index 0000000..6e15018
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithImport.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithImport {
++    public void respond(@Val ImportedPeople imported, ObjectResponse<ImportResponse> response) {
++        response.send(new ImportResponse(imported.people().size(), List.of()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/SaveImport.java b/src/main/java/net/officefloor/hq/app/person/SaveImport.java
+new file mode 100644
+index 0000000..b4f277c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/SaveImport.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SaveImport {
++    public void save(@Val ImportedPeople imported, PersonRepository repository) {
++        imported.people().forEach(repository::save); // in order, so ids follow the paste
++        repository.flush();
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.InvalidImportException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.InvalidImportException.yml
+new file mode 100644
+index 0000000..79f2106
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.InvalidImportException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandleInvalidImport
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml
+new file mode 100644
+index 0000000..db7e6a0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml
+@@ -0,0 +1,17 @@
++# Import people pasted as lines of name,grade. Every line is checked first with the form's rules;
++# any bad line refuses the whole import (400, with the bad line numbers) and writes nothing.
++check:
++  class: net.officefloor.hq.app.person.CheckImport
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.person.SaveImport
++  govern: [ transaction ]
++  next: audit
++# Record the people only once they are all saved, so a refused import writes no audit line.
++audit:
++  class: net.officefloor.hq.app.person.AuditImport
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithImport
