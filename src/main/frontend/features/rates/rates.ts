@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
+import type { Claim } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useCurrentSheet } from '../session/session';
 
@@ -48,6 +49,13 @@ export function dueCents(amount: string, rate: string): bigint {
   const product = hundredths(amount) * hundredths(rate); // cents × hundredths of a percent
   const sign = product < 0n ? -1n : 1n;
   return sign * ((sign * product + 5000n) / 10000n);
+}
+
+/** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft
+ *  claim's is live, at its grade's rate now. Undefined for n/a. */
+export function claimDueCents(claim: Claim, rate: string | undefined): bigint | undefined {
+  if (claim.status === 'SETTLED') return claim.settledDue === null ? undefined : hundredths(claim.settledDue);
+  return rate === undefined ? undefined : dueCents(claim.amount, rate);
 }
 
 /** The rate (two decimals) for a person's grade, or undefined when the grade has none. */

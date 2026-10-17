@@ -7,7 +7,9 @@ import { useCurrentSheet } from '../session/session';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when opened, the next on the sheet; null for a draft or a voided claim. */
-  number: number | null };
+  number: number | null;
+  /** Fixed when settled (two decimals); null while live, or when no rate applied at settling. */
+  settledDue: string | null };
 export type ClaimInput = { amount: string; date: string; note: string };
 
 /** 0.00 or more, with up to two decimals. */

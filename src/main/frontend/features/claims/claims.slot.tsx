@@ -4,12 +4,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { NA, dueCents, show, usePersonRate } from '../rates/rates';
+import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
 import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, total, updateClaim, useClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 const LABEL: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void' };
+const showDue = (due: bigint | undefined) => (due === undefined ? NA : show(due));
 const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided' };
 
 function ClaimColumns() {
@@ -137,7 +138,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{rate === undefined ? NA : show(dueCents(c.amount, rate))}</span>{' '}
+              <span data-testid="claim-due">{showDue(claimDueCents(c, rate))}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
