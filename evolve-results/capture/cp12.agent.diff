@@ -1,0 +1,77 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index ed00520..4a6c126 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -3,10 +3,10 @@ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+-import { total, useClaims } from '../claims/claims';
++import { counts, useClaims } from '../claims/claims';
+ import { GRADES, usePeople } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { NA, PERCENT, dueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
++import { NA, PERCENT, claimDueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
+ import type { RateInput } from './rates';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+@@ -129,18 +129,23 @@ function DueColumn() {
+   return <th>Due</th>;
+ }
+ 
+-/** A person's due-total in cents (their claimed × their grade's rate / 100), or undefined for n/a. */
++/** A person's due-total in cents: the already-rounded figures of their claims that count added up
++ *  (0 when none counts). Undefined for n/a: their grade has no rate today and no settled claim keeps
++ *  a figure. */
+ function useDueTotal() {
+   const claims = useClaims().data ?? [];
+   const rateOf = usePersonRate();
+   return (personId: number) => {
+-    const rate = rateOf(personId);
+-    if (rate === undefined) return undefined;
+-    return dueCents(total(claims.filter((c) => c.personId === personId)), rate);
++    const figures = claims
++      .filter((c) => c.personId === personId && counts(c))
++      .map((c) => ({ claim: c, due: claimDueCents(c, rateOf(personId, c.date)) }));
++    const kept = figures.some((f) => f.claim.status === 'SETTLED' && f.due !== undefined);
++    if (rateOf(personId) === undefined && !kept) return undefined;
++    return figures.reduce((n, f) => n + (f.due ?? 0n), 0n);
+   };
+ }
+ 
+-// A person's due-total: n/a when their grade has no rate.
++// A person's due-total: n/a when their grade has no rate today, unless a settled claim keeps a figure.
+ function PersonDueTotal({ personId }: { personId: number }) {
+   const due = useDueTotal()(personId);
+   return <td data-testid="person-due-total">{due === undefined ? NA : show(due)}</td>;
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 5ec81fd..dd1e3aa 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -8,7 +8,7 @@ import { useCurrentSheet, useSheetToday } from '../session/session';
+ // beginning of time); a grade may have several. A date uses the rate whose from-date is the latest on
+ // or before it; a date before every rate of its grade, or a grade with no rate, has none (n/a).
+ // Due is worked out in whole cents and hundredths of a percent with BigInt, so no floating-point
+-// error shows: amount × rate / 100, rounded half up (away from zero) to two decimals.
++// error shows: amount × rate / 100, rounded half to even to two decimals.
+ export type Rate = { grade: string; rate: string; from: string | null };
+ export type RateInput = { grade: string; rate: string; from: string };
+ 
+@@ -46,11 +46,15 @@ export const show = (n: bigint): string => {
+   return `${sign}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
+ };
+ 
+-/** The due on an amount at a rate, in cents: amount × rate / 100, rounded half up. */
++/** The due on an amount at a rate, in cents: amount × rate / 100, rounded half to even. */
+ export function dueCents(amount: string, rate: string): bigint {
+   const product = hundredths(amount) * hundredths(rate); // cents × hundredths of a percent
+   const sign = product < 0n ? -1n : 1n;
+-  return sign * ((sign * product + 5000n) / 10000n);
++  const abs = sign * product;
++  const whole = abs / 10000n;
++  const rest = abs % 10000n;
++  const up = rest > 5000n || (rest === 5000n && whole % 2n === 1n);
++  return sign * (up ? whole + 1n : whole);
+ }
+ 
+ /** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft
