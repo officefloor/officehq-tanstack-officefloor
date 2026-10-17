@@ -2,7 +2,7 @@
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
 /** A non-2xx answer; `status` lets a caller tell one refusal from another (e.g. 409 Conflict). */
 export class HttpError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly body?: unknown) {
     super(message);
   }
 }
@@ -10,7 +10,9 @@ export class HttpError extends Error {
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
-    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+    // A refusal may explain itself in a JSON body (e.g. which lines of an import were bad).
+    const body: unknown = await res.json().catch(() => undefined);
+    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status, body);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }

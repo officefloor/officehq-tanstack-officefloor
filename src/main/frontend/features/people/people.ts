@@ -29,5 +29,12 @@ export const addPerson = (sheet: string, user: string, input: PersonInput) =>
 export const updatePerson = (sheet: string, user: string, id: number, input: PersonInput) =>
   putJson<Person>(`${base(sheet)}/${id}`, input, user);
 
+/** The outcome of an import: the count added, or the numbers of the lines refused (nothing added). */
+export type ImportResult = { added: number; errors: number[] };
+
+/** Imports people pasted as lines of name,grade; a refusal (400) carries the bad line numbers. */
+export const importPeople = (sheet: string, user: string, text: string) =>
+  postJson<ImportResult>(`${base(sheet)}/import`, { text }, user);
+
 /** The person open in the editor (by id), kept in the URL. */
 export const useEditingPerson = () => useSearchParam('editPerson', asString);
