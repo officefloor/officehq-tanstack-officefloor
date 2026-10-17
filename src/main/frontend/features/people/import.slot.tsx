@@ -9,7 +9,8 @@ import { importPeople, peopleKey } from './people';
 import type { ImportResult } from './people';
 
 // Import people pasted as lines of name,grade. The server checks every line first; when any is bad
-// nothing is imported and each bad line is marked by its number, otherwise the count added is shown.
+// nothing is imported and each bad line is marked by its number, otherwise the counts added and
+// updated (a name already on the sheet updates that person's grade) are shown.
 function ImportPeople() {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -28,7 +29,7 @@ function ImportPeople() {
     },
     onError: (e) => {
       const body = e instanceof HttpError ? (e.body as ImportResult | undefined) : undefined;
-      if (body && Array.isArray(body.errors)) setResult({ added: 0, errors: body.errors });
+      if (body && Array.isArray(body.errors)) setResult({ added: 0, updated: 0, errors: body.errors });
       else setFailed(true);
     },
   });
@@ -66,7 +67,8 @@ function ImportPeople() {
       </form>
       {result && (
         <p>
-          Added <span data-testid="import-added">{result.added}</span>
+          Added <span data-testid="import-added">{result.added}</span>, updated{' '}
+          <span data-testid="import-updated">{result.updated}</span>
           {result.errors.length > 0 && <> — nothing was imported; fix these lines:</>}
         </p>
       )}
@@ -74,7 +76,7 @@ function ImportPeople() {
         <ul>
           {result.errors.map((n) => (
             <li key={n} data-testid={`import-error-${n}`}>
-              Line {n}: a name is required, unique on the sheet and in the paste, with a grade of A, B or C.
+              Line {n}: a name is required, not repeated in the paste, with a grade of A, B or C.
             </li>
           ))}
         </ul>

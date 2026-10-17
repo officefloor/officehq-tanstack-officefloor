@@ -6,6 +6,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithImport {
     public void respond(@Val ImportedPeople imported, ObjectResponse<ImportResponse> response) {
-        response.send(new ImportResponse(imported.people().size(), List.of()));
+        response.send(new ImportResponse(imported.addedCount(), imported.updated().size(), List.of()));
     }
 }
