@@ -5,7 +5,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
-import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, total, updateClaim, useClaims } from './claims';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
@@ -54,6 +54,10 @@ function PersonClaims({ personId }: { personId: number }) {
     clearClaimError(claim.id);
     if (!canTake(claim, action)) {
       refuse(claim.id, `A ${claim.status} claim cannot be ${DONE[action]}.`);
+      return;
+    }
+    if (selfSettle(claim, user, action)) {
+      refuse(claim.id, 'The user who opened a claim cannot settle it.');
       return;
     }
     act.mutate({ claim, action });
@@ -141,6 +145,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-due">{showDue(claimDueCents(c, rateOf(personId, c.date)))}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+              <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>

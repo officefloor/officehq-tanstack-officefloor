@@ -9,7 +9,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** Given when opened, the next on the sheet; null for a draft or a voided claim. */
   number: number | null;
   /** Fixed when settled (two decimals); null while live, or when no rate applied at settling. */
-  settledDue: string | null };
+  settledDue: string | null;
+  /** The user who opened it; null for a draft. */
+  openedBy: string | null };
 export type ClaimInput = { amount: string; date: string; note: string };
 
 /** 0.00 or more, with up to two decimals. */
@@ -40,6 +42,10 @@ export type ClaimAction = 'open' | 'settle' | 'void';
 export const CLAIM_ACTIONS: ClaimAction[] = ['open', 'settle', 'void'];
 const ALLOWED: Record<ClaimAction, ClaimStatus[]> = { open: ['DRAFT'], settle: ['OPEN'], void: ['DRAFT', 'OPEN'] };
 export const canTake = (claim: Claim, action: ClaimAction) => ALLOWED[action].includes(claim.status);
+
+/** Four eyes: the user who opened a claim cannot settle it. */
+export const selfSettle = (claim: Claim, user: string, action: ClaimAction) =>
+  action === 'settle' && claim.openedBy != null && claim.openedBy === user.trim();
 
 export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction) =>
   postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, {}, user);
