@@ -5,8 +5,10 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-export type Person = { id: number; name: string; grade: string };
-export type PersonInput = { name: string; grade: string };
+export type Person = { id: number; name: string; grade: string; version: number };
+/** An edit carries the version of the person it was loaded from; the server refuses it (409) when
+ *  someone else has saved the person since. */
+export type PersonInput = { name: string; grade: string; version?: number };
 
 const base = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
 export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;

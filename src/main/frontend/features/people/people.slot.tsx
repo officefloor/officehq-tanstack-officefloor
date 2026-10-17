@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { HttpError } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
@@ -10,7 +12,8 @@ import type { Person, PersonInput } from './people';
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 // The sheet's people: a form that adds a person or, once a person's editor is opened, edits them;
-// and the list of people in the order they were added.
+// and the list of people in the order they were added. The editor remembers the version it loaded:
+// when someone else has saved the person since, the save is refused and the form shows their values.
 function People() {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -19,6 +22,7 @@ function People() {
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useSubmitOnce();
 
   const save = useMutation({
     mutationFn: (input: PersonInput) =>
@@ -28,7 +32,16 @@ function People() {
       setEditing(undefined);
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
     },
-    onError: () => setError('The person could not be saved: a name is required and must not already be in use.'),
+    onError: async (e) => {
+      if (!(editing && e instanceof HttpError && e.status === 409)) {
+        setError('The person could not be saved: a name is required and must not already be in use.');
+        return;
+      }
+      setError('Someone else saved this person meanwhile; their values are shown. Nothing was saved.');
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
+      const current = queryClient.getQueryData<Person[]>(peopleKey(sheet!))?.find((p) => p.id === Number(editing));
+      if (current) setForm({ name: current.name, grade: current.grade, version: current.version });
+    },
   });
 
   if (!sheet) return null;
@@ -40,7 +53,7 @@ function People() {
 
   const open = (person: Person) => {
     setEditing(String(person.id));
-    setForm({ name: person.name, grade: person.grade });
+    setForm({ name: person.name, grade: person.grade, version: person.version });
     setError('');
   };
 
@@ -57,7 +70,7 @@ function People() {
       setError('A person needs a name.');
       return;
     }
-    save.mutate(form);
+    once(() => save.mutateAsync(form));
   };
 
   return (

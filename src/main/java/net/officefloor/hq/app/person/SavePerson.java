@@ -4,6 +4,6 @@ import net.officefloor.plugin.variable.Val;
 
 public class SavePerson {
     public void save(@Val Person person, PersonRepository repository) {
-        repository.save(person);
+        repository.saveAndFlush(person); // flushed so the response carries the raised version
     }
 }

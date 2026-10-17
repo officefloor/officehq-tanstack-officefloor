@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
@@ -24,6 +25,7 @@ function Rates() {
   const [form, setForm] = useState<RateInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useSubmitOnce();
 
   const save = useMutation({
     mutationFn: (input: RateInput) => setRate(sheet!, user, input),
@@ -54,7 +56,7 @@ function Rates() {
       setError('The from-date must be a date (yyyy-mm-dd).');
       return;
     }
-    save.mutate({ grade: form.grade, rate: form.rate.trim(), from });
+    once(() => save.mutateAsync({ grade: form.grade, rate: form.rate.trim(), from }));
   };
 
   return (

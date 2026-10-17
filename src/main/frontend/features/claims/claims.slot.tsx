@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
@@ -35,6 +36,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const [error, setError] = useState('');
   const [claimErrors, setClaimErrors] = useState<Record<number, string>>({});
   const queryClient = useQueryClient();
+  const once = useSubmitOnce();
 
   const clearClaimError = (id: number) =>
     setClaimErrors(({ [id]: _, ...rest }) => rest);
@@ -99,7 +101,7 @@ function PersonClaims({ personId }: { personId: number }) {
       setError('The amount must be a number of 0.00 or more, with up to two decimals.');
       return;
     }
-    save.mutate({ amount: form.amount.trim(), date: form.date, note: form.note });
+    once(() => save.mutateAsync({ amount: form.amount.trim(), date: form.date, note: form.note }));
   };
 
   return (

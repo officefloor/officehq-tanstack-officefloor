@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSession } from '../../slots/defs/appSession';
 import { loadSheet, sheetKey, useCurrentSheet, useCurrentUser } from './session';
@@ -10,6 +11,7 @@ function SheetPicker() {
   const [id, setId] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useSubmitOnce();
 
   const load = useMutation({
     mutationFn: (sheetId: string) => loadSheet(sheetId),
@@ -34,7 +36,7 @@ function SheetPicker() {
       setError('Type a sheet id to load.');
       return;
     }
-    load.mutate(trimmed);
+    once(() => load.mutateAsync(trimmed));
   };
 
   return (

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { AppSession } from '../../slots/defs/appSession';
@@ -13,6 +14,7 @@ function SheetToday() {
   const [date, setDate] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useSubmitOnce();
 
   const save = useMutation({
     mutationFn: (value: string) =>
@@ -36,7 +38,7 @@ function SheetToday() {
       setError('Today must be a date (yyyy-mm-dd).');
       return;
     }
-    save.mutate(date.trim());
+    once(() => save.mutateAsync(date.trim()));
   };
 
   return (
