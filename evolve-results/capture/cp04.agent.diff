@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index c17694e..246c43c 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -26,7 +26,7 @@ function People() {
+       setEditing(undefined);
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
+     },
+-    onError: () => setError('The person could not be saved: a name is required.'),
++    onError: () => setError('The person could not be saved: a name is required and must not already be in use.'),
+   });
+ 
+   if (!sheet) return null;
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java b/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java
+new file mode 100644
+index 0000000..9bef15d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses a name already used by another person on the sheet (ignoring case; names are trimmed). */
++public class CheckPersonName {
++    public void check(@Val PersonRequest request, @Val Person person, PersonRepository repository)
++            throws InvalidPersonException {
++        boolean taken = repository.findBySheetIdOrderByIdAsc(person.getSheetId()).stream()
++                .anyMatch((other) -> !other.getId().equals(person.getId())
++                        && other.getName().equalsIgnoreCase(request.name()));
++        if (taken) {
++            throw new InvalidPersonException("The name " + request.name() + " is already in use on this sheet.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+index d4e127d..80e72e9 100644
+--- a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** The requested person is not valid (no name, or an unknown grade); nothing is changed. */
++/** The requested person is not valid (no name, a name already in use, or an unknown grade); nothing is changed. */
+ public class InvalidPersonException extends Exception {
+     public InvalidPersonException(String message) {
+         super(message);
+diff --git a/src/main/resources/db/migration/V4__person_name_unique.sql b/src/main/resources/db/migration/V4__person_name_unique.sql
+new file mode 100644
+index 0000000..c70d352
+--- /dev/null
++++ b/src/main/resources/db/migration/V4__person_name_unique.sql
+@@ -0,0 +1,4 @@
++-- A person's name is unique on its sheet, without regard to case. Names are stored trimmed, so the
++-- key is the lower-cased name.
++ALTER TABLE person ADD COLUMN name_key VARCHAR(200) GENERATED ALWAYS AS (LOWER(name));
++CREATE UNIQUE INDEX person_sheet_name ON person (sheet_id, name_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 381946a..4b3a56a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,9 +1,14 @@
+-# Add a person. Validate first so an empty name or bad grade is refused (400) and writes nothing.
++# Add a person. Validate first so an empty name or bad grade is refused (400) and writes nothing;
++# then refuse a name already in use on the sheet.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: build
+ build:
+   class: net.officefloor.hq.app.person.BuildPerson
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckPersonName
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 4806d4d..f2df5c7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,10 +1,15 @@
+-# Edit a person. Validate before Load so an invalid body is a 400, not masked by a 404.
++# Edit a person. Validate before Load so an invalid body is a 400, not masked by a 404; then refuse
++# a name already used by another person on the sheet.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckPersonName
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.person.ApplyPerson
