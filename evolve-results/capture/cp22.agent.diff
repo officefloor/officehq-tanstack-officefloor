@@ -1,0 +1,415 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 1841a1b..ea83e19 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -9,7 +9,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import { afterRetirement, peopleKey, usePeople } from '../people/people';
+ import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
+ import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
+-import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
++import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims, useCounts } from './claims';
+ import type { Claim, ClaimAction, ClaimInput } from './claims';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+@@ -36,6 +36,7 @@ function PersonClaims({ personId }: { personId: number }) {
+   const [user] = useCurrentUser();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
+   const person = (usePeople().data ?? []).find((p) => p.id === personId);
++  const counted = useCounts();
+   const today = useSheetToday();
+   const rateOf = usePersonRate();
+   const periodOf = usePeriodOf();
+@@ -155,7 +156,7 @@ function PersonClaims({ personId }: { personId: number }) {
+ 
+   return (
+     <>
+-      <td data-testid="person-claimed">{total(claims)}</td>
++      <td data-testid="person-claimed">{total(claims, counted)}</td>
+       <td>
+         <form data-testid="claim-form" onSubmit={submit}>
+           <input
+@@ -215,14 +216,16 @@ function PersonClaims({ personId }: { personId: number }) {
+   );
+ }
+ 
+-// The sheet's claimed-total: everyone's claimed added up (only OPEN and SETTLED claims count).
++// The sheet's claimed-total: everyone's claimed added up (only OPEN and SETTLED claims count, and not
++// the OPEN claims of a person on hold).
+ function ClaimedTotal() {
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims();
++  const counted = useCounts();
+   if (!sheet) return null;
+   return (
+     <section data-testid="rollup">
+-      Claimed total <strong data-testid="rollup-claimed-total">{total(claims.data ?? [])}</strong>
++      Claimed total <strong data-testid="rollup-claimed-total">{total(claims.data ?? [], counted)}</strong>
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 656bc0a..ff7bcac 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson, postJson, putJson } from '../../api/http';
+ import { useCurrentSheet } from '../session/session';
++import { usePeople } from '../people/people';
+ 
+ // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
+ // floating-point error shows.
+@@ -61,13 +62,20 @@ export const claimAction = (sheet: string, user: string, id: number, action: Cla
+ /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
+ export const counts = (claim: Claim) => claim.status === 'OPEN' || claim.status === 'SETTLED';
+ 
++/** Whether a claim counts toward the live totals: as `counts`, except that the OPEN claims of a person
++ *  on hold count in none (their SETTLED claims still do). */
++export function useCounts() {
++  const held = new Set((usePeople().data ?? []).filter((p) => p.held).map((p) => p.id));
++  return (claim: Claim) => counts(claim) && !(claim.status === 'OPEN' && held.has(claim.personId));
++}
++
+ const cents = (amount: string) => {
+   const [whole, frac = ''] = amount.split('.');
+   return Number(whole) * 100 + Number((frac + '00').slice(0, 2));
+ };
+ 
+-/** The amounts of the claims that count (OPEN and SETTLED) added up, shown with two decimals. */
+-export function total(claims: Claim[]): string {
+-  const sum = claims.filter(counts).reduce((n, c) => n + cents(c.amount), 0);
++/** The amounts of the claims that count (by `counted`, from `useCounts`) added up, shown with two decimals. */
++export function total(claims: Claim[], counted: (claim: Claim) => boolean): string {
++  const sum = claims.filter(counted).reduce((n, c) => n + cents(c.amount), 0);
+   return `${Math.floor(sum / 100)}.${String(sum % 100).padStart(2, '0')}`;
+ }
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+new file mode 100644
+index 0000000..35863a7
+--- /dev/null
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -0,0 +1,58 @@
++import { useState } from 'react';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { holdPerson, peopleKey, usePeople } from './people';
++
++function HoldColumns() {
++  return (
++    <>
++      <th>On hold</th>
++      <th>Hold</th>
++    </>
++  );
++}
++
++// Whether a person is on hold, and a button that puts them on hold or releases them. A refusal shows
++// on the row.
++function PersonHold({ personId }: { personId: number }) {
++  const [sheet] = useCurrentSheet();
++  const [user] = useCurrentUser();
++  const person = (usePeople().data ?? []).find((p) => p.id === personId);
++  const [error, setError] = useState('');
++  const queryClient = useQueryClient();
++  const once = useSubmitOnce();
++
++  const hold = useMutation({
++    mutationFn: (held: boolean) => holdPerson(sheet!, user, personId, held),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) }),
++    onError: async () => {
++      setError('The hold could not be changed: someone may have changed it already.');
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
++    },
++  });
++
++  const toggle = () => {
++    setError('');
++    if (!person) return;
++    once(() => hold.mutateAsync(!person.held));
++  };
++
++  return (
++    <>
++      <td data-testid="person-hold">{person?.held ? 'yes' : 'no'}</td>
++      <td>
++        <button type="button" data-testid="person-hold-toggle" onClick={toggle} disabled={hold.isPending}>
++          {person?.held ? 'Release' : 'Hold'}
++        </button>
++        {error && <span data-testid="person-error">{error}</span>}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonColumns.fill({ order: 35, Component: HoldColumns }),
++  PersonCells.fill({ order: 35, Component: PersonHold }),
++];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index cbe0a8a..0151588 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -7,7 +7,9 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+ export type Person = { id: number; name: string; grade: string; version: number;
+   /** The date retired from (yyyy-mm-dd); null while not retired. A claim dated after it is refused. */
+-  retiredFrom: string | null };
++  retiredFrom: string | null;
++  /** While on hold, their OPEN claims count in no live total; their SETTLED claims still do. */
++  held: boolean };
+ /** An edit carries the version of the person it was loaded from; the server refuses it (409) when
+  *  someone else has saved the person since. */
+ export type PersonInput = { name: string; grade: string; version?: number };
+@@ -40,6 +42,10 @@ export type ImportResult = { added: number; updated: number; errors: number[] };
+ export const retirePerson = (sheet: string, user: string, id: number, from: string) =>
+   postJson<Person>(`${base(sheet)}/${id}/retire`, { from }, user);
+ 
++/** Puts a person on hold (held true) or releases them (false); refused (400) when already so. */
++export const holdPerson = (sheet: string, user: string, id: number, held: boolean) =>
++  postJson<Person>(`${base(sheet)}/${id}/hold`, { held }, user);
++
+ /** Whether a claim dated `date` would be after the person's retirement (and so refused). */
+ export const afterRetirement = (person: Person | undefined, date: string) =>
+   !!person?.retiredFrom && date > person.retiredFrom;
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 378114c..63a9243 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+-import { counts, useClaims } from '../claims/claims';
++import { useClaims, useCounts } from '../claims/claims';
+ import { claimDueCents, hundredths, show, usePersonRate } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { addPeriod, closePeriod, periodsKey, usePeriods } from './periods';
+@@ -18,6 +18,7 @@ const EMPTY: PeriodInput = { name: '', from: '', to: '' };
+ function usePeriodDue() {
+   const claims = useClaims().data ?? [];
+   const rateOf = usePersonRate();
++  const counts = useCounts();
+   return (period: Period) =>
+     period.closed && period.closedTotal !== null
+       ? hundredths(period.closedTotal)
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 15c1a70..d9363ce 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -4,7 +4,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
+-import { counts, useClaims } from '../claims/claims';
++import { useClaims, useCounts } from '../claims/claims';
+ import { GRADES, usePeople } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { NA, PERCENT, claimDueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
+@@ -137,6 +137,7 @@ function DueColumn() {
+ function useDueTotal() {
+   const claims = useClaims().data ?? [];
+   const rateOf = usePersonRate();
++  const counts = useCounts();
+   return (personId: number) => {
+     const figures = claims
+       .filter((c) => c.personId === personId && counts(c))
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 5e1941e..00e1b25 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -14,7 +14,7 @@ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Closes the period, refusing one already closed, and fixes its due-total: the due of the claims that
+- *  count dated in it, as shown now (a settled claim's fixed due; an open one's at the rate in force on its
++ *  count dated in it (not the OPEN claims of a person on hold), as shown now (a settled claim's fixed due; an open one's at the rate in force on its
+  *  date, rounded half to even), none where no rate applies. */
+ public class ClosePeriod {
+     public void close(@Val Period period, ClaimRepository claims, PersonRepository people, RateRepository rates)
+@@ -26,7 +26,8 @@ public class ClosePeriod {
+                 .collect(Collectors.toMap(Person::getId, Function.identity()));
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         for (Claim c : claims.findBySheetIdOrderByIdDesc(period.getSheetId())) {
+-            if (!c.getStatus().counts() || !period.contains(c.getDate())) {
++            if (!c.getStatus().counts() || !period.contains(c.getDate())
++                    || (c.getStatus() == ClaimStatus.OPEN && byId.get(c.getPersonId()).isHeld())) {
+                 continue;
+             }
+             BigDecimal due = c.getStatus() == ClaimStatus.SETTLED ? c.getSettledDue()
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonHold.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonHold.java
+new file mode 100644
+index 0000000..4012cf2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonHold.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.HttpHeaderParameter;
++
++/** Records PERSON_HELD or PERSON_RELEASED once the person is saved; the signed-in user arrives as X-User. */
++public class AuditPersonHold {
++    public void audit(@Val Person person, @HttpHeaderParameter("X-User") String user, Audit audit) {
++        audit.record((person.isHeld() ? "PERSON_HELD" : "PERSON_RELEASED") + " sheet=" + person.getSheetId()
++                + " by=" + (user == null ? "" : user.trim()) + " name=" + person.getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HoldInput.java b/src/main/java/net/officefloor/hq/app/person/HoldInput.java
+new file mode 100644
+index 0000000..252fcf5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HoldInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A validated hold body: whether the person is to be held. */
++public record HoldInput(boolean held) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HoldPerson.java b/src/main/java/net/officefloor/hq/app/person/HoldPerson.java
+new file mode 100644
+index 0000000..a0846b2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HoldPerson.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Puts the person on hold or releases them, refusing one already in that state. */
++public class HoldPerson {
++    public void hold(@Val HoldInput input, @Val Person person) throws InvalidPersonException {
++        if (person.isHeld() == input.held()) {
++            throw new InvalidPersonException(person.getName() + (input.held() ? " is already on hold." : " is not on hold."));
++        }
++        person.setHeld(input.held());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HoldRequest.java b/src/main/java/net/officefloor/hq/app/person/HoldRequest.java
+new file mode 100644
+index 0000000..5fde163
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HoldRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The body of holding or releasing a person: true puts them on hold, false releases them. */
++public record HoldRequest(Boolean held) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index b8b5dc1..2ef0929 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -9,7 +9,7 @@ import jakarta.persistence.Table;
+ import jakarta.persistence.Version;
+ import java.time.LocalDate;
+ 
+-/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from. */
++/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from; whether on hold. */
+ @Entity
+ @Table(name = "person")
+ public class Person {
+@@ -36,6 +36,10 @@ public class Person {
+     @Column(name = "retired_from")
+     private LocalDate retiredFrom;
+ 
++    /** While held, their OPEN claims count in no live total; their SETTLED claims still do. */
++    @Column(name = "held", nullable = false)
++    private boolean held;
++
+     protected Person() {
+     }
+ 
+@@ -78,4 +82,12 @@ public class Person {
+     public void setRetiredFrom(LocalDate retiredFrom) {
+         this.retiredFrom = retiredFrom;
+     }
++
++    public boolean isHeld() {
++        return held;
++    }
++
++    public void setHeld(boolean held) {
++        this.held = held;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 9290740..70466b9 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -1,10 +1,11 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** A person as shown; retiredFrom is yyyy-mm-dd, or null while not retired. */
+-public record PersonResponse(long id, String name, String grade, long version, String retiredFrom) {
++/** A person as shown; retiredFrom is yyyy-mm-dd, or null while not retired; held while on hold. */
++public record PersonResponse(long id, String name, String grade, long version, String retiredFrom,
++        boolean held) {
+ 
+     public static PersonResponse from(Person person) {
+         return new PersonResponse(person.getId(), person.getName(), person.getGrade(), person.getVersion(),
+-                person.getRetiredFrom() == null ? null : person.getRetiredFrom().toString());
++                person.getRetiredFrom() == null ? null : person.getRetiredFrom().toString(), person.isHeld());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+new file mode 100644
+index 0000000..6fc9fb9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the hold body, refusing one that does not say whether to hold or release. */
++public class ValidateHold {
++    public void validate(@RequestBody HoldRequest request, Out<HoldInput> holdOut) throws InvalidPersonException {
++        if (request == null || request.held() == null) {
++            throw new InvalidPersonException("Say whether to hold or release the person.");
++        }
++        holdOut.set(new HoldInput(request.held()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V16__person_held.sql b/src/main/resources/db/migration/V16__person_held.sql
+new file mode 100644
+index 0000000..094eddb
+--- /dev/null
++++ b/src/main/resources/db/migration/V16__person_held.sql
+@@ -0,0 +1,3 @@
++-- A person may be put on hold, and released again. While held, their OPEN claims count in no live total
++-- (their claimed and due-total, the sheet's totals, a period's due-total); their SETTLED claims still do.
++ALTER TABLE person ADD COLUMN held BOOLEAN NOT NULL DEFAULT FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+new file mode 100644
+index 0000000..41c2d2d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -0,0 +1,24 @@
++# Put a person on hold, or release them (the body says which). Validate before Load so a bad body is a
++# 400, not masked by a 404; a person already in that state is refused (400) and writes nothing.
++validate:
++  class: net.officefloor.hq.app.person.ValidateHold
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: hold
++hold:
++  class: net.officefloor.hq.app.person.HoldPerson
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.person.SavePerson
++  govern: [ transaction ]
++  next: audit
++# Record the change only once it is saved, so a refused change writes no audit line.
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonHold
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
