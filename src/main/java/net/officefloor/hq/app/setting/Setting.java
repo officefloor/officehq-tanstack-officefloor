@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.List;
 
 /** A sheet's setting by key; its value is null when not set (for clerk-limit: no limit). */
 @Entity
@@ -20,6 +21,15 @@ public class Setting {
 
     /** The terms: the number of days after a claim's date by which it is due (14 when not set). */
     public static final String TERMS = "terms";
+
+    /** The grades that may have their own terms, set under {@link #termsOf(String)}. */
+    public static final List<String> GRADES = List.of("A", "B", "C");
+
+    /** A grade's own terms (terms-<grade>): the days after the date of a claim of that grade by which it is due; the
+     *  sheet's terms when not set. */
+    public static String termsOf(String grade) {
+        return TERMS + "-" + grade;
+    }
 
     /** The late percent: an overdue claim's live due gains it of its floored due for every full 30 days
      *  it is overdue (two decimals); 0.00 when not set. */

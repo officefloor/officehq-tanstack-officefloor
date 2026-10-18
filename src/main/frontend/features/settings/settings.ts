@@ -11,8 +11,11 @@ import { hundredths } from '../rates/rates';
 // every full 30 days it is overdue. The policy date (null: the sheet's today): a claim dated before it rounds
 // its live figures half up, one dated on or after it half to even. The period numbering date (null: off): while
 // the sheet's today is on or after it, a claim opened is numbered within its period (<period name>-<n>, X-<n> in none).
-export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null; periodNumberingFrom: string | null };
-export type SettingsInput = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string };
+// Each grade may have its own terms (gradeTerms, by grade; a grade not listed uses the sheet's terms).
+export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null; periodNumberingFrom: string | null;
+  gradeTerms: Partial<Record<string, string>> };
+export type SettingsInput = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
+  gradeTerms: Record<string, string> };
 export type Role = 'clerk' | 'steward';
 export type UserRole = { user: string; role: Role };
 
@@ -63,14 +66,6 @@ export const DEFAULT_FLOOR = '1.00';
 /** The active sheet's floor in cents: a claim's live due is at least it. */
 export function useFloor(): bigint {
   return hundredths(useSettings().data?.floor ?? DEFAULT_FLOOR);
-}
-
-/** The terms in force before the sheet's settings load or any is set. */
-export const DEFAULT_TERMS = '14';
-
-/** The active sheet's terms in days: a claim is due by its date plus them. */
-export function useTerms(): number {
-  return Number(useSettings().data?.terms ?? DEFAULT_TERMS);
 }
 
 /** Whether the user is a steward on the active sheet (a name with no role is a clerk). */

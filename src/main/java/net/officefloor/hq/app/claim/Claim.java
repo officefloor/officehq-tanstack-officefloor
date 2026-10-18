@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /** A claim a person on a sheet has made: an amount (negative only for a correction, which names the settled claim it corrects), a date, a note (may be empty) and a
- *  status (starting DRAFT), once opened, its number on the sheet and, once settled, its fixed due; once opened, who opened it. */
+ *  status (starting DRAFT), once opened, its number on the sheet and, once settled, its fixed due; once opened, who opened it; and its due-by, fixed when it is created. */
 @Entity
 @Table(name = "claim")
 public class Claim {
@@ -61,6 +61,11 @@ public class Claim {
     @Column(name = "corrects")
     private Integer corrects;
 
+    /** Fixed when created: its date plus the terms of its person's grade in force on that date (the sheet's when the
+     *  grade has none); later changes to the terms or the claim's date do not alter it. */
+    @Column(name = "due_by", nullable = false)
+    private LocalDate dueBy;
+
     protected Claim() {
     }
 
@@ -99,6 +104,14 @@ public class Claim {
 
     public void setDate(LocalDate date) {
         this.date = date;
+    }
+
+    public LocalDate getDueBy() {
+        return dueBy;
+    }
+
+    public void setDueBy(LocalDate dueBy) {
+        this.dueBy = dueBy;
     }
 
     public String getNote() {

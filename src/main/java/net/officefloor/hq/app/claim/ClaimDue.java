@@ -12,7 +12,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 
 /** A claim's due as it would be fixed now: at the rate its person's grade has in force on the claim's date: amount × rate / 100,
  *  rounded half up when the claim is dated before the sheet's policy date (its today when none is set), half to even otherwise,
- *  and raised to the sheet's floor (none when no rate applies), plus, when it is overdue (its date plus the sheet's terms is
+ *  and raised to the sheet's floor (none when no rate applies), plus, when it is overdue (its due-by, fixed when it was created, is
  *  before the sheet's today), the sheet's late percent of that floored due for every full 30 days it is overdue, rounded the
  *  same way. A correction (a negative amount) gets neither the floor nor the late charge. */
 final class ClaimDue {
@@ -33,7 +33,7 @@ final class ClaimDue {
             due = settings.floored(claim.getSheetId(), due);
         }
         if (due != null && !claim.isCorrection()) {
-            LocalDate dueBy = claim.getDate().plusDays(settings.terms(claim.getSheetId()));
+            LocalDate dueBy = claim.getDueBy();
             long spans = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
             if (spans > 0) {
                 due = due.add(due.multiply(settings.latePct(claim.getSheetId())).multiply(BigDecimal.valueOf(spans))

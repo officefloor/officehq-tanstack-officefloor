@@ -6,7 +6,7 @@ import net.officefloor.web.HttpHeaderParameter;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Saves each setting whose value changed and records SETTING_CHANGED for it once saved; an unchanged
- *  setting (or a floor, terms or late percent not given) writes nothing. The signed-in user arrives as X-User. */
+ *  setting (or a floor, terms, grade's terms or late percent not given) writes nothing. The signed-in user arrives as X-User. */
 public class SaveSettings {
     public void save(@PathVariable("sheetId") String sheetId, @Val SettingsInput input,
             @HttpHeaderParameter("X-User") String user, SettingRepository repository, Audit audit) {
@@ -19,6 +19,8 @@ public class SaveSettings {
         if (input.terms() != null) {
             change(id, by, Setting.TERMS, input.terms(), Setting.DEFAULT_TERMS, repository, audit);
         }
+        input.gradeTerms().forEach((grade, terms) ->
+                change(id, by, Setting.termsOf(grade), terms, null, repository, audit));
         if (input.latePct() != null) {
             change(id, by, Setting.LATE_PCT, input.latePct(), Setting.DEFAULT_LATE_PCT, repository, audit);
         }

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { useCurrentSheet, useSheetToday } from '../session/session';
 import { usePeople } from '../people/people';
-import { useFloor, useLatePct, useRoundsHalfUp, useTerms } from '../settings/settings';
+import { useFloor, useLatePct, useRoundsHalfUp } from '../settings/settings';
 import { claimDueCents } from '../rates/rates';
 
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
@@ -19,7 +19,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** For a correction (a negative amount), the number of the SETTLED claim it corrects; null otherwise. */
   corrects: number | null;
   /** Given instead of a number when opened while period numbering is on: <period name>-<n>, or X-<n> in no period. */
-  periodNumber: string | null };
+  periodNumber: string | null;
+  /** Fixed when created: its date plus the terms of its person's grade in force on it (the sheet's when the grade has none). */
+  dueBy: string };
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
 
 /** A number with up to two decimals; negative only for a correction. */
@@ -164,10 +166,9 @@ export function addDays(date: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
-/** A claim's due-by: its date plus the sheet's terms in force (days). */
+/** A claim's due-by, fixed when it was created. */
 export function useDueBy() {
-  const terms = useTerms();
-  return (claim: Claim) => addDays(claim.date, terms);
+  return (claim: Claim) => claim.dueBy;
 }
 
 /** Whether a claim is overdue: it is live (OPEN or PENDING) and its due-by is before the sheet's today. */

@@ -30,6 +30,17 @@ public interface SettingRepository extends JpaRepository<Setting, Long> {
                 .orElse(Setting.DEFAULT_TERMS));
     }
 
+    /** The grade's own terms in days, or empty when it has none (the sheet's terms are then in force). */
+    default Optional<Integer> gradeTerms(String sheetId, String grade) {
+        return grade == null ? Optional.empty()
+                : findBySheetIdAndKey(sheetId, Setting.termsOf(grade)).map(Setting::getValue).map(Integer::parseInt);
+    }
+
+    /** The terms in force for a claim of the grade: the grade's own, else the sheet's. */
+    default int terms(String sheetId, String grade) {
+        return gradeTerms(sheetId, grade).orElseGet(() -> terms(sheetId));
+    }
+
     /** The sheet's late percent (0.00 when not set). */
     default BigDecimal latePct(String sheetId) {
         return new BigDecimal(findBySheetIdAndKey(sheetId, Setting.LATE_PCT).map(Setting::getValue)

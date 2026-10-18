@@ -4,14 +4,15 @@ package net.officefloor.hq.app.claim;
  *  (null when it has none) and, once settled, its fixed due with two decimals (null while live, or when
  *  no rate applied at settling) and who opened it (null while a draft), and the
  *  number a correction corrects (null for any other claim), and its period number when it was numbered
- *  within its period (null otherwise). */
+ *  within its period (null otherwise), and its due-by as yyyy-mm-dd. */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
-        Integer number, String settledDue, String openedBy, Integer corrects, String periodNumber) {
+        Integer number, String settledDue, String openedBy, Integer corrects, String periodNumber, String dueBy) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),
                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),
                 claim.getSettledDue() == null ? null : claim.getSettledDue().setScale(2).toPlainString(),
-                claim.getOpenedBy(), claim.getCorrects(), claim.getPeriodNumber());
+                claim.getOpenedBy(), claim.getCorrects(), claim.getPeriodNumber(),
+                claim.getDueBy().toString());
     }
 }

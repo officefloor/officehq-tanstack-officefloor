@@ -5,9 +5,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { SettingsInput } from './settings';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { GRADES } from '../people/people';
 import { LIMIT, POLICY_DATE, ROLES, TERMS, rolesKey, saveSettings, setRole, settingsKey, useRoles, useSettings } from './settings';
 
-// The sheet's settings: the clerk limit (blank: no limit), the floor, the terms and the late percent (blank: unchanged), and the
+// The sheet's settings: the clerk limit (blank: no limit), the floor, the terms, each grade's own terms (none: the sheet's) and the late percent (blank: unchanged), and the
 // policy date (blank: the sheet's today) and the period numbering date (blank: off), each with
 // the one in force shown beside it.
 function SettingsPanel() {
@@ -17,6 +18,7 @@ function SettingsPanel() {
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [numberingFrom, setNumberingFrom] = useState('');
@@ -53,6 +55,15 @@ function SettingsPanel() {
       setError('The terms must be blank or a whole number of days, 0 or more.');
       return;
     }
+    const gradeValues: Record<string, string> = {};
+    for (const g of GRADES) {
+      const v = (gradeTerms[g] ?? '').trim();
+      if (!TERMS.test(v)) {
+        setError(`The terms of grade ${g} must be blank or a whole number of days, 0 or more.`);
+        return;
+      }
+      if (v) gradeValues[g] = v;
+    }
     const lateValue = latePct.trim();
     if (!LIMIT.test(lateValue)) {
       setError('The late percent must be blank or 0.00 or more, with up to two decimals.');
@@ -74,6 +85,7 @@ function SettingsPanel() {
         floor: floorValue,
         terms: termsValue,
         latePct: lateValue,
+        gradeTerms: gradeValues,
         policyDate: policyValue,
         periodNumberingFrom: numberingValue,
       }),
@@ -132,6 +144,26 @@ function SettingsPanel() {
         <span>
           now <strong data-testid="setting-terms-current">{settings?.terms ?? ''}</strong>
         </span>{' '}
+        {GRADES.map((g) => (
+          <span key={g}>
+            <label>
+              Terms grade {g}{' '}
+              <input
+                data-testid={`setting-terms-${g}`}
+                placeholder="Unchanged"
+                inputMode="numeric"
+                value={gradeTerms[g] ?? ''}
+                onChange={(e) => {
+                  setGradeTerms((t) => ({ ...t, [g]: e.target.value }));
+                  setError('');
+                }}
+              />
+            </label>{' '}
+            <span>
+              now <strong data-testid={`setting-terms-${g}-current`}>{settings?.gradeTerms?.[g] ?? ''}</strong>
+            </span>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input
