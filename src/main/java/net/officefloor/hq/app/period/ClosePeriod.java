@@ -14,7 +14,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Closes the period, refusing one already closed, and fixes its due-total: the due of the claims that
- *  count dated in it, as shown now (a settled claim's fixed due; an open one's at the rate in force on its
+ *  count dated in it (not the OPEN claims of a person on hold), as shown now (a settled claim's fixed due; an open one's at the rate in force on its
  *  date, rounded half to even), none where no rate applies. */
 public class ClosePeriod {
     public void close(@Val Period period, ClaimRepository claims, PersonRepository people, RateRepository rates)
@@ -26,7 +26,8 @@ public class ClosePeriod {
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim c : claims.findBySheetIdOrderByIdDesc(period.getSheetId())) {
-            if (!c.getStatus().counts() || !period.contains(c.getDate())) {
+            if (!c.getStatus().counts() || !period.contains(c.getDate())
+                    || (c.getStatus() == ClaimStatus.OPEN && byId.get(c.getPersonId()).isHeld())) {
                 continue;
             }
             BigDecimal due = c.getStatus() == ClaimStatus.SETTLED ? c.getSettledDue()

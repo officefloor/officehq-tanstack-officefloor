@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
+import { usePeople } from '../people/people';
 
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
 // floating-point error shows.
@@ -61,13 +62,20 @@ export const claimAction = (sheet: string, user: string, id: number, action: Cla
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
 export const counts = (claim: Claim) => claim.status === 'OPEN' || claim.status === 'SETTLED';
 
+/** Whether a claim counts toward the live totals: as `counts`, except that the OPEN claims of a person
+ *  on hold count in none (their SETTLED claims still do). */
+export function useCounts() {
+  const held = new Set((usePeople().data ?? []).filter((p) => p.held).map((p) => p.id));
+  return (claim: Claim) => counts(claim) && !(claim.status === 'OPEN' && held.has(claim.personId));
+}
+
 const cents = (amount: string) => {
   const [whole, frac = ''] = amount.split('.');
   return Number(whole) * 100 + Number((frac + '00').slice(0, 2));
 };
 
-/** The amounts of the claims that count (OPEN and SETTLED) added up, shown with two decimals. */
-export function total(claims: Claim[]): string {
-  const sum = claims.filter(counts).reduce((n, c) => n + cents(c.amount), 0);
+/** The amounts of the claims that count (by `counted`, from `useCounts`) added up, shown with two decimals. */
+export function total(claims: Claim[], counted: (claim: Claim) => boolean): string {
+  const sum = claims.filter(counted).reduce((n, c) => n + cents(c.amount), 0);
   return `${Math.floor(sum / 100)}.${String(sum % 100).padStart(2, '0')}`;
 }

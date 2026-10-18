@@ -9,7 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.LocalDate;
 
-/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from. */
+/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from; whether on hold. */
 @Entity
 @Table(name = "person")
 public class Person {
@@ -35,6 +35,10 @@ public class Person {
     /** None while active; a claim dated after it is refused. */
     @Column(name = "retired_from")
     private LocalDate retiredFrom;
+
+    /** While held, their OPEN claims count in no live total; their SETTLED claims still do. */
+    @Column(name = "held", nullable = false)
+    private boolean held;
 
     protected Person() {
     }
@@ -77,5 +81,13 @@ public class Person {
 
     public void setRetiredFrom(LocalDate retiredFrom) {
         this.retiredFrom = retiredFrom;
+    }
+
+    public boolean isHeld() {
+        return held;
+    }
+
+    public void setHeld(boolean held) {
+        this.held = held;
     }
 }

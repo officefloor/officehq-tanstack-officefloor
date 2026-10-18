@@ -4,7 +4,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { counts, useClaims } from '../claims/claims';
+import { useClaims, useCounts } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { NA, PERCENT, claimDueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
@@ -137,6 +137,7 @@ function DueColumn() {
 function useDueTotal() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
+  const counts = useCounts();
   return (personId: number) => {
     const figures = claims
       .filter((c) => c.personId === personId && counts(c))

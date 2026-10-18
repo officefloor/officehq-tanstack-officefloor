@@ -9,7 +9,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
-import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims, useCounts } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
@@ -36,6 +36,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const [user] = useCurrentUser();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
   const person = (usePeople().data ?? []).find((p) => p.id === personId);
+  const counted = useCounts();
   const today = useSheetToday();
   const rateOf = usePersonRate();
   const periodOf = usePeriodOf();
@@ -155,7 +156,7 @@ function PersonClaims({ personId }: { personId: number }) {
 
   return (
     <>
-      <td data-testid="person-claimed">{total(claims)}</td>
+      <td data-testid="person-claimed">{total(claims, counted)}</td>
       <td>
         <form data-testid="claim-form" onSubmit={submit}>
           <input
@@ -215,14 +216,16 @@ function PersonClaims({ personId }: { personId: number }) {
   );
 }
 
-// The sheet's claimed-total: everyone's claimed added up (only OPEN and SETTLED claims count).
+// The sheet's claimed-total: everyone's claimed added up (only OPEN and SETTLED claims count, and not
+// the OPEN claims of a person on hold).
 function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
   const claims = useClaims();
+  const counted = useCounts();
   if (!sheet) return null;
   return (
     <section data-testid="rollup">
-      Claimed total <strong data-testid="rollup-claimed-total">{total(claims.data ?? [])}</strong>
+      Claimed total <strong data-testid="rollup-claimed-total">{total(claims.data ?? [], counted)}</strong>
     </section>
   );
 }

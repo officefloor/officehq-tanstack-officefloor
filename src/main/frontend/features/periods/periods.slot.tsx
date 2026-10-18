@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { counts, useClaims } from '../claims/claims';
+import { useClaims, useCounts } from '../claims/claims';
 import { claimDueCents, hundredths, show, usePersonRate } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { addPeriod, closePeriod, periodsKey, usePeriods } from './periods';
@@ -18,6 +18,7 @@ const EMPTY: PeriodInput = { name: '', from: '', to: '' };
 function usePeriodDue() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
+  const counts = useCounts();
   return (period: Period) =>
     period.closed && period.closedTotal !== null
       ? hundredths(period.closedTotal)
