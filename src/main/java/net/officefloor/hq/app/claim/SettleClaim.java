@@ -18,6 +18,7 @@ import net.officefloor.web.HttpHeaderParameter;
  *  rate its person's grade has in force on the claim's date: amount × rate / 100, rounded half up and raised to the sheet's floor (none when no rate applies),
  *  plus, when it is overdue (its date plus the sheet's terms is before the sheet's today), the sheet's late percent of that floored
  *  due for every full 30 days it is overdue, rounded the same way.
+ *  A correction (a negative amount) gets neither the floor nor the late charge.
  *  The user who opened the claim (arriving as X-User) cannot settle it. A clerk (any user not made a steward)
  *  cannot settle a claim whose due is above the sheet's clerk limit (no limit when none is set; a claim with no due
  *  is within it); a steward settles any. */
@@ -35,8 +36,11 @@ public class SettleClaim {
                 .map((r) -> claim.getAmount().multiply(r.getRate())
                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
                 .orElse(null);
-        due = settings.floored(claim.getSheetId(), due);
-        if (due != null) {
+        // A correction's due is its amount × rate, rounded, with no floor and no late charge.
+        if (!claim.isCorrection()) {
+            due = settings.floored(claim.getSheetId(), due);
+        }
+        if (due != null && !claim.isCorrection()) {
             LocalDate dueBy = claim.getDate().plusDays(settings.terms(claim.getSheetId()));
             LocalDate today = sheets.findById(claim.getSheetId()).orElseThrow().getToday();
             long spans = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;

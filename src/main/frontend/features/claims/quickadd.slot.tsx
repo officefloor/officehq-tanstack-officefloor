@@ -7,7 +7,10 @@ import { PeopleBar } from '../../slots/defs/peopleBar';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { peopleKey } from '../people/people';
 import { periodsKey, useClosedPeriodOf } from '../periods/periods';
-import { AMOUNT, claimsKey, quickAddClaim } from './claims';
+import { claimsKey, quickAddClaim } from './claims';
+
+/** 0.00 or more, with up to two decimals: a quick-added claim is never a correction. */
+const AMOUNT = /^\d+(\.\d{1,2})?$/;
 
 type QuickInput = { name: string; amount: string };
 const EMPTY: QuickInput = { name: '', amount: '' };

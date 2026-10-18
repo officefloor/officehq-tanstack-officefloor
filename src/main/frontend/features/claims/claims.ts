@@ -14,11 +14,34 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** Fixed when settled (two decimals); null while live, or when no rate applied at settling. */
   settledDue: string | null;
   /** The user who opened it; null for a draft. */
-  openedBy: string | null };
-export type ClaimInput = { amount: string; date: string; note: string };
+  openedBy: string | null;
+  /** For a correction (a negative amount), the number of the SETTLED claim it corrects; null otherwise. */
+  corrects: number | null };
+export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
 
-/** 0.00 or more, with up to two decimals. */
-export const AMOUNT = /^\d+(\.\d{1,2})?$/;
+/** A number with up to two decimals; negative only for a correction. */
+export const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+
+/** A claim number. */
+export const NUMBER = /^\d{1,9}$/;
+
+/** Whether an amount is negative, which makes its claim a correction. */
+export const isCorrection = (amount: string) => /^-/.test(amount.trim()) && /[1-9]/.test(amount);
+
+/** A correction must name, by number, a SETTLED claim of the same person; any other claim names none. */
+export function correctionError(claims: Claim[], personId: number, amount: string, corrects: string): string | undefined {
+  const named = corrects.trim();
+  if (named !== '' && !NUMBER.test(named)) return 'The claim corrected must be given by its number.';
+  if (!isCorrection(amount)) {
+    return named === '' ? undefined : 'Only a correction (a negative amount) names a claim it corrects.';
+  }
+  if (named === '') return 'A negative amount is a correction: name the settled claim it corrects.';
+  const target = claims.find((c) => c.number === Number(named));
+  if (!target || target.personId !== personId || target.status !== 'SETTLED') {
+    return `A correction must name a settled claim of the same person; claim ${named} is not one.`;
+  }
+  return undefined;
+}
 
 const base = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}`;
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
@@ -72,14 +95,17 @@ export function useCounts() {
 }
 
 const cents = (amount: string) => {
-  const [whole, frac = ''] = amount.split('.');
-  return Number(whole) * 100 + Number((frac + '00').slice(0, 2));
+  const negative = amount.startsWith('-');
+  const [whole, frac = ''] = (negative ? amount.slice(1) : amount).split('.');
+  const n = Number(whole) * 100 + Number((frac + '00').slice(0, 2));
+  return negative ? -n : n;
 };
 
 /** The amounts of the claims that count (by `counted`, from `useCounts`) added up, shown with two decimals. */
 export function total(claims: Claim[], counted: (claim: Claim) => boolean): string {
   const sum = claims.filter(counted).reduce((n, c) => n + cents(c.amount), 0);
-  return `${Math.floor(sum / 100)}.${String(sum % 100).padStart(2, '0')}`;
+  const abs = Math.abs(sum);
+  return `${sum < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
 }
 
 /** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */

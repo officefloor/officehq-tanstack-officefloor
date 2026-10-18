@@ -33,10 +33,12 @@ export function useRates() {
 
 export const setRate = (sheet: string, user: string, input: RateInput) => postJson<Rate>(base(sheet), input, user);
 
-/** A two-decimal string as a whole number of hundredths. */
+/** A two-decimal string (may be negative) as a whole number of hundredths. */
 export const hundredths = (value: string): bigint => {
-  const [whole, frac = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
+  const negative = value.startsWith('-');
+  const [whole, frac = ''] = (negative ? value.slice(1) : value).split('.');
+  const n = BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -n : n;
 };
 
 /** Hundredths shown with two decimals. */
@@ -65,11 +67,13 @@ export function percentOf(cents: bigint, percent: bigint): bigint {
 /** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft
  *  claim's is live, at its grade's rate in force on the claim's date, and at least the sheet's floor
  *  (cents), plus the late charge: the late percent (hundredths of a percent) of that floored due for each
- *  full 30 days it is overdue (`lateSpans`), rounded like due. Undefined for n/a. */
+ *  full 30 days it is overdue (`lateSpans`), rounded like due. A correction (a negative amount) has neither
+ *  the floor nor the late charge. Undefined for n/a. */
 export function claimDueCents(claim: Claim, rate: string | undefined, floor: bigint, latePct = 0n, lateSpans = 0n): bigint | undefined {
   if (claim.status === 'SETTLED') return claim.settledDue === null ? undefined : hundredths(claim.settledDue);
   if (rate === undefined) return undefined;
   const due = dueCents(claim.amount, rate);
+  if (due < 0n || claim.amount.startsWith('-')) return due; // a correction: no floor, no late charge
   const floored = due < floor ? floor : due;
   return floored + percentOf(floored, latePct * lateSpans);
 }

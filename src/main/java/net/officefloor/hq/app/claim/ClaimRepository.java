@@ -12,6 +12,9 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
     /** The sheet's claims, newest first. */
     List<Claim> findBySheetIdOrderByIdDesc(String sheetId);
 
+    /** The sheet's claim with this number (numbers are unique on a sheet once given). */
+    Optional<Claim> findFirstBySheetIdAndNumber(String sheetId, Integer number);
+
     Optional<Claim> findByIdAndSheetId(Long id, String sheetId);
 
     /** Takes the sheet's next claim number. The update locks the sheet's row until the transaction
