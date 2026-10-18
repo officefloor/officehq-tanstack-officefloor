@@ -15,4 +15,15 @@ public interface SettingRepository extends JpaRepository<Setting, Long> {
     default Optional<BigDecimal> clerkLimit(String sheetId) {
         return findBySheetIdAndKey(sheetId, Setting.CLERK_LIMIT).map(Setting::getValue).map(BigDecimal::new);
     }
+
+    /** The sheet's floor: a claim's live due is at least it (1.00 when not set). */
+    default BigDecimal floor(String sheetId) {
+        return new BigDecimal(findBySheetIdAndKey(sheetId, Setting.FLOOR).map(Setting::getValue)
+                .orElse(Setting.DEFAULT_FLOOR));
+    }
+
+    /** A live due raised to the sheet's floor (null, for no rate, stays null). */
+    default BigDecimal floored(String sheetId, BigDecimal due) {
+        return due == null ? null : due.max(floor(sheetId));
+    }
 }

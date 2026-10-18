@@ -6,23 +6,25 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { LIMIT, ROLES, rolesKey, saveSettings, setRole, settingsKey, useRoles, useSettings } from './settings';
 
-// The sheet's settings: the clerk limit (blank: no limit), with the one in force shown beside it.
+// The sheet's settings: the clerk limit (blank: no limit) and the floor (blank: unchanged), each with
+// the one in force shown beside it.
 function SettingsPanel() {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const settings = useSettings().data;
   const [limit, setLimit] = useState('');
+  const [floor, setFloor] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (clerkLimit: string) => saveSettings(sheet!, user, { clerkLimit }),
+    mutationFn: (input: { clerkLimit: string; floor: string }) => saveSettings(sheet!, user, input),
     onSuccess: async (saved) => {
       queryClient.setQueryData(settingsKey(sheet!), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet!) });
     },
-    onError: () => setError('The settings could not be saved: the clerk limit must be blank or 0.00 or more, with up to two decimals.'),
+    onError: () => setError('The settings could not be saved: the clerk limit must be blank or 0.00 or more, and the floor blank or 0.00 or more, with up to two decimals.'),
   });
 
   if (!sheet) return null;
@@ -35,7 +37,12 @@ function SettingsPanel() {
       setError('The clerk limit must be blank or 0.00 or more, with up to two decimals.');
       return;
     }
-    once(() => save.mutateAsync(value));
+    const floorValue = floor.trim();
+    if (!LIMIT.test(floorValue)) {
+      setError('The floor must be blank or 0.00 or more, with up to two decimals.');
+      return;
+    }
+    once(() => save.mutateAsync({ clerkLimit: value, floor: floorValue }));
   };
 
   return (
@@ -57,6 +64,22 @@ function SettingsPanel() {
         </label>{' '}
         <span>
           now <strong data-testid="setting-clerk-limit-current">{settings?.clerkLimit ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Floor{' '}
+          <input
+            data-testid="setting-floor"
+            placeholder="Unchanged"
+            inputMode="decimal"
+            value={floor}
+            onChange={(e) => {
+              setFloor(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <span>
+          now <strong data-testid="setting-floor-current">{settings?.floor ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

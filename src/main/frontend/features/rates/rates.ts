@@ -58,10 +58,13 @@ export function dueCents(amount: string, rate: string): bigint {
 }
 
 /** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft
- *  claim's is live, at its grade's rate in force on the claim's date. Undefined for n/a. */
-export function claimDueCents(claim: Claim, rate: string | undefined): bigint | undefined {
+ *  claim's is live, at its grade's rate in force on the claim's date, and at least the sheet's floor
+ *  (cents). Undefined for n/a. */
+export function claimDueCents(claim: Claim, rate: string | undefined, floor: bigint): bigint | undefined {
   if (claim.status === 'SETTLED') return claim.settledDue === null ? undefined : hundredths(claim.settledDue);
-  return rate === undefined ? undefined : dueCents(claim.amount, rate);
+  if (rate === undefined) return undefined;
+  const due = dueCents(claim.amount, rate);
+  return due < floor ? floor : due;
 }
 
 /** The grade's rate (two decimals) in force on a date (yyyy-mm-dd), or undefined when none applies. */

@@ -7,7 +7,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class RespondWithSettings {
     public void respond(@PathVariable("sheetId") String sheetId, SettingRepository repository,
             ObjectResponse<SettingsResponse> response) {
-        response.send(new SettingsResponse(repository.findBySheetIdAndKey(sheetId.trim(), Setting.CLERK_LIMIT)
-                .map(Setting::getValue).orElse(null)));
+        String id = sheetId.trim();
+        response.send(new SettingsResponse(repository.findBySheetIdAndKey(id, Setting.CLERK_LIMIT)
+                .map(Setting::getValue).orElse(null), repository.floor(id).setScale(2).toPlainString()));
     }
 }

@@ -15,6 +15,12 @@ public class Setting {
     /** The clerk limit: a clerk settles only a claim whose due is at or below it (two decimals). */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The floor: a claim's live due is at least it (two decimals); 1.00 when not set. */
+    public static final String FLOOR = "floor";
+
+    /** The floor in force when none is set. */
+    public static final String DEFAULT_FLOOR = "1.00";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

@@ -9,7 +9,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
-import { rolesKey, settingsKey, useWithinClerkLimit } from '../settings/settings';
+import { rolesKey, settingsKey, useFloor, useWithinClerkLimit } from '../settings/settings';
 import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims, useCounts } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
@@ -40,6 +40,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const counted = useCounts();
   const today = useSheetToday();
   const rateOf = usePersonRate();
+  const floor = useFloor();
   const periodOf = usePeriodOf();
   const closedOf = useClosedPeriodOf();
   const withinLimit = useWithinClerkLimit();
@@ -85,7 +86,7 @@ function PersonClaims({ personId }: { personId: number }) {
       refuse(claim.id, 'The user who opened a claim cannot settle it.');
       return;
     }
-    if (action === 'settle' && !withinLimit(user, claimDueCents(claim, rateOf(personId, claim.date)))) {
+    if (action === 'settle' && !withinLimit(user, claimDueCents(claim, rateOf(personId, claim.date), floor))) {
       refuse(claim.id, 'A clerk cannot settle a claim whose due is above the clerk limit.');
       return;
     }
@@ -206,7 +207,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-period">{periodOf(c.date) ?? ''}</span>{' '}
-              <span data-testid="claim-due">{showDue(claimDueCents(c, rateOf(personId, c.date)))}</span>{' '}
+              <span data-testid="claim-due">{showDue(claimDueCents(c, rateOf(personId, c.date), floor))}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}

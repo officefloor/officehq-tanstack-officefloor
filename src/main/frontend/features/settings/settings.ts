@@ -5,8 +5,9 @@ import { hundredths } from '../rates/rates';
 
 // A sheet's settings: the clerk limit (two decimals; null: no limit). And the role each user name has
 // on the sheet: clerk (any name not given one) or steward. A clerk settles only a claim whose due is
-// at or below the clerk limit; a steward settles any.
-export type Settings = { clerkLimit: string | null };
+// at or below the clerk limit; a steward settles any. The floor (two decimals, 1.00 until set): a
+// claim's live due is at least it.
+export type Settings = { clerkLimit: string | null; floor: string };
 export type Role = 'clerk' | 'steward';
 export type UserRole = { user: string; role: Role };
 
@@ -39,11 +40,19 @@ export function useRoles() {
   });
 }
 
-export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string }) =>
+export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string; floor: string }) =>
   postJson<Settings>(`${base(sheet)}/settings`, settings, user);
 
 export const setRole = (sheet: string, user: string, input: { user: string; role: string }) =>
   postJson<UserRole>(`${base(sheet)}/roles`, input, user);
+
+/** The floor in force before the sheet's settings load or any is set. */
+export const DEFAULT_FLOOR = '1.00';
+
+/** The active sheet's floor in cents: a claim's live due is at least it. */
+export function useFloor(): bigint {
+  return hundredths(useSettings().data?.floor ?? DEFAULT_FLOOR);
+}
 
 /** Whether the user may settle a claim with this due (cents; undefined for n/a, which is within any limit). */
 export function useWithinClerkLimit() {
