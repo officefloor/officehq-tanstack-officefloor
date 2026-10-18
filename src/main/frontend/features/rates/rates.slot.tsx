@@ -5,8 +5,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useClaimDue, useClaims, useCounts } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { GRADES, gradeOn, usePeople } from '../people/people';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { NA, PERCENT, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
 import type { RateInput } from './rates';
 
@@ -132,24 +132,29 @@ function DueColumn() {
 }
 
 /** A person's due-total in cents: the already-rounded figures of their claims that count added up
- *  (0 when none counts). Undefined for n/a: their grade has no rate today and no settled claim keeps
- *  a figure. */
+ *  (0 when none counts). Undefined for n/a: their grade has no rate today and no claim keeps a figure
+ *  (a settled claim's fixed due, or one dated under another grade than today's that has a due). */
 export function useDueTotal() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
   const counts = useCounts();
   const claimDue = useClaimDue();
+  const people = usePeople().data ?? [];
+  const today = useSheetToday();
   return (personId: number) => {
+    const person = people.find((p) => p.id === personId);
+    const gradeToday = gradeOn(person, today);
     const figures = claims
       .filter((c) => c.personId === personId && counts(c))
       .map((c) => ({ claim: c, due: claimDue(c, rateOf(personId, c.date)) }));
-    const kept = figures.some((f) => f.claim.status === 'SETTLED' && f.due !== undefined);
+    const kept = figures.some((f) => f.due !== undefined
+      && (f.claim.status === 'SETTLED' || gradeOn(person, f.claim.date) !== gradeToday));
     if (rateOf(personId) === undefined && !kept) return undefined;
     return figures.reduce((n, f) => n + (f.due ?? 0n), 0n);
   };
 }
 
-// A person's due-total: n/a when their grade has no rate today, unless a settled claim keeps a figure.
+// A person's due-total: n/a when their grade has no rate today, unless a claim keeps a figure.
 function PersonDueTotal({ personId }: { personId: number }) {
   const due = useDueTotal()(personId);
   return <td data-testid="person-due-total">{due === undefined ? NA : show(due)}</td>;

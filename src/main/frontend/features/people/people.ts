@@ -5,7 +5,12 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-export type Person = { id: number; name: string; grade: string; version: number;
+export type Person = { id: number; name: string;
+  /** The grade in force on the sheet's today (null before all their grades). */
+  grade: string | null;
+  /** Every grade recorded, by from-date (yyyy-mm-dd; null: from the beginning of time). */
+  grades: { from: string | null; grade: string }[];
+  version: number;
   /** The date retired from (yyyy-mm-dd); null while not retired. A claim dated after it is refused. */
   retiredFrom: string | null;
   /** While on hold, their OPEN claims count in no live total; their SETTLED claims still do. */
@@ -14,7 +19,21 @@ export type Person = { id: number; name: string; grade: string; version: number;
   patronIds: number[] };
 /** An edit carries the version of the person it was loaded from; the server refuses it (409) when
  *  someone else has saved the person since. */
-export type PersonInput = { name: string; grade: string; version?: number };
+export type PersonInput = { name: string; grade: string; version?: number;
+  /** The date the grade applies from (empty: the sheet's today); a person's first grade applies from
+   *  the beginning of time. */
+  gradeFrom?: string };
+
+/** The person's grade in force on a date (yyyy-mm-dd): the latest from-date on or before it. */
+export function gradeOn(person: Person | undefined, date: string | undefined): string | undefined {
+  if (person === undefined || date === undefined) return undefined;
+  let found: { from: string | null; grade: string } | undefined;
+  for (const g of person.grades) {
+    if (g.from !== null && g.from > date) continue;
+    if (found === undefined || (found.from ?? '') < (g.from ?? '')) found = g;
+  }
+  return found?.grade;
+}
 
 const base = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
 export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'] as const;

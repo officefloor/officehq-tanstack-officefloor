@@ -31,7 +31,7 @@ public class SettleClaim {
         }
         ClaimTransition.check(claim.getStatus(), ClaimStatus.SETTLED);
         Person person = people.findById(claim.getPersonId()).orElseThrow();
-        BigDecimal due = rates.findInForce(claim.getSheetId(), person.getGrade(), claim.getDate())
+        BigDecimal due = rates.findInForce(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate())
                 .map((r) -> claim.getAmount().multiply(r.getRate())
                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
                 .orElse(null);

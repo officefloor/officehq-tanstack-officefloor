@@ -18,7 +18,7 @@ public class FindQuickPerson {
         if (found == null) {
             found = new Person(sheet);
             found.setName(request.name());
-            found.setGrade(request.grade());
+            found.recordGrade(request.grade(), null);
         }
         quickOut.set(new QuickPerson(found.getId() == null));
         personOut.set(found);

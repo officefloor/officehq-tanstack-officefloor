@@ -7,6 +7,6 @@ public final class PersonAudit {
 
     public static String line(String event, Person person, String user) {
         return event + " sheet=" + person.getSheetId() + " by=" + (user == null ? "" : user.trim())
-                + " name=" + person.getName() + " grade=" + person.getGrade();
+                + " name=" + person.getName() + " grade=" + person.getSavedGrade();
     }
 }

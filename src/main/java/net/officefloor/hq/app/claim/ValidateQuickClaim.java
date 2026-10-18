@@ -23,7 +23,7 @@ public class ValidateQuickClaim {
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidClaimException("The amount must be a number of 0.00 or more, with up to two decimals.");
         }
-        personOut.set(new PersonRequest(name, "A", null));
+        personOut.set(new PersonRequest(name, "A", null, null));
         claimOut.set(new ClaimInput(new BigDecimal(amount).setScale(2), null, ""));
     }
 }

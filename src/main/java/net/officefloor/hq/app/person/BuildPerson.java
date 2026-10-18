@@ -8,7 +8,7 @@ public class BuildPerson {
     public void build(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, Out<Person> personOut) {
         Person person = new Person(sheetId.trim());
         person.setName(request.name());
-        person.setGrade(request.grade());
+        person.recordGrade(request.grade(), null); // a first grade applies from the beginning of time
         personOut.set(person);
     }
 }

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import type { Claim } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { useCurrentSheet, useSheetToday } from '../session/session';
 
 // A rate is a percent with two decimals ("12.50") for a grade from a from-date on (null: from the
@@ -92,9 +92,12 @@ export function useGradeRate() {
   return (grade: string | undefined, date: string | undefined = today) => rateOn(rates, grade, date);
 }
 
-/** The rate for a person's grade in force on a date (default: the sheet's today), looked up by person id. */
+/** The rate in force on a date (default: the sheet's today) for the person's grade in force on that date,
+ *  looked up by person id. */
 export function usePersonRate() {
   const people = usePeople().data ?? [];
   const rateOf = useGradeRate();
-  return (personId: number, date?: string) => rateOf(people.find((p) => p.id === personId)?.grade, date);
+  const today = useSheetToday();
+  return (personId: number, date: string | undefined = today) =>
+    rateOf(gradeOn(people.find((p) => p.id === personId), date), date);
 }
