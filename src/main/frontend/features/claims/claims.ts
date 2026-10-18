@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
-import { useCurrentSheet } from '../session/session';
+import { useCurrentSheet, useSheetToday } from '../session/session';
 import { usePeople } from '../people/people';
+import { useTerms } from '../settings/settings';
 
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
 // floating-point error shows.
@@ -78,4 +79,23 @@ const cents = (amount: string) => {
 export function total(claims: Claim[], counted: (claim: Claim) => boolean): string {
   const sum = claims.filter(counted).reduce((n, c) => n + cents(c.amount), 0);
   return `${Math.floor(sum / 100)}.${String(sum % 100).padStart(2, '0')}`;
+}
+
+/** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
+export function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** A claim's due-by: its date plus the sheet's terms in force (days). */
+export function useDueBy() {
+  const terms = useTerms();
+  return (claim: Claim) => addDays(claim.date, terms);
+}
+
+/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+export function useOverdue() {
+  const dueBy = useDueBy();
+  const today = useSheetToday();
+  return (claim: Claim) => claim.status === 'OPEN' && today !== undefined && dueBy(claim) < today;
 }

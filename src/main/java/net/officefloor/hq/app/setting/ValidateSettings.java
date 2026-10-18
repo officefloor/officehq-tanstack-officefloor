@@ -5,8 +5,11 @@ import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the settings from the body, refusing a clerk limit or floor that is not empty or 0.00 or more with up to two decimals. */
+/** Reads the settings from the body, refusing a clerk limit or floor that is not empty or 0.00 or more with up to two decimals,
+ *  or terms that are not empty or a whole number of days. */
 public class ValidateSettings {
+
+    private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
 
     private static final Pattern LIMIT = Pattern.compile("\\d{1,12}(\\.\\d{1,2})?");
 
@@ -20,7 +23,12 @@ public class ValidateSettings {
         if (!floor.isEmpty() && !LIMIT.matcher(floor).matches()) {
             throw new InvalidSettingException("The floor must be 0.00 or more, with up to two decimals.");
         }
+        String terms = request == null || request.terms() == null ? "" : request.terms().trim();
+        if (!terms.isEmpty() && !TERMS.matcher(terms).matches()) {
+            throw new InvalidSettingException("The terms must be a whole number of days, 0 or more.");
+        }
         settingsOut.set(new SettingsInput(limit.isEmpty() ? null : new BigDecimal(limit).setScale(2).toPlainString(),
-                floor.isEmpty() ? null : new BigDecimal(floor).setScale(2).toPlainString()));
+                floor.isEmpty() ? null : new BigDecimal(floor).setScale(2).toPlainString(),
+                terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms))));
     }
 }

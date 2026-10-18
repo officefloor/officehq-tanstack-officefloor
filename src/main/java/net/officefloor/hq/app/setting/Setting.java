@@ -18,6 +18,12 @@ public class Setting {
     /** The floor: a claim's live due is at least it (two decimals); 1.00 when not set. */
     public static final String FLOOR = "floor";
 
+    /** The terms: the number of days after a claim's date by which it is due (14 when not set). */
+    public static final String TERMS = "terms";
+
+    /** The terms in force when none is set. */
+    public static final String DEFAULT_TERMS = "14";
+
     /** The floor in force when none is set. */
     public static final String DEFAULT_FLOOR = "1.00";
 

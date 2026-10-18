@@ -22,6 +22,12 @@ public interface SettingRepository extends JpaRepository<Setting, Long> {
                 .orElse(Setting.DEFAULT_FLOOR));
     }
 
+    /** The sheet's terms in days: a claim is due by its date plus them (14 when not set). */
+    default int terms(String sheetId) {
+        return Integer.parseInt(findBySheetIdAndKey(sheetId, Setting.TERMS).map(Setting::getValue)
+                .orElse(Setting.DEFAULT_TERMS));
+    }
+
     /** A live due raised to the sheet's floor (null, for no rate, stays null). */
     default BigDecimal floored(String sheetId, BigDecimal due) {
         return due == null ? null : due.max(floor(sheetId));

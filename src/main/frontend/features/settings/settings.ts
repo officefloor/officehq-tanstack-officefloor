@@ -6,10 +6,13 @@ import { hundredths } from '../rates/rates';
 // A sheet's settings: the clerk limit (two decimals; null: no limit). And the role each user name has
 // on the sheet: clerk (any name not given one) or steward. A clerk settles only a claim whose due is
 // at or below the clerk limit; a steward settles any. The floor (two decimals, 1.00 until set): a
-// claim's live due is at least it.
-export type Settings = { clerkLimit: string | null; floor: string };
+// claim's live due is at least it. The terms (whole days, 14 until set): a claim is due by its date plus them.
+export type Settings = { clerkLimit: string | null; floor: string; terms: string };
 export type Role = 'clerk' | 'steward';
 export type UserRole = { user: string; role: Role };
+
+/** Empty (unchanged), or a whole number of days, 0 or more. */
+export const TERMS = /^(\d{1,4})?$/;
 
 export const ROLES: Role[] = ['clerk', 'steward'];
 
@@ -40,7 +43,7 @@ export function useRoles() {
   });
 }
 
-export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string; floor: string }) =>
+export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string; floor: string; terms: string }) =>
   postJson<Settings>(`${base(sheet)}/settings`, settings, user);
 
 export const setRole = (sheet: string, user: string, input: { user: string; role: string }) =>
@@ -52,6 +55,14 @@ export const DEFAULT_FLOOR = '1.00';
 /** The active sheet's floor in cents: a claim's live due is at least it. */
 export function useFloor(): bigint {
   return hundredths(useSettings().data?.floor ?? DEFAULT_FLOOR);
+}
+
+/** The terms in force before the sheet's settings load or any is set. */
+export const DEFAULT_TERMS = '14';
+
+/** The active sheet's terms in days: a claim is due by its date plus them. */
+export function useTerms(): number {
+  return Number(useSettings().data?.terms ?? DEFAULT_TERMS);
 }
 
 /** Whether the user may settle a claim with this due (cents; undefined for n/a, which is within any limit). */
