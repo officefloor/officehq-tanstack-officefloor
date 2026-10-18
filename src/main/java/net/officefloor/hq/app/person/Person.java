@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** A person on a sheet, with a name and a dated grade (A, B or C); once retired, the date retired from; whether on hold; the people named as their patrons. */
+/** A person on a sheet, with a name and a dated grade (A, B or C); once retired, the date retired from; their holds; the people named as their patrons. */
 @Entity
 @Table(name = "person")
 public class Person {
@@ -55,9 +55,15 @@ public class Person {
     @Column(name = "retired_from")
     private LocalDate retiredFrom;
 
-    /** While held, their OPEN and PENDING claims count in no live total; their SETTLED claims still do. */
-    @Column(name = "held", nullable = false)
-    private boolean held;
+    /** The person's holds: their OPEN and PENDING claims dated within one count in no live total; their
+     *  other claims still do. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "person_hold", joinColumns = @JoinColumn(name = "person_id"))
+    private List<PersonHold> holds = new ArrayList<>();
+
+    /** The hold added by this save, for its audit line. */
+    @Transient
+    private PersonHold addedHold;
 
     /** The ids of the other people on the sheet named as this person's patrons. */
     @ElementCollection(fetch = FetchType.EAGER)
@@ -131,12 +137,30 @@ public class Person {
         this.retiredFrom = retiredFrom;
     }
 
-    public boolean isHeld() {
-        return held;
+    /** The holds, by from-date (none, the beginning of time, first). */
+    public List<PersonHold> getHolds() {
+        return holds.stream().sorted(Comparator.comparing(PersonHold::getFromDate,
+                Comparator.nullsFirst(Comparator.naturalOrder()))).toList();
     }
 
-    public void setHeld(boolean held) {
-        this.held = held;
+    /** Whether the person has any hold. */
+    public boolean isHeld() {
+        return !holds.isEmpty();
+    }
+
+    /** Whether the date falls within one of the person's holds. */
+    public boolean heldOn(LocalDate date) {
+        return holds.stream().anyMatch((h) -> h.covers(date));
+    }
+
+    public void addHold(PersonHold hold) {
+        holds.add(hold);
+        addedHold = hold;
+    }
+
+    /** The hold this save added (the audit line's from-date). */
+    public PersonHold getAddedHold() {
+        return addedHold;
     }
 
     public Set<Long> getPatronIds() {

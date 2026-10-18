@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.person;
 
-/** A validated hold body: whether the person is to be held. */
-public record HoldInput(boolean held) {
+import java.time.LocalDate;
+
+/** A validated hold body: the from-date (null: the sheet's today) and the to-date (null: open-ended). */
+public record HoldInput(LocalDate from, LocalDate to) {
 }

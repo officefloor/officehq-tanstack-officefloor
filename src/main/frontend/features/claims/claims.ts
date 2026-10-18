@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { useCurrentSheet, useSheetToday } from '../session/session';
-import { usePeople } from '../people/people';
+import { heldOn, usePeople } from '../people/people';
 import { useFloor, useLatePct, useRoundsHalfUp } from '../settings/settings';
 import { claimDueCents } from '../rates/rates';
 
@@ -143,11 +143,11 @@ export const live = (claim: Claim) => claim.status === 'OPEN' || claim.status ==
 /** Whether a claim counts toward claimed, due-total and every total: only live (OPEN, PENDING) and SETTLED do. */
 export const counts = (claim: Claim) => live(claim) || claim.status === 'SETTLED';
 
-/** Whether a claim counts toward the live totals: as `counts`, except that the live claims of a person
- *  on hold count in none (their SETTLED claims still do). */
+/** Whether a claim counts toward the live totals: as `counts`, except that a live claim dated within one
+ *  of its person's holds counts in none (their SETTLED claims, and claims outside a hold, still do). */
 export function useCounts() {
-  const held = new Set((usePeople().data ?? []).filter((p) => p.held).map((p) => p.id));
-  return (claim: Claim) => counts(claim) && !(live(claim) && held.has(claim.personId));
+  const people = new Map((usePeople().data ?? []).map((p) => [p.id, p]));
+  return (claim: Claim) => counts(claim) && !(live(claim) && heldOn(people.get(claim.personId), claim.date));
 }
 
 const cents = (amount: string) => {

@@ -13,8 +13,11 @@ export type Person = { id: number; name: string;
   version: number;
   /** The date retired from (yyyy-mm-dd); null while not retired. A claim dated after it is refused. */
   retiredFrom: string | null;
-  /** While on hold, their OPEN and PENDING claims count in no live total; their SETTLED claims still do. */
+  /** Whether they have any hold. */
   held: boolean;
+  /** Their holds, by from-date (yyyy-mm-dd, both inclusive; from null: the beginning of time; to null:
+   *  open-ended). Their OPEN and PENDING claims dated within one count in no live total. */
+  holds: { from: string | null; to: string | null }[];
   /** The ids of the other people on the sheet named as their patrons. */
   patronIds: number[] };
 /** An edit carries the version of the person it was loaded from; the server refuses it (409) when
@@ -63,9 +66,14 @@ export type ImportResult = { added: number; updated: number; errors: number[] };
 export const retirePerson = (sheet: string, user: string, id: number, from: string) =>
   postJson<Person>(`${base(sheet)}/${id}/retire`, { from }, user);
 
-/** Puts a person on hold (held true) or releases them (false); refused (400) when already so. */
-export const holdPerson = (sheet: string, user: string, id: number, held: boolean) =>
-  postJson<Person>(`${base(sheet)}/${id}/hold`, { held }, user);
+/** Adds a hold on a person from a date (empty: the sheet's today) to a date (empty: open-ended);
+ *  refused (400) when the to-date is before the from-date. */
+export const holdPerson = (sheet: string, user: string, id: number, from: string, to: string) =>
+  postJson<Person>(`${base(sheet)}/${id}/hold`, { from, to }, user);
+
+/** Whether a date (yyyy-mm-dd) falls within one of the person's holds. */
+export const heldOn = (person: Person | undefined, date: string) =>
+  !!person?.holds.some((h) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to));
 
 /** Names another person on the sheet as the person's patron; refused (400) for themselves or one
  *  already named. */

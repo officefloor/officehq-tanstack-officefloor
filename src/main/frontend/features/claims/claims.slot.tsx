@@ -351,7 +351,7 @@ function PersonClaims({ personId }: { personId: number }) {
 }
 
 // The sheet's claimed-total: everyone's claimed added up (only OPEN, PENDING and SETTLED claims count, and
-// not the OPEN or PENDING claims of a person on hold).
+// not the OPEN or PENDING claims dated within one of their person's holds).
 function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
   const claims = useClaims();
