@@ -9,7 +9,9 @@ export type Person = { id: number; name: string; grade: string; version: number;
   /** The date retired from (yyyy-mm-dd); null while not retired. A claim dated after it is refused. */
   retiredFrom: string | null;
   /** While on hold, their OPEN claims count in no live total; their SETTLED claims still do. */
-  held: boolean };
+  held: boolean;
+  /** The ids of the other people on the sheet named as their patrons. */
+  patronIds: number[] };
 /** An edit carries the version of the person it was loaded from; the server refuses it (409) when
  *  someone else has saved the person since. */
 export type PersonInput = { name: string; grade: string; version?: number };
@@ -45,6 +47,11 @@ export const retirePerson = (sheet: string, user: string, id: number, from: stri
 /** Puts a person on hold (held true) or releases them (false); refused (400) when already so. */
 export const holdPerson = (sheet: string, user: string, id: number, held: boolean) =>
   postJson<Person>(`${base(sheet)}/${id}/hold`, { held }, user);
+
+/** Names another person on the sheet as the person's patron; refused (400) for themselves or one
+ *  already named. */
+export const addPatron = (sheet: string, user: string, id: number, patronId: number) =>
+  postJson<Person>(`${base(sheet)}/${id}/patrons`, { patronId }, user);
 
 /** Whether a claim dated `date` would be after the person's retirement (and so refused). */
 export const afterRetirement = (person: Person | undefined, date: string) =>

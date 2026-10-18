@@ -134,7 +134,7 @@ function DueColumn() {
 /** A person's due-total in cents: the already-rounded figures of their claims that count added up
  *  (0 when none counts). Undefined for n/a: their grade has no rate today and no settled claim keeps
  *  a figure. */
-function useDueTotal() {
+export function useDueTotal() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
   const counts = useCounts();

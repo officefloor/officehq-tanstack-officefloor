@@ -1,6 +1,10 @@
 package net.officefloor.hq.app.person;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -8,8 +12,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
-/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from; whether on hold. */
+/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from; whether on hold; the people named as their patrons. */
 @Entity
 @Table(name = "person")
 public class Person {
@@ -39,6 +45,12 @@ public class Person {
     /** While held, their OPEN claims count in no live total; their SETTLED claims still do. */
     @Column(name = "held", nullable = false)
     private boolean held;
+
+    /** The ids of the other people on the sheet named as this person's patrons. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "person_patron", joinColumns = @JoinColumn(name = "person_id"))
+    @Column(name = "patron_id", nullable = false)
+    private Set<Long> patronIds = new LinkedHashSet<>();
 
     protected Person() {
     }
@@ -89,5 +101,9 @@ public class Person {
 
     public void setHeld(boolean held) {
         this.held = held;
+    }
+
+    public Set<Long> getPatronIds() {
+        return patronIds;
     }
 }
