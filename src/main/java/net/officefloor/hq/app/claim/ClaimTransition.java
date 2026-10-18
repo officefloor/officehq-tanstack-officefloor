@@ -10,6 +10,13 @@ final class ClaimTransition {
         claim.setStatus(to);
     }
 
+    /** Refuses approving or rejecting (moving to {@code to}) a claim that is not PENDING. */
+    static void requirePending(Claim claim, ClaimStatus to) throws InvalidClaimStatusException {
+        if (!claim.getStatus().awaitsApproval()) {
+            throw new InvalidClaimStatusException("A " + claim.getStatus() + " claim cannot become " + to + ".");
+        }
+    }
+
     static void check(ClaimStatus from, ClaimStatus to) throws InvalidClaimStatusException {
         if (!from.canBecome(to)) {
             throw new InvalidClaimStatusException("A " + from + " claim cannot become " + to + ".");

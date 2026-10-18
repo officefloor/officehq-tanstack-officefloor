@@ -10,6 +10,9 @@ function SheetPicker() {
   const [sheet, setSheet] = useCurrentSheet();
   const [id, setId] = useState('');
   const [error, setError] = useState('');
+  // While a load re-reads the sheet, the current sheet is not shown, so nothing reads the screen as
+  // loaded until it shows what the store holds now.
+  const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
 
@@ -36,7 +39,10 @@ function SheetPicker() {
       setError('Type a sheet id to load.');
       return;
     }
-    once(() => load.mutateAsync(trimmed));
+    once(() => {
+      setLoading(true);
+      return load.mutateAsync(trimmed).finally(() => setLoading(false));
+    });
   };
 
   return (
@@ -54,7 +60,7 @@ function SheetPicker() {
         Load
       </button>
       {error && <span data-testid="sheet-load-error">{error}</span>}
-      {sheet && (
+      {sheet && !loading && (
         <span>
           Sheet <strong data-testid="sheet-current-id">{sheet}</strong>
         </span>

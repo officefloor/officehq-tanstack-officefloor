@@ -73,14 +73,10 @@ export function useTerms(): number {
   return Number(useSettings().data?.terms ?? DEFAULT_TERMS);
 }
 
-/** Whether the user may settle a claim with this due (cents; undefined for n/a, which is within any limit). */
-export function useWithinClerkLimit() {
-  const limit = useSettings().data?.clerkLimit ?? null;
+/** Whether the user is a steward on the active sheet (a name with no role is a clerk). */
+export function useIsSteward() {
   const roles = useRoles().data ?? [];
-  return (user: string, due: bigint | undefined) => {
-    const role = roles.find((r) => r.user === user.trim())?.role ?? 'clerk';
-    return role === 'steward' || limit === null || due === undefined || due <= hundredths(limit);
-  };
+  return (user: string) => roles.find((r) => r.user === user.trim())?.role === 'steward';
 }
 
 /** The late percent in force before the sheet's settings load or any is set. */

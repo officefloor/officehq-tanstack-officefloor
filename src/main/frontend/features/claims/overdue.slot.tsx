@@ -28,7 +28,7 @@ function useOverdueOf() {
   };
 }
 
-// A person's overdue count and overdue-total: their OPEN claims that count, due by before the sheet's today.
+// A person's overdue count and overdue-total: their live (OPEN or PENDING) claims that count, due by before the sheet's today.
 function PersonOverdue({ personId }: { personId: number }) {
   const { count, due } = useOverdueOf()(personId);
   return (

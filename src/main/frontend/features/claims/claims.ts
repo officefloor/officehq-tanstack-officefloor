@@ -8,7 +8,7 @@ import { claimDueCents } from '../rates/rates';
 
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
 // floating-point error shows.
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when opened, the next on the sheet; null for a draft; a voided claim keeps it. */
   number: number | null;
@@ -70,22 +70,30 @@ export const quickAddClaim = (sheet: string, user: string, input: { name: string
 export const updateClaim = (sheet: string, user: string, id: number, input: ClaimInput) =>
   putJson<Claim>(`${base(sheet)}/claims/${id}`, input, user);
 
-// A claim starts DRAFT; it can be opened, then settled; a DRAFT or OPEN claim can be voided.
-// SETTLED and VOID are final. The server refuses a change not allowed; the screen refuses it first.
-export type ClaimAction = 'open' | 'settle' | 'void';
-export const CLAIM_ACTIONS: ClaimAction[] = ['open', 'settle', 'void'];
-const ALLOWED: Record<ClaimAction, ClaimStatus[]> = { open: ['DRAFT'], settle: ['OPEN'], void: ['DRAFT', 'OPEN'] };
+// A claim starts DRAFT; it can be opened, then settled; a DRAFT or OPEN claim can be voided. A clerk
+// settling a claim whose due is above the clerk limit sends it to PENDING instead: a steward approves it
+// (SETTLED) or rejects it with a reason (back to OPEN). SETTLED and VOID are final. The server refuses a
+// change not allowed; the screen refuses it first.
+export type ClaimAction = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+export const CLAIM_ACTIONS: ClaimAction[] = ['open', 'settle', 'void', 'approve', 'reject'];
+const ALLOWED: Record<ClaimAction, ClaimStatus[]> = {
+  open: ['DRAFT'], settle: ['OPEN'], void: ['DRAFT', 'OPEN'], approve: ['PENDING'], reject: ['PENDING'],
+};
 export const canTake = (claim: Claim, action: ClaimAction) => ALLOWED[action].includes(claim.status);
 
 /** Only a DRAFT can be edited; to change an OPEN claim, void it and add a new one. */
 export const canEdit = (claim: Claim) => claim.status === 'DRAFT';
 
-/** Four eyes: the user who opened a claim cannot settle it. */
+/** Four eyes: the user who opened a claim cannot settle it, nor approve it. */
 export const selfSettle = (claim: Claim, user: string, action: ClaimAction) =>
-  action === 'settle' && claim.openedBy != null && claim.openedBy === user.trim();
+  (action === 'settle' || action === 'approve') && claim.openedBy != null && claim.openedBy === user.trim();
 
-export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction) =>
-  postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, {}, user);
+/** Only a steward approves or rejects a PENDING claim. */
+export const needsSteward = (action: ClaimAction) => action === 'approve' || action === 'reject';
+
+/** Take an action on a claim; a rejection carries its reason. */
+export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction, reason = '') =>
+  postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, action === 'reject' ? { reason } : {}, user);
 
 // The claims ticked for opening together, shared by every person's claim list and the bulk-open bar.
 let selected: ReadonlySet<number> = new Set();
@@ -115,14 +123,17 @@ export function useSelectedClaims() {
 export const bulkOpenClaims = (sheet: string, user: string, ids: number[]) =>
   postJson<{ opened: number; refused: number }>(`${base(sheet)}/bulk-open`, { ids }, user);
 
-/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
-export const counts = (claim: Claim) => claim.status === 'OPEN' || claim.status === 'SETTLED';
+/** Whether a claim is live: OPEN, or PENDING (which counts as open in every total). */
+export const live = (claim: Claim) => claim.status === 'OPEN' || claim.status === 'PENDING';
 
-/** Whether a claim counts toward the live totals: as `counts`, except that the OPEN claims of a person
+/** Whether a claim counts toward claimed, due-total and every total: only live (OPEN, PENDING) and SETTLED do. */
+export const counts = (claim: Claim) => live(claim) || claim.status === 'SETTLED';
+
+/** Whether a claim counts toward the live totals: as `counts`, except that the live claims of a person
  *  on hold count in none (their SETTLED claims still do). */
 export function useCounts() {
   const held = new Set((usePeople().data ?? []).filter((p) => p.held).map((p) => p.id));
-  return (claim: Claim) => counts(claim) && !(claim.status === 'OPEN' && held.has(claim.personId));
+  return (claim: Claim) => counts(claim) && !(live(claim) && held.has(claim.personId));
 }
 
 const cents = (amount: string) => {
@@ -151,11 +162,11 @@ export function useDueBy() {
   return (claim: Claim) => addDays(claim.date, terms);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is live (OPEN or PENDING) and its due-by is before the sheet's today. */
 export function useOverdue() {
   const dueBy = useDueBy();
   const today = useSheetToday();
-  return (claim: Claim) => claim.status === 'OPEN' && today !== undefined && dueBy(claim) < today;
+  return (claim: Claim) => live(claim) && today !== undefined && dueBy(claim) < today;
 }
 
 /** Whole days from one date (yyyy-mm-dd) to another. */

@@ -9,14 +9,14 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
-import { rolesKey, settingsKey, useWithinClerkLimit } from '../settings/settings';
-import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
+import { rolesKey, settingsKey, useIsSteward } from '../settings/settings';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, needsSteward, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
-const LABEL: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void' };
+const LABEL: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void', approve: 'Approve', reject: 'Reject' };
 const showDue = (due: bigint | undefined) => (due === undefined ? NA : show(due));
-const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided' };
+const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided', approve: 'approved', reject: 'rejected' };
 
 function ClaimColumns() {
   return (
@@ -32,7 +32,8 @@ function ClaimColumns() {
 // change it. An empty date means the sheet's today; a claim dated after the person's retirement is
 // refused; a negative amount is a correction, which must name by number a settled
 // claim of the same person. A refused status change, or the edit of a claim
-// that is not a DRAFT, shows on its claim; so does a clerk settling a claim whose due is above the clerk limit.
+// that is not a DRAFT, shows on its claim. A clerk settling a claim whose due is above the clerk limit sends
+// it to PENDING; a steward other than its opener approves it, or rejects it with the reason typed on its row.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -47,7 +48,8 @@ function PersonClaims({ personId }: { personId: number }) {
   const overdue = useOverdue();
   const periodOf = usePeriodOf();
   const closedOf = useClosedPeriodOf();
-  const withinLimit = useWithinClerkLimit();
+  const isSteward = useIsSteward();
+  const [reasons, setReasons] = useState<Record<number, string>>({});
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
@@ -62,12 +64,15 @@ function PersonClaims({ personId }: { personId: number }) {
 
   const act = useMutation({
     mutationFn: ({ claim, action }: { claim: Claim; action: ClaimAction }) =>
-      claimAction(sheet!, user, claim.id, action),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) }),
+      claimAction(sheet!, user, claim.id, action, reasons[claim.id]?.trim() ?? ''),
+    onSuccess: (_, { claim, action }) => {
+      if (action === 'reject') setReasons(({ [claim.id]: _r, ...rest }) => rest);
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+    },
     onError: async (e, { claim, action }) => {
       const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
-      refuse(claim.id, reason === 'limit'
-        ? 'A clerk cannot settle a claim whose due is above the clerk limit.'
+      refuse(claim.id, reason === 'steward'
+        ? `Only a steward can ${action} a pending claim.`
         : `This claim cannot be ${DONE[action]}.`);
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
@@ -87,12 +92,16 @@ function PersonClaims({ personId }: { personId: number }) {
       refuse(claim.id, `The claim is dated inside the closed period ${closed.name}.`);
       return;
     }
-    if (selfSettle(claim, user, action)) {
-      refuse(claim.id, 'The user who opened a claim cannot settle it.');
+    if (needsSteward(action) && !isSteward(user)) {
+      refuse(claim.id, `Only a steward can ${action} a pending claim.`);
       return;
     }
-    if (action === 'settle' && !withinLimit(user, claimDue(claim, rateOf(personId, claim.date)))) {
-      refuse(claim.id, 'A clerk cannot settle a claim whose due is above the clerk limit.');
+    if (selfSettle(claim, user, action)) {
+      refuse(claim.id, `The user who opened a claim cannot ${action} it.`);
+      return;
+    }
+    if (action === 'reject' && !(reasons[claim.id] ?? '').trim()) {
+      refuse(claim.id, 'A rejection must give a reason.');
       return;
     }
     act.mutate({ claim, action });
@@ -243,6 +252,15 @@ function PersonClaims({ personId }: { personId: number }) {
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
+              <input
+                data-testid="claim-reject-reason"
+                placeholder="Reject reason"
+                value={reasons[c.id] ?? ''}
+                onChange={(e) => {
+                  setReasons((r) => ({ ...r, [c.id]: e.target.value }));
+                  clearClaimError(c.id);
+                }}
+              />{' '}
               {CLAIM_ACTIONS.map((a) => (
                 <button key={a} type="button" data-testid={`claim-${a}`} onClick={() => take(c, a)}>
                   {LABEL[a]}
@@ -257,8 +275,8 @@ function PersonClaims({ personId }: { personId: number }) {
   );
 }
 
-// The sheet's claimed-total: everyone's claimed added up (only OPEN and SETTLED claims count, and not
-// the OPEN claims of a person on hold).
+// The sheet's claimed-total: everyone's claimed added up (only OPEN, PENDING and SETTLED claims count, and
+// not the OPEN or PENDING claims of a person on hold).
 function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
   const claims = useClaims();

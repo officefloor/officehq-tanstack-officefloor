@@ -13,7 +13,7 @@ export type Person = { id: number; name: string;
   version: number;
   /** The date retired from (yyyy-mm-dd); null while not retired. A claim dated after it is refused. */
   retiredFrom: string | null;
-  /** While on hold, their OPEN claims count in no live total; their SETTLED claims still do. */
+  /** While on hold, their OPEN and PENDING claims count in no live total; their SETTLED claims still do. */
   held: boolean;
   /** The ids of the other people on the sheet named as their patrons. */
   patronIds: number[] };
