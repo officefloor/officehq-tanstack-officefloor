@@ -3,30 +3,14 @@ import type { FormEvent } from 'react';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useClaimDue, useClaims, useCounts } from '../claims/claims';
-import { hundredths, show, usePersonRate } from '../rates/rates';
+import { show } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { addPeriod, closePeriod, periodsKey, reopenPeriod, usePeriods } from './periods';
+import { addPeriod, closePeriod, periodsKey, reopenPeriod, usePeriodDue, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const EMPTY: PeriodInput = { name: '', from: '', to: '' };
-
-/** A period's due-total in cents: once closed, the one fixed then; otherwise the due of the claims that
- *  count whose date falls in it (n/a as 0). */
-function usePeriodDue() {
-  const claims = useClaims().data ?? [];
-  const rateOf = usePersonRate();
-  const counts = useCounts();
-  const claimDue = useClaimDue();
-  return (period: Period) =>
-    period.closed && period.closedTotal !== null
-      ? hundredths(period.closedTotal)
-      : claims
-      .filter((c) => counts(c) && period.from <= c.date && c.date <= period.to)
-      .reduce((n, c) => n + (claimDue(c, rateOf(c.personId, c.date)) ?? 0n), 0n);
-}
 
 // The sheet's periods: a form that adds one (a name unique on the sheet, from on or before to, not
 // overlapping another), and each period with its dates, its due-total, whether it is closed and a button

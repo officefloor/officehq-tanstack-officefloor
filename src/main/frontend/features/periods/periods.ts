@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
+import { useClaimDue, useClaims, useCounts } from '../claims/claims';
+import { hundredths, usePersonRate } from '../rates/rates';
 
 // A period is a name, unique on the sheet, and a from and to date (yyyy-mm-dd), inclusive; no two
 // periods of a sheet overlap. A claim belongs to the period whose dates contain its date, or to none.
@@ -48,4 +50,19 @@ export function useClosedPeriodOf() {
     const p = periodOf(periods, date);
     return p?.closed ? p : undefined;
   };
+}
+
+/** A period's due-total in cents: once closed, the one fixed then; otherwise the due of the claims that
+ *  count whose date falls in it (n/a as 0). */
+export function usePeriodDue() {
+  const claims = useClaims().data ?? [];
+  const rateOf = usePersonRate();
+  const counts = useCounts();
+  const claimDue = useClaimDue();
+  return (period: Period) =>
+    period.closed && period.closedTotal !== null
+      ? hundredths(period.closedTotal)
+      : claims
+      .filter((c) => counts(c) && period.from <= c.date && c.date <= period.to)
+      .reduce((n, c) => n + (claimDue(c, rateOf(c.personId, c.date)) ?? 0n), 0n);
 }
