@@ -335,6 +335,13 @@ function PersonClaims({ personId }: { personId: number }) {
                 Move
               </button>
               {claimErrors[c.id] && <span data-testid="claim-error">{claimErrors[c.id]}</span>}
+              <ol data-testid="claim-log">
+                {(c.log ?? []).map((l, i) => (
+                  <li key={i} data-testid="claim-log-line">
+                    {`${l.status} by ${l.by} on ${l.date} due=${l.due ?? NA}`}
+                  </li>
+                ))}
+              </ol>
             </li>
           ))}
         </ul>

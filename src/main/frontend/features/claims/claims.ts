@@ -21,7 +21,11 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** Given instead of a number when opened while period numbering is on: <period name>-<n>, or X-<n> in no period. */
   periodNumber: string | null;
   /** Fixed when created: its date plus the terms of its person's grade in force on it (the sheet's when the grade has none). */
-  dueBy: string };
+  dueBy: string;
+  /** Its status log, oldest first: each status it has had, who made the change, the sheet's today then and its due
+   *  as computed then (null when no rate applied). */
+  log: ClaimLogLine[] };
+export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string | null };
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
 
 /** A number with up to two decimals; negative only for a correction. */

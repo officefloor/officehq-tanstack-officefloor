@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
             @HttpHeaderParameter("X-User") String user, ClaimRepository repository, PeriodRepository periods,
-            SettingRepository settings, SheetRepository sheets, Out<BulkOpened> openedOut) {
+            SettingRepository settings, SheetRepository sheets, ClaimLog log, Out<BulkOpened> openedOut) {
         String sheet = sheetId.trim();
         Set<Long> selected = new HashSet<>(request == null || request.ids() == null ? List.of() : request.ids());
         selected.remove(null);
@@ -47,6 +47,7 @@ public class BulkOpenClaims {
             numbering.number(claim, repository, periods);
             claim.setOpenedBy(user == null ? "" : user.trim());
             repository.save(claim);
+            log.record(claim, user);
             opened.add(claim);
         }
         openedOut.set(new BulkOpened(opened, selected.size() - opened.size()));

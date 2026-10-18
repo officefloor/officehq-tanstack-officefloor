@@ -7,7 +7,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -66,7 +68,16 @@ public class Claim {
     @Column(name = "due_by", nullable = false)
     private LocalDate dueBy;
 
+    /** The status last written to its status log (as loaded); none for a claim not yet saved. */
+    @Transient
+    private ClaimStatus loggedStatus;
+
     protected Claim() {
+    }
+
+    @PostLoad
+    void loaded() {
+        this.loggedStatus = status;
     }
 
     public Claim(String sheetId, Long personId) {
@@ -178,5 +189,14 @@ public class Claim {
 
     public void setOpenedBy(String openedBy) {
         this.openedBy = openedBy;
+    }
+
+    ClaimStatus getLoggedStatus() {
+        return loggedStatus;
+    }
+
+    /** Marks its current status as written to its status log. */
+    void markLogged() {
+        this.loggedStatus = status;
     }
 }
