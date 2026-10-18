@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the settings from the body, refusing a clerk limit or floor that is not empty or 0.00 or more with up to two decimals,
  *  or terms that are not empty or a whole number of days, or a late percent that is not empty or 0.00 or more with up to two
- *  decimals, or a policy date that is not empty or a date (yyyy-mm-dd). */
+ *  decimals, or a policy date or period numbering date that is not empty or a date (yyyy-mm-dd). */
 public class ValidateSettings {
 
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
@@ -42,10 +42,18 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The policy date must be empty or a date (yyyy-mm-dd).");
             }
         }
+        String numbering = request == null || request.periodNumberingFrom() == null ? "" : request.periodNumberingFrom().trim();
+        if (!numbering.isEmpty()) {
+            try {
+                numbering = LocalDate.parse(numbering).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The period numbering date must be empty or a date (yyyy-mm-dd).");
+            }
+        }
         settingsOut.set(new SettingsInput(limit.isEmpty() ? null : new BigDecimal(limit).setScale(2).toPlainString(),
                 floor.isEmpty() ? null : new BigDecimal(floor).setScale(2).toPlainString(),
                 terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms)),
                 late.isEmpty() ? null : new BigDecimal(late).setScale(2).toPlainString(),
-                policy.isEmpty() ? null : policy));
+                policy.isEmpty() ? null : policy, numbering.isEmpty() ? null : numbering));
     }
 }

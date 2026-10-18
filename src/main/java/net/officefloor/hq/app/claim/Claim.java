@@ -44,6 +44,11 @@ public class Claim {
     @Column(name = "claim_number")
     private Integer number;
 
+    /** Given instead of a number when opened while period numbering is on: <period name>-<n>, or X-<n>
+     *  for a claim dated in no period; none otherwise, kept when voided. */
+    @Column(name = "period_number")
+    private String periodNumber;
+
     /** Fixed when settled (amount × rate / 100, two decimals); none while live or when no rate applied. */
     @Column(name = "settled_due", precision = 14, scale = 2)
     private BigDecimal settledDue;
@@ -114,6 +119,19 @@ public class Claim {
 
     public void setNumber(Integer number) {
         this.number = number;
+    }
+
+    public String getPeriodNumber() {
+        return periodNumber;
+    }
+
+    public void setPeriodNumber(String periodNumber) {
+        this.periodNumber = periodNumber;
+    }
+
+    /** The number as shown: its period number when it has one, else its sheet-wide number; null for none. */
+    public String getShownNumber() {
+        return periodNumber != null ? periodNumber : number == null ? null : String.valueOf(number);
     }
 
     public BigDecimal getSettledDue() {

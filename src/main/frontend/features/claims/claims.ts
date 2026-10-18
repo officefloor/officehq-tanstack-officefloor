@@ -17,7 +17,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The user who opened it; null for a draft. */
   openedBy: string | null;
   /** For a correction (a negative amount), the number of the SETTLED claim it corrects; null otherwise. */
-  corrects: number | null };
+  corrects: number | null;
+  /** Given instead of a number when opened while period numbering is on: <period name>-<n>, or X-<n> in no period. */
+  periodNumber: string | null };
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
 
 /** A number with up to two decimals; negative only for a correction. */

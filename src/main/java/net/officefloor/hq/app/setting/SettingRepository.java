@@ -41,6 +41,11 @@ public interface SettingRepository extends JpaRepository<Setting, Long> {
         return findBySheetIdAndKey(sheetId, Setting.POLICY_DATE).map(Setting::getValue).map(LocalDate::parse);
     }
 
+    /** The sheet's period numbering date, or empty when period numbering is off. */
+    default Optional<LocalDate> periodNumberingFrom(String sheetId) {
+        return findBySheetIdAndKey(sheetId, Setting.PERIOD_NUMBERING_FROM).map(Setting::getValue).map(LocalDate::parse);
+    }
+
     /** How a claim dated on this date rounds its live figures: half up when dated before the policy date
      *  (the sheet's today when none is set), half to even when on or after it. */
     default RoundingMode rounding(String sheetId, LocalDate claimDate, LocalDate today) {

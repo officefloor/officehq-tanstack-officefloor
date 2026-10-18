@@ -237,7 +237,7 @@ function PersonClaims({ personId }: { personId: number }) {
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
-              <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+              <span data-testid="claim-number">{c.periodNumber ?? c.number ?? ''}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>

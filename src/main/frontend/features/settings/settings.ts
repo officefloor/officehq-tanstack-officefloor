@@ -9,9 +9,10 @@ import { hundredths } from '../rates/rates';
 // claim's live due is at least it. The terms (whole days, 14 until set): a claim is due by its date plus them.
 // The late percent (two decimals, 0.00 until set): an overdue claim's live due gains it of its floored due for
 // every full 30 days it is overdue. The policy date (null: the sheet's today): a claim dated before it rounds
-// its live figures half up, one dated on or after it half to even.
-export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null };
-export type SettingsInput = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
+// its live figures half up, one dated on or after it half to even. The period numbering date (null: off): while
+// the sheet's today is on or after it, a claim opened is numbered within its period (<period name>-<n>, X-<n> in none).
+export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null; periodNumberingFrom: string | null };
+export type SettingsInput = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string };
 export type Role = 'clerk' | 'steward';
 export type UserRole = { user: string; role: Role };
 

@@ -8,7 +8,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { LIMIT, POLICY_DATE, ROLES, TERMS, rolesKey, saveSettings, setRole, settingsKey, useRoles, useSettings } from './settings';
 
 // The sheet's settings: the clerk limit (blank: no limit), the floor, the terms and the late percent (blank: unchanged), and the
-// policy date (blank: the sheet's today), each with
+// policy date (blank: the sheet's today) and the period numbering date (blank: off), each with
 // the one in force shown beside it.
 function SettingsPanel() {
   const [sheet] = useCurrentSheet();
@@ -19,6 +19,7 @@ function SettingsPanel() {
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
+  const [numberingFrom, setNumberingFrom] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
@@ -29,7 +30,7 @@ function SettingsPanel() {
       queryClient.setQueryData(settingsKey(sheet!), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet!) });
     },
-    onError: () => setError('The settings could not be saved: the clerk limit must be blank or 0.00 or more, and the floor blank or 0.00 or more, with up to two decimals, the terms blank or a whole number of days, the late percent blank or 0.00 or more with up to two decimals, and the policy date blank or a date.'),
+    onError: () => setError('The settings could not be saved: the clerk limit must be blank or 0.00 or more, and the floor blank or 0.00 or more, with up to two decimals, the terms blank or a whole number of days, the late percent blank or 0.00 or more with up to two decimals, the policy date blank or a date, and the period numbering date blank or a date.'),
   });
 
   if (!sheet) return null;
@@ -62,7 +63,21 @@ function SettingsPanel() {
       setError('The policy date must be blank or a date (yyyy-mm-dd).');
       return;
     }
-    once(() => save.mutateAsync({ clerkLimit: value, floor: floorValue, terms: termsValue, latePct: lateValue, policyDate: policyValue }));
+    const numberingValue = numberingFrom.trim();
+    if (!POLICY_DATE.test(numberingValue)) {
+      setError('The period numbering date must be blank or a date (yyyy-mm-dd).');
+      return;
+    }
+    once(() =>
+      save.mutateAsync({
+        clerkLimit: value,
+        floor: floorValue,
+        terms: termsValue,
+        latePct: lateValue,
+        policyDate: policyValue,
+        periodNumberingFrom: numberingValue,
+      }),
+    );
   };
 
   return (
@@ -147,6 +162,21 @@ function SettingsPanel() {
         </label>{' '}
         <span>
           now <strong data-testid="setting-policy-date-current">{settings?.policyDate ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Period numbering from{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="Off"
+            value={numberingFrom}
+            onChange={(e) => {
+              setNumberingFrom(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <span>
+          now <strong data-testid="setting-period-numbering-from-current">{settings?.periodNumberingFrom ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

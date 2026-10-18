@@ -29,6 +29,10 @@ public class Setting {
      *  after it half to even; the sheet's today when not set. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The period numbering date (yyyy-mm-dd): while the sheet's today is on or after it, a claim opened is
+     *  numbered within its period (<period name>-<n>, or X-<n> in no period); off when not set. */
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     /** The late percent in force when none is set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
