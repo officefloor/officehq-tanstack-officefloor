@@ -1,0 +1,314 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 538ad3b..eba436f 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -10,7 +10,7 @@ import { afterRetirement, peopleKey, usePeople } from '../people/people';
+ import { NA, show, usePersonRate } from '../rates/rates';
+ import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
+ import { rolesKey, settingsKey, useIsSteward } from '../settings/settings';
+-import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, needsSteward, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
++import { AMOUNT, CLAIM_ACTIONS, addClaim, canReassign, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, needsSteward, reassignClaim, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
+ import type { Claim, ClaimAction, ClaimInput } from './claims';
+ 
+ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
+@@ -34,6 +34,7 @@ function ClaimColumns() {
+ // claim of the same person. A refused status change, or the edit of a claim
+ // that is not a DRAFT, shows on its claim. A clerk settling a claim whose due is above the clerk limit sends
+ // it to PENDING; a steward other than its opener approves it, or rejects it with the reason typed on its row.
++// A steward moves a DRAFT, OPEN or PENDING claim to the person chosen on its row; it keeps its number and date.
+ function PersonClaims({ personId }: { personId: number }) {
+   const [sheet] = useCurrentSheet();
+   const [user] = useCurrentUser();
+@@ -50,6 +51,8 @@ function PersonClaims({ personId }: { personId: number }) {
+   const closedOf = useClosedPeriodOf();
+   const isSteward = useIsSteward();
+   const [reasons, setReasons] = useState<Record<number, string>>({});
++  const [moveTo, setMoveTo] = useState<Record<number, string>>({});
++  const people = usePeople().data ?? [];
+   const [editing, setEditing] = useState<number | undefined>();
+   const [form, setForm] = useState<ClaimInput>(EMPTY);
+   const [error, setError] = useState('');
+@@ -107,6 +110,54 @@ function PersonClaims({ personId }: { personId: number }) {
+     act.mutate({ claim, action });
+   };
+ 
++  const move = useMutation({
++    mutationFn: ({ claim, to }: { claim: Claim; to: number }) => reassignClaim(sheet!, user, claim.id, to),
++    onSuccess: (_, { claim }) => {
++      setMoveTo(({ [claim.id]: _m, ...rest }) => rest);
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
++    },
++    onError: async (e, { claim }) => {
++      const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
++      refuse(claim.id, reason === 'steward'
++        ? 'Only a steward can move a claim.'
++        : 'This claim cannot be moved to that person.');
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
++      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
++      await queryClient.invalidateQueries({ queryKey: rolesKey(sheet!) });
++    },
++  });
++
++  // A steward moves a DRAFT, OPEN or PENDING claim to the person chosen on its row.
++  const reassign = (claim: Claim) => {
++    clearClaimError(claim.id);
++    if (!isSteward(user)) {
++      refuse(claim.id, 'Only a steward can move a claim.');
++      return;
++    }
++    if (!canReassign(claim)) {
++      refuse(claim.id, claim.corrects != null
++        ? 'A correction cannot be moved to another person.'
++        : `A ${claim.status} claim cannot be moved.`);
++      return;
++    }
++    const to = people.find((p) => String(p.id) === moveTo[claim.id]);
++    if (!to || to.id === personId) {
++      refuse(claim.id, 'Choose another person to move the claim to.');
++      return;
++    }
++    const closed = closedOf(claim.date);
++    if (closed) {
++      refuse(claim.id, `The claim is dated inside the closed period ${closed.name}.`);
++      return;
++    }
++    if (afterRetirement(to, claim.date)) {
++      refuse(claim.id, `The claim cannot be moved to ${to.name}: it is dated after they retired (${to.retiredFrom}).`);
++      return;
++    }
++    move.mutate({ claim, to: to.id });
++  };
++
+   const notDraft = (id: number) => refuse(id, 'Only a DRAFT claim can be edited; void it and add a new one.');
+ 
+   const save = useMutation({
+@@ -266,6 +317,23 @@ function PersonClaims({ personId }: { personId: number }) {
+                   {LABEL[a]}
+                 </button>
+               ))}
++              <select
++                data-testid="claim-reassign-to"
++                aria-label="Move to"
++                value={moveTo[c.id] ?? ''}
++                onChange={(e) => {
++                  setMoveTo((m) => ({ ...m, [c.id]: e.target.value }));
++                  clearClaimError(c.id);
++                }}
++              >
++                <option value="">Move to…</option>
++                {people.filter((p) => p.id !== personId).map((p) => (
++                  <option key={p.id} value={String(p.id)}>{p.name}</option>
++                ))}
++              </select>
++              <button type="button" data-testid="claim-reassign" onClick={() => reassign(c)}>
++                Move
++              </button>
+               {claimErrors[c.id] && <span data-testid="claim-error">{claimErrors[c.id]}</span>}
+             </li>
+           ))}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index fc8fa2d..f94e6e4 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -95,6 +95,14 @@ export const needsSteward = (action: ClaimAction) => action === 'approve' || act
+ export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction, reason = '') =>
+   postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, action === 'reject' ? { reason } : {}, user);
+ 
++/** A steward moves a DRAFT, OPEN or PENDING claim to another person on the sheet; it keeps its number and
++ *  date. A SETTLED or VOID claim, and a correction (it names a settled claim of its own person), cannot move. */
++export const canReassign = (claim: Claim) =>
++  (claim.status === 'DRAFT' || live(claim)) && claim.corrects == null;
++
++export const reassignClaim = (sheet: string, user: string, id: number, personId: number) =>
++  postJson<Claim>(`${base(sheet)}/claims/${id}/reassign`, { personId }, user);
++
+ // The claims ticked for opening together, shared by every person's claim list and the bulk-open bar.
+ let selected: ReadonlySet<number> = new Set();
+ const listeners = new Set<() => void>();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimReassigned.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimReassigned.java
+new file mode 100644
+index 0000000..1390ddf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimReassigned.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.HttpHeaderParameter;
++
++/** Records CLAIM_REASSIGNED once the claim is saved, naming it (with its new person) and ending with the names
++ *  it moved from and to; the signed-in user arrives as X-User. */
++public class AuditClaimReassigned {
++    public void audit(@Val Claim claim, @Val Reassignment reassignment, @HttpHeaderParameter("X-User") String user,
++            PersonRepository people, Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_REASSIGNED", claim, user, people)
++                + " from=" + reassignment.getFromName() + " to=" + reassignment.getToName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 70aa0d2..f224ad4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -81,6 +81,10 @@ public class Claim {
+         return personId;
+     }
+ 
++    public void setPersonId(Long personId) {
++        this.personId = personId;
++    }
++
+     public BigDecimal getAmount() {
+         return amount;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+new file mode 100644
+index 0000000..c15e239
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.setting.UserRole;
++import net.officefloor.hq.app.setting.UserRoleRepository;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.HttpHeaderParameter;
++
++/** A steward moves a DRAFT, OPEN or PENDING claim to another person on its sheet; it keeps its number, date and
++ *  status, and every total follows. Refused for a user who is not a steward (arriving as X-User), for a SETTLED
++ *  or VOID claim, for a correction (it names a settled claim of its own person), for a person not on the sheet or
++ *  the claim's own person, and when the claim is dated after the new person's retirement. */
++public class ReassignClaim {
++    public void apply(@Val Claim claim, @Val Reassignment reassignment, @HttpHeaderParameter("X-User") String user,
++            PersonRepository people, UserRoleRepository roles)
++            throws InvalidClaimStatusException, NotStewardException, InvalidClaimException, RetiredPersonException {
++        String by = user == null ? "" : user.trim();
++        if (!UserRole.STEWARD.equals(roles.roleOf(claim.getSheetId(), by))) {
++            throw new NotStewardException("Only a steward can move a claim.");
++        }
++        if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
++            throw new InvalidClaimStatusException("A " + claim.getStatus() + " claim cannot be moved.");
++        }
++        if (claim.getCorrects() != null) {
++            throw new InvalidClaimException("A correction cannot be moved to another person.");
++        }
++        Person to = people.findById(reassignment.getToPersonId())
++                .filter((p) -> p.getSheetId().equals(claim.getSheetId())).orElse(null);
++        if (to == null || to.getId().equals(claim.getPersonId())) {
++            throw new InvalidClaimException("A claim must be moved to another person on its sheet.");
++        }
++        if (to.getRetiredFrom() != null && claim.getDate().isAfter(to.getRetiredFrom())) {
++            throw new RetiredPersonException(to.getName() + " is retired from " + to.getRetiredFrom()
++                    + "; a claim dated after that cannot be moved to them.");
++        }
++        String from = people.findById(claim.getPersonId()).orElseThrow().getName();
++        claim.setPersonId(to.getId());
++        reassignment.moved(from, to.getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java b/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
+new file mode 100644
+index 0000000..211c7f1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The body of moving a claim to another person: the id of the person on the sheet it moves to. */
++public record ReassignRequest(Long personId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Reassignment.java b/src/main/java/net/officefloor/hq/app/claim/Reassignment.java
+new file mode 100644
+index 0000000..a3fa03e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Reassignment.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app.claim;
++
++/** A validated move of a claim: the person it moves to and, once applied, the names it moved from and to. */
++public class Reassignment {
++    private final long toPersonId;
++    private String fromName;
++    private String toName;
++
++    public Reassignment(long toPersonId) {
++        this.toPersonId = toPersonId;
++    }
++
++    public long getToPersonId() {
++        return toPersonId;
++    }
++
++    public String getFromName() {
++        return fromName;
++    }
++
++    public String getToName() {
++        return toName;
++    }
++
++    void moved(String fromName, String toName) {
++        this.fromName = fromName;
++        this.toName = toName;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateReassignment.java b/src/main/java/net/officefloor/hq/app/claim/ValidateReassignment.java
+new file mode 100644
+index 0000000..b26f967
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateReassignment.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the move from the body, refusing one that names no person. */
++public class ValidateReassignment {
++    public void validate(@RequestBody ReassignRequest request, Out<Reassignment> reassignmentOut) throws InvalidClaimException {
++        if (request == null || request.personId() == null) {
++            throw new InvalidClaimException("A claim must be moved to a person.");
++        }
++        reassignmentOut.set(new Reassignment(request.personId()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+new file mode 100644
+index 0000000..647cd82
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+@@ -0,0 +1,30 @@
++# A steward moves a DRAFT, OPEN or PENDING claim to another person on the sheet; it keeps its number and date.
++# A body naming no person, or not another person on the sheet, is refused (400), a SETTLED or VOID claim (409)
++# and a user who is not a steward (403); none writes anything.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateReassignment
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: check
++# A claim dated inside a closed period is refused (409) and writes nothing.
++check:
++  class: net.officefloor.hq.app.claim.CheckClaimPeriod
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ReassignClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: audit
++# Record the change only once it is saved, so a refused change writes no audit line.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimReassigned
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
