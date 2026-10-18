@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -32,6 +34,18 @@ public interface SettingRepository extends JpaRepository<Setting, Long> {
     default BigDecimal latePct(String sheetId) {
         return new BigDecimal(findBySheetIdAndKey(sheetId, Setting.LATE_PCT).map(Setting::getValue)
                 .orElse(Setting.DEFAULT_LATE_PCT));
+    }
+
+    /** The sheet's policy date, or empty when not set (the sheet's today is then in force). */
+    default Optional<LocalDate> policyDate(String sheetId) {
+        return findBySheetIdAndKey(sheetId, Setting.POLICY_DATE).map(Setting::getValue).map(LocalDate::parse);
+    }
+
+    /** How a claim dated on this date rounds its live figures: half up when dated before the policy date
+     *  (the sheet's today when none is set), half to even when on or after it. */
+    default RoundingMode rounding(String sheetId, LocalDate claimDate, LocalDate today) {
+        LocalDate policy = policyDate(sheetId).orElse(today);
+        return policy != null && claimDate.isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
     /** A live due raised to the sheet's floor (null, for no rate, stays null). */

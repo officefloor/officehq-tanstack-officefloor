@@ -25,6 +25,10 @@ public class Setting {
      *  it is overdue (two decimals); 0.00 when not set. */
     public static final String LATE_PCT = "late-pct";
 
+    /** The policy date (yyyy-mm-dd): a claim dated before it rounds its live figures half up, one dated on or
+     *  after it half to even; the sheet's today when not set. */
+    public static final String POLICY_DATE = "policy-date";
+
     /** The late percent in force when none is set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 

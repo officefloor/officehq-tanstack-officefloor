@@ -1,13 +1,15 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the settings from the body, refusing a clerk limit or floor that is not empty or 0.00 or more with up to two decimals,
  *  or terms that are not empty or a whole number of days, or a late percent that is not empty or 0.00 or more with up to two
- *  decimals. */
+ *  decimals, or a policy date that is not empty or a date (yyyy-mm-dd). */
 public class ValidateSettings {
 
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
@@ -32,9 +34,18 @@ public class ValidateSettings {
         if (!late.isEmpty() && !LIMIT.matcher(late).matches()) {
             throw new InvalidSettingException("The late percent must be 0.00 or more, with up to two decimals.");
         }
+        String policy = request == null || request.policyDate() == null ? "" : request.policyDate().trim();
+        if (!policy.isEmpty()) {
+            try {
+                policy = LocalDate.parse(policy).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The policy date must be empty or a date (yyyy-mm-dd).");
+            }
+        }
         settingsOut.set(new SettingsInput(limit.isEmpty() ? null : new BigDecimal(limit).setScale(2).toPlainString(),
                 floor.isEmpty() ? null : new BigDecimal(floor).setScale(2).toPlainString(),
                 terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms)),
-                late.isEmpty() ? null : new BigDecimal(late).setScale(2).toPlainString()));
+                late.isEmpty() ? null : new BigDecimal(late).setScale(2).toPlainString(),
+                policy.isEmpty() ? null : policy));
     }
 }

@@ -22,6 +22,7 @@ public class SaveSettings {
         if (input.latePct() != null) {
             change(id, by, Setting.LATE_PCT, input.latePct(), Setting.DEFAULT_LATE_PCT, repository, audit);
         }
+        change(id, by, Setting.POLICY_DATE, input.policyDate(), null, repository, audit);
     }
 
     private static void change(String id, String by, String key, String value, String fallback,

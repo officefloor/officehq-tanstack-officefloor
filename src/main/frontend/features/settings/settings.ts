@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
-import { useCurrentSheet } from '../session/session';
+import { useCurrentSheet, useSheetToday } from '../session/session';
 import { hundredths } from '../rates/rates';
 
 // A sheet's settings: the clerk limit (two decimals; null: no limit). And the role each user name has
@@ -8,8 +8,10 @@ import { hundredths } from '../rates/rates';
 // at or below the clerk limit; a steward settles any. The floor (two decimals, 1.00 until set): a
 // claim's live due is at least it. The terms (whole days, 14 until set): a claim is due by its date plus them.
 // The late percent (two decimals, 0.00 until set): an overdue claim's live due gains it of its floored due for
-// every full 30 days it is overdue.
-export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string };
+// every full 30 days it is overdue. The policy date (null: the sheet's today): a claim dated before it rounds
+// its live figures half up, one dated on or after it half to even.
+export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null };
+export type SettingsInput = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
 export type Role = 'clerk' | 'steward';
 export type UserRole = { user: string; role: Role };
 
@@ -17,6 +19,9 @@ export type UserRole = { user: string; role: Role };
 export const TERMS = /^(\d{1,4})?$/;
 
 export const ROLES: Role[] = ['clerk', 'steward'];
+
+/** Empty (the sheet's today), or a date. */
+export const POLICY_DATE = /^(\d{4}-\d{2}-\d{2})?$/;
 
 /** Empty (no limit), or 0.00 or more with up to two decimals. */
 export const LIMIT = /^(\d{1,12}(\.\d{1,2})?)?$/;
@@ -45,7 +50,7 @@ export function useRoles() {
   });
 }
 
-export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string; floor: string; terms: string; latePct: string }) =>
+export const saveSettings = (sheet: string, user: string, settings: SettingsInput) =>
   postJson<Settings>(`${base(sheet)}/settings`, settings, user);
 
 export const setRole = (sheet: string, user: string, input: { user: string; role: string }) =>
@@ -83,4 +88,15 @@ export const DEFAULT_LATE_PCT = '0.00';
 /** The active sheet's late percent in hundredths of a percent. */
 export function useLatePct(): bigint {
   return hundredths(useSettings().data?.latePct ?? DEFAULT_LATE_PCT);
+}
+
+/** Whether a claim dated on this date (yyyy-mm-dd) rounds its live figures half up: it is dated before the
+ *  sheet's policy date (its today when none is set); otherwise it rounds half to even. */
+export function useRoundsHalfUp() {
+  const policy = useSettings().data?.policyDate ?? null;
+  const today = useSheetToday();
+  return (date: string) => {
+    const on = policy ?? today;
+    return on !== undefined && date < on;
+  };
 }
