@@ -7,7 +7,9 @@ import { hundredths } from '../rates/rates';
 // on the sheet: clerk (any name not given one) or steward. A clerk settles only a claim whose due is
 // at or below the clerk limit; a steward settles any. The floor (two decimals, 1.00 until set): a
 // claim's live due is at least it. The terms (whole days, 14 until set): a claim is due by its date plus them.
-export type Settings = { clerkLimit: string | null; floor: string; terms: string };
+// The late percent (two decimals, 0.00 until set): an overdue claim's live due gains it of its floored due for
+// every full 30 days it is overdue.
+export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string };
 export type Role = 'clerk' | 'steward';
 export type UserRole = { user: string; role: Role };
 
@@ -43,7 +45,7 @@ export function useRoles() {
   });
 }
 
-export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string; floor: string; terms: string }) =>
+export const saveSettings = (sheet: string, user: string, settings: { clerkLimit: string; floor: string; terms: string; latePct: string }) =>
   postJson<Settings>(`${base(sheet)}/settings`, settings, user);
 
 export const setRole = (sheet: string, user: string, input: { user: string; role: string }) =>
@@ -73,4 +75,12 @@ export function useWithinClerkLimit() {
     const role = roles.find((r) => r.user === user.trim())?.role ?? 'clerk';
     return role === 'steward' || limit === null || due === undefined || due <= hundredths(limit);
   };
+}
+
+/** The late percent in force before the sheet's settings load or any is set. */
+export const DEFAULT_LATE_PCT = '0.00';
+
+/** The active sheet's late percent in hundredths of a percent. */
+export function useLatePct(): bigint {
+  return hundredths(useSettings().data?.latePct ?? DEFAULT_LATE_PCT);
 }

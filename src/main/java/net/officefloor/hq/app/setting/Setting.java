@@ -21,6 +21,13 @@ public class Setting {
     /** The terms: the number of days after a claim's date by which it is due (14 when not set). */
     public static final String TERMS = "terms";
 
+    /** The late percent: an overdue claim's live due gains it of its floored due for every full 30 days
+     *  it is overdue (two decimals); 0.00 when not set. */
+    public static final String LATE_PCT = "late-pct";
+
+    /** The late percent in force when none is set. */
+    public static final String DEFAULT_LATE_PCT = "0.00";
+
     /** The terms in force when none is set. */
     public static final String DEFAULT_TERMS = "14";
 

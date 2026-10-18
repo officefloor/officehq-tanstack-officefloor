@@ -10,6 +10,7 @@ public class RespondWithSettings {
         String id = sheetId.trim();
         response.send(new SettingsResponse(repository.findBySheetIdAndKey(id, Setting.CLERK_LIMIT)
                 .map(Setting::getValue).orElse(null), repository.floor(id).setScale(2).toPlainString(),
-                String.valueOf(repository.terms(id))));
+                String.valueOf(repository.terms(id)),
+                repository.latePct(id).setScale(2).toPlainString()));
     }
 }

@@ -48,7 +48,12 @@ export const show = (n: bigint): string => {
 
 /** The due on an amount at a rate, in cents: amount × rate / 100, rounded half to even. */
 export function dueCents(amount: string, rate: string): bigint {
-  const product = hundredths(amount) * hundredths(rate); // cents × hundredths of a percent
+  return percentOf(hundredths(amount), hundredths(rate));
+}
+
+/** A percent (hundredths of a percent) of cents, in cents, rounded half to even. */
+export function percentOf(cents: bigint, percent: bigint): bigint {
+  const product = cents * percent; // cents × hundredths of a percent
   const sign = product < 0n ? -1n : 1n;
   const abs = sign * product;
   const whole = abs / 10000n;
@@ -59,12 +64,14 @@ export function dueCents(amount: string, rate: string): bigint {
 
 /** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft
  *  claim's is live, at its grade's rate in force on the claim's date, and at least the sheet's floor
- *  (cents). Undefined for n/a. */
-export function claimDueCents(claim: Claim, rate: string | undefined, floor: bigint): bigint | undefined {
+ *  (cents), plus the late charge: the late percent (hundredths of a percent) of that floored due for each
+ *  full 30 days it is overdue (`lateSpans`), rounded like due. Undefined for n/a. */
+export function claimDueCents(claim: Claim, rate: string | undefined, floor: bigint, latePct = 0n, lateSpans = 0n): bigint | undefined {
   if (claim.status === 'SETTLED') return claim.settledDue === null ? undefined : hundredths(claim.settledDue);
   if (rate === undefined) return undefined;
   const due = dueCents(claim.amount, rate);
-  return due < floor ? floor : due;
+  const floored = due < floor ? floor : due;
+  return floored + percentOf(floored, latePct * lateSpans);
 }
 
 /** The grade's rate (two decimals) in force on a date (yyyy-mm-dd), or undefined when none applies. */

@@ -3,10 +3,9 @@ import type { FormEvent } from 'react';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useClaims, useCounts } from '../claims/claims';
-import { claimDueCents, hundredths, show, usePersonRate } from '../rates/rates';
+import { useClaimDue, useClaims, useCounts } from '../claims/claims';
+import { hundredths, show, usePersonRate } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useFloor } from '../settings/settings';
 import { addPeriod, closePeriod, periodsKey, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 
@@ -20,13 +19,13 @@ function usePeriodDue() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
   const counts = useCounts();
-  const floor = useFloor();
+  const claimDue = useClaimDue();
   return (period: Period) =>
     period.closed && period.closedTotal !== null
       ? hundredths(period.closedTotal)
       : claims
       .filter((c) => counts(c) && period.from <= c.date && c.date <= period.to)
-      .reduce((n, c) => n + (claimDueCents(c, rateOf(c.personId, c.date), floor) ?? 0n), 0n);
+      .reduce((n, c) => n + (claimDue(c, rateOf(c.personId, c.date)) ?? 0n), 0n);
 }
 
 // The sheet's periods: a form that adds one (a name unique on the sheet, from on or before to, not

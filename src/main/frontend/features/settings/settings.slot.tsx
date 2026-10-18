@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { LIMIT, ROLES, TERMS, rolesKey, saveSettings, setRole, settingsKey, useRoles, useSettings } from './settings';
 
-// The sheet's settings: the clerk limit (blank: no limit), the floor and the terms (blank: unchanged), each with
+// The sheet's settings: the clerk limit (blank: no limit), the floor, the terms and the late percent (blank: unchanged), each with
 // the one in force shown beside it.
 function SettingsPanel() {
   const [sheet] = useCurrentSheet();
@@ -15,17 +15,18 @@ function SettingsPanel() {
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [latePct, setLatePct] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (input: { clerkLimit: string; floor: string; terms: string }) => saveSettings(sheet!, user, input),
+    mutationFn: (input: { clerkLimit: string; floor: string; terms: string; latePct: string }) => saveSettings(sheet!, user, input),
     onSuccess: async (saved) => {
       queryClient.setQueryData(settingsKey(sheet!), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet!) });
     },
-    onError: () => setError('The settings could not be saved: the clerk limit must be blank or 0.00 or more, and the floor blank or 0.00 or more, with up to two decimals, and the terms blank or a whole number of days.'),
+    onError: () => setError('The settings could not be saved: the clerk limit must be blank or 0.00 or more, and the floor blank or 0.00 or more, with up to two decimals, the terms blank or a whole number of days, and the late percent blank or 0.00 or more with up to two decimals.'),
   });
 
   if (!sheet) return null;
@@ -48,7 +49,12 @@ function SettingsPanel() {
       setError('The terms must be blank or a whole number of days, 0 or more.');
       return;
     }
-    once(() => save.mutateAsync({ clerkLimit: value, floor: floorValue, terms: termsValue }));
+    const lateValue = latePct.trim();
+    if (!LIMIT.test(lateValue)) {
+      setError('The late percent must be blank or 0.00 or more, with up to two decimals.');
+      return;
+    }
+    once(() => save.mutateAsync({ clerkLimit: value, floor: floorValue, terms: termsValue, latePct: lateValue }));
   };
 
   return (
@@ -102,6 +108,22 @@ function SettingsPanel() {
         </label>{' '}
         <span>
           now <strong data-testid="setting-terms-current">{settings?.terms ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Late percent{' '}
+          <input
+            data-testid="setting-late-pct"
+            placeholder="Unchanged"
+            inputMode="decimal"
+            value={latePct}
+            onChange={(e) => {
+              setLatePct(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <span>
+          now <strong data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

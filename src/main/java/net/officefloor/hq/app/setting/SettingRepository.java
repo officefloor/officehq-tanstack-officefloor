@@ -28,6 +28,12 @@ public interface SettingRepository extends JpaRepository<Setting, Long> {
                 .orElse(Setting.DEFAULT_TERMS));
     }
 
+    /** The sheet's late percent (0.00 when not set). */
+    default BigDecimal latePct(String sheetId) {
+        return new BigDecimal(findBySheetIdAndKey(sheetId, Setting.LATE_PCT).map(Setting::getValue)
+                .orElse(Setting.DEFAULT_LATE_PCT));
+    }
+
     /** A live due raised to the sheet's floor (null, for no rate, stays null). */
     default BigDecimal floored(String sheetId, BigDecimal due) {
         return due == null ? null : due.max(floor(sheetId));

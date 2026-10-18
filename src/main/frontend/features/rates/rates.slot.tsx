@@ -4,11 +4,10 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { useClaims, useCounts } from '../claims/claims';
+import { useClaimDue, useClaims, useCounts } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useFloor } from '../settings/settings';
-import { NA, PERCENT, claimDueCents, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
+import { NA, PERCENT, ratesKey, setRate, show, useGradeRate, usePersonRate, useRates } from './rates';
 import type { RateInput } from './rates';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -139,11 +138,11 @@ function useDueTotal() {
   const claims = useClaims().data ?? [];
   const rateOf = usePersonRate();
   const counts = useCounts();
-  const floor = useFloor();
+  const claimDue = useClaimDue();
   return (personId: number) => {
     const figures = claims
       .filter((c) => c.personId === personId && counts(c))
-      .map((c) => ({ claim: c, due: claimDueCents(c, rateOf(personId, c.date), floor) }));
+      .map((c) => ({ claim: c, due: claimDue(c, rateOf(personId, c.date)) }));
     const kept = figures.some((f) => f.claim.status === 'SETTLED' && f.due !== undefined);
     if (rateOf(personId) === undefined && !kept) return undefined;
     return figures.reduce((n, f) => n + (f.due ?? 0n), 0n);

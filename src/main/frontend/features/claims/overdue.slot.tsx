@@ -1,10 +1,9 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { usePeople } from '../people/people';
-import { claimDueCents, show, usePersonRate } from '../rates/rates';
+import { show, usePersonRate } from '../rates/rates';
 import { useCurrentSheet } from '../session/session';
-import { useFloor } from '../settings/settings';
-import { useClaims, useCounts, useOverdue } from './claims';
+import { useClaimDue, useClaims, useCounts, useOverdue } from './claims';
 
 function OverdueColumns() {
   return (
@@ -21,10 +20,10 @@ function useOverdueOf() {
   const counts = useCounts();
   const overdue = useOverdue();
   const rateOf = usePersonRate();
-  const floor = useFloor();
+  const claimDue = useClaimDue();
   return (personId: number) => {
     const late = claims.filter((c) => c.personId === personId && counts(c) && overdue(c));
-    const due = late.reduce((n, c) => n + (claimDueCents(c, rateOf(personId, c.date), floor) ?? 0n), 0n);
+    const due = late.reduce((n, c) => n + (claimDue(c, rateOf(personId, c.date)) ?? 0n), 0n);
     return { count: late.length, due };
   };
 }

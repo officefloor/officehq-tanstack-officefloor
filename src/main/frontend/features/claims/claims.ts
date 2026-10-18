@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { useCurrentSheet, useSheetToday } from '../session/session';
 import { usePeople } from '../people/people';
-import { useTerms } from '../settings/settings';
+import { useFloor, useLatePct, useTerms } from '../settings/settings';
+import { claimDueCents } from '../rates/rates';
 
 // Amounts travel as strings with two decimals ("13.50"); sums are added up in whole cents so no
 // floating-point error shows.
@@ -98,4 +99,23 @@ export function useOverdue() {
   const dueBy = useDueBy();
   const today = useSheetToday();
   return (claim: Claim) => claim.status === 'OPEN' && today !== undefined && dueBy(claim) < today;
+}
+
+/** Whole days from one date (yyyy-mm-dd) to another. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+}
+
+/** A claim's due in cents (see `claimDueCents`) at a rate, with the sheet's floor and, while it is overdue,
+ *  the late percent for each full 30 days past its due-by. */
+export function useClaimDue() {
+  const floor = useFloor();
+  const latePct = useLatePct();
+  const dueBy = useDueBy();
+  const overdue = useOverdue();
+  const today = useSheetToday();
+  return (claim: Claim, rate: string | undefined) => {
+    const spans = overdue(claim) && today !== undefined ? BigInt(Math.floor(daysBetween(dueBy(claim), today) / 30)) : 0n;
+    return claimDueCents(claim, rate, floor, latePct, spans);
+  };
 }
