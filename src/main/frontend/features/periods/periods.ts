@@ -6,6 +6,7 @@ import { useCurrentSheet } from '../session/session';
 // periods of a sheet overlap. A claim belongs to the period whose dates contain its date, or to none.
 // A period may be closed: its due-total is then the one fixed when it was closed (closedTotal), and
 // no claim dated inside it can be added, edited, opened, settled or voided.
+// A steward may reopen a closed period, making its due-total live again.
 export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
 export type PeriodInput = { name: string; from: string; to: string };
 
@@ -26,6 +27,9 @@ export const addPeriod = (sheet: string, user: string, input: PeriodInput) => po
 
 export const closePeriod = (sheet: string, user: string, name: string) =>
   postJson<Period>(`${base(sheet)}/${encodeURIComponent(name)}/close`, {}, user);
+
+export const reopenPeriod = (sheet: string, user: string, name: string) =>
+  postJson<Period>(`${base(sheet)}/${encodeURIComponent(name)}/reopen`, {}, user);
 
 /** The period whose dates contain the date, or undefined. */
 export const periodOf = (periods: Period[], date: string): Period | undefined =>

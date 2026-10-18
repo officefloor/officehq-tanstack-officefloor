@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useClaimDue, useClaims, useCounts } from '../claims/claims';
 import { hundredths, show, usePersonRate } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { addPeriod, closePeriod, periodsKey, usePeriods } from './periods';
+import { addPeriod, closePeriod, periodsKey, reopenPeriod, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -30,7 +30,8 @@ function usePeriodDue() {
 
 // The sheet's periods: a form that adds one (a name unique on the sheet, from on or before to, not
 // overlapping another), and each period with its dates, its due-total, whether it is closed and a button
-// that closes it. A refused close shows on its period.
+// that closes it, and one that reopens it (a closed period, by a steward only). A refused close or reopen
+// shows on its period.
 function Periods() {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -50,6 +51,24 @@ function Periods() {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
     },
   });
+
+  const reopen = useMutation({
+    mutationFn: (name: string) => reopenPeriod(sheet!, user, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) }),
+    onError: async (_e, name) => {
+      setPeriodErrors((e) => ({ ...e, [name]: `The period ${name} could not be reopened: only a steward can reopen a closed period.` }));
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
+    },
+  });
+
+  const takeReopen = (period: Period) => {
+    setPeriodErrors(({ [period.name]: _, ...rest }) => rest);
+    if (!period.closed) {
+      setPeriodErrors((e) => ({ ...e, [period.name]: `The period ${period.name} is not closed.` }));
+      return;
+    }
+    reopen.mutate(period.name);
+  };
 
   const take = (period: Period) => {
     setPeriodErrors(({ [period.name]: _, ...rest }) => rest);
@@ -158,6 +177,9 @@ function Periods() {
               <td>
                 <button type="button" data-testid="period-close" onClick={() => take(p)}>
                   Close
+                </button>
+                <button type="button" data-testid="period-reopen" onClick={() => takeReopen(p)}>
+                  Reopen
                 </button>
                 {periodErrors[p.name] && <span data-testid="period-error">{periodErrors[p.name]}</span>}
               </td>
