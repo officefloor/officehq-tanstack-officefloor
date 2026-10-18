@@ -1,0 +1,519 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 10133fb..1e99b2e 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -10,10 +10,10 @@ import { afterRetirement, peopleKey, usePeople } from '../people/people';
+ import { NA, show, usePersonRate } from '../rates/rates';
+ import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
+ import { rolesKey, settingsKey, useWithinClerkLimit } from '../settings/settings';
+-import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue } from './claims';
++import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue } from './claims';
+ import type { Claim, ClaimAction, ClaimInput } from './claims';
+ 
+-const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
++const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
+ const LABEL: Record<ClaimAction, string> = { open: 'Open', settle: 'Settle', void: 'Void' };
+ const showDue = (due: bigint | undefined) => (due === undefined ? NA : show(due));
+ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', void: 'voided' };
+@@ -30,12 +30,14 @@ function ClaimColumns() {
+ // A person's claimed total, and their claims: a form that adds a claim or, once a claim's edit is
+ // pressed, edits it; and the claims listed newest first, each with its status and the buttons that
+ // change it. An empty date means the sheet's today; a claim dated after the person's retirement is
+-// refused. A refused status change, or the edit of a claim
++// refused; a negative amount is a correction, which must name by number a settled
++// claim of the same person. A refused status change, or the edit of a claim
+ // that is not a DRAFT, shows on its claim; so does a clerk settling a claim whose due is above the clerk limit.
+ function PersonClaims({ personId }: { personId: number }) {
+   const [sheet] = useCurrentSheet();
+   const [user] = useCurrentUser();
+-  const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
++  const allClaims = useClaims().data ?? [];
++  const claims = allClaims.filter((c) => c.personId === personId);
+   const person = (usePeople().data ?? []).find((p) => p.id === personId);
+   const counted = useCounts();
+   const today = useSheetToday();
+@@ -117,9 +119,11 @@ function PersonClaims({ personId }: { personId: number }) {
+       const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
+       setError(reason === 'retired'
+         ? 'The claim could not be saved: it is dated after the person retired.'
++        : e instanceof HttpError && e.status === 400 && isCorrection(form.amount)
++        ? 'The claim could not be saved: a correction must name a settled claim of the same person.'
+         : e instanceof HttpError && e.status === 409
+         ? 'The claim could not be saved: it is dated inside a closed period.'
+-        : 'The claim could not be saved: the amount must be 0.00 or more, with up to two decimals.');
++        : 'The claim could not be saved: the amount must be a number with up to two decimals.');
+       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
+     },
+@@ -137,7 +141,7 @@ function PersonClaims({ personId }: { personId: number }) {
+       return;
+     }
+     setEditing(claim.id);
+-    setForm({ amount: claim.amount, date: claim.date, note: claim.note });
++    setForm({ amount: claim.amount, date: claim.date, note: claim.note, corrects: claim.corrects == null ? '' : String(claim.corrects) });
+     setError('');
+   };
+ 
+@@ -151,7 +155,12 @@ function PersonClaims({ personId }: { personId: number }) {
+     e.preventDefault();
+     setError('');
+     if (!AMOUNT.test(form.amount.trim())) {
+-      setError('The amount must be a number of 0.00 or more, with up to two decimals.');
++      setError('The amount must be a number with up to two decimals.');
++      return;
++    }
++    const wrong = correctionError(allClaims, personId, form.amount, form.corrects);
++    if (wrong) {
++      setError(wrong);
+       return;
+     }
+     const edited = editing !== undefined ? claims.find((c) => c.id === editing) : undefined;
+@@ -165,7 +174,7 @@ function PersonClaims({ personId }: { personId: number }) {
+       setError(`The claim cannot be dated after ${person!.name} retired (${person!.retiredFrom}).`);
+       return;
+     }
+-    once(() => save.mutateAsync({ amount: form.amount.trim(), date: form.date, note: form.note }));
++    once(() => save.mutateAsync({ amount: form.amount.trim(), date: form.date, note: form.note, corrects: form.corrects.trim() }));
+   };
+ 
+   return (
+@@ -192,6 +201,13 @@ function PersonClaims({ personId }: { personId: number }) {
+             value={form.note}
+             onChange={(e) => change({ note: e.target.value })}
+           />
++          <input
++            data-testid="claim-form-corrects"
++            placeholder="Corrects no."
++            inputMode="numeric"
++            value={form.corrects}
++            onChange={(e) => change({ corrects: e.target.value })}
++          />
+           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+             {editing !== undefined ? 'Save claim' : 'Add claim'}
+           </button>
+@@ -214,6 +230,7 @@ function PersonClaims({ personId }: { personId: number }) {
+               <span data-testid="claim-overdue">{overdue(c) ? 'yes' : 'no'}</span>{' '}
+               <span data-testid="claim-status">{c.status}</span>{' '}
+               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
++              <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
+                 Edit
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index f7fa531..6daa14d 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -14,11 +14,34 @@ export type Claim = { id: number; personId: number; amount: string; date: string
+   /** Fixed when settled (two decimals); null while live, or when no rate applied at settling. */
+   settledDue: string | null;
+   /** The user who opened it; null for a draft. */
+-  openedBy: string | null };
+-export type ClaimInput = { amount: string; date: string; note: string };
+-
+-/** 0.00 or more, with up to two decimals. */
+-export const AMOUNT = /^\d+(\.\d{1,2})?$/;
++  openedBy: string | null;
++  /** For a correction (a negative amount), the number of the SETTLED claim it corrects; null otherwise. */
++  corrects: number | null };
++export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
++
++/** A number with up to two decimals; negative only for a correction. */
++export const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
++
++/** A claim number. */
++export const NUMBER = /^\d{1,9}$/;
++
++/** Whether an amount is negative, which makes its claim a correction. */
++export const isCorrection = (amount: string) => /^-/.test(amount.trim()) && /[1-9]/.test(amount);
++
++/** A correction must name, by number, a SETTLED claim of the same person; any other claim names none. */
++export function correctionError(claims: Claim[], personId: number, amount: string, corrects: string): string | undefined {
++  const named = corrects.trim();
++  if (named !== '' && !NUMBER.test(named)) return 'The claim corrected must be given by its number.';
++  if (!isCorrection(amount)) {
++    return named === '' ? undefined : 'Only a correction (a negative amount) names a claim it corrects.';
++  }
++  if (named === '') return 'A negative amount is a correction: name the settled claim it corrects.';
++  const target = claims.find((c) => c.number === Number(named));
++  if (!target || target.personId !== personId || target.status !== 'SETTLED') {
++    return `A correction must name a settled claim of the same person; claim ${named} is not one.`;
++  }
++  return undefined;
++}
+ 
+ const base = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}`;
+ export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'] as const;
+@@ -72,14 +95,17 @@ export function useCounts() {
+ }
+ 
+ const cents = (amount: string) => {
+-  const [whole, frac = ''] = amount.split('.');
+-  return Number(whole) * 100 + Number((frac + '00').slice(0, 2));
++  const negative = amount.startsWith('-');
++  const [whole, frac = ''] = (negative ? amount.slice(1) : amount).split('.');
++  const n = Number(whole) * 100 + Number((frac + '00').slice(0, 2));
++  return negative ? -n : n;
+ };
+ 
+ /** The amounts of the claims that count (by `counted`, from `useCounts`) added up, shown with two decimals. */
+ export function total(claims: Claim[], counted: (claim: Claim) => boolean): string {
+   const sum = claims.filter(counted).reduce((n, c) => n + cents(c.amount), 0);
+-  return `${Math.floor(sum / 100)}.${String(sum % 100).padStart(2, '0')}`;
++  const abs = Math.abs(sum);
++  return `${sum < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+ }
+ 
+ /** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
+diff --git a/src/main/frontend/features/claims/quickadd.slot.tsx b/src/main/frontend/features/claims/quickadd.slot.tsx
+index 0fff122..ca3ffc9 100644
+--- a/src/main/frontend/features/claims/quickadd.slot.tsx
++++ b/src/main/frontend/features/claims/quickadd.slot.tsx
+@@ -7,7 +7,10 @@ import { PeopleBar } from '../../slots/defs/peopleBar';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { peopleKey } from '../people/people';
+ import { periodsKey, useClosedPeriodOf } from '../periods/periods';
+-import { AMOUNT, claimsKey, quickAddClaim } from './claims';
++import { claimsKey, quickAddClaim } from './claims';
++
++/** 0.00 or more, with up to two decimals: a quick-added claim is never a correction. */
++const AMOUNT = /^\d+(\.\d{1,2})?$/;
+ 
+ type QuickInput = { name: string; amount: string };
+ const EMPTY: QuickInput = { name: '', amount: '' };
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 0a9ab19..331a00a 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -33,10 +33,12 @@ export function useRates() {
+ 
+ export const setRate = (sheet: string, user: string, input: RateInput) => postJson<Rate>(base(sheet), input, user);
+ 
+-/** A two-decimal string as a whole number of hundredths. */
++/** A two-decimal string (may be negative) as a whole number of hundredths. */
+ export const hundredths = (value: string): bigint => {
+-  const [whole, frac = ''] = value.split('.');
+-  return BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
++  const negative = value.startsWith('-');
++  const [whole, frac = ''] = (negative ? value.slice(1) : value).split('.');
++  const n = BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
++  return negative ? -n : n;
+ };
+ 
+ /** Hundredths shown with two decimals. */
+@@ -65,11 +67,13 @@ export function percentOf(cents: bigint, percent: bigint): bigint {
+ /** A claim's due in cents: a settled claim's is the one fixed when it was settled; an open or draft
+  *  claim's is live, at its grade's rate in force on the claim's date, and at least the sheet's floor
+  *  (cents), plus the late charge: the late percent (hundredths of a percent) of that floored due for each
+- *  full 30 days it is overdue (`lateSpans`), rounded like due. Undefined for n/a. */
++ *  full 30 days it is overdue (`lateSpans`), rounded like due. A correction (a negative amount) has neither
++ *  the floor nor the late charge. Undefined for n/a. */
+ export function claimDueCents(claim: Claim, rate: string | undefined, floor: bigint, latePct = 0n, lateSpans = 0n): bigint | undefined {
+   if (claim.status === 'SETTLED') return claim.settledDue === null ? undefined : hundredths(claim.settledDue);
+   if (rate === undefined) return undefined;
+   const due = dueCents(claim.amount, rate);
++  if (due < 0n || claim.amount.startsWith('-')) return due; // a correction: no floor, no late charge
+   const floored = due < floor ? floor : due;
+   return floored + percentOf(floored, latePct * lateSpans);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 86d56e8..ecbc0c4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -3,12 +3,13 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Sets the claim's amount, date and note; a claim given no date takes the sheet's today. */
++/** Sets the claim's amount, date, note and the number it corrects; a claim given no date takes the sheet's today. */
+ public class ApplyClaim {
+     public void apply(@Val ClaimInput input, @Val Claim claim, SheetRepository sheets) {
+         claim.setAmount(input.amount());
+         claim.setDate(input.date() != null ? input.date()
+                 : sheets.findById(claim.getSheetId()).orElseThrow().getToday());
+         claim.setNote(input.note());
++        claim.setCorrects(input.corrects());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrects.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrects.java
+new file mode 100644
+index 0000000..f57875e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrects.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses a correction (a negative amount) unless the number it names is a SETTLED claim of the same
++ *  person on its sheet. */
++public class CheckClaimCorrects {
++    public void check(@Val Claim claim, ClaimRepository repository) throws InvalidClaimException {
++        if (!claim.isCorrection()) {
++            return;
++        }
++        boolean settled = claim.getCorrects() != null && repository
++                .findFirstBySheetIdAndNumber(claim.getSheetId(), claim.getCorrects())
++                .filter((c) -> c.getPersonId().equals(claim.getPersonId()) && c.getStatus() == ClaimStatus.SETTLED)
++                .isPresent();
++        if (!settled) {
++            throw new InvalidClaimException("A correction must name a settled claim of the same person it corrects.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 9211d7e..9501d71 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -11,7 +11,7 @@ import jakarta.persistence.Table;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A claim a person on a sheet has made: an amount (0.00 or more), a date, a note (may be empty) and a
++/** A claim a person on a sheet has made: an amount (negative only for a correction, which names the settled claim it corrects), a date, a note (may be empty) and a
+  *  status (starting DRAFT), once opened, its number on the sheet and, once settled, its fixed due; once opened, who opened it. */
+ @Entity
+ @Table(name = "claim")
+@@ -52,6 +52,10 @@ public class Claim {
+     @Column(name = "opened_by")
+     private String openedBy;
+ 
++    /** For a correction (a negative amount), the number of the SETTLED claim of the same person it corrects; none otherwise. */
++    @Column(name = "corrects")
++    private Integer corrects;
++
+     protected Claim() {
+     }
+ 
+@@ -120,6 +124,19 @@ public class Claim {
+         this.settledDue = settledDue;
+     }
+ 
++    public Integer getCorrects() {
++        return corrects;
++    }
++
++    public void setCorrects(Integer corrects) {
++        this.corrects = corrects;
++    }
++
++    /** Whether this claim is a correction: its amount is negative. */
++    public boolean isCorrection() {
++        return amount != null && amount.signum() < 0;
++    }
++
+     public String getOpenedBy() {
+         return openedBy;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+index 5c7d8f9..0f7a68a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A validated claim body. The date is null when none was given (it defaults to the sheet's today). */
+-public record ClaimInput(BigDecimal amount, LocalDate date, String note) {
++/** A validated claim body. The date is null when none was given (it defaults to the sheet's today); corrects is null when
++ *  the claim names no claim it corrects. */
++public record ClaimInput(BigDecimal amount, LocalDate date, String note, Integer corrects) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 80e0ca4..e4cae28 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -12,6 +12,9 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
+     /** The sheet's claims, newest first. */
+     List<Claim> findBySheetIdOrderByIdDesc(String sheetId);
+ 
++    /** The sheet's claim with this number (numbers are unique on a sheet once given). */
++    Optional<Claim> findFirstBySheetIdAndNumber(String sheetId, Integer number);
++
+     Optional<Claim> findByIdAndSheetId(Long id, String sheetId);
+ 
+     /** Takes the sheet's next claim number. The update locks the sheet's row until the transaction
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+index 9a49010..31c8b90 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The body of adding or editing a claim: an amount (required), a date (empty = the sheet's today) and a note. */
+-public record ClaimRequest(String amount, String date, String note) {
++/** The body of adding or editing a claim: an amount (required), a date (empty = the sheet's today), a note and, for a correction
++ *  (a negative amount), the number of the settled claim it corrects. */
++public record ClaimRequest(String amount, String date, String note, String corrects) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 78de234..a005940 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -2,14 +2,15 @@ package net.officefloor.hq.app.claim;
+ 
+ /** A claim as shown: its amount with two decimals, its date as yyyy-mm-dd, its status, its number
+  *  (null when it has none) and, once settled, its fixed due with two decimals (null while live, or when
+- *  no rate applied at settling) and who opened it (null while a draft). */
++ *  no rate applied at settling) and who opened it (null while a draft), and the
++ *  number a correction corrects (null for any other claim). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+-        Integer number, String settledDue, String openedBy) {
++        Integer number, String settledDue, String openedBy, Integer corrects) {
+ 
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),
+                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),
+                 claim.getSettledDue() == null ? null : claim.getSettledDue().setScale(2).toPlainString(),
+-                claim.getOpenedBy());
++                claim.getOpenedBy(), claim.getCorrects());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index d0917af..640b275 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -18,6 +18,7 @@ import net.officefloor.web.HttpHeaderParameter;
+  *  rate its person's grade has in force on the claim's date: amount × rate / 100, rounded half up and raised to the sheet's floor (none when no rate applies),
+  *  plus, when it is overdue (its date plus the sheet's terms is before the sheet's today), the sheet's late percent of that floored
+  *  due for every full 30 days it is overdue, rounded the same way.
++ *  A correction (a negative amount) gets neither the floor nor the late charge.
+  *  The user who opened the claim (arriving as X-User) cannot settle it. A clerk (any user not made a steward)
+  *  cannot settle a claim whose due is above the sheet's clerk limit (no limit when none is set; a claim with no due
+  *  is within it); a steward settles any. */
+@@ -35,8 +36,11 @@ public class SettleClaim {
+                 .map((r) -> claim.getAmount().multiply(r.getRate())
+                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
+                 .orElse(null);
+-        due = settings.floored(claim.getSheetId(), due);
+-        if (due != null) {
++        // A correction's due is its amount × rate, rounded, with no floor and no late charge.
++        if (!claim.isCorrection()) {
++            due = settings.floored(claim.getSheetId(), due);
++        }
++        if (due != null && !claim.isCorrection()) {
+             LocalDate dueBy = claim.getDate().plusDays(settings.terms(claim.getSheetId()));
+             LocalDate today = sheets.findById(claim.getSheetId()).orElseThrow().getToday();
+             long spans = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index 5d8e441..3af0881 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -7,17 +7,30 @@ import java.util.regex.Pattern;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Reads the claim from the body, refusing an amount that is not 0.00 or more with up to two decimals, or a bad date. */
++/** Reads the claim from the body, refusing an amount that is not a number with up to two decimals, or a bad date.
++ *  A negative amount is a correction and must name, by number, the claim it corrects; any other claim names none. */
+ public class ValidateClaim {
+ 
+-    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
++    private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
++    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
+ 
+     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> claimOut) throws InvalidClaimException {
+         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+         String date = request == null || request.date() == null ? "" : request.date().trim();
+         String note = request == null || request.note() == null ? "" : request.note().trim();
++        String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
+         if (!AMOUNT.matcher(amount).matches()) {
+-            throw new InvalidClaimException("The amount must be a number of 0.00 or more, with up to two decimals.");
++            throw new InvalidClaimException("The amount must be a number with up to two decimals.");
++        }
++        BigDecimal value = new BigDecimal(amount).setScale(2);
++        if (!corrects.isEmpty() && !NUMBER.matcher(corrects).matches()) {
++            throw new InvalidClaimException("The claim corrected must be given by its number.");
++        }
++        if (value.signum() < 0 && corrects.isEmpty()) {
++            throw new InvalidClaimException("A negative amount is a correction: name the settled claim it corrects.");
++        }
++        if (value.signum() >= 0 && !corrects.isEmpty()) {
++            throw new InvalidClaimException("Only a correction (a negative amount) names a claim it corrects.");
+         }
+         LocalDate parsed = null;
+         if (!date.isEmpty()) {
+@@ -27,6 +40,7 @@ public class ValidateClaim {
+                 throw new InvalidClaimException("The date must be a date (yyyy-mm-dd).");
+             }
+         }
+-        claimOut.set(new ClaimInput(new BigDecimal(amount).setScale(2), parsed, note));
++        claimOut.set(new ClaimInput(value, parsed, note,
++                corrects.isEmpty() ? null : Integer.valueOf(corrects)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
+index 69c1756..fd6d9b2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateQuickClaim.java
+@@ -24,6 +24,6 @@ public class ValidateQuickClaim {
+             throw new InvalidClaimException("The amount must be a number of 0.00 or more, with up to two decimals.");
+         }
+         personOut.set(new PersonRequest(name, "A", null, null));
+-        claimOut.set(new ClaimInput(new BigDecimal(amount).setScale(2), null, ""));
++        claimOut.set(new ClaimInput(new BigDecimal(amount).setScale(2), null, "", null));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 742e862..aa4c128 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -16,7 +16,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Closes the period, refusing one already closed, and fixes its due-total: the due of the claims that
+  *  count dated in it (not the OPEN claims of a person on hold), as shown now (a settled claim's fixed due; an open one's at the rate in force on its date for the grade in force on its
+- *  date, rounded half to even and raised to the sheet's floor), none where no rate applies. */
++ *  date, rounded half to even and raised to the sheet's floor unless it is a correction), none where no rate applies. */
+ public class ClosePeriod {
+     public void close(@Val Period period, ClaimRepository claims, PersonRepository people, RateRepository rates,
+             SettingRepository settings)
+@@ -36,7 +36,8 @@ public class ClosePeriod {
+             BigDecimal due = c.getStatus() == ClaimStatus.SETTLED ? c.getSettledDue()
+                     : rates.findInForce(c.getSheetId(), byId.get(c.getPersonId()).gradeOn(c.getDate()), c.getDate())
+                             .map((r) -> c.getAmount().multiply(r.getRate())
+-                                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN).max(floor))
++                                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
++                            .map((d) -> c.isCorrection() ? d : d.max(floor))
+                             .orElse(null);
+             if (due != null) {
+                 total = total.add(due);
+diff --git a/src/main/resources/db/migration/V20__claim_corrects.sql b/src/main/resources/db/migration/V20__claim_corrects.sql
+new file mode 100644
+index 0000000..0edb0f8
+--- /dev/null
++++ b/src/main/resources/db/migration/V20__claim_corrects.sql
+@@ -0,0 +1,3 @@
++-- A claim with a negative amount is a correction: it names, by number, the SETTLED claim of the same
++-- person that it corrects. None for any other claim.
++ALTER TABLE claim ADD COLUMN corrects INT;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index f628afd..e0faf66 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -30,6 +30,11 @@ recheck:
+ retired:
+   class: net.officefloor.hq.app.claim.CheckClaimRetired
+   govern: [ transaction ]
++  next: corrects
++# A correction (a negative amount) naming no SETTLED claim of the same person is refused (400) and writes nothing.
++corrects:
++  class: net.officefloor.hq.app.claim.CheckClaimCorrects
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 0cd34ce..89c676d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -24,6 +24,11 @@ check:
+ retired:
+   class: net.officefloor.hq.app.claim.CheckClaimRetired
+   govern: [ transaction ]
++  next: corrects
++# A correction (a negative amount) naming no SETTLED claim of the same person is refused (400) and writes nothing.
++corrects:
++  class: net.officefloor.hq.app.claim.CheckClaimCorrects
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
