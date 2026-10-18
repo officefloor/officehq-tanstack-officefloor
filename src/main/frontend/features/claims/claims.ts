@@ -95,6 +95,14 @@ export const needsSteward = (action: ClaimAction) => action === 'approve' || act
 export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction, reason = '') =>
   postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, action === 'reject' ? { reason } : {}, user);
 
+/** A steward moves a DRAFT, OPEN or PENDING claim to another person on the sheet; it keeps its number and
+ *  date. A SETTLED or VOID claim, and a correction (it names a settled claim of its own person), cannot move. */
+export const canReassign = (claim: Claim) =>
+  (claim.status === 'DRAFT' || live(claim)) && claim.corrects == null;
+
+export const reassignClaim = (sheet: string, user: string, id: number, personId: number) =>
+  postJson<Claim>(`${base(sheet)}/claims/${id}/reassign`, { personId }, user);
+
 // The claims ticked for opening together, shared by every person's claim list and the bulk-open bar.
 let selected: ReadonlySet<number> = new Set();
 const listeners = new Set<() => void>();

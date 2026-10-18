@@ -10,7 +10,7 @@ import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
 import { rolesKey, settingsKey, useIsSteward } from '../settings/settings';
-import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, needsSteward, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, canReassign, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, needsSteward, reassignClaim, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
@@ -34,6 +34,7 @@ function ClaimColumns() {
 // claim of the same person. A refused status change, or the edit of a claim
 // that is not a DRAFT, shows on its claim. A clerk settling a claim whose due is above the clerk limit sends
 // it to PENDING; a steward other than its opener approves it, or rejects it with the reason typed on its row.
+// A steward moves a DRAFT, OPEN or PENDING claim to the person chosen on its row; it keeps its number and date.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -50,6 +51,8 @@ function PersonClaims({ personId }: { personId: number }) {
   const closedOf = useClosedPeriodOf();
   const isSteward = useIsSteward();
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  const [moveTo, setMoveTo] = useState<Record<number, string>>({});
+  const people = usePeople().data ?? [];
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
@@ -105,6 +108,54 @@ function PersonClaims({ personId }: { personId: number }) {
       return;
     }
     act.mutate({ claim, action });
+  };
+
+  const move = useMutation({
+    mutationFn: ({ claim, to }: { claim: Claim; to: number }) => reassignClaim(sheet!, user, claim.id, to),
+    onSuccess: (_, { claim }) => {
+      setMoveTo(({ [claim.id]: _m, ...rest }) => rest);
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+    },
+    onError: async (e, { claim }) => {
+      const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
+      refuse(claim.id, reason === 'steward'
+        ? 'Only a steward can move a claim.'
+        : 'This claim cannot be moved to that person.');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: rolesKey(sheet!) });
+    },
+  });
+
+  // A steward moves a DRAFT, OPEN or PENDING claim to the person chosen on its row.
+  const reassign = (claim: Claim) => {
+    clearClaimError(claim.id);
+    if (!isSteward(user)) {
+      refuse(claim.id, 'Only a steward can move a claim.');
+      return;
+    }
+    if (!canReassign(claim)) {
+      refuse(claim.id, claim.corrects != null
+        ? 'A correction cannot be moved to another person.'
+        : `A ${claim.status} claim cannot be moved.`);
+      return;
+    }
+    const to = people.find((p) => String(p.id) === moveTo[claim.id]);
+    if (!to || to.id === personId) {
+      refuse(claim.id, 'Choose another person to move the claim to.');
+      return;
+    }
+    const closed = closedOf(claim.date);
+    if (closed) {
+      refuse(claim.id, `The claim is dated inside the closed period ${closed.name}.`);
+      return;
+    }
+    if (afterRetirement(to, claim.date)) {
+      refuse(claim.id, `The claim cannot be moved to ${to.name}: it is dated after they retired (${to.retiredFrom}).`);
+      return;
+    }
+    move.mutate({ claim, to: to.id });
   };
 
   const notDraft = (id: number) => refuse(id, 'Only a DRAFT claim can be edited; void it and add a new one.');
@@ -266,6 +317,23 @@ function PersonClaims({ personId }: { personId: number }) {
                   {LABEL[a]}
                 </button>
               ))}
+              <select
+                data-testid="claim-reassign-to"
+                aria-label="Move to"
+                value={moveTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setMoveTo((m) => ({ ...m, [c.id]: e.target.value }));
+                  clearClaimError(c.id);
+                }}
+              >
+                <option value="">Move to…</option>
+                {people.filter((p) => p.id !== personId).map((p) => (
+                  <option key={p.id} value={String(p.id)}>{p.name}</option>
+                ))}
+              </select>
+              <button type="button" data-testid="claim-reassign" onClick={() => reassign(c)}>
+                Move
+              </button>
               {claimErrors[c.id] && <span data-testid="claim-error">{claimErrors[c.id]}</span>}
             </li>
           ))}
