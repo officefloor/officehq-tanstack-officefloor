@@ -7,8 +7,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.LocalDate;
 
-/** A person on a sheet, with a name and a grade (A, B or C). */
+/** A person on a sheet, with a name and a grade (A, B or C); once retired, the date retired from. */
 @Entity
 @Table(name = "person")
 public class Person {
@@ -30,6 +31,10 @@ public class Person {
     @Version
     @Column(name = "version", nullable = false)
     private long version;
+
+    /** None while active; a claim dated after it is refused. */
+    @Column(name = "retired_from")
+    private LocalDate retiredFrom;
 
     protected Person() {
     }
@@ -64,5 +69,13 @@ public class Person {
 
     public long getVersion() {
         return version;
+    }
+
+    public LocalDate getRetiredFrom() {
+        return retiredFrom;
+    }
+
+    public void setRetiredFrom(LocalDate retiredFrom) {
+        this.retiredFrom = retiredFrom;
     }
 }

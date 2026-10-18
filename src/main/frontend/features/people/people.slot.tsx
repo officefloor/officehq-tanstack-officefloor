@@ -7,18 +7,23 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleBar } from '../../slots/defs/peopleBar';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { GRADES, addPerson, peopleKey, updatePerson, useEditingPerson, usePeople } from './people';
+import { useClaims } from '../claims/claims';
+import { GRADES, addPerson, peopleKey, updatePerson, useEditingPerson, usePeople, useShowRetired } from './people';
 import type { Person, PersonInput } from './people';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 // The sheet's people: a form that adds a person or, once a person's editor is opened, edits them;
-// and the list of people in the order they were added. The editor remembers the version it loaded:
-// when someone else has saved the person since, the save is refused and the form shows their values.
+// and the list of people in the order they were added. Retired people are left out unless "show
+// retired" is on — except one who still has a DRAFT claim, who stays listed until it is dealt with.
+// The editor remembers the version it loaded: when someone else has saved the person since, the save
+// is refused and the form shows their values.
 function People() {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const people = usePeople();
+  const claims = useClaims().data ?? [];
+  const [showRetired] = useShowRetired();
   const [editing, setEditing] = useEditingPerson();
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [error, setError] = useState('');
@@ -46,6 +51,9 @@ function People() {
   });
 
   if (!sheet) return null;
+
+  const hasDraft = (id: number) => claims.some((c) => c.personId === id && c.status === 'DRAFT');
+  const listed = (people.data ?? []).filter((p) => showRetired || !p.retiredFrom || hasDraft(p.id));
 
   const change = (patch: Partial<PersonInput>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -116,7 +124,7 @@ function People() {
           </tr>
         </thead>
         <tbody>
-          {(people.data ?? []).map((p) => (
+          {listed.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>

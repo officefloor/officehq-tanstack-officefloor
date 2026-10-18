@@ -5,7 +5,8 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonCells, PersonColumns } from '../../slots/defs/personRow';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
 import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims } from './claims';
@@ -27,12 +28,15 @@ function ClaimColumns() {
 
 // A person's claimed total, and their claims: a form that adds a claim or, once a claim's edit is
 // pressed, edits it; and the claims listed newest first, each with its status and the buttons that
-// change it. An empty date means the sheet's today. A refused status change, or the edit of a claim
+// change it. An empty date means the sheet's today; a claim dated after the person's retirement is
+// refused. A refused status change, or the edit of a claim
 // that is not a DRAFT, shows on its claim.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === personId);
+  const person = (usePeople().data ?? []).find((p) => p.id === personId);
+  const today = useSheetToday();
   const rateOf = usePersonRate();
   const periodOf = usePeriodOf();
   const closedOf = useClosedPeriodOf();
@@ -95,10 +99,14 @@ function PersonClaims({ personId }: { personId: number }) {
         await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
         return;
       }
-      setError(e instanceof HttpError && e.status === 409
+      const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
+      setError(reason === 'retired'
+        ? 'The claim could not be saved: it is dated after the person retired.'
+        : e instanceof HttpError && e.status === 409
         ? 'The claim could not be saved: it is dated inside a closed period.'
         : 'The claim could not be saved: the amount must be 0.00 or more, with up to two decimals.');
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet!) });
     },
   });
 
@@ -135,6 +143,11 @@ function PersonClaims({ personId }: { personId: number }) {
     const closed = (edited && closedOf(edited.date)) || (form.date !== '' ? closedOf(form.date) : undefined);
     if (closed) {
       setError(`The claim is dated inside the closed period ${closed.name}.`);
+      return;
+    }
+    const date = form.date !== '' ? form.date : (today ?? '');
+    if (afterRetirement(person, date)) {
+      setError(`The claim cannot be dated after ${person!.name} retired (${person!.retiredFrom}).`);
       return;
     }
     once(() => save.mutateAsync({ amount: form.amount.trim(), date: form.date, note: form.note }));

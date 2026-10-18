@@ -34,7 +34,10 @@ function QuickAdd() {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
     },
     onError: async (e) => {
-      setError(e instanceof HttpError && e.status === 409
+      const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
+      setError(reason === 'retired'
+        ? 'The claim could not be added: the person retired before today.'
+        : e instanceof HttpError && e.status === 409
         ? 'The claim could not be added: today is inside a closed period.'
         : 'The claim could not be added: a name is required and the amount must be 0.00 or more, with up to two decimals.');
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
