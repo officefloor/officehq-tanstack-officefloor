@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { useCurrentSheet, useSheetToday } from '../session/session';
@@ -83,6 +84,34 @@ export const selfSettle = (claim: Claim, user: string, action: ClaimAction) =>
 
 export const claimAction = (sheet: string, user: string, id: number, action: ClaimAction) =>
   postJson<Claim>(`${base(sheet)}/claims/${id}/${action}`, {}, user);
+
+// The claims ticked for opening together, shared by every person's claim list and the bulk-open bar.
+let selected: ReadonlySet<number> = new Set();
+const listeners = new Set<() => void>();
+const setSelected = (next: ReadonlySet<number>) => {
+  selected = next;
+  listeners.forEach((l) => l());
+};
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
+
+/** The selected claim ids, and a toggle and a clear for them. */
+export function useSelectedClaims() {
+  const ids = useSyncExternalStore(subscribe, () => selected);
+  const toggle = (id: number, on: boolean) => {
+    const next = new Set(selected);
+    if (on) next.add(id);
+    else next.delete(id);
+    setSelected(next);
+  };
+  return { ids, toggle, clear: () => setSelected(new Set()) };
+}
+
+/** Open the selected claims together: each that can be opened is, numbered in list order; the rest are refused. */
+export const bulkOpenClaims = (sheet: string, user: string, ids: number[]) =>
+  postJson<{ opened: number; refused: number }>(`${base(sheet)}/bulk-open`, { ids }, user);
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
 export const counts = (claim: Claim) => claim.status === 'OPEN' || claim.status === 'SETTLED';

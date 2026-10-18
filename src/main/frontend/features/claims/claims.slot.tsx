@@ -10,7 +10,7 @@ import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
 import { rolesKey, settingsKey, useWithinClerkLimit } from '../settings/settings';
-import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue } from './claims';
+import { AMOUNT, CLAIM_ACTIONS, addClaim, correctionError, isCorrection, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaimDue, useClaims, useCounts, useDueBy, useOverdue, useSelectedClaims } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
@@ -54,6 +54,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const [claimErrors, setClaimErrors] = useState<Record<number, string>>({});
   const queryClient = useQueryClient();
   const once = useSubmitOnce();
+  const selection = useSelectedClaims();
 
   const clearClaimError = (id: number) =>
     setClaimErrors(({ [id]: _, ...rest }) => rest);
@@ -221,6 +222,13 @@ function PersonClaims({ personId }: { personId: number }) {
         <ul data-testid="claim-list">
           {claims.map((c) => (
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
+              <input
+                type="checkbox"
+                data-testid="claim-select"
+                aria-label="Select claim"
+                checked={selection.ids.has(c.id)}
+                onChange={(e) => selection.toggle(c.id, e.target.checked)}
+              />{' '}
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
