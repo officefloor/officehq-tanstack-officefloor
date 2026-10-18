@@ -9,6 +9,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { afterRetirement, peopleKey, usePeople } from '../people/people';
 import { NA, claimDueCents, show, usePersonRate } from '../rates/rates';
 import { periodsKey, useClosedPeriodOf, usePeriodOf } from '../periods/periods';
+import { rolesKey, settingsKey, useWithinClerkLimit } from '../settings/settings';
 import { AMOUNT, CLAIM_ACTIONS, addClaim, canEdit, canTake, claimAction, claimsKey, selfSettle, total, updateClaim, useClaims, useCounts } from './claims';
 import type { Claim, ClaimAction, ClaimInput } from './claims';
 
@@ -30,7 +31,7 @@ function ClaimColumns() {
 // pressed, edits it; and the claims listed newest first, each with its status and the buttons that
 // change it. An empty date means the sheet's today; a claim dated after the person's retirement is
 // refused. A refused status change, or the edit of a claim
-// that is not a DRAFT, shows on its claim.
+// that is not a DRAFT, shows on its claim; so does a clerk settling a claim whose due is above the clerk limit.
 function PersonClaims({ personId }: { personId: number }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
@@ -41,6 +42,7 @@ function PersonClaims({ personId }: { personId: number }) {
   const rateOf = usePersonRate();
   const periodOf = usePeriodOf();
   const closedOf = useClosedPeriodOf();
+  const withinLimit = useWithinClerkLimit();
   const [editing, setEditing] = useState<number | undefined>();
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [error, setError] = useState('');
@@ -56,10 +58,15 @@ function PersonClaims({ personId }: { personId: number }) {
     mutationFn: ({ claim, action }: { claim: Claim; action: ClaimAction }) =>
       claimAction(sheet!, user, claim.id, action),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) }),
-    onError: async (_e, { claim, action }) => {
-      refuse(claim.id, `This claim cannot be ${DONE[action]}.`);
+    onError: async (e, { claim, action }) => {
+      const reason = e instanceof HttpError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
+      refuse(claim.id, reason === 'limit'
+        ? 'A clerk cannot settle a claim whose due is above the clerk limit.'
+        : `This claim cannot be ${DONE[action]}.`);
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet!) });
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: settingsKey(sheet!) });
+      await queryClient.invalidateQueries({ queryKey: rolesKey(sheet!) });
     },
   });
 
@@ -76,6 +83,10 @@ function PersonClaims({ personId }: { personId: number }) {
     }
     if (selfSettle(claim, user, action)) {
       refuse(claim.id, 'The user who opened a claim cannot settle it.');
+      return;
+    }
+    if (action === 'settle' && !withinLimit(user, claimDueCents(claim, rateOf(personId, claim.date)))) {
+      refuse(claim.id, 'A clerk cannot settle a claim whose due is above the clerk limit.');
       return;
     }
     act.mutate({ claim, action });

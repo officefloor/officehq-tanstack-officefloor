@@ -1,0 +1,54 @@
+package net.officefloor.hq.app.setting;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+/** A sheet's setting by key; its value is null when not set (for clerk-limit: no limit). */
+@Entity
+@Table(name = "setting")
+public class Setting {
+
+    /** The clerk limit: a clerk settles only a claim whose due is at or below it (two decimals). */
+    public static final String CLERK_LIMIT = "clerk-limit";
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "sheet_id", nullable = false)
+    private String sheetId;
+
+    @Column(name = "setting_key", nullable = false)
+    private String key;
+
+    @Column(name = "setting_value")
+    private String value;
+
+    protected Setting() {
+    }
+
+    public Setting(String sheetId, String key) {
+        this.sheetId = sheetId;
+        this.key = key;
+    }
+
+    public String getSheetId() {
+        return sheetId;
+    }
+
+    public String getKey() {
+        return key;
+    }
+
+    public String getValue() {
+        return value;
+    }
+
+    public void setValue(String value) {
+        this.value = value;
+    }
+}
