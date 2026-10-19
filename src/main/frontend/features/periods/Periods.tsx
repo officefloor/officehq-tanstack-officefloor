@@ -10,6 +10,7 @@ import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './us
 
 // The sheet's periods, added here, each with its due-total: the figures of the claims that count
 // whose date falls in it, each at its person's grade's rate in force on its date, skipping n/a.
+// A closed period shows the due-total it was closed at instead, whatever rates do later.
 export function Periods({ sheet }: { sheet: string }) {
   const periods = usePeriods(sheet);
   const people = usePeople(sheet);
@@ -32,20 +33,52 @@ export function Periods({ sheet }: { sheet: string }) {
             <th>From</th>
             <th>To</th>
             <th>Due total</th>
+            <th>Closed</th>
+            <th />
           </tr>
         </thead>
         <tbody>
           {periods.map((p) => (
-            <tr key={p.name} data-testid={`period-row-${p.name}`}>
-              <td data-testid="period-name">{p.name}</td>
-              <td data-testid="period-from">{p.from}</td>
-              <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{dueTotalOf(p)}</td>
-            </tr>
+            <PeriodRow key={p.name} sheet={sheet} period={p}
+              dueTotal={p.closed && p.closedTotal != null ? p.closedTotal : dueTotalOf(p)} />
           ))}
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** One period: its dates, due-total and whether it is closed, with its close button. A refused close
+ *  shows the row's error, which the row's next action clears. */
+function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Period; dueTotal: string }) {
+  const queryClient = useQueryClient();
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const close = useMutation({
+    mutationFn: () => postJson<Period>(`${periodsPath(sheet)}/${encodeURIComponent(p.name)}/close${by}`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+
+  return (
+    <tr data-testid={`period-row-${p.name}`}>
+      <td data-testid="period-name">{p.name}</td>
+      <td data-testid="period-from">{p.from}</td>
+      <td data-testid="period-to">{p.to}</td>
+      <td data-testid="period-due-total">{dueTotal}</td>
+      <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+      <td>
+        <button type="button" data-testid="period-close" disabled={close.isPending}
+          onClick={() => { close.reset(); close.mutate(); }}>
+          Close
+        </button>
+        {close.isError && (
+          <span role="alert" data-testid="period-error">
+            {' '}
+            {(close.error instanceof HttpError && close.error.reason) || 'The period could not be closed.'}
+          </span>
+        )}
+      </td>
+    </tr>
   );
 }
 

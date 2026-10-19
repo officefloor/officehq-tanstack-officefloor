@@ -86,6 +86,24 @@ public class Rollup {
         return new Snapshot(figures, text(claimedTotal), text(dueTotal));
     }
 
+    /** The due-total of the sheet's counting claims dated from {@code from} to {@code to}, both included:
+     *  each claim's figure at its person's grade, skipping n/a. */
+    public BigDecimal dueTotal(String sheetId, LocalDate from, LocalDate to) {
+        List<Rate> sheetRates = rates.findBySheet(sheetId);
+        List<Claim> sheetClaims = claims.findBySheet(sheetId);
+        BigDecimal sum = zero();
+        for (Person person : people.findBySheet(sheetId)) {
+            for (Claim claim : sheetClaims) {
+                if (claim.getPersonId() != person.getId()) continue;
+                if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED) continue;
+                if (claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) continue;
+                BigDecimal figure = figure(claim, person, sheetRates);
+                if (figure != null) sum = sum.add(figure);
+            }
+        }
+        return sum.setScale(2, RoundingMode.HALF_EVEN);
+    }
+
     /** The ROLLUP lines for each person whose figures moved since {@code before} (a new person counts
      *  as moved), then a TOTALS line when the sheet's totals moved. */
     public List<String> changes(String sheetId, String user, Snapshot before, Snapshot after) {

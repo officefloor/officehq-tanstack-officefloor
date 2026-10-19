@@ -4,7 +4,9 @@ import { getJson } from '../../api/http';
 // The sheet's periods: a name unique on the sheet and a from and to date (yyyy-MM-dd), both
 // inclusive, no two overlapping. A claim belongs to the period whose dates contain its date, or none.
 // Kept apart from Periods.tsx so the claims can use it without importing the screen that totals them.
-export type Period = { name: string; from: string; to: string };
+// A closed period keeps the due-total it was closed at (`closedTotal`); no claim dated in it may be
+// added, edited, opened, settled or voided.
+export type Period = { name: string; from: string; to: string; closed?: boolean; closedTotal?: string | null };
 
 export const periodsKey = (sheet: string) => ['sheet', sheet, 'periods'];
 export const periodsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/periods`;
