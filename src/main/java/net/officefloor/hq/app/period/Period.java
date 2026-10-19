@@ -24,4 +24,9 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
     public Period close(BigDecimal total) {
         return new Period(sheetId, name, from, to, true, total);
     }
+
+    /** The period open again, its due-total live once more. */
+    public Period reopen() {
+        return new Period(sheetId, name, from, to, false, null);
+    }
 }

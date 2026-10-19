@@ -12,7 +12,7 @@ import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './us
 // The sheet's periods, added here, each with its due-total: the figures of the claims that count
 // (not a held person's OPEN claims)
 // whose date falls in it, each at the rate in force on its date of its person's grade in force on that date, skipping n/a.
-// A closed period shows the due-total it was closed at instead, whatever rates do later.
+// A closed period shows the due-total it was closed at instead, whatever rates do later, until a steward reopens it.
 export function Periods({ sheet }: { sheet: string }) {
   const periods = usePeriods(sheet);
   const people = usePeople(sheet);
@@ -53,7 +53,7 @@ export function Periods({ sheet }: { sheet: string }) {
   );
 }
 
-/** One period: its dates, due-total and whether it is closed, with its close button. A refused close
+/** One period: its dates, due-total and whether it is closed, with its close and reopen buttons. A refused close or reopen
  *  shows the row's error, which the row's next action clears. */
 function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
@@ -63,6 +63,12 @@ function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Peri
     mutationFn: () => postJson<Period>(`${periodsPath(sheet)}/${encodeURIComponent(p.name)}/close${by}`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
+  // Only a steward may reopen a closed period (the server refuses anyone else, and a period not closed).
+  const reopen = useMutation({
+    mutationFn: () => postJson<Period>(`${periodsPath(sheet)}/${encodeURIComponent(p.name)}/reopen${by}`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+  const failed = close.isError ? close.error : reopen.isError ? reopen.error : null;
 
   return (
     <tr data-testid={`period-row-${p.name}`}>
@@ -73,13 +79,18 @@ function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Peri
       <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
       <td>
         <button type="button" data-testid="period-close" disabled={close.isPending}
-          onClick={() => { close.reset(); close.mutate(); }}>
+          onClick={() => { close.reset(); reopen.reset(); close.mutate(); }}>
           Close
+        </button>{' '}
+        <button type="button" data-testid="period-reopen" disabled={reopen.isPending}
+          onClick={() => { close.reset(); reopen.reset(); reopen.mutate(); }}>
+          Reopen
         </button>
-        {close.isError && (
+        {failed && (
           <span role="alert" data-testid="period-error">
             {' '}
-            {(close.error instanceof HttpError && close.error.reason) || 'The period could not be closed.'}
+            {(failed instanceof HttpError && failed.reason)
+              || (close.isError ? 'The period could not be closed.' : 'The period could not be reopened.')}
           </span>
         )}
       </td>
