@@ -8,8 +8,16 @@ import { due } from '../rates/Rates';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
 // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
-// server as strings with two decimals and are added up in whole cents, never as floats.
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+// server as strings with two decimals and are added up in whole cents, never as floats. A claim's
+// status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+
+const ACTIONS = [
+  { action: 'open', label: 'Open' },
+  { action: 'settle', label: 'Settle' },
+  { action: 'void', label: 'Void' },
+];
 
 type ClaimBody = { amount: string; date: string; note: string };
 
@@ -31,9 +39,12 @@ const toCents = (amount: string) => {
   return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
 };
 
-/** The claims' amounts added up, with two decimals. */
+/** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
+const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+
+/** The counted claims' amounts added up, with two decimals. */
 export function claimed(claims: Claim[]): string {
-  const cents = claims.reduce((sum, c) => sum + toCents(c.amount), 0);
+  const cents = claims.filter(counts).reduce((sum, c) => sum + toCents(c.amount), 0);
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
@@ -61,18 +72,49 @@ export function PersonClaims({ sheet, personId, claims, pct }: {
         editing={editing} onDone={() => setEditId(undefined)} />
       <ul>
         {claims.map((c) => (
-          <li key={c.id} data-testid={`claim-row-${c.id}`}>
-            <span data-testid="claim-amount">{c.amount}</span>{' '}
-            <span data-testid="claim-date">{c.date}</span>{' '}
-            <span data-testid="claim-note">{c.note}</span>{' '}
-            Due <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
-            <button type="button" data-testid="claim-edit" onClick={() => setEditId(c.id)}>
-              Edit
-            </button>
-          </li>
+          <ClaimRow key={c.id} sheet={sheet} claim={c} pct={pct} onEdit={() => setEditId(c.id)} />
         ))}
       </ul>
     </>
+  );
+}
+
+/** One claim: its fields, status and due, with its edit and status buttons. A refused status change
+ *  shows the row's error, which the row's next action clears. */
+function ClaimRow({ sheet, claim: c, pct, onEdit }: {
+  sheet: string; claim: Claim; pct: string | undefined; onEdit: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const change = useMutation({
+    mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+
+  return (
+    <li data-testid={`claim-row-${c.id}`}>
+      <span data-testid="claim-amount">{c.amount}</span>{' '}
+      <span data-testid="claim-date">{c.date}</span>{' '}
+      <span data-testid="claim-note">{c.note}</span>{' '}
+      <span data-testid="claim-status">{c.status}</span>{' '}
+      Due <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
+      <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
+        Edit
+      </button>
+      {ACTIONS.map(({ action, label }) => (
+        <button key={action} type="button" data-testid={`claim-${action}`} disabled={change.isPending}
+          onClick={() => { change.reset(); change.mutate(action); }}>
+          {label}
+        </button>
+      ))}
+      {change.isError && (
+        <span role="alert" data-testid="claim-error">
+          {' '}
+          {(change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.'}
+        </span>
+      )}
+    </li>
   );
 }
 

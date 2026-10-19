@@ -16,7 +16,7 @@ public class ClaimRepository {
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
-            rs.getString("note"));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
 
     private final JdbcTemplate jdbc;
 
@@ -46,11 +46,11 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getSheetId(), claim.getId());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE sheet_id = ? AND id = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(), claim.getSheetId(), claim.getId());
     }
 }

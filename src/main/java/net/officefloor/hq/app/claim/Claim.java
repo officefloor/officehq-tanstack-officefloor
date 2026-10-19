@@ -12,14 +12,17 @@ public class Claim {
     private BigDecimal amount;
     private LocalDate date;
     private String note;
+    private ClaimStatus status;
 
-    public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+    public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            ClaimStatus status) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
         this.amount = amount;
         this.date = date;
         this.note = note;
+        this.status = status;
     }
 
     public long getId() { return id; }
@@ -31,4 +34,6 @@ public class Claim {
     public void setDate(LocalDate date) { this.date = date; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
+    public ClaimStatus getStatus() { return status; }
+    public void setStatus(ClaimStatus status) { this.status = status; }
 }
