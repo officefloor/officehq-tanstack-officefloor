@@ -11,12 +11,14 @@ import { useCurrentUser } from '../session/SignIn';
 // after its date a claim is due by; see `dueBy`. The late percent (two decimals, 0.00 until set) is
 // charged on an overdue claim's figure for every full 30 days it is overdue; see `lateCharge`. The policy
 // date (yyyy-MM-dd; blank: the sheet's today) decides how a claim's live figures round; see `roundsHalfUp`.
+// Period numbering from (yyyy-MM-dd; blank: off): from that day of the sheet's today on, a claim opened is
+// numbered within its period (<period name>-<n>, X-<n> in none); the server gives out the numbers.
 type Setting = { key: string; value: string };
 type Role = { user: string; role: string };
 
 const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }, { key: 'floor', label: 'Floor' },
   { key: 'terms', label: 'Terms (days)' }, { key: 'late-pct', label: 'Late %' },
-  { key: 'policy-date', label: 'Policy date' }];
+  { key: 'policy-date', label: 'Policy date' }, { key: 'period-numbering-from', label: 'Period numbering from' }];
 
 const DEFAULT_FLOOR = '1.00';
 

@@ -12,6 +12,7 @@ public class RespondWithSettings {
                 new SettingResponse(Floor.KEY, repository.find(sheetId, Floor.KEY).orElse(Floor.DEFAULT)),
                 new SettingResponse(Terms.KEY, repository.find(sheetId, Terms.KEY).orElse(Terms.DEFAULT)),
                 new SettingResponse(LatePct.KEY, repository.find(sheetId, LatePct.KEY).orElse(LatePct.DEFAULT)),
-                new SettingResponse(PolicyDate.KEY, repository.find(sheetId, PolicyDate.KEY).orElse(""))));
+                new SettingResponse(PolicyDate.KEY, repository.find(sheetId, PolicyDate.KEY).orElse("")),
+                new SettingResponse(PeriodNumberingFrom.KEY, repository.find(sheetId, PeriodNumberingFrom.KEY).orElse(""))));
     }
 }

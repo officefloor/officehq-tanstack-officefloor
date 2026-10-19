@@ -14,14 +14,14 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
- *  Opening gives the claim the sheet's next number, which it keeps when voided. Settling fixes the claim's
+ *  Opening gives the claim its number (see {@link ClaimNumbering}), which it keeps when voided. Settling fixes the claim's
  *  due at the person's grade's rate in force on the claim's date (none when there is none, so it stays live).
  *  A claim a statement binds is settled at its bound figure. An overdue claim's late charge is frozen in on top.
  *  Both are rounded by the claim's rounding (see {@link PolicyDate}).
  *  The user who opened a claim may not settle it (four eyes).
  *  Publishes the number the audit line carries. */
 public class ApplyClaimAction {
-    public void apply(@Val ClaimAction action, @Val Claim claim, ClaimRepository repository,
+    public void apply(@Val ClaimAction action, @Val Claim claim, ClaimNumbering numbering,
             PersonRepository people, RateRepository rates, Floor floor, LatePct latePct, PolicyDate policyDate,
             Out<ClaimNumber> numberOut,
             @RequestParam(value = "user", required = false) String user)
@@ -40,7 +40,7 @@ public class ApplyClaimAction {
         claim.setStatus(action.to());
         switch (action) {
             case OPEN -> {
-                claim.setNumber(repository.nextNumber(claim.getSheetId()));
+                claim.setNumber(numbering.next(claim));
                 claim.setOpenedBy(user);
             }
             case SETTLE -> claim.setSettledDue(settledDue);

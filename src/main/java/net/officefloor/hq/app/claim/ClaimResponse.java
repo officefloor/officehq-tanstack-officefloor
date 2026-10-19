@@ -5,7 +5,7 @@ package net.officefloor.hq.app.claim;
  *  who opened it (null until it is opened), whether a statement binds it and the figure it binds it to
  *  (null when unbound or n/a), and the number a correction corrects (null for any other claim). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
-        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, Integer corrects) {
+        String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects) {
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(), claim.getNumber(),

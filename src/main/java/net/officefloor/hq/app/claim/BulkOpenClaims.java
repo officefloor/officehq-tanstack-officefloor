@@ -25,7 +25,7 @@ public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request,
             @RequestParam(value = "user", required = false) String user, ClaimRepository claims,
             PersonRepository people, PeriodRepository periods, RateRepository rates, Floor floor, LatePct latePct,
-            PolicyDate policyDate, Rollup rollup, Audit audit, Out<BulkOpenResult> resultOut) {
+            PolicyDate policyDate, ClaimNumbering numbering, Rollup rollup, Audit audit, Out<BulkOpenResult> resultOut) {
         Set<Long> selected = new HashSet<>(request.claimIds());
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         List<Claim> ordered = new ArrayList<>();
@@ -40,7 +40,7 @@ public class BulkOpenClaims {
             ClaimNumber[] number = new ClaimNumber[1];
             try {
                 new CheckClaimActionOpen().check(claim, periods);
-                new ApplyClaimAction().apply(ClaimAction.OPEN, claim, claims, people, rates, floor, latePct, policyDate,
+                new ApplyClaimAction().apply(ClaimAction.OPEN, claim, numbering, people, rates, floor, latePct, policyDate,
                         n -> number[0] = n, user);
             } catch (InvalidClaimStatusException refused) {
                 continue;

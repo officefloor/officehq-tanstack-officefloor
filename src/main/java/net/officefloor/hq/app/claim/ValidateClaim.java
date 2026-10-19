@@ -12,8 +12,8 @@ public class ValidateClaim {
     /** Any amount, with up to two decimals; a negative one is a correction. */
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
 
-    /** A claim number: 1 or more. */
-    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
+    /** A claim number: a sheet-wide one (1 or more), or one within a period (<period name>-<n>, X-<n> in none). */
+    private static final Pattern NUMBER = Pattern.compile("(.+-)?\\d{1,9}");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
         body.set(of(request));
@@ -42,15 +42,16 @@ public class ValidateClaim {
             }
         }
         BigDecimal value = new BigDecimal(amount).setScale(2);
-        Integer number = null;
+        String number = null;
         if (value.signum() < 0) {
             if (corrects.isEmpty()) {
                 throw new InvalidClaimException("A negative amount is a correction: name the number of the settled claim it corrects.");
             }
-            if (!NUMBER.matcher(corrects).matches() || Integer.parseInt(corrects) < 1) {
+            boolean sheetWide = corrects.chars().allMatch(Character::isDigit);
+            if (!NUMBER.matcher(corrects).matches() || (sheetWide && Integer.parseInt(corrects) < 1)) {
                 throw new InvalidClaimException("The claim a correction corrects must be named by its number.");
             }
-            number = Integer.valueOf(corrects);
+            number = sheetWide ? String.valueOf(Integer.parseInt(corrects)) : corrects;
         } else if (!corrects.isEmpty()) {
             throw new InvalidClaimException("Only a claim with a negative amount corrects another claim.");
         }

@@ -20,7 +20,8 @@ public class ValidateSetting {
             @RequestBody SettingRequest request, Out<Setting> setting) throws InvalidSettingException {
         String value = request == null || request.value() == null ? "" : request.value().strip();
         if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key) && !Terms.KEY.equals(key)
-                && !LatePct.KEY.equals(key) && !PolicyDate.KEY.equals(key)) {
+                && !LatePct.KEY.equals(key) && !PolicyDate.KEY.equals(key)
+                && !PeriodNumberingFrom.KEY.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
         if (PolicyDate.KEY.equals(key)) {
@@ -29,6 +30,14 @@ public class ValidateSetting {
                     value = LocalDate.parse(value).toString();
                 } catch (DateTimeParseException e) {
                     throw new InvalidSettingException("The policy date must be blank or a date (yyyy-MM-dd).");
+                }
+            }
+        } else if (PeriodNumberingFrom.KEY.equals(key)) {
+            if (!value.isEmpty()) {
+                try {
+                    value = LocalDate.parse(value).toString();
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("Period numbering from must be blank or a date (yyyy-MM-dd).");
                 }
             }
         } else if (Terms.KEY.equals(key)) {

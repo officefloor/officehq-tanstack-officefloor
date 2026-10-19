@@ -13,16 +13,16 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
-    private Integer number;
+    private String number;
     private BigDecimal settledDue;
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
-    private Integer corrects;
+    private String corrects;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
-            boolean stated, BigDecimal statedDue, Integer corrects) {
+            ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
+            boolean stated, BigDecimal statedDue, String corrects) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -50,8 +50,8 @@ public class Claim {
     public ClaimStatus getStatus() { return status; }
     public void setStatus(ClaimStatus status) { this.status = status; }
     /** The claim's number on the sheet: null for a draft (a voided claim keeps its number). */
-    public Integer getNumber() { return number; }
-    public void setNumber(Integer number) { this.number = number; }
+    public String getNumber() { return number; }
+    public void setNumber(String number) { this.number = number; }
     /** The due fixed when the claim was settled: null while it is live (not settled, or settled without a rate). */
     public BigDecimal getSettledDue() { return settledDue; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
@@ -65,8 +65,8 @@ public class Claim {
     public BigDecimal getStatedDue() { return statedDue; }
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
     /** The number of the SETTLED claim this correction (a negative amount) corrects: null for any other claim. */
-    public Integer getCorrects() { return corrects; }
-    public void setCorrects(Integer corrects) { this.corrects = corrects; }
+    public String getCorrects() { return corrects; }
+    public void setCorrects(String corrects) { this.corrects = corrects; }
     /** Whether the claim is a correction: its due has no floor and no late charge. */
     public boolean isCorrection() { return corrects != null; }
 }

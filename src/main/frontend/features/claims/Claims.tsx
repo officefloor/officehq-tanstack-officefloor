@@ -13,7 +13,8 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
 // server as strings with two decimals and are added up in whole cents, never as floats. A claim's
 // status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
-// Opening gives a claim the sheet's next number, which a voided claim keeps; a draft has none.
+// Opening gives a claim the sheet's next number (or, under period numbering, the next of its period:
+// P1-1, X-1, ...), which a voided claim keeps; a draft has none.
 // Only a draft can be edited: to change an open claim, void it and add a new one.
 // The user who opens a claim is recorded and may not settle it.
 // Settling fixes a claim's due at the rate of that moment. A person's statement binds each of their
@@ -26,7 +27,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened, and kept if it is voided; null for a draft. */
-  number: number | null;
+  number: string | null;
   /** The due fixed when the claim was settled; null while it is live (not settled, or settled without a rate). */
   settledDue: string | null;
   /** The user who opened the claim; null until it is opened. That user may not settle it. */
@@ -36,7 +37,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The figure the last statement bound the claim to; null when unbound, or bound without a rate (n/a). */
   statedDue: string | null;
   /** The number of the SETTLED claim this correction (a negative amount) corrects; null for any other claim. */
-  corrects: number | null };
+  corrects: string | null };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -270,7 +271,7 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
   const [date, setDate] = useState<string | undefined>(editing?.date);
   const [note, setNote] = useState(editing?.note ?? '');
   // The number of the settled claim a correction (a negative amount) corrects; blank for any other claim.
-  const [corrects, setCorrects] = useState(editing?.corrects?.toString() ?? '');
+  const [corrects, setCorrects] = useState(editing?.corrects ?? '');
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const submitOnce = useSingleSubmit();
@@ -314,7 +315,7 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
         onChange={(e) => changed(setDate)(e.target.value)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note}
         onChange={(e) => changed(setNote)(e.target.value)} />{' '}
-      <input data-testid="claim-form-corrects" placeholder="Corrects claim #" inputMode="numeric" value={corrects}
+      <input data-testid="claim-form-corrects" placeholder="Corrects claim #" value={corrects}
         onChange={(e) => changed(setCorrects)(e.target.value)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}

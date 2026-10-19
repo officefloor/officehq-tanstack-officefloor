@@ -18,9 +18,9 @@ public class ClaimRepository {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+            rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getObject("corrects", Integer.class));
+            rs.getString("corrects"));
 
     private final JdbcTemplate jdbc;
 
@@ -41,7 +41,7 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim create(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Integer corrects) {
+    public Claim create(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -52,7 +52,7 @@ public class ClaimRepository {
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
-            ps.setObject(6, corrects, Types.INTEGER);
+            ps.setObject(6, corrects, Types.VARCHAR);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
@@ -71,5 +71,16 @@ public class ClaimRepository {
         jdbc.update("MERGE INTO sheet (id) KEY (id) VALUES (?)", sheetId);
         return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
                 + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, sheetId);
+    }
+
+    /** Gives out the next number of one of the sheet's period sequences ({@code seq}), raised and read in
+     *  one statement like {@link #nextNumber}; the sheet-wide sequence is left as it is. */
+    public int nextInSequence(String sheetId, String seq) {
+        jdbc.update("INSERT INTO claim_number_seq (sheet_id, seq, last_n) "
+                + "SELECT ?, ?, 0 FROM DUAL WHERE NOT EXISTS "
+                + "(SELECT 1 FROM claim_number_seq WHERE sheet_id = ? AND seq = ?)", sheetId, seq, sheetId, seq);
+        return jdbc.queryForObject("SELECT last_n FROM FINAL TABLE "
+                + "(UPDATE claim_number_seq SET last_n = last_n + 1 WHERE sheet_id = ? AND seq = ?)",
+                Integer.class, sheetId, seq);
     }
 }
