@@ -1,0 +1,115 @@
+diff --git a/src/main/frontend/features/session/SheetPicker.tsx b/src/main/frontend/features/session/SheetPicker.tsx
+new file mode 100644
+index 0000000..854484e
+--- /dev/null
++++ b/src/main/frontend/features/session/SheetPicker.tsx
+@@ -0,0 +1,39 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// Choose the active sheet by id. The active sheet is URL state (`sheet`); everything else is kept
++// per sheet, under query keys starting ['sheet', id]. Loading an id (again) re-reads it from the store.
++export function useSheetId(): string {
++  return useSearchParam('sheet', asString)[0];
++}
++
++export function SheetPicker() {
++  const [sheet, setSheet] = useSearchParam('sheet', asString);
++  const [id, setId] = useState('');
++  const queryClient = useQueryClient();
++
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = id.trim();
++        if (!trimmed) return;
++        setSheet(trimmed);
++        void queryClient.invalidateQueries({ queryKey: ['sheet', trimmed] });
++      }}
++    >
++      <label>
++        Sheet <input data-testid="sheet-id-input" value={id} onChange={(e) => setId(e.target.value)} />
++      </label>
++      <button type="submit" data-testid="sheet-load">
++        Load
++      </button>
++      {sheet && (
++        <span>
++          {' '}Active sheet: <strong data-testid="sheet-current-id">{sheet}</strong>
++        </span>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 0000000..bd89ee8
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,36 @@
++import { useState } from 'react';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// Sign in by name (no password). The signed-in name is URL state (`user`), so it survives a reload.
++export function useCurrentUser(): [string, (user: string | undefined) => void] {
++  return useSearchParam('user', asString);
++}
++
++export function SignIn() {
++  const [user, setUser] = useCurrentUser();
++  const [name, setName] = useState('');
++
++  if (user) {
++    return (
++      <p>
++        Signed in as <strong data-testid="current-user">{user}</strong>
++      </p>
++    );
++  }
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        const trimmed = name.trim();
++        if (trimmed) setUser(trimmed);
++      }}
++    >
++      <label>
++        Name <input data-testid="signin-name" value={name} onChange={(e) => setName(e.target.value)} />
++      </label>
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++    </form>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb0312..ee73b1f 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,20 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { SignIn, useCurrentUser } from '../features/session/SignIn';
++import { SheetPicker, useSheetId } from '../features/session/SheetPicker';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The one screen. Sign in by name, then load a sheet by id; everything else is per sheet.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  const [user] = useCurrentUser();
++  const sheet = useSheetId();
++  return (
++    <>
++      <SignIn />
++      {user && <SheetPicker />}
++      {user && !sheet && <p data-testid="home-empty">Nothing here yet.</p>}
++    </>
++  );
+ }
