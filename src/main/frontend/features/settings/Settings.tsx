@@ -1,0 +1,184 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { HttpError, getJson, putJson } from '../../api/http';
+import { useSingleSubmit } from '../../api/useSingleSubmit';
+import { useCurrentUser } from '../session/SignIn';
+
+// The sheet's settings and roles. The clerk limit (two decimals; blank: no limit) is the highest due
+// a clerk may settle; a steward settles anything. Every user name is a clerk unless assigned steward
+// here. The server enforces both when a claim is settled.
+type Setting = { key: string; value: string };
+type Role = { user: string; role: string };
+
+const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }];
+
+const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'];
+const settingsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/settings`;
+const rolesKey = (sheet: string) => ['sheet', sheet, 'roles'];
+const rolesPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/roles`;
+
+export function Settings({ sheet }: { sheet: string }) {
+  return (
+    <section>
+      <h2>Settings</h2>
+      <SettingsForm sheet={sheet} />
+      <Roles sheet={sheet} />
+    </section>
+  );
+}
+
+function SettingsForm({ sheet }: { sheet: string }) {
+  const queryClient = useQueryClient();
+  const current = useQuery({
+    queryKey: settingsKey(sheet),
+    queryFn: () => getJson<Setting[]>(settingsPath(sheet)),
+    enabled: !!sheet,
+  }).data ?? [];
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const submitOnce = useSingleSubmit();
+  // Only the settings changed in the form are saved; each is written (and audited) on its own.
+  const save = useMutation({
+    mutationFn: async (changes: Record<string, string>) => {
+      for (const [key, value] of Object.entries(changes)) {
+        await putJson<Setting>(`${settingsPath(sheet)}/${encodeURIComponent(key)}${by}`, { value });
+      }
+    },
+    onSuccess: () => setDraft({}),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: settingsKey(sheet) }),
+  });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitOnce(() => {
+          save.reset();
+          // A value that is not blank or an amount with up to two decimals is refused by the server (400).
+          return save.mutateAsync(Object.fromEntries(Object.entries(draft).map(([k, v]) => [k, v.trim()])));
+        });
+      }}
+    >
+      {SETTINGS.map(({ key, label }) => (
+        <span key={key}>
+          <label>
+            {label}{' '}
+            <input
+              data-testid={`setting-${key}`}
+              inputMode="decimal"
+              value={draft[key] ?? ''}
+              onChange={(e) => {
+                save.reset();
+                setDraft((d) => ({ ...d, [key]: e.target.value }));
+              }}
+            />
+          </label>{' '}
+          (now: <strong data-testid={`setting-${key}-current`}>{current.find((s) => s.key === key)?.value ?? ''}</strong>){' '}
+        </span>
+      ))}
+      <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+        Save settings
+      </button>
+      {save.isError && (
+        <span role="alert" data-testid="settings-error">
+          {' '}
+          {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
+            || 'The settings could not be saved.'}
+        </span>
+      )}
+    </form>
+  );
+}
+
+function Roles({ sheet }: { sheet: string }) {
+  const queryClient = useQueryClient();
+  const roles = useQuery({
+    queryKey: rolesKey(sheet),
+    queryFn: () => getJson<Role[]>(rolesPath(sheet)),
+    enabled: !!sheet,
+  }).data ?? [];
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('');
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const submitOnce = useSingleSubmit();
+  const save = useMutation({
+    mutationFn: (body: Role) =>
+      putJson<Role>(`${rolesPath(sheet)}/${encodeURIComponent(body.user)}${by}`, { role: body.role }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: rolesKey(sheet) });
+      setName('');
+      setRole('');
+    },
+  });
+
+  return (
+    <>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitOnce(() => {
+            save.reset();
+            // A blank name or a role other than clerk or steward is refused by the server (400).
+            return save.mutateAsync({ user: name.trim(), role: role.trim() });
+          });
+        }}
+      >
+        <label>
+          User{' '}
+          <input
+            data-testid="role-form-user"
+            value={name}
+            onChange={(e) => {
+              save.reset();
+              setName(e.target.value);
+            }}
+          />
+        </label>{' '}
+        <label>
+          Role{' '}
+          <input
+            data-testid="role-form-role"
+            list="role-options"
+            value={role}
+            onChange={(e) => {
+              save.reset();
+              setRole(e.target.value);
+            }}
+          />
+          <datalist id="role-options">
+            <option value="clerk" />
+            <option value="steward" />
+          </datalist>
+        </label>{' '}
+        <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
+          Set role
+        </button>
+        {save.isError && (
+          <span role="alert" data-testid="role-form-error">
+            {' '}
+            {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
+              || 'The role could not be saved.'}
+          </span>
+        )}
+      </form>
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          {roles.map((r) => (
+            <tr key={r.user} data-testid={`role-row-${r.user}`}>
+              <td>{r.user}</td>
+              <td data-testid="role-value">{r.role}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
