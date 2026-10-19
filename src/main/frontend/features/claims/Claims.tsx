@@ -11,13 +11,16 @@ import { due } from '../rates/Rates';
 // server as strings with two decimals and are added up in whole cents, never as floats. A claim's
 // status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
 // Opening gives a claim the sheet's next number, which voiding clears; a draft has none.
+// The user who opens a claim is recorded and may not settle it.
 // Settling fixes a claim's due at the rate of that moment; every other claim's due follows the current rate.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened; null for a draft or a voided claim. */
   number: number | null;
   /** The due fixed when the claim was settled; null while it is live (not settled, or settled without a rate). */
-  settledDue: string | null };
+  settledDue: string | null;
+  /** The user who opened the claim; null until it is opened. That user may not settle it. */
+  openedBy: string | null };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -108,6 +111,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
+      Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       Due <span data-testid="claim-due">{claimDue(c, pct)}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
         Edit
