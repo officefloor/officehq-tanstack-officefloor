@@ -104,6 +104,32 @@ export function useDueTotalOf(sheet: string): (p: Person) => string {
   };
 }
 
+/** A CSV field: wrapped in double quotes, with any quote inside doubled, when it holds a comma,
+ *  a quote or a line break. */
+function csvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/** Every person in list order, retired people included: their name, the grade in force on the
+ *  sheet's today, the retired-from date (blank when not retired) and the due-total as shown. */
+function peopleCsv(people: Person[], today: string | undefined, dueTotalOf: (p: Person) => string): string {
+  const lines = [['name', 'grade', 'retired-from', 'due-total'],
+    ...people.map((p) => [p.name, gradeOn(p, today), p.retiredFrom ?? '', dueTotalOf(p)])];
+  return lines.map((fields) => fields.map(csvField).join(',') + '\n').join('');
+}
+
+/** Hands the text to the browser as a downloaded file. */
+function download(fileName: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function People({ sheet }: { sheet: string }) {
   const people = usePeople(sheet);
   const [showRetired] = useShowRetired();
@@ -137,7 +163,11 @@ export function People({ sheet }: { sheet: string }) {
       <PersonForm key={editing ? `edit-${editing.id}-${opened}` : 'add'} sheet={sheet} editing={editing}
         onDone={() => setEditId(undefined)} />
       <QuickAdd sheet={sheet} />
-      <ShowRetired />
+      <ShowRetired />{' '}
+      <button type="button" data-testid="export-people"
+        onClick={() => download('people.csv', peopleCsv(people, today, dueTotalOf))}>
+        Export CSV
+      </button>
       <table>
         <thead>
           <tr>
