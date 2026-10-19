@@ -6,7 +6,7 @@ import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
 import { NA, due, fromHundredths, roundScaled, toHundredths } from '../rates/Rates';
-import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/Settings';
+import { useFloor, useLatePct, usePolicyDate } from '../settings/Settings';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
@@ -42,7 +42,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The figure the last statement bound the claim to; null when unbound, or bound without a rate (n/a). */
   statedDue: string | null;
   /** The number of the SETTLED claim this correction (a negative amount) corrects; null for any other claim. */
-  corrects: string | null };
+  corrects: string | null;
+  /** The day the claim is due by (yyyy-MM-dd): fixed when it was created, from the terms of its person's
+   *  grade in force on its date; it does not change when the terms or its date change later. */
+  dueBy: string };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -80,13 +83,13 @@ export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (isO
 /** Whether the statement binding holds now: stated, and not PENDING (which follows its live figure). */
 const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
-/** What the late charge is worked out from: the sheet's late percent, terms and today; and what a live
+/** What the late charge is worked out from: the sheet's late percent and today; and what a live
  *  figure's rounding is decided by: the policy date (the sheet's today while blank) and the sheet's claims. */
-export type Late = { pct: string; terms: number; today: string | undefined; policy: string | undefined; claims: Claim[] };
+export type Late = { pct: string; today: string | undefined; policy: string | undefined; claims: Claim[] };
 
 export function useLate(sheet: string): Late {
   const today = useSheetToday(sheet);
-  return { pct: useLatePct(sheet), terms: useTerms(sheet), today, policy: usePolicyDate(sheet) ?? today,
+  return { pct: useLatePct(sheet), today, policy: usePolicyDate(sheet) ?? today,
     claims: useClaims(sheet) };
 }
 
@@ -108,8 +111,8 @@ export const claimDue = (c: Claim, pct: string | undefined, floor: string, late:
 /** The figure plus the late percent of it for every full 30 days the claim is overdue, rounded to two
  *  decimals by the claim's rounding (see `roundsHalfUp`). A statement never binds the charge: it follows the sheet's today. */
 function lateCharge(c: Claim, figure: string, late: Late): string {
-  if (figure === NA || c.corrects !== null || !isOverdue(c, late.terms, late.today)) return figure;
-  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
+  if (figure === NA || c.corrects !== null || !isOverdue(c, late.today)) return figure;
+  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${c.dueBy}T00:00:00Z`)) / 86_400_000;
   const periods = BigInt(Math.floor(days / 30));
   return fromHundredths(toHundredths(figure) + roundScaled(toHundredths(figure) * toHundredths(late.pct) * periods, roundsHalfUp(c, late)));
 }
@@ -121,16 +124,9 @@ const atLeast = (value: string, floor: string | undefined) =>
 /** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
 export const hasFixedDue = (c: Claim) => c.settledDue !== null || (isBound(c) && c.statedDue !== null);
 
-/** The claim's due-by (yyyy-MM-dd): its date plus the sheet's `terms` in days. */
-export function dueBy(c: Claim, terms: number): string {
-  const d = new Date(`${c.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
-}
-
 /** Whether the claim is overdue: OPEN or PENDING, with its due-by before the sheet's `today`. */
-export const isOverdue = (c: Claim, terms: number, today: string | undefined) =>
-  isOpen(c) && !!today && dueBy(c, terms) < today;
+export const isOverdue = (c: Claim, today: string | undefined) =>
+  isOpen(c) && !!today && c.dueBy < today;
 
 /** The counted claims' amounts added up, with two decimals; `held` says whose person is on hold. */
 export function claimed(claims: Claim[], held: (personId: number) => boolean = () => false): string {
@@ -224,7 +220,7 @@ function ClaimRow({ sheet, claim: c, pct, others, onEdit }: {
   const period = periodOf(usePeriods(sheet), c.date);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
-  const { terms, today } = late;
+  const { today } = late;
   const change = useMutation({
     mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`
       + (action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : ''), {}),
@@ -256,8 +252,8 @@ function ClaimRow({ sheet, claim: c, pct, others, onEdit }: {
       <span data-testid="claim-status">{c.status}</span>{' '}
       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       Due <span data-testid="claim-due">{claimDue(c, pct, floor, late)}</span>{' '}
-      Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
-      Overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+      Due by <span data-testid="claim-due-by">{c.dueBy}</span>{' '}
+      Overdue <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       Corrects <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => {

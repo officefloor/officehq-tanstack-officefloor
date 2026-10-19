@@ -8,7 +8,9 @@ import { useCurrentUser } from '../session/SignIn';
 // a clerk may settle; a steward settles anything. Every user name is a clerk unless assigned steward
 // here. The server enforces both when a claim is settled. The floor (two decimals, 1.00 until set) is
 // the least live due a claim has; see `claimDue`. The terms (whole days, 14 until set) are how long
-// after its date a claim is due by; see `dueBy`. The late percent (two decimals, 0.00 until set) is
+// after its date a claim is due by; a grade's
+// terms (blank until set) are used instead for its people's claims. A claim's due-by is fixed by the server
+// when it is created, from the terms of its person's grade in force on its date; see `Claim.dueBy`. The late percent (two decimals, 0.00 until set) is
 // charged on an overdue claim's figure for every full 30 days it is overdue; see `lateCharge`. The policy
 // date (yyyy-MM-dd; blank: the sheet's today) decides how a claim's live figures round; see `roundsHalfUp`.
 // Period numbering from (yyyy-MM-dd; blank: off): from that day of the sheet's today on, a claim opened is
@@ -17,12 +19,12 @@ type Setting = { key: string; value: string };
 type Role = { user: string; role: string };
 
 const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }, { key: 'floor', label: 'Floor' },
-  { key: 'terms', label: 'Terms (days)' }, { key: 'late-pct', label: 'Late %' },
+  { key: 'terms', label: 'Terms (days)' },
+  { key: 'terms-A', label: 'Terms A' }, { key: 'terms-B', label: 'Terms B' }, { key: 'terms-C', label: 'Terms C' },
+  { key: 'late-pct', label: 'Late %' },
   { key: 'policy-date', label: 'Policy date' }, { key: 'period-numbering-from', label: 'Period numbering from' }];
 
 const DEFAULT_FLOOR = '1.00';
-
-const DEFAULT_TERMS = '14';
 
 const DEFAULT_LATE_PCT = '0.00';
 
@@ -42,11 +44,6 @@ function useSettings(sheet: string): Setting[] {
 /** The sheet's floor: the least live due a claim has, with two decimals. */
 export function useFloor(sheet: string): string {
   return useSettings(sheet).find((s) => s.key === 'floor')?.value || DEFAULT_FLOOR;
-}
-
-/** The sheet's terms: how many days after its date a claim is due by. */
-export function useTerms(sheet: string): number {
-  return Number(useSettings(sheet).find((s) => s.key === 'terms')?.value || DEFAULT_TERMS);
 }
 
 /** The sheet's late percent, with two decimals. */

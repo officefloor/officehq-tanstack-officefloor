@@ -143,14 +143,13 @@ export function People({ sheet }: { sheet: string }) {
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
-  const { terms } = late;
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
   const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
   const dueTotalOf = useDueTotalOf(sheet);
   // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
   // their figures, skipping n/a.
   const overdueOf = (p: Person) =>
-    claimsOf(p).filter((c) => counts(c, p.held) && isOverdue(c, terms, today));
+    claimsOf(p).filter((c) => counts(c, p.held) && isOverdue(c, today));
   const backingOf = (p: Person) =>
     total(people.filter((o) => p.patrons.includes(o.name)).map(dueTotalOf));
   const overdueTotalOf = (p: Person) =>

@@ -20,7 +20,7 @@ public class ClaimRepository {
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getString("corrects"));
+            rs.getString("corrects"), rs.getDate("due_by").toLocalDate());
 
     private final JdbcTemplate jdbc;
 
@@ -41,11 +41,12 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim create(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+    public Claim create(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] {"id"});
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -53,9 +54,10 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setObject(6, corrects, Types.VARCHAR);
+            ps.setDate(7, Date.valueOf(dueBy));
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects, dueBy);
     }
 
     public void save(Claim claim) {

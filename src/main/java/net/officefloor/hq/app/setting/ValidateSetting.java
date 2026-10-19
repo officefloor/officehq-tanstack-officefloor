@@ -19,7 +19,7 @@ public class ValidateSetting {
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("key") String key,
             @RequestBody SettingRequest request, Out<Setting> setting) throws InvalidSettingException {
         String value = request == null || request.value() == null ? "" : request.value().strip();
-        if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key) && !Terms.KEY.equals(key)
+        if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key) && !Terms.KEY.equals(key) && !Terms.isGradeKey(key)
                 && !LatePct.KEY.equals(key) && !PolicyDate.KEY.equals(key)
                 && !PeriodNumberingFrom.KEY.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
@@ -39,6 +39,13 @@ public class ValidateSetting {
                 } catch (DateTimeParseException e) {
                     throw new InvalidSettingException("Period numbering from must be blank or a date (yyyy-MM-dd).");
                 }
+            }
+        } else if (Terms.isGradeKey(key)) {
+            if (!value.isEmpty()) {
+                if (!DAYS.matcher(value).matches()) {
+                    throw new InvalidSettingException("A grade's terms must be blank or a whole number of days.");
+                }
+                value = String.valueOf(Integer.parseInt(value));
             }
         } else if (Terms.KEY.equals(key)) {
             if (!DAYS.matcher(value).matches()) {
