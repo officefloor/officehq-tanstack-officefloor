@@ -1,11 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { SignIn, useCurrentUser } from '../features/session/SignIn';
+import { SheetPicker, useSheetId } from '../features/session/SheetPicker';
 
-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
-// with its nav link under features/.
+// The one screen. Sign in by name, then load a sheet by id; everything else is per sheet.
 export const Route = createFileRoute('/')({
   component: Home,
 });
 
 function Home() {
-  return <p data-testid="home-empty">Nothing here yet.</p>;
+  const [user] = useCurrentUser();
+  const sheet = useSheetId();
+  return (
+    <>
+      <SignIn />
+      {user && <SheetPicker />}
+      {user && !sheet && <p data-testid="home-empty">Nothing here yet.</p>}
+    </>
+  );
 }
