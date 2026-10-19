@@ -4,7 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, isOverdue, useClaims, useLate } from '../claims/Claims';
+import { BulkOpen, ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, isOverdue, useClaims, useLate } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
 import { useFloor } from '../settings/Settings';
@@ -168,6 +168,7 @@ export function People({ sheet }: { sheet: string }) {
         onClick={() => download('people.csv', peopleCsv(people, today, dueTotalOf))}>
         Export CSV
       </button>
+      <BulkOpen sheet={sheet} />
       <table>
         <thead>
           <tr>

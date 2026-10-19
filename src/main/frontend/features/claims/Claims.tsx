@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
-import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
 import { NA, due, fromHundredths, roundScaled, toHundredths } from '../rates/Rates';
@@ -21,6 +21,8 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // follows the current rate. Each claim shows the period its date falls in, if any.
 // A claim with a negative amount is a correction: the form must name, by number, a SETTLED claim of the
 // same person that it corrects (the server refuses it otherwise). Its due has no floor and no late charge.
+// Claims can be selected (URL state `selectedClaims`, their ids) and opened together: each that can be
+// opened is opened, numbered in list order; each that cannot is left as it is. The counts are shown.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened, and kept if it is voided; null for a draft. */
@@ -152,6 +154,50 @@ export function PersonClaims({ sheet, personId, claims, pctOn }: {
 /** One claim: its fields, status and due, with its edit and status buttons. A refused status change,
  *  or editing a claim that is not a draft or is dated in a closed period, shows the row's error, which
  *  the row's next action clears. */
+/** The selected claims' ids (URL state `selectedClaims`, comma-separated) and a setter for them. */
+function useSelectedClaims(): [number[], (ids: number[]) => void] {
+  const [raw, setRaw] = useSearchParam('selectedClaims', asString);
+  const ids = raw.split(',').filter((s) => s !== '').map(Number).filter((n) => !Number.isNaN(n));
+  return [ids, (next) => setRaw(next.join(','))];
+}
+
+/** Opens the selected claims together and shows how many were opened and how many refused. */
+export function BulkOpen({ sheet }: { sheet: string }) {
+  const queryClient = useQueryClient();
+  const [user] = useCurrentUser();
+  const [selected, setSelected] = useSelectedClaims();
+  const submitOnce = useSingleSubmit();
+  const open = useMutation({
+    mutationFn: (claimIds: number[]) => postJson<{ opened: number; refused: number }>(
+      `${sheetPath(sheet)}/claims/bulk-open?user=${encodeURIComponent(user ?? '')}`, { claimIds }),
+    onSuccess: async () => {
+      setSelected([]);
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+
+  return (
+    <p>
+      <button type="button" data-testid="bulk-open" disabled={open.isPending}
+        onClick={() => submitOnce(() => { open.reset(); return open.mutateAsync(selected); })}>
+        Open selected ({selected.length})
+      </button>
+      {open.isSuccess && (
+        <>
+          {' '}Opened <span data-testid="bulk-opened">{open.data.opened}</span>,{' '}
+          refused <span data-testid="bulk-refused">{open.data.refused}</span>
+        </>
+      )}
+      {open.isError && (
+        <span role="alert" data-testid="bulk-error">
+          {' '}
+          {(open.error instanceof HttpError && open.error.reason) || 'The claims could not be opened.'}
+        </span>
+      )}
+    </p>
+  );
+}
+
 function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   sheet: string; claim: Claim; pct: string | undefined; onEdit: () => void;
 }) {
@@ -168,9 +214,12 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   });
   // Why the last press of Edit was refused; null when it was not.
   const [editRefused, setEditRefused] = useState<string | null>(null);
+  const [selected, setSelected] = useSelectedClaims();
 
   return (
     <li data-testid={`claim-row-${c.id}`}>
+      <input type="checkbox" data-testid="claim-select" checked={selected.includes(c.id)}
+        onChange={(e) => setSelected(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id))} />{' '}
       #<span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span>{' '}
       <span data-testid="claim-date">{c.date}</span>{' '}
