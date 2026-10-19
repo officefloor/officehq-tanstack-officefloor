@@ -1,0 +1,204 @@
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 16ac51f..c0ea52b 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -51,7 +51,7 @@ export function gradeOn(person: Person, date: string | undefined): string {
+   return grade;
+ }
+ 
+-const GRADES = ['A', 'B', 'C'];
++export const GRADES = ['A', 'B', 'C'];
+ 
+ export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'];
+ const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
+@@ -86,6 +86,24 @@ function ShowRetired() {
+   );
+ }
+ 
++/** A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
++ *  It is n/a when the grade in force on the sheet's today has no rate there, unless a counted claim has
++ *  a figure (settled, bound by a statement, or at the grade in force on its date): then it is the sum
++ *  of the figures there are. */
++export function useDueTotalOf(sheet: string): (p: Person) => string {
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const floor = useFloor(sheet);
++  const late = useLate(sheet);
++  return (p: Person) => {
++    const dues = claims.filter((c) => c.personId === p.id && counts(c, p.held))
++      .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late));
++    if (rateOn(rates, gradeOn(p, today), today) === undefined && dues.every((d) => d === NA)) return NA;
++    return total(dues);
++  };
++}
++
+ export function People({ sheet }: { sheet: string }) {
+   const people = usePeople(sheet);
+   const [showRetired] = useShowRetired();
+@@ -102,16 +120,7 @@ export function People({ sheet }: { sheet: string }) {
+   const { terms } = late;
+   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
+   const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
+-  // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
+-  // It is n/a when the grade in force on the sheet's today has no rate there, unless a counted claim has
+-  // a figure (settled, bound by a statement, or at the grade in force on its date): then it is the sum
+-  // of the figures there are.
+-  const dueTotalOf = (p: Person) => {
+-    const dues = claimsOf(p).filter((c) => counts(c, p.held))
+-      .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late));
+-    if (rateOn(rates, gradeOn(p, today), today) === undefined && dues.every((d) => d === NA)) return NA;
+-    return total(dues);
+-  };
++  const dueTotalOf = useDueTotalOf(sheet);
+   // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
+   // their figures, skipping n/a.
+   const overdueOf = (p: Person) =>
+diff --git a/src/main/frontend/features/periods/Periods.tsx b/src/main/frontend/features/periods/Periods.tsx
+index e42ef99..95541d1 100644
+--- a/src/main/frontend/features/periods/Periods.tsx
++++ b/src/main/frontend/features/periods/Periods.tsx
+@@ -15,17 +15,7 @@ import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './us
+ // A closed period shows the due-total it was closed at instead, whatever rates do later, until a steward reopens it.
+ export function Periods({ sheet }: { sheet: string }) {
+   const periods = usePeriods(sheet);
+-  const people = usePeople(sheet);
+-  const claims = useClaims(sheet);
+-  const rates = useRates(sheet);
+-  const floor = useFloor(sheet);
+-  const late = useLate(sheet);
+-  const personOf = new Map(people.map((p) => [p.id, p]));
+-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
+-  const dueTotalOf = (period: Period) =>
+-    total(claims
+-      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && personOf.has(c.personId))
+-      .map((c) => claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late)));
++  const dueTotalOf = usePeriodDueTotal(sheet);
+ 
+   return (
+     <section>
+@@ -45,7 +35,7 @@ export function Periods({ sheet }: { sheet: string }) {
+         <tbody>
+           {periods.map((p) => (
+             <PeriodRow key={p.name} sheet={sheet} period={p}
+-              dueTotal={p.closed && p.closedTotal != null ? p.closedTotal : dueTotalOf(p)} />
++              dueTotal={dueTotalOf(p)} />
+           ))}
+         </tbody>
+       </table>
+@@ -53,6 +43,22 @@ export function Periods({ sheet }: { sheet: string }) {
+   );
+ }
+ 
++/** A period's due-total as its row shows it: the one it was closed at while it is closed, else
++ *  worked out from the claims that count. */
++export function usePeriodDueTotal(sheet: string): (period: Period) => string {
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const floor = useFloor(sheet);
++  const late = useLate(sheet);
++  const personOf = new Map(people.map((p) => [p.id, p]));
++  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
++  return (period: Period) =>
++    period.closed && period.closedTotal != null ? period.closedTotal : total(claims
++      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && personOf.has(c.personId))
++      .map((c) => claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late)));
++}
++
+ /** One period: its dates, due-total and whether it is closed, with its close and reopen buttons. A refused close or reopen
+  *  shows the row's error, which the row's next action clears. */
+ function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Period; dueTotal: string }) {
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+new file mode 100644
+index 0000000..c3eb4b7
+--- /dev/null
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -0,0 +1,67 @@
++import { useClaims } from '../claims/Claims';
++import { GRADES, gradeOn, useDueTotalOf, usePeople } from '../people/People';
++import { usePeriodDueTotal } from '../periods/Periods';
++import { usePeriods } from '../periods/usePeriods';
++import { total } from '../rates/Rates';
++import { useSheetToday } from '../sheet/SheetToday';
++
++const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
++// The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on
++// it on the sheet's today (retired people left out) and their due-totals added up, skipping n/a. Per
++// period: its due-total as its row shows it. Per status: how many of the sheet's claims have it.
++export function Summary({ sheet }: { sheet: string }) {
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const periods = usePeriods(sheet);
++  const today = useSheetToday(sheet);
++  const dueTotalOf = useDueTotalOf(sheet);
++  const periodDueTotalOf = usePeriodDueTotal(sheet);
++  const onGrade = (grade: string) => people.filter((p) => !p.retired && gradeOn(p, today) === grade);
++
++  return (
++    <section>
++      <h2>Summary</h2>
++      <table>
++        <thead>
++          <tr><th>Grade</th><th>People</th><th>Due total</th></tr>
++        </thead>
++        <tbody>
++          {GRADES.map((g) => (
++            <tr key={g}>
++              <td>{g}</td>
++              <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>
++              <td data-testid={`summary-grade-${g}-due-total`}>{total(onGrade(g).map(dueTotalOf))}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <table>
++        <thead>
++          <tr><th>Period</th><th>Due total</th></tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name}>
++              <td>{p.name}</td>
++              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDueTotalOf(p)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <table>
++        <thead>
++          <tr><th>Status</th><th>Claims</th></tr>
++        </thead>
++        <tbody>
++          {STATUSES.map((s) => (
++            <tr key={s}>
++              <td>{s}</td>
++              <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 6b6c21d..da3dd75 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -6,6 +6,7 @@ import { People } from '../features/people/People';
+ import { Rates } from '../features/rates/Rates';
+ import { Periods } from '../features/periods/Periods';
+ import { Settings } from '../features/settings/Settings';
++import { Summary } from '../features/summary/Summary';
+ 
+ // The one screen. Sign in by name, then load a sheet by id; everything else is per sheet.
+ export const Route = createFileRoute('/')({
+@@ -24,6 +25,7 @@ function Home() {
+       {user && sheet && <Periods sheet={sheet} />}
+       {user && sheet && <Settings sheet={sheet} />}
+       {user && sheet && <People sheet={sheet} />}
++      {user && sheet && <Summary sheet={sheet} />}
+       {user && !sheet && <p data-testid="home-empty">Nothing here yet.</p>}
+     </>
+   );
