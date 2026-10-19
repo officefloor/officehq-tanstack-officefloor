@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { useCurrentUser } from '../session/SignIn';
 import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
@@ -76,11 +77,13 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
   const queryClient = useQueryClient();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
   const save = useMutation({
     mutationFn: (body: { name: string; grade: string }) =>
       editing
-        ? putJson<Person>(`${peoplePath(sheet)}/${editing.id}`, body)
-        : postJson<Person>(peoplePath(sheet), body),
+        ? putJson<Person>(`${peoplePath(sheet)}/${editing.id}${by}`, body)
+        : postJson<Person>(`${peoplePath(sheet)}${by}`, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
       if (editing) {

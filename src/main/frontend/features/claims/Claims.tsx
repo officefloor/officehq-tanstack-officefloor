@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
@@ -79,11 +80,13 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
   // Undefined until changed: the sheet's today, which the server fills in when the date is blank.
   const [date, setDate] = useState<string | undefined>(editing?.date);
   const [note, setNote] = useState(editing?.note ?? '');
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
   const save = useMutation({
     mutationFn: (body: ClaimBody) =>
       editing
-        ? putJson<Claim>(`${sheetPath(sheet)}/claims/${editing.id}`, body)
-        : postJson<Claim>(`${sheetPath(sheet)}/people/${personId}/claims`, body),
+        ? putJson<Claim>(`${sheetPath(sheet)}/claims/${editing.id}${by}`, body)
+        : postJson<Claim>(`${sheetPath(sheet)}/people/${personId}/claims${by}`, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       if (editing) {
