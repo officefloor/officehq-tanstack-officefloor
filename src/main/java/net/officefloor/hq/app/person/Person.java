@@ -2,6 +2,8 @@ package net.officefloor.hq.app.person;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.claim.ClaimStatus;
 
 /** A person on a sheet. Mutable so an Apply step changes it in place. */
@@ -17,6 +19,7 @@ public class Person {
     private LocalDate statementDate;
     private LocalDate retiredFrom;
     private boolean held;
+    private List<String> patrons = new ArrayList<>();
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this(id, sheetId, name, grade, version, 0, null, null);
@@ -58,6 +61,9 @@ public class Person {
     /** Whether the person is on hold: their OPEN claims count in no live total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
+    /** The names of the person's patrons, sorted. */
+    public List<String> getPatrons() { return patrons; }
+    public void setPatrons(List<String> patrons) { this.patrons = new ArrayList<>(patrons); }
     /** Whether a claim of the person in this status counts in the live totals: SETTLED, and OPEN
      *  unless they are held. */
     public boolean counts(ClaimStatus status) {

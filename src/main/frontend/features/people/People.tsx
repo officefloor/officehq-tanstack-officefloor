@@ -15,6 +15,8 @@ import { useFloor } from '../settings/Settings';
 // A retired person's row is left out unless "show retired" (URL state `showRetired`) is on; their
 // claims keep counting in every total. A person on hold keeps their SETTLED claims in every total,
 // but their OPEN claims count in none.
+// A person may name other people on the sheet as their patrons; their backing is their patrons'
+// due-totals added up, skipping n/a (0.00 with no patrons).
 export type Person = { id: number; name: string; grade: string; version: number;
   /** How many statements have been taken for the person. */
   statementCount: number;
@@ -27,7 +29,9 @@ export type Person = { id: number; name: string; grade: string; version: number;
   /** The date the person is retired from; null when they are not retired. */
   retiredFrom: string | null;
   /** Whether the person is on hold: their OPEN claims count in no total. */
-  held: boolean };
+  held: boolean;
+  /** The names of the other people the person has named as their patrons, sorted. */
+  patrons: string[] };
 
 const GRADES = ['A', 'B', 'C'];
 
@@ -92,6 +96,8 @@ export function People({ sheet }: { sheet: string }) {
   // their figures, skipping n/a.
   const overdueOf = (p: Person) =>
     claimsOf(p).filter((c) => counts(c, p.held) && isOverdue(c, terms, today));
+  const backingOf = (p: Person) =>
+    total(people.filter((o) => p.patrons.includes(o.name)).map(dueTotalOf));
   const overdueTotalOf = (p: Person) =>
     total(overdueOf(p).map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor, late)));
 
@@ -115,6 +121,8 @@ export function People({ sheet }: { sheet: string }) {
             <th>Statements</th>
             <th>Retired</th>
             <th>Hold</th>
+            <th>Patrons</th>
+            <th>Backing</th>
             <th>Claims</th>
             <th />
           </tr>
@@ -128,7 +136,8 @@ export function People({ sheet }: { sheet: string }) {
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
               <td data-testid="person-overdue-count">{overdueOf(p).length}</td>
               <td data-testid="person-overdue-total">{overdueTotalOf(p)}</td>
-              <PersonActions sheet={sheet} person={p} />
+              <PersonActions sheet={sheet} person={p} people={people} />
+              <td data-testid="person-backing">{backingOf(p)}</td>
               <td>
                 <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
                   pctOn={(date) => rateOn(rates, p.grade, date)} />
@@ -158,12 +167,16 @@ export function People({ sheet }: { sheet: string }) {
 /** The person's statements (how many, the last one's due-total and date, and the button that takes
  *  one) and their retirement (yes/no, the date, and the control that retires them from a date; blank
  *  is the sheet's today), and their hold (yes/no, and the button that puts them on hold or takes
- *  them off it). A refused action shows the row's error, which the row's next action clears. */
-function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) {
+ *  them off it), and their patrons (the names, and the control that names another person on the sheet
+ *  as one: the person themselves and those already named are not offered). A refused action shows
+ *  the row's error, which the row's next action clears. */
+function PersonActions({ sheet, person: p, people }: { sheet: string; person: Person; people: Person[] }) {
   const queryClient = useQueryClient();
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const [retireFrom, setRetireFrom] = useState('');
+  const [patronId, setPatronId] = useState('');
+  const offered = people.filter((o) => o.id !== p.id && !p.patrons.includes(o.name));
   const refetch = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
     queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
@@ -183,10 +196,18 @@ function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) 
     mutationFn: () => postJson<Person>(`${peoplePath(sheet)}/${p.id}/hold${by}`, {}),
     onSuccess: refetch,
   });
+  const patron = useMutation({
+    mutationFn: (id: number | null) => postJson<Person>(`${peoplePath(sheet)}/${p.id}/patrons${by}`, { patronId: id }),
+    onSuccess: async () => {
+      await refetch();
+      setPatronId('');
+    },
+  });
   const reset = () => {
     take.reset();
     retire.reset();
     hold.reset();
+    patron.reset();
   };
   const failed = take.isError ? take : retire.isError ? retire : hold.isError ? hold : undefined;
   return (
@@ -224,6 +245,26 @@ function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) 
           onClick={() => { reset(); hold.mutate(); }}>
           {p.held ? 'Release' : 'Hold'}
         </button>
+      </td>
+      <td>
+        <span data-testid="person-patrons">{p.patrons.join(', ')}</span>{' '}
+        <select data-testid="person-patron-select" value={patronId}
+          onChange={(e) => { reset(); setPatronId(e.target.value); }}>
+          <option value="">Choose…</option>
+          {offered.map((o) => (
+            <option key={o.id} value={String(o.id)}>{o.name}</option>
+          ))}
+        </select>{' '}
+        <button type="button" data-testid="person-patron-add" disabled={patron.isPending}
+          onClick={() => { reset(); patron.mutate(patronId ? Number(patronId) : null); }}>
+          Add patron
+        </button>
+        {patron.isError && (
+          <span role="alert" data-testid="person-patron-error">
+            {' '}
+            {(patron.error instanceof HttpError && patron.error.reason) || 'The patron could not be added.'}
+          </span>
+        )}
       </td>
     </>
   );

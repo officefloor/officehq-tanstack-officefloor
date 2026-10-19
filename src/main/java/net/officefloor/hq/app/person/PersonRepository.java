@@ -3,6 +3,8 @@ package net.officefloor.hq.app.person;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -29,12 +31,47 @@ public class PersonRepository {
     }
 
     public List<Person> findBySheet(String sheetId) {
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        return withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
     }
 
     public Person findById(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+        List<Person> found = withPatrons(sheetId,
+                jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id));
         return found.isEmpty() ? null : found.get(0);
+    }
+
+    private record PatronLink(long personId, String name) {
+    }
+
+    /** Fills in each person's patrons' names, sorted. */
+    private List<Person> withPatrons(String sheetId, List<Person> people) {
+        if (people.isEmpty()) return people;
+        Map<Long, List<String>> names = jdbc.query(
+                "SELECT pp.person_id, p.name FROM person_patron pp"
+                        + " JOIN person p ON p.sheet_id = pp.sheet_id AND p.id = pp.patron_id"
+                        + " WHERE pp.sheet_id = ? ORDER BY p.name",
+                (rs, i) -> new PatronLink(rs.getLong("person_id"), rs.getString("name")), sheetId).stream()
+                .collect(Collectors.groupingBy(PatronLink::personId,
+                        Collectors.mapping(PatronLink::name, Collectors.toList())));
+        for (Person person : people) {
+            List<String> patrons = names.getOrDefault(person.getId(), List.of()).stream().sorted().toList();
+            person.setPatrons(patrons);
+        }
+        return people;
+    }
+
+    /** Whether this person is already one of the person's patrons. */
+    public boolean isPatron(Person person, long patronId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person_patron WHERE sheet_id = ? AND person_id = ? AND patron_id = ?",
+                Integer.class, person.getSheetId(), person.getId(), patronId);
+        return count != null && count > 0;
+    }
+
+    /** Names this person as one of the person's patrons. Not an edit, so the version stays. */
+    public void addPatron(Person person, long patronId) {
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
+                person.getSheetId(), person.getId(), patronId);
     }
 
     /** The person on the sheet with this name, ignoring case; null when there is none. */
