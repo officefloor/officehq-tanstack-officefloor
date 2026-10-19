@@ -12,6 +12,7 @@ public class AuditClaimEdited {
             PersonRepository people, Audit audit) {
         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
         audit.record("CLAIM_EDITED sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
-                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate());
+                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate()
+                + new ClaimNumber(claim.getNumber()).auditField());
     }
 }

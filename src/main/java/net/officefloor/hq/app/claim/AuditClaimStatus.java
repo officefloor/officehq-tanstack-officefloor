@@ -8,10 +8,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Records the claim's status change once it is allowed and saved. */
 public class AuditClaimStatus {
-    public void audit(@Val ClaimAction action, @Val Claim claim,
+    public void audit(@Val ClaimAction action, @Val Claim claim, @Val ClaimNumber number,
             @RequestParam(value = "user", required = false) String user, PersonRepository people, Audit audit) {
         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
         audit.record(action.event() + " sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
-                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate());
+                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate()
+                + number.auditField());
     }
 }

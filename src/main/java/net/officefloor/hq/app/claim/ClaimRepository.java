@@ -16,7 +16,8 @@ public class ClaimRepository {
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+            rs.getObject("claim_number", Integer.class));
 
     private final JdbcTemplate jdbc;
 
@@ -46,11 +47,21 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null);
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE sheet_id = ? AND id = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(), claim.getSheetId(), claim.getId());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?"
+                + " WHERE sheet_id = ? AND id = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
+                claim.getNumber(), claim.getSheetId(), claim.getId());
+    }
+
+    /** Gives out the sheet's next claim number. The counter is raised and read in one statement, so
+     *  claims opened at the same moment never share a number, and the number is never given again. */
+    public int nextNumber(String sheetId) {
+        jdbc.update("MERGE INTO sheet (id) KEY (id) VALUES (?)", sheetId);
+        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
+                + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, sheetId);
     }
 }

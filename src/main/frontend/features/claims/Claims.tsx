@@ -10,8 +10,11 @@ import { due } from '../rates/Rates';
 // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
 // server as strings with two decimals and are added up in whole cents, never as floats. A claim's
 // status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
+// Opening gives a claim the sheet's next number, which voiding clears; a draft has none.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+  /** Given when the claim is opened; null for a draft or a voided claim. */
+  number: number | null };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -94,6 +97,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
 
   return (
     <li data-testid={`claim-row-${c.id}`}>
+      #<span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span>{' '}
       <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
