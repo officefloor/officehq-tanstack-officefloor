@@ -63,6 +63,7 @@ export function People({ sheet }: { sheet: string }) {
       {/* Keyed so opening a person's editor (again) or closing it refills the form. */}
       <PersonForm key={editing ? `edit-${editing.id}-${opened}` : 'add'} sheet={sheet} editing={editing}
         onDone={() => setEditId(undefined)} />
+      <QuickAdd sheet={sheet} />
       <table>
         <thead>
           <tr>
@@ -135,6 +136,74 @@ function PersonStatement({ sheet, person: p }: { sheet: string; person: Person }
         </span>
       )}
     </>
+  );
+}
+
+/** The quick-add bar: a DRAFT claim of this amount, dated the sheet's today with an empty note, for
+ *  the named person, who is added with grade A when not on the sheet. The server refuses (400) what
+ *  the person or claim form would refuse, and then adds no one; the bar shows its error. */
+function QuickAdd({ sheet }: { sheet: string }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const submitOnce = useSingleSubmit();
+  const add = useMutation({
+    mutationFn: (body: { name: string; amount: string }) =>
+      postJson(`/api/sheets/${encodeURIComponent(sheet)}/quick-add${by}`, body),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+      ]);
+      setName('');
+      setAmount('');
+    },
+  });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitOnce(() => {
+          add.reset();
+          return add.mutateAsync({ name, amount });
+        });
+      }}
+    >
+      <label>
+        Quick add{' '}
+        <input
+          data-testid="quick-name"
+          placeholder="Name"
+          value={name}
+          onChange={(e) => {
+            add.reset();
+            setName(e.target.value);
+          }}
+        />
+      </label>{' '}
+      <input
+        data-testid="quick-amount"
+        placeholder="Amount"
+        value={amount}
+        onChange={(e) => {
+          add.reset();
+          setAmount(e.target.value);
+        }}
+      />{' '}
+      <button type="submit" data-testid="quick-submit" disabled={add.isPending}>
+        Add claim
+      </button>
+      {add.isError && (
+        <span role="alert" data-testid="quick-error">
+          {' '}
+          {(add.error instanceof HttpError && add.error.status === 400 && add.error.reason)
+            || 'The claim could not be added.'}
+        </span>
+      )}
+    </form>
   );
 }
 

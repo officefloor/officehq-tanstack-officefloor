@@ -13,6 +13,11 @@ public class ValidateClaim {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body) throws InvalidClaimException {
+        body.set(of(request));
+    }
+
+    /** The claim form's rules, shared with the quick-add bar. */
+    static ValidClaim of(ClaimRequest request) throws InvalidClaimException {
         String amount = request == null || request.amount() == null ? "" : request.amount().strip();
         String date = request == null || request.date() == null ? "" : request.date().strip();
         String note = request == null || request.note() == null ? "" : request.note();
@@ -30,6 +35,6 @@ public class ValidateClaim {
                 throw new InvalidClaimException("Not a valid date.");
             }
         }
-        body.set(new ValidClaim(new BigDecimal(amount).setScale(2), parsed, note));
+        return new ValidClaim(new BigDecimal(amount).setScale(2), parsed, note);
     }
 }
