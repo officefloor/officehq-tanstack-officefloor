@@ -1,0 +1,364 @@
+diff --git a/src/main/frontend/features/claims/Claims.tsx b/src/main/frontend/features/claims/Claims.tsx
+index 0d8c2d7..2929c13 100644
+--- a/src/main/frontend/features/claims/Claims.tsx
++++ b/src/main/frontend/features/claims/Claims.tsx
+@@ -8,8 +8,16 @@ import { due } from '../rates/Rates';
+ 
+ // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
+ // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
+-// server as strings with two decimals and are added up in whole cents, never as floats.
+-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
++// server as strings with two decimals and are added up in whole cents, never as floats. A claim's
++// status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
++export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
++
++const ACTIONS = [
++  { action: 'open', label: 'Open' },
++  { action: 'settle', label: 'Settle' },
++  { action: 'void', label: 'Void' },
++];
+ 
+ type ClaimBody = { amount: string; date: string; note: string };
+ 
+@@ -31,9 +39,12 @@ const toCents = (amount: string) => {
+   return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+ };
+ 
+-/** The claims' amounts added up, with two decimals. */
++/** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
++const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
++
++/** The counted claims' amounts added up, with two decimals. */
+ export function claimed(claims: Claim[]): string {
+-  const cents = claims.reduce((sum, c) => sum + toCents(c.amount), 0);
++  const cents = claims.filter(counts).reduce((sum, c) => sum + toCents(c.amount), 0);
+   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+ }
+ 
+@@ -61,21 +72,52 @@ export function PersonClaims({ sheet, personId, claims, pct }: {
+         editing={editing} onDone={() => setEditId(undefined)} />
+       <ul>
+         {claims.map((c) => (
+-          <li key={c.id} data-testid={`claim-row-${c.id}`}>
+-            <span data-testid="claim-amount">{c.amount}</span>{' '}
+-            <span data-testid="claim-date">{c.date}</span>{' '}
+-            <span data-testid="claim-note">{c.note}</span>{' '}
+-            Due <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
+-            <button type="button" data-testid="claim-edit" onClick={() => setEditId(c.id)}>
+-              Edit
+-            </button>
+-          </li>
++          <ClaimRow key={c.id} sheet={sheet} claim={c} pct={pct} onEdit={() => setEditId(c.id)} />
+         ))}
+       </ul>
+     </>
+   );
+ }
+ 
++/** One claim: its fields, status and due, with its edit and status buttons. A refused status change
++ *  shows the row's error, which the row's next action clears. */
++function ClaimRow({ sheet, claim: c, pct, onEdit }: {
++  sheet: string; claim: Claim; pct: string | undefined; onEdit: () => void;
++}) {
++  const queryClient = useQueryClient();
++  const [user] = useCurrentUser();
++  const by = `?user=${encodeURIComponent(user ?? '')}`;
++  const change = useMutation({
++    mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++  });
++
++  return (
++    <li data-testid={`claim-row-${c.id}`}>
++      <span data-testid="claim-amount">{c.amount}</span>{' '}
++      <span data-testid="claim-date">{c.date}</span>{' '}
++      <span data-testid="claim-note">{c.note}</span>{' '}
++      <span data-testid="claim-status">{c.status}</span>{' '}
++      Due <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
++      <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
++        Edit
++      </button>
++      {ACTIONS.map(({ action, label }) => (
++        <button key={action} type="button" data-testid={`claim-${action}`} disabled={change.isPending}
++          onClick={() => { change.reset(); change.mutate(action); }}>
++          {label}
++        </button>
++      ))}
++      {change.isError && (
++        <span role="alert" data-testid="claim-error">
++          {' '}
++          {(change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.'}
++        </span>
++      )}
++    </li>
++  );
++}
++
+ function ClaimForm({ sheet, personId, editing, onDone }: {
+   sheet: string; personId: number; editing?: Claim; onDone: () => void;
+ }) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+new file mode 100644
+index 0000000..afe9c8f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Moves the claim to the action's status, refusing a change its current status does not allow. */
++public class ApplyClaimAction {
++    public void apply(@Val ClaimAction action, @Val Claim claim) throws InvalidClaimStatusException {
++        if (!action.allowedFrom(claim.getStatus())) {
++            throw new InvalidClaimStatusException(
++                    "A " + claim.getStatus() + " claim cannot be moved to " + action.to() + ".");
++        }
++        claim.setStatus(action.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+new file mode 100644
+index 0000000..e9e7546
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the claim's status change once it is allowed and saved. */
++public class AuditClaimStatus {
++    public void audit(@Val ClaimAction action, @Val Claim claim,
++            @RequestParam(value = "user", required = false) String user, PersonRepository people, Audit audit) {
++        Person person = people.findById(claim.getSheetId(), claim.getPersonId());
++        audit.record(action.event() + " sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
++                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 25e9d50..addd9ed 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -12,14 +12,17 @@ public class Claim {
+     private BigDecimal amount;
+     private LocalDate date;
+     private String note;
++    private ClaimStatus status;
+ 
+-    public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
++    public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
++            ClaimStatus status) {
+         this.id = id;
+         this.sheetId = sheetId;
+         this.personId = personId;
+         this.amount = amount;
+         this.date = date;
+         this.note = note;
++        this.status = status;
+     }
+ 
+     public long getId() { return id; }
+@@ -31,4 +34,6 @@ public class Claim {
+     public void setDate(LocalDate date) { this.date = date; }
+     public String getNote() { return note; }
+     public void setNote(String note) { this.note = note; }
++    public ClaimStatus getStatus() { return status; }
++    public void setStatus(ClaimStatus status) { this.status = status; }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+new file mode 100644
+index 0000000..512390a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.Set;
++
++/** A status change, named as in the path: the statuses it may be taken from, the status it moves
++ *  the claim to and the audit event it writes. */
++public enum ClaimAction {
++    OPEN(Set.of(ClaimStatus.DRAFT), ClaimStatus.OPEN, "CLAIM_OPENED"),
++    SETTLE(Set.of(ClaimStatus.OPEN), ClaimStatus.SETTLED, "CLAIM_SETTLED"),
++    VOID(Set.of(ClaimStatus.DRAFT, ClaimStatus.OPEN), ClaimStatus.VOID, "CLAIM_VOIDED");
++
++    private final Set<ClaimStatus> from;
++    private final ClaimStatus to;
++    private final String event;
++
++    ClaimAction(Set<ClaimStatus> from, ClaimStatus to, String event) {
++        this.from = from;
++        this.to = to;
++        this.event = event;
++    }
++
++    public boolean allowedFrom(ClaimStatus status) { return from.contains(status); }
++    public ClaimStatus to() { return to; }
++    public String event() { return event; }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 1691b4b..98c787e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -16,7 +16,7 @@ public class ClaimRepository {
+ 
+     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(),
+-            rs.getString("note"));
++            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -46,11 +46,11 @@ public class ClaimRepository {
+             ps.setString(5, note);
+             return ps;
+         }, keys);
+-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note);
++        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
+     }
+ 
+     public void save(Claim claim) {
+-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ?",
+-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getSheetId(), claim.getId());
++        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE sheet_id = ? AND id = ?",
++                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(), claim.getSheetId(), claim.getId());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index c44cf9f..69a30e9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -1,9 +1,9 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A claim as the screen shows it: the amount with two decimals, the date as yyyy-MM-dd. */
+-public record ClaimResponse(long id, long personId, String amount, String date, String note) {
++/** A claim as the screen shows it: the amount with two decimals, the date as yyyy-MM-dd, the status by name. */
++public record ClaimResponse(long id, long personId, String amount, String date, String note, String status) {
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
+-                claim.getDate().toString(), claim.getNote());
++                claim.getDate().toString(), claim.getNote(), claim.getStatus().name());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+new file mode 100644
+index 0000000..70b09b0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++/** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. Only OPEN and
++ *  SETTLED claims count toward the totals; SETTLED and VOID are final. */
++public enum ClaimStatus {
++    DRAFT, OPEN, SETTLED, VOID
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleInvalidClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/HandleInvalidClaimStatus.java
+new file mode 100644
+index 0000000..f1a6a7d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleInvalidClaimStatus.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidClaimStatus {
++    public void handle(@Parameter InvalidClaimStatusException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
+new file mode 100644
+index 0000000..87784fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++/** The claim's status does not allow the requested change (SETTLED and VOID are final). */
++public class InvalidClaimStatusException extends Exception {
++    public InvalidClaimStatusException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimAction.java
+new file mode 100644
+index 0000000..581f41a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimAction.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.Locale;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class ValidateClaimAction {
++    public void validate(@PathVariable("action") String action, Out<ClaimAction> actionOut)
++            throws InvalidClaimException {
++        try {
++            actionOut.set(ClaimAction.valueOf(action.toUpperCase(Locale.ROOT)));
++        } catch (IllegalArgumentException e) {
++            throw new InvalidClaimException("No such claim action: " + action);
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V6__claim_status.sql b/src/main/resources/db/migration/V6__claim_status.sql
+new file mode 100644
+index 0000000..87a82fa
+--- /dev/null
++++ b/src/main/resources/db/migration/V6__claim_status.sql
+@@ -0,0 +1,4 @@
++-- A claim's status: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID. SETTLED and VOID are final.
++-- Only OPEN and SETTLED claims count toward the totals.
++ALTER TABLE claim ADD COLUMN status VARCHAR(10) DEFAULT 'DRAFT' NOT NULL
++    CHECK (status IN ('DRAFT', 'OPEN', 'SETTLED', 'VOID'));
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.InvalidClaimStatusException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.InvalidClaimStatusException.yml
+new file mode 100644
+index 0000000..8896f8e
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.InvalidClaimStatusException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleInvalidClaimStatus
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+new file mode 100644
+index 0000000..ab01459
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -0,0 +1,24 @@
++# open | settle | void a claim. The audit line is written last, once the change is allowed and
++# saved, so a refused change (an unknown action 400, a status that forbids it 409) writes none.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateClaimAction
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyClaimAction
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimStatus
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
