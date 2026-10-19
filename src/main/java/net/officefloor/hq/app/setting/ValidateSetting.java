@@ -11,13 +11,21 @@ public class ValidateSetting {
     /** 0 or more, with up to two decimals. */
     private static final Pattern MONEY = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
+    /** A whole number of days, 0 or more. */
+    private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("key") String key,
             @RequestBody SettingRequest request, Out<Setting> setting) throws InvalidSettingException {
         String value = request == null || request.value() == null ? "" : request.value().strip();
-        if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key)) {
+        if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key) && !Terms.KEY.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
-        if (Floor.KEY.equals(key)) {
+        if (Terms.KEY.equals(key)) {
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The terms must be a whole number of days.");
+            }
+            value = String.valueOf(Integer.parseInt(value));
+        } else if (Floor.KEY.equals(key)) {
             if (!MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The floor must be an amount with up to two decimals.");
             }

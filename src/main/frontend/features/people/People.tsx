@@ -4,10 +4,10 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, useClaims } from '../claims/Claims';
+import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, isOverdue, useClaims } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
-import { useFloor } from '../settings/Settings';
+import { useFloor, useTerms } from '../settings/Settings';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
@@ -76,6 +76,7 @@ export function People({ sheet }: { sheet: string }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
+  const terms = useTerms(sheet);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
   const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
   // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
@@ -86,6 +87,12 @@ export function People({ sheet }: { sheet: string }) {
     if (rateOn(rates, p.grade, today) === undefined && !counted.some(hasFixedDue)) return NA;
     return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor)));
   };
+  // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
+  // their figures, skipping n/a.
+  const overdueOf = (p: Person) =>
+    claimsOf(p).filter((c) => counts(c, p.held) && isOverdue(c, terms, today));
+  const overdueTotalOf = (p: Person) =>
+    total(overdueOf(p).map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor)));
 
   return (
     <section>
@@ -102,6 +109,8 @@ export function People({ sheet }: { sheet: string }) {
             <th>Grade</th>
             <th>Claimed</th>
             <th>Due</th>
+            <th>Overdue</th>
+            <th>Overdue total</th>
             <th>Statements</th>
             <th>Retired</th>
             <th>Hold</th>
@@ -116,6 +125,8 @@ export function People({ sheet }: { sheet: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-claimed">{claimed(claimsOf(p), isHeld)}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
+              <td data-testid="person-overdue-count">{overdueOf(p).length}</td>
+              <td data-testid="person-overdue-total">{overdueTotalOf(p)}</td>
               <PersonActions sheet={sheet} person={p} />
               <td>
                 <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
@@ -133,6 +144,11 @@ export function People({ sheet }: { sheet: string }) {
       <ClaimedTotal sheet={sheet} held={isHeld} />
       <p>
         Due total: <strong data-testid="rollup-due-total">{total(people.map(dueTotalOf))}</strong>
+      </p>
+      <p>
+        Overdue: <strong data-testid="rollup-overdue-count">
+          {people.reduce((n, p) => n + overdueOf(p).length, 0)}</strong>{' '}
+        Overdue total: <strong data-testid="rollup-overdue-total">{total(people.map(overdueTotalOf))}</strong>
       </p>
     </section>
   );

@@ -6,7 +6,7 @@ import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
 import { NA, due, toHundredths } from '../rates/Rates';
-import { useFloor } from '../settings/Settings';
+import { useFloor, useTerms } from '../settings/Settings';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
@@ -73,6 +73,17 @@ const atLeast = (value: string, floor: string) =>
 /** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
 export const hasFixedDue = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null);
 
+/** The claim's due-by (yyyy-MM-dd): its date plus the sheet's `terms` in days. */
+export function dueBy(c: Claim, terms: number): string {
+  const d = new Date(`${c.date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + terms);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether the claim is overdue: OPEN, with its due-by before the sheet's `today`. */
+export const isOverdue = (c: Claim, terms: number, today: string | undefined) =>
+  c.status === 'OPEN' && !!today && dueBy(c, terms) < today;
+
 /** The counted claims' amounts added up, with two decimals; `held` says whose person is on hold. */
 export function claimed(claims: Claim[], held: (personId: number) => boolean = () => false): string {
   const cents = claims.filter((c) => counts(c, held(c.personId))).reduce((sum, c) => sum + toCents(c.amount), 0);
@@ -111,7 +122,8 @@ export function PersonClaims({ sheet, personId, claims, pctOn }: {
 }
 
 /** One claim: its fields, status and due, with its edit and status buttons. A refused status change,
- *  or editing a claim that is not a draft, shows the row's error, which the row's next action clears. */
+ *  or editing a claim that is not a draft or is dated in a closed period, shows the row's error, which
+ *  the row's next action clears. */
 function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   sheet: string; claim: Claim; pct: string | undefined; onEdit: () => void;
 }) {
@@ -120,11 +132,14 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const period = periodOf(usePeriods(sheet), c.date);
   const floor = useFloor(sheet);
+  const terms = useTerms(sheet);
+  const today = useSheetToday(sheet);
   const change = useMutation({
     mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
-  const [editRefused, setEditRefused] = useState(false);
+  // Why the last press of Edit was refused; null when it was not.
+  const [editRefused, setEditRefused] = useState<string | null>(null);
 
   return (
     <li data-testid={`claim-row-${c.id}`}>
@@ -136,17 +151,23 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       <span data-testid="claim-status">{c.status}</span>{' '}
       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       Due <span data-testid="claim-due">{claimDue(c, pct, floor)}</span>{' '}
+      Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+      Overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => {
         change.reset();
-        setEditRefused(c.status !== 'DRAFT');
-        if (c.status === 'DRAFT') onEdit();
+        // Only a draft dated outside every closed period can be edited (the server refuses the rest).
+        const refused = c.status !== 'DRAFT'
+          ? `Only a draft claim can be edited; this one is ${c.status}. To change it, void it and add a new one.`
+          : period?.closed ? `The claim is dated in the closed period ${period.name}; it cannot be edited.` : null;
+        setEditRefused(refused);
+        if (!refused) onEdit();
       }}>
         Edit
       </button>
       {ACTIONS.map(({ action, label }) => (
         <button key={action} type="button" data-testid={`claim-${action}`} disabled={change.isPending}
-          onClick={() => { change.reset(); setEditRefused(false); change.mutate(action); }}>
+          onClick={() => { change.reset(); setEditRefused(null); change.mutate(action); }}>
           {label}
         </button>
       ))}
@@ -154,8 +175,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
         <span role="alert" data-testid="claim-error">
           {' '}
           {editRefused
-            ? `Only a draft claim can be edited; this one is ${c.status}. To change it, void it and add a new one.`
-            : (change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.'}
+            ?? ((change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.')}
         </span>
       )}
     </li>
