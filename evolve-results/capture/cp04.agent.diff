@@ -1,0 +1,196 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 3aba447..3aa9e66 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,9 +1,17 @@
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
++// A refused request: `reason` is the server's explanation (the response text), for the screen.
++export class HttpError extends Error {
++  constructor(message: string, readonly status: number, readonly reason: string) {
++    super(message);
++  }
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const res = await fetch(path, init);
+   if (!res.ok) {
+-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
++    const reason = await res.text().catch(() => '');
++    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status, reason);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 37db98b..c11954f 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+-import { getJson, postJson, putJson } from '../../api/http';
++import { HttpError, getJson, postJson, putJson } from '../../api/http';
+ import { asNumber, useSearchParam } from '../../url/useSearchParam';
+ 
+ // The people on the sheet, in the order they were added. One form adds a person, or edits the
+@@ -88,7 +88,7 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
+       onSubmit={(e) => {
+         e.preventDefault();
+         save.reset();
+-        // A blank name is refused by the server (400), which shows the form's error.
++        // A blank or already-used name is refused by the server (400), which shows the form's error.
+         save.mutate({ name, grade });
+       }}
+     >
+@@ -130,7 +130,9 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
+       )}
+       {save.isError && (
+         <span role="alert" data-testid="person-form-error">
+-          {' '}A name is required.
++          {' '}
++          {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
++            || 'The person could not be saved.'}
+         </span>
+       )}
+     </form>
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java b/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java
+new file mode 100644
+index 0000000..8b3352b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Refuses adding a person with a name already used on the sheet (ignoring case). */
++public class CheckPersonName {
++    public void check(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
++            PersonRepository repository) throws InvalidPersonException {
++        if (repository.nameInUse(sheetId, request.name(), null)) {
++            throw new InvalidPersonException("That name is already in use on this sheet.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java b/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java
+new file mode 100644
+index 0000000..e41aff3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CheckPersonRename.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses renaming a person to a name another person on the sheet already uses (ignoring case). */
++public class CheckPersonRename {
++    public void check(@Val PersonRequest request, @Val Person person, PersonRepository repository)
++            throws InvalidPersonException {
++        if (repository.nameInUse(person.getSheetId(), request.name(), person.getId())) {
++            throw new InvalidPersonException("That name is already in use on this sheet.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+index 383f876..c4af90a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** The person form was refused: a blank name or a grade other than A, B or C. */
++/** The person form was refused: a blank name, a name already in use on the sheet, or a grade other
++ *  than A, B or C. */
+ public class InvalidPersonException extends Exception {
+     public InvalidPersonException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 1586671..7b34ef8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -1,7 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.sql.PreparedStatement;
+-import java.sql.Statement;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -30,11 +29,19 @@ public class PersonRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** Whether a person on the sheet other than {@code exceptId} (null: none) has this name, ignoring case. */
++    public boolean nameInUse(String sheetId, String name, Long exceptId) {
++        Integer count = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND (? IS NULL OR id <> ?)",
++                Integer.class, sheetId, name, exceptId, exceptId);
++        return count != null && count > 0;
++    }
++
+     public Person create(String sheetId, String name, String grade) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
++                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] {"id"});
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+             ps.setString(3, grade);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 4d3581b..2ec16df 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -17,6 +17,7 @@ public class ValidatePerson {
+         if (grade == null || !GRADES.contains(grade)) {
+             throw new InvalidPersonException("The grade must be A, B or C.");
+         }
+-        body.set(new PersonRequest(name, grade));
++        // Stored without surrounding spaces.
++        body.set(new PersonRequest(name.strip(), grade));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V3__person_name_unique.sql b/src/main/resources/db/migration/V3__person_name_unique.sql
+new file mode 100644
+index 0000000..06d5e51
+--- /dev/null
++++ b/src/main/resources/db/migration/V3__person_name_unique.sql
+@@ -0,0 +1,5 @@
++-- A person's name is unique on the sheet, compared without regard to case. Names are stored
++-- without surrounding spaces; name_key is the name as compared.
++UPDATE person SET name = TRIM(name);
++ALTER TABLE person ADD COLUMN name_key VARCHAR(200) GENERATED ALWAYS AS (LOWER(name));
++CREATE UNIQUE INDEX person_sheet_name ON person (sheet_id, name_key);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 14f9a76..81fd7fd 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,6 +1,11 @@
+-# Validate first so a blank name or unknown grade is a 400 and nothing is written.
++# Validate first so a blank name or unknown grade is a 400 and nothing is written; a name already
++# in use on the sheet is also a 400.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckPersonName
++  govern: [ transaction ]
+   next: create
+ create:
+   class: net.officefloor.hq.app.person.CreatePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 4a8cc01..42397d3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -5,6 +5,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckPersonRename
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.person.ApplyPerson
