@@ -14,10 +14,15 @@ public class ValidateSetting {
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("key") String key,
             @RequestBody SettingRequest request, Out<Setting> setting) throws InvalidSettingException {
         String value = request == null || request.value() == null ? "" : request.value().strip();
-        if (!ClerkLimit.KEY.equals(key)) {
+        if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
-        if (!value.isEmpty()) {
+        if (Floor.KEY.equals(key)) {
+            if (!MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The floor must be an amount with up to two decimals.");
+            }
+            value = new BigDecimal(value).setScale(2).toPlainString();
+        } else if (!value.isEmpty()) {
             if (!MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The clerk limit must be blank or an amount with up to two decimals.");
             }

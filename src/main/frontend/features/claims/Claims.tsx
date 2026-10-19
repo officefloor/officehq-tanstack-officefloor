@@ -5,7 +5,8 @@ import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
-import { NA, due } from '../rates/Rates';
+import { NA, due, toHundredths } from '../rates/Rates';
+import { useFloor } from '../settings/Settings';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
@@ -62,9 +63,12 @@ const toCents = (amount: string) => {
 export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
 
 /** A claim's figure: the due fixed when it was settled, else the figure a statement bound it to, else
- *  its live due at `pct` (n/a without one). */
-export const claimDue = (c: Claim, pct: string | undefined): string =>
-  c.settledDue ?? (c.stated ? c.statedDue ?? NA : due(c.amount, pct));
+ *  its live due at `pct`, at least the sheet's `floor` (n/a without a rate). */
+export const claimDue = (c: Claim, pct: string | undefined, floor: string): string =>
+  c.settledDue ?? (c.stated ? c.statedDue ?? NA : atLeast(due(c.amount, pct), floor));
+
+const atLeast = (value: string, floor: string) =>
+  value !== NA && toHundredths(value) < toHundredths(floor) ? floor : value;
 
 /** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
 export const hasFixedDue = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null);
@@ -115,6 +119,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const period = periodOf(usePeriods(sheet), c.date);
+  const floor = useFloor(sheet);
   const change = useMutation({
     mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
@@ -130,7 +135,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
-      Due <span data-testid="claim-due">{claimDue(c, pct)}</span>{' '}
+      Due <span data-testid="claim-due">{claimDue(c, pct, floor)}</span>{' '}
       Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => {
         change.reset();

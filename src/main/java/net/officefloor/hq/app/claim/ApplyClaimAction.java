@@ -6,6 +6,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Floor;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  Publishes the number the audit line carries. */
 public class ApplyClaimAction {
     public void apply(@Val ClaimAction action, @Val Claim claim, ClaimRepository repository,
-            PersonRepository people, RateRepository rates, Out<ClaimNumber> numberOut,
+            PersonRepository people, RateRepository rates, Floor floor, Out<ClaimNumber> numberOut,
             @RequestParam(value = "user", required = false) String user)
             throws InvalidClaimStatusException {
         if (!action.allowedFrom(claim.getStatus())) {
@@ -34,17 +35,17 @@ public class ApplyClaimAction {
                 claim.setNumber(repository.nextNumber(claim.getSheetId()));
                 claim.setOpenedBy(user);
             }
-            case SETTLE -> claim.setSettledDue(claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates));
+            case SETTLE -> claim.setSettledDue(claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates, floor));
             default -> { }
         }
         numberOut.set(new ClaimNumber(claim.getNumber()));
     }
 
-    /** amount × pct / 100, rounded half to even to two decimals; null when no rate is in force on the claim's date. */
-    private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
+    /** amount × pct / 100, rounded half to even to two decimals and at least the floor; null when no rate is in force on the claim's date. */
+    private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates, Floor floor) {
         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
-        return Rate.inForce(rates.findBySheet(claim.getSheetId()), person.getGrade(), claim.getDate())
+        return Floor.raise(Rate.inForce(rates.findBySheet(claim.getSheetId()), person.getGrade(), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
-                .orElse(null);
+                .orElse(null), floor.of(claim.getSheetId()));
     }
 }

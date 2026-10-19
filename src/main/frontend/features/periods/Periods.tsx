@@ -6,6 +6,7 @@ import { useCurrentUser } from '../session/SignIn';
 import { claimDue, counts, useClaims } from '../claims/Claims';
 import { usePeople } from '../people/People';
 import { rateOn, total, useRates } from '../rates/Rates';
+import { useFloor } from '../settings/Settings';
 import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './usePeriods';
 
 // The sheet's periods, added here, each with its due-total: the figures of the claims that count
@@ -17,12 +18,13 @@ export function Periods({ sheet }: { sheet: string }) {
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const floor = useFloor(sheet);
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
   const held = new Set(people.filter((p) => p.held).map((p) => p.id));
   const dueTotalOf = (period: Period) =>
     total(claims
       .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && gradeOf.has(c.personId))
-      .map((c) => claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date))));
+      .map((c) => claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor)));
 
   return (
     <section>

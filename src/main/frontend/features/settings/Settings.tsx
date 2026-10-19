@@ -6,16 +6,32 @@ import { useCurrentUser } from '../session/SignIn';
 
 // The sheet's settings and roles. The clerk limit (two decimals; blank: no limit) is the highest due
 // a clerk may settle; a steward settles anything. Every user name is a clerk unless assigned steward
-// here. The server enforces both when a claim is settled.
+// here. The server enforces both when a claim is settled. The floor (two decimals, 1.00 until set) is
+// the least live due a claim has; see `claimDue`.
 type Setting = { key: string; value: string };
 type Role = { user: string; role: string };
 
-const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }];
+const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }, { key: 'floor', label: 'Floor' }];
+
+const DEFAULT_FLOOR = '1.00';
 
 const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'];
 const settingsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/settings`;
 const rolesKey = (sheet: string) => ['sheet', sheet, 'roles'];
 const rolesPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/roles`;
+
+function useSettings(sheet: string): Setting[] {
+  return useQuery({
+    queryKey: settingsKey(sheet),
+    queryFn: () => getJson<Setting[]>(settingsPath(sheet)),
+    enabled: !!sheet,
+  }).data ?? [];
+}
+
+/** The sheet's floor: the least live due a claim has, with two decimals. */
+export function useFloor(sheet: string): string {
+  return useSettings(sheet).find((s) => s.key === 'floor')?.value || DEFAULT_FLOOR;
+}
 
 export function Settings({ sheet }: { sheet: string }) {
   return (
@@ -29,11 +45,7 @@ export function Settings({ sheet }: { sheet: string }) {
 
 function SettingsForm({ sheet }: { sheet: string }) {
   const queryClient = useQueryClient();
-  const current = useQuery({
-    queryKey: settingsKey(sheet),
-    queryFn: () => getJson<Setting[]>(settingsPath(sheet)),
-    enabled: !!sheet,
-  }).data ?? [];
+  const current = useSettings(sheet);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
@@ -55,7 +67,8 @@ function SettingsForm({ sheet }: { sheet: string }) {
         e.preventDefault();
         submitOnce(() => {
           save.reset();
-          // A value that is not blank or an amount with up to two decimals is refused by the server (400).
+          // A value that is not blank or an amount with up to two decimals is refused by the server (400);
+          // the floor may not be blank.
           return save.mutateAsync(Object.fromEntries(Object.entries(draft).map(([k, v]) => [k, v.trim()])));
         });
       }}
@@ -71,6 +84,13 @@ function SettingsForm({ sheet }: { sheet: string }) {
               onChange={(e) => {
                 save.reset();
                 setDraft((d) => ({ ...d, [key]: e.target.value }));
+              }}
+              // Deleting in the (empty) field also marks the setting as changed, so it can be cleared.
+              onKeyDown={(e) => {
+                if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+                const value = e.currentTarget.value;
+                save.reset();
+                setDraft((d) => (key in d ? d : { ...d, [key]: value }));
               }}
             />
           </label>{' '}
