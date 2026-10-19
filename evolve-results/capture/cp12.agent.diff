@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/claims/Claims.tsx b/src/main/frontend/features/claims/Claims.tsx
+index d012801..43f693b 100644
+--- a/src/main/frontend/features/claims/Claims.tsx
++++ b/src/main/frontend/features/claims/Claims.tsx
+@@ -46,7 +46,10 @@ const toCents = (amount: string) => {
+ };
+ 
+ /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
+-const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
++export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
++
++/** A claim's figure: the due fixed when it was settled, else its live due at `pct` (n/a without one). */
++export const claimDue = (c: Claim, pct: string | undefined): string => c.settledDue ?? due(c.amount, pct);
+ 
+ /** The counted claims' amounts added up, with two decimals. */
+ export function claimed(claims: Claim[]): string {
+@@ -105,7 +108,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
+       <span data-testid="claim-date">{c.date}</span>{' '}
+       <span data-testid="claim-note">{c.note}</span>{' '}
+       <span data-testid="claim-status">{c.status}</span>{' '}
+-      Due <span data-testid="claim-due">{c.settledDue ?? due(c.amount, pct)}</span>{' '}
++      Due <span data-testid="claim-due">{claimDue(c, pct)}</span>{' '}
+       <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
+         Edit
+       </button>
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index f22021b..1a3290d 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, getJson, postJson, putJson } from '../../api/http';
+ import { asNumber, useSearchParam } from '../../url/useSearchParam';
+ import { useCurrentUser } from '../session/SignIn';
+-import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
+-import { due, rateOn, total, useRates } from '../rates/Rates';
++import { ClaimedTotal, PersonClaims, claimDue, claimed, counts, useClaims } from '../claims/Claims';
++import { NA, rateOn, total, useRates } from '../rates/Rates';
+ import { useSheetToday } from '../sheet/SheetToday';
+ 
+ // The people on the sheet, in the order they were added. One form adds a person, or edits the
+@@ -38,9 +38,14 @@ export function People({ sheet }: { sheet: string }) {
+   const rates = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
+-  // A person's due-total is on their claimed total, not the sum of their claims' rounded dues, at the
+-  // rate in force on the sheet's today.
+-  const dueTotalOf = (p: Person) => due(claimed(claimsOf(p)), rateOn(rates, p.grade, today));
++  // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
++  // It is n/a when their grade has no rate on the sheet's today, unless a counted settled claim keeps
++  // a figure: then it is the sum of the figures there are.
++  const dueTotalOf = (p: Person) => {
++    const counted = claimsOf(p).filter(counts);
++    if (rateOn(rates, p.grade, today) === undefined && !counted.some((c) => c.settledDue !== null)) return NA;
++    return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date))));
++  };
+ 
+   return (
+     <section>
+diff --git a/src/main/frontend/features/rates/Rates.tsx b/src/main/frontend/features/rates/Rates.tsx
+index 67e6d65..d88a557 100644
+--- a/src/main/frontend/features/rates/Rates.tsx
++++ b/src/main/frontend/features/rates/Rates.tsx
+@@ -49,11 +49,14 @@ export const toHundredths = (value: string): bigint => {
+ export const fromHundredths = (h: bigint): string =>
+   `${h / 100n}.${String(h % 100n).padStart(2, '0')}`;
+ 
+-/** amount × pct / 100, rounded half up to two decimals; n/a without a rate. Amounts are never negative. */
++/** amount × pct / 100, rounded half to even to two decimals; n/a without a rate. Amounts are never negative. */
+ export function due(amount: string, pct: string | undefined): string {
+   if (pct === undefined) return NA;
+   // cents × hundredths-of-a-percent gives cents × 10000.
+-  return fromHundredths((toHundredths(amount) * toHundredths(pct) + 5000n) / 10000n);
++  const scaled = toHundredths(amount) * toHundredths(pct);
++  const cents = scaled / 10000n;
++  const rest = scaled % 10000n;
++  return fromHundredths(rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents);
+ }
+ 
+ /** Two-decimal values added up, skipping n/a. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index f2b7369..5cfc5df 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -32,11 +32,11 @@ public class ApplyClaimAction {
+         numberOut.set(new ClaimNumber(action == ClaimAction.VOID ? had : claim.getNumber()));
+     }
+ 
+-    /** amount × pct / 100, rounded half up to two decimals; null when no rate is in force on the claim's date. */
++    /** amount × pct / 100, rounded half to even to two decimals; null when no rate is in force on the claim's date. */
+     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
+         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
+         return Rate.inForce(rates.findBySheet(claim.getSheetId()), person.getGrade(), claim.getDate())
+-                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
++                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                 .orElse(null);
+     }
+ }
