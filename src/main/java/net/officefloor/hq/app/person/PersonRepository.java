@@ -20,7 +20,6 @@ public class PersonRepository {
                 rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
                 rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate());
         person.setRetiredFrom(rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate());
-        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -31,12 +30,12 @@ public class PersonRepository {
     }
 
     public List<Person> findBySheet(String sheetId) {
-        return withGrades(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId)));
+        return withHolds(sheetId, withGrades(sheetId, withPatrons(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId))));
     }
 
     public Person findById(String sheetId, long id) {
-        List<Person> found = withGrades(sheetId, withPatrons(sheetId,
-                jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)));
+        List<Person> found = withHolds(sheetId, withGrades(sheetId, withPatrons(sheetId,
+                jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))));
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -78,6 +77,25 @@ public class PersonRepository {
         return people;
     }
 
+    private record HoldLink(long personId, Hold hold) {
+    }
+
+    /** Fills in each person's holds, in the order they were added. */
+    private List<Person> withHolds(String sheetId, List<Person> people) {
+        if (people.isEmpty()) return people;
+        Map<Long, List<Hold>> holds = jdbc.query(
+                "SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY id",
+                (rs, i) -> new HoldLink(rs.getLong("person_id"), new Hold(
+                        rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate(),
+                        rs.getDate("to_date") == null ? null : rs.getDate("to_date").toLocalDate())), sheetId).stream()
+                .collect(Collectors.groupingBy(HoldLink::personId,
+                        Collectors.mapping(HoldLink::hold, Collectors.toList())));
+        for (Person person : people) {
+            person.setHolds(holds.getOrDefault(person.getId(), List.of()));
+        }
+        return people;
+    }
+
     /** Stores the person's dated grades, replacing the ones stored. */
     private void saveGrades(Person person) {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", person.getSheetId(), person.getId());
@@ -104,8 +122,8 @@ public class PersonRepository {
 
     /** The person on the sheet with this name, ignoring case; null when there is none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = withGrades(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
-                ROW, sheetId, name));
+        List<Person> found = withHolds(sheetId, withGrades(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
+                ROW, sheetId, name)));
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -158,9 +176,10 @@ public class PersonRepository {
                 Date.valueOf(person.getRetiredFrom()), person.getSheetId(), person.getId());
     }
 
-    /** Stores whether the person is on hold. Holding is not an edit, so the version stays. */
-    public void saveHeld(Person person) {
-        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?",
-                person.isHeld(), person.getSheetId(), person.getId());
+    /** Stores a hold added to the person. Holding is not an edit, so the version stays. */
+    public void addHold(Person person, Hold hold) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), hold.from() == null ? null : Date.valueOf(hold.from()),
+                hold.to() == null ? null : Date.valueOf(hold.to()));
     }
 }

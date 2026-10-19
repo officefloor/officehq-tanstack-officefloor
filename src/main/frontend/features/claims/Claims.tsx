@@ -80,9 +80,17 @@ export function useClaims(sheet: string): Claim[] {
 /** Whether the claim is open: OPEN, or PENDING (handled like OPEN in every total). */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total; the open claims
- *  of a person on hold (`held`) count in none. */
-export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (isOpen(c) && !held);
+/** One hold on a person: from its from-date (null: the beginning of time) to its to-date (null:
+ *  open-ended), both included. */
+export type Hold = { from: string | null; to: string | null };
+
+/** Whether the date (yyyy-MM-dd) falls within the hold. */
+export const covers = (h: Hold, date: string) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to);
+
+/** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total; an open claim
+ *  dated within one of its person's holds (`holds`) counts in none, unless a statement binds it. */
+export const counts = (c: Claim, holds: Hold[] = []) =>
+  c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !holds.some((h) => covers(h, c.date))));
 
 /** Whether the statement binding holds now: stated, and not PENDING (which follows its live figure). */
 const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
@@ -132,16 +140,16 @@ export const hasFixedDue = (c: Claim) => c.settledDue !== null || (isBound(c) &&
 export const isOverdue = (c: Claim, today: string | undefined) =>
   isOpen(c) && !!today && c.dueBy < today;
 
-/** The counted claims' amounts added up, with two decimals; `held` says whose person is on hold. */
-export function claimed(claims: Claim[], held: (personId: number) => boolean = () => false): string {
-  return fromHundredths(claims.filter((c) => counts(c, held(c.personId))).reduce((sum, c) => sum + toHundredths(c.amount), 0n));
+/** The counted claims' amounts added up, with two decimals; `holds` gives each person's holds. */
+export function claimed(claims: Claim[], holds: (personId: number) => Hold[] = () => []): string {
+  return fromHundredths(claims.filter((c) => counts(c, holds(c.personId))).reduce((sum, c) => sum + toHundredths(c.amount), 0n));
 }
 
-export function ClaimedTotal({ sheet, held }: { sheet: string; held: (personId: number) => boolean }) {
+export function ClaimedTotal({ sheet, holds }: { sheet: string; holds: (personId: number) => Hold[] }) {
   const claims = useClaims(sheet);
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims, held)}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims, holds)}</strong>
     </p>
   );
 }

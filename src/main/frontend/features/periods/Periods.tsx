@@ -10,7 +10,7 @@ import { useFloor } from '../settings/Settings';
 import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './usePeriods';
 
 // The sheet's periods, added here, each with its due-total: the figures of the claims that count
-// (not a held person's OPEN or PENDING claims)
+// (not an OPEN or PENDING claim dated within one of its person's holds, unless a statement binds it)
 // whose date falls in it, each at the rate in force on its date of its person's grade in force on that date, skipping n/a.
 // A closed period shows the due-total it was closed at instead, whatever rates do later, until a steward reopens it.
 export function Periods({ sheet }: { sheet: string }) {
@@ -52,10 +52,9 @@ export function usePeriodDueTotal(sheet: string): (period: Period) => string {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const personOf = new Map(people.map((p) => [p.id, p]));
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
   return (period: Period) =>
     period.closed && period.closedTotal != null ? period.closedTotal : total(claims
-      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && personOf.has(c.personId))
+      .filter((c) => counts(c, personOf.get(c.personId)?.holds) && inPeriod(period, c.date) && personOf.has(c.personId))
       .map((c) => claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late)));
 }
 

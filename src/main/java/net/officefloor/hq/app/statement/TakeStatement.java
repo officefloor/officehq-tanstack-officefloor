@@ -21,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes a statement for the person: works out their due-total as the screen shows it, binds each of
  * their claims that counts (OPEN, PENDING or SETTLED) to the figure it has now (a PENDING claim's live one), unbinds the rest
- * (leaving a held person's OPEN claims, which count in no total, as they are), and moves
+ * (leaving a held person's unbound OPEN and PENDING claims dated within a hold, which count in no total, as they are), and moves
  * the person's statement count, last due-total and date (the sheet's today) on.
  *
  * A claim's figure is its settled due, else the figure a statement bound it to, else its live due at
@@ -44,8 +44,8 @@ public class TakeStatement {
         int counted = 0;
         for (Claim claim : claims.findByPerson(sheetId, person.getId())) {
             boolean counts = claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED;
-            if (counts && !person.counts(claim.getStatus())) {
-                continue;           // a held person's OPEN or PENDING claim: in no total, and left as it is
+            if (counts && !person.counts(claim)) {
+                continue;           // an unbound OPEN or PENDING claim dated within a hold: in no total, and left as it is
             } else if (!counts) {
                 claim.setStated(false);
                 claim.setStatedDue(null);

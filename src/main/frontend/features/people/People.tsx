@@ -4,7 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { BulkOpen, ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, isOverdue, useClaims, useLate } from '../claims/Claims';
+import { BulkOpen, ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, isOverdue, useClaims, useLate, type Hold } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
 import { useFloor } from '../settings/Settings';
@@ -13,8 +13,9 @@ import { useFloor } from '../settings/Settings';
 // person whose editor is open (URL state `editPerson`, the person's id).
 // A statement taken for a person records their due-total and binds their counting claims' figures.
 // A retired person's row is left out unless "show retired" (URL state `showRetired`) is on; their
-// claims keep counting in every total. A person on hold keeps their SETTLED claims in every total,
-// but their OPEN and PENDING claims count in none.
+// claims keep counting in every total. A person may have several holds over time, each from a date (blank:
+// the sheet's today) to an optional to-date; their OPEN and PENDING claims dated within a hold count in
+// no total unless a statement binds them, and their other claims count. There is no release: a hold ends on its to-date.
 // A person may name other people on the sheet as their patrons; their backing is their patrons'
 // due-totals added up, skipping n/a (0.00 with no patrons).
 export type Person = { id: number; name: string;
@@ -33,8 +34,10 @@ export type Person = { id: number; name: string;
   retired: boolean;
   /** The date the person is retired from; null when they are not retired. */
   retiredFrom: string | null;
-  /** Whether the person is on hold: their OPEN and PENDING claims count in no total. */
+  /** Whether the person has any hold. */
   held: boolean;
+  /** The person's holds, in the order they were added. */
+  holds: Hold[];
   /** The names of the other people the person has named as their patrons, sorted. */
   patrons: string[] };
 
@@ -97,7 +100,7 @@ export function useDueTotalOf(sheet: string): (p: Person) => string {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   return (p: Person) => {
-    const dues = claims.filter((c) => c.personId === p.id && counts(c, p.held))
+    const dues = claims.filter((c) => c.personId === p.id && counts(c, p.holds))
       .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late));
     if (rateOn(rates, gradeOn(p, today), today) === undefined && dues.every((d) => d === NA)) return NA;
     return total(dues);
@@ -144,12 +147,12 @@ export function People({ sheet }: { sheet: string }) {
   const floor = useFloor(sheet);
   const late = useLate(sheet);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
-  const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
+  const holdsOf = (personId: number) => people.find((p) => p.id === personId)?.holds ?? [];
   const dueTotalOf = useDueTotalOf(sheet);
   // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
   // their figures, skipping n/a.
   const overdueOf = (p: Person) =>
-    claimsOf(p).filter((c) => counts(c, p.held) && isOverdue(c, today));
+    claimsOf(p).filter((c) => counts(c, p.holds) && isOverdue(c, today));
   const backingOf = (p: Person) =>
     total(people.filter((o) => p.patrons.includes(o.name)).map(dueTotalOf));
   const overdueTotalOf = (p: Person) =>
@@ -191,7 +194,7 @@ export function People({ sheet }: { sheet: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{gradeOn(p, today)}</td>
-              <td data-testid="person-claimed">{claimed(claimsOf(p), isHeld)}</td>
+              <td data-testid="person-claimed">{claimed(claimsOf(p), holdsOf)}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
               <td data-testid="person-overdue-count">{overdueOf(p).length}</td>
               <td data-testid="person-overdue-total">{overdueTotalOf(p)}</td>
@@ -211,7 +214,7 @@ export function People({ sheet }: { sheet: string }) {
           ))}
         </tbody>
       </table>
-      <ClaimedTotal sheet={sheet} held={isHeld} />
+      <ClaimedTotal sheet={sheet} holds={holdsOf} />
       <p>
         Due total: <strong data-testid="rollup-due-total">{total(people.map(dueTotalOf))}</strong>
       </p>
@@ -226,8 +229,8 @@ export function People({ sheet }: { sheet: string }) {
 
 /** The person's statements (how many, the last one's due-total and date, and the button that takes
  *  one) and their retirement (yes/no, the date, and the control that retires them from a date; blank
- *  is the sheet's today), and their hold (yes/no, and the button that puts them on hold or takes
- *  them off it), and their patrons (the names, and the control that names another person on the sheet
+ *  is the sheet's today), and their holds (yes/no for any hold, a line for each, and the control that adds
+ *  one from a date, blank for the sheet's today, to an optional to-date), and their patrons (the names, and the control that names another person on the sheet
  *  as one: the person themselves and those already named are not offered). A refused action shows
  *  the row's error, which the row's next action clears. */
 function PersonActions({ sheet, person: p, people }: { sheet: string; person: Person; people: Person[] }) {
@@ -235,6 +238,8 @@ function PersonActions({ sheet, person: p, people }: { sheet: string; person: Pe
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const [retireFrom, setRetireFrom] = useState('');
+  const [holdFrom, setHoldFrom] = useState('');
+  const [holdTo, setHoldTo] = useState('');
   const [patronId, setPatronId] = useState('');
   const offered = people.filter((o) => o.id !== p.id && !p.patrons.includes(o.name));
   const refetch = () => Promise.all([
@@ -253,8 +258,12 @@ function PersonActions({ sheet, person: p, people }: { sheet: string; person: Pe
     },
   });
   const hold = useMutation({
-    mutationFn: () => postJson<Person>(`${peoplePath(sheet)}/${p.id}/hold${by}`, {}),
-    onSuccess: refetch,
+    mutationFn: (h: { from: string; to: string }) => postJson<Person>(`${peoplePath(sheet)}/${p.id}/hold${by}`, h),
+    onSuccess: async () => {
+      await refetch();
+      setHoldFrom('');
+      setHoldTo('');
+    },
   });
   const patron = useMutation({
     mutationFn: (id: number | null) => postJson<Person>(`${peoplePath(sheet)}/${p.id}/patrons${by}`, { patronId: id }),
@@ -295,15 +304,24 @@ function PersonActions({ sheet, person: p, people }: { sheet: string; person: Pe
             {' '}
             {(failed.error instanceof HttpError && failed.error.reason)
               || (failed === take ? 'The statement could not be taken.'
-                : failed === hold ? 'The hold could not be changed.' : 'The person could not be retired.')}
+                : failed === hold ? 'The hold could not be added.' : 'The person could not be retired.')}
           </span>
         )}
       </td>
       <td>
         <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}
+        <ul>
+          {p.holds.map((h, i) => (
+            <li key={i} data-testid="person-hold-line">from {h.from ?? 'the start'}{h.to ? ` to ${h.to}` : ''}</li>
+          ))}
+        </ul>
+        from <input type="date" data-testid="person-hold-from" value={holdFrom}
+          onChange={(e) => { reset(); setHoldFrom(e.target.value); }} />{' '}
+        to <input type="date" data-testid="person-hold-to" value={holdTo}
+          onChange={(e) => { reset(); setHoldTo(e.target.value); }} />{' '}
         <button type="button" data-testid="person-hold-toggle" disabled={hold.isPending}
-          onClick={() => { reset(); hold.mutate(); }}>
-          {p.held ? 'Release' : 'Hold'}
+          onClick={() => { reset(); hold.mutate({ from: holdFrom, to: holdTo }); }}>
+          Hold
         </button>
       </td>
       <td>

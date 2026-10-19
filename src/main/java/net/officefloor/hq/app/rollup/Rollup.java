@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
  * The sheet's figures as the screen shows them: each person's claimed and due-total, in the order
  * they were added, and the sheet's claimed-total and due-total.
  *
- * Only OPEN, PENDING and SETTLED claims count, and a held person's OPEN and PENDING claims do not. A claim's figure is its settled due, else the figure a statement
+ * Only OPEN, PENDING and SETTLED claims count, and a person's OPEN and PENDING claims dated within one of their holds do not, unless bound by a statement. A claim's figure is its settled due, else the figure a statement
  * bound it to (never while PENDING), else its live due at the person's grade's rate in force on its date, at least the sheet's floor
  * (n/a without a rate), plus the late charge of an overdue OPEN or PENDING claim (see {@link LatePct}), each rounded by the
  * claim's rounding (see {@link PolicyDate}).
@@ -86,7 +86,7 @@ public class Rollup {
             boolean figured = false;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (!person.counts(claim.getStatus())) continue;
+                if (!person.counts(claim)) continue;
                 claimed = claimed.add(claim.getAmount());
                 RoundingMode mode = policy.modeFor(claim);
                 BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least, mode), mode);
@@ -115,7 +115,7 @@ public class Rollup {
         for (Person person : people.findBySheet(sheetId)) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (!person.counts(claim.getStatus())) continue;
+                if (!person.counts(claim)) continue;
                 if (claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) continue;
                 RoundingMode mode = policy.modeFor(claim);
                 BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least, mode), mode);
