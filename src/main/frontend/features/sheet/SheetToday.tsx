@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
+import { useCurrentUser } from '../session/SignIn';
 
 // The sheet's "today" (yyyy-MM-dd). It starts as the real date and is changed here. Anything that
 // depends on the date, or defaults a date, reads it with useSheetToday — never the browser clock.
@@ -22,9 +23,11 @@ export function SheetToday({ sheet }: { sheet: string }) {
   const today = useSheetToday(sheet);
   const queryClient = useQueryClient();
   const [date, setDate] = useState('');
+  const [user] = useCurrentUser();
   const submitOnce = useSingleSubmit();
   const save = useMutation({
-    mutationFn: (value: string) => putJson<Today>(todayPath(sheet), { today: value }),
+    mutationFn: (value: string) =>
+      putJson<Today>(`${todayPath(sheet)}?user=${encodeURIComponent(user ?? '')}`, { today: value }),
     onSuccess: (saved) => {
       queryClient.setQueryData(todayKey(sheet), saved);
       void queryClient.invalidateQueries({ queryKey: ['sheet', sheet] });
