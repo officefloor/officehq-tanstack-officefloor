@@ -17,6 +17,7 @@ public class ValidatePerson {
         if (grade == null || !GRADES.contains(grade)) {
             throw new InvalidPersonException("The grade must be A, B or C.");
         }
-        body.set(new PersonRequest(name, grade));
+        // Stored without surrounding spaces.
+        body.set(new PersonRequest(name.strip(), grade));
     }
 }

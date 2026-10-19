@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJson, postJson, putJson } from '../../api/http';
+import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
@@ -88,7 +88,7 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
       onSubmit={(e) => {
         e.preventDefault();
         save.reset();
-        // A blank name is refused by the server (400), which shows the form's error.
+        // A blank or already-used name is refused by the server (400), which shows the form's error.
         save.mutate({ name, grade });
       }}
     >
@@ -130,7 +130,9 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
       )}
       {save.isError && (
         <span role="alert" data-testid="person-form-error">
-          {' '}A name is required.
+          {' '}
+          {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
+            || 'The person could not be saved.'}
         </span>
       )}
     </form>

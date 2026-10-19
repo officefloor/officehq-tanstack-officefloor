@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -30,11 +29,19 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether a person on the sheet other than {@code exceptId} (null: none) has this name, ignoring case. */
+    public boolean nameInUse(String sheetId, String name, Long exceptId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND (? IS NULL OR id <> ?)",
+                Integer.class, sheetId, name, exceptId, exceptId);
+        return count != null && count > 0;
+    }
+
     public Person create(String sheetId, String name, String grade) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] {"id"});
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
