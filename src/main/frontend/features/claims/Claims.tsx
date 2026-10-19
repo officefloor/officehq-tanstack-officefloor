@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
+import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
@@ -143,6 +144,7 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
   const [note, setNote] = useState(editing?.note ?? '');
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const submitOnce = useSingleSubmit();
   const save = useMutation({
     mutationFn: (body: ClaimBody) =>
       editing
@@ -168,9 +170,11 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        // A missing, negative or over-precise amount is refused by the server (400).
-        save.mutate({ amount, date: date ?? '', note });
+        submitOnce(() => {
+          save.reset();
+          // A missing, negative or over-precise amount is refused by the server (400).
+          return save.mutateAsync({ amount, date: date ?? '', note });
+        });
       }}
     >
       <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={amount}

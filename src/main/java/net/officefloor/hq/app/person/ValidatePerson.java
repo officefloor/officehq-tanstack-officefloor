@@ -18,6 +18,6 @@ public class ValidatePerson {
             throw new InvalidPersonException("The grade must be A, B or C.");
         }
         // Stored without surrounding spaces.
-        body.set(new PersonRequest(name.strip(), grade));
+        body.set(new PersonRequest(name.strip(), grade, request.version()));
     }
 }

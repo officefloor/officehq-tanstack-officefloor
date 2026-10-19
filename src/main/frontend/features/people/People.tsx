@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
+import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { ClaimedTotal, PersonClaims, claimDue, claimed, counts, useClaims } from '../claims/Claims';
@@ -9,7 +10,7 @@ import { useSheetToday } from '../sheet/SheetToday';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
-export type Person = { id: number; name: string; grade: string };
+export type Person = { id: number; name: string; grade: string; version: number };
 
 const GRADES = ['A', 'B', 'C'];
 
@@ -33,6 +34,8 @@ function useEditPerson() {
 export function People({ sheet }: { sheet: string }) {
   const people = usePeople(sheet);
   const [editId, setEditId] = useEditPerson();
+  // Counts each press of an Edit button, so opening the editor again reloads it with the current values.
+  const [opened, setOpened] = useState(0);
   const editing = people.find((p) => p.id === editId);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
@@ -50,8 +53,8 @@ export function People({ sheet }: { sheet: string }) {
   return (
     <section>
       <h2>People</h2>
-      {/* Keyed so opening another person's editor (or closing it) refills the form. */}
-      <PersonForm key={editing ? `edit-${editing.id}` : 'add'} sheet={sheet} editing={editing}
+      {/* Keyed so opening a person's editor (again) or closing it refills the form. */}
+      <PersonForm key={editing ? `edit-${editing.id}-${opened}` : 'add'} sheet={sheet} editing={editing}
         onDone={() => setEditId(undefined)} />
       <table>
         <thead>
@@ -76,7 +79,7 @@ export function People({ sheet }: { sheet: string }) {
                   pctOn={(date) => rateOn(rates, p.grade, date)} />
               </td>
               <td>
-                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditId(p.id)}>
+                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => { setOpened((n) => n + 1); setEditId(p.id); }}>
                   Edit
                 </button>
               </td>
@@ -96,10 +99,14 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
   const queryClient = useQueryClient();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  // The version of the person the editor loaded; the server refuses the save (409) when someone
+  // else has saved the person since.
+  const [version, setVersion] = useState(editing?.version);
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const submitOnce = useSingleSubmit();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: string }) =>
+    mutationFn: (body: { name: string; grade: string; version?: number }) =>
       editing
         ? putJson<Person>(`${peoplePath(sheet)}/${editing.id}${by}`, body)
         : postJson<Person>(`${peoplePath(sheet)}${by}`, body),
@@ -112,15 +119,28 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
         setGrade('A');
       }
     },
+    onError: (error) => {
+      if (!(editing && error instanceof HttpError && error.status === 409)) return;
+      // Someone else saved the person: re-read the sheet and show the current values in the form.
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }).then(() => {
+        const current = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((p) => p.id === editing.id);
+        if (!current) return;
+        setName(current.name);
+        setGrade(current.grade);
+        setVersion(current.version);
+      });
+    },
   });
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        // A blank or already-used name is refused by the server (400), which shows the form's error.
-        save.mutate({ name, grade });
+        submitOnce(() => {
+          save.reset();
+          // A blank or already-used name is refused by the server (400), which shows the form's error.
+          return save.mutateAsync({ name, grade, version });
+        });
       }}
     >
       <label>
@@ -162,7 +182,7 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
       {save.isError && (
         <span role="alert" data-testid="person-form-error">
           {' '}
-          {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
+          {(save.error instanceof HttpError && (save.error.status === 400 || save.error.status === 409) && save.error.reason)
             || 'The person could not be saved.'}
         </span>
       )}

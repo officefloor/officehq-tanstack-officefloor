@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, putJson } from '../../api/http';
+import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
 
@@ -116,6 +117,7 @@ function RateForm({ sheet }: { sheet: string }) {
   const [from, setFrom] = useState('');
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const submitOnce = useSingleSubmit();
   const save = useMutation({
     mutationFn: (body: { grade: string; pct: string; from: string }) =>
       putJson<Rate>(`${ratesPath(sheet)}/${encodeURIComponent(body.grade)}${by}`, { pct: body.pct, from: body.from }),
@@ -130,10 +132,12 @@ function RateForm({ sheet }: { sheet: string }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        // A missing, out-of-range or over-precise percent, or a from-date that is not a date, is
-        // refused by the server (400). A blank from-date sets the rate in force from the beginning.
-        save.mutate({ grade, pct, from: from.trim() });
+        submitOnce(() => {
+          save.reset();
+          // A missing, out-of-range or over-precise percent, or a from-date that is not a date, is
+          // refused by the server (400). A blank from-date sets the rate in force from the beginning.
+          return save.mutateAsync({ grade, pct, from: from.trim() });
+        });
       }}
     >
       <label>
