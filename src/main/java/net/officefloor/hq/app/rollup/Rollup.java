@@ -125,6 +125,16 @@ public class Rollup {
         return sum.setScale(2, RoundingMode.HALF_EVEN);
     }
 
+    /** The claim's figure as the screen shows it now, as text with two decimals (n/a without a rate). */
+    public String figureOf(Claim claim) {
+        String sheetId = claim.getSheetId();
+        Person person = people.findById(sheetId, claim.getPersonId());
+        RoundingMode mode = policyDate.of(sheetId).modeFor(claim);
+        BigDecimal figure = latePct.of(sheetId).addTo(claim,
+                figure(claim, person, rates.findBySheet(sheetId), floor.of(sheetId), mode), mode);
+        return figure == null ? NA : text(figure);
+    }
+
     /** The ROLLUP lines for each person whose figures moved since {@code before} (a new person counts
      *  as moved), then a TOTALS line when the sheet's totals moved. */
     public List<String> changes(String sheetId, String user, Snapshot before, Snapshot after) {

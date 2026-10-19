@@ -21,12 +21,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Opens each selected claim in list order (people in the order they were added, each person's claims
  *  newest first), so their numbers follow that order. Each is opened by the same rules, and writes the same
- *  audit lines, as opening it alone; one those rules refuse (or not on the sheet) is left as it is. */
+ *  audit lines and status log line, as opening it alone; one those rules refuse (or not on the sheet) is left as it is. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request,
             @RequestParam(value = "user", required = false) String user, ClaimRepository claims,
             PersonRepository people, PeriodRepository periods, RateRepository rates, Floor floor, LatePct latePct,
-            PolicyDate policyDate, ClaimNumbering numbering, RoleRepository roles, Rollup rollup, Audit audit, Out<BulkOpenResult> resultOut) {
+            PolicyDate policyDate, ClaimNumbering numbering, RoleRepository roles, Rollup rollup, ClaimLog log, Audit audit, Out<BulkOpenResult> resultOut) {
         Set<Long> selected = new HashSet<>(request.claimIds());
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         List<Claim> ordered = new ArrayList<>();
@@ -47,6 +47,7 @@ public class BulkOpenClaims {
                 continue;
             }
             claims.save(claim);
+            log.record(claim, user);
             new AuditClaimStatus().audit(ClaimAction.OPEN, claim, number[0], user, null, people, audit);
             rollup.changes(sheetId, user, before, rollup.take(sheetId)).forEach(audit::record);
             opened++;

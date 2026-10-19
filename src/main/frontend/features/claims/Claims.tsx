@@ -29,6 +29,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // opened is opened, numbered in list order; each that cannot is left as it is. The counts are shown.
 // A steward can move a DRAFT, OPEN or PENDING claim to another person on the sheet. It keeps its number and
 // date but loses any figure a statement bound it to: it follows its live figure at its new person's grade.
+// Each claim shows its status log (kept by the server): one line per status it has had, oldest first.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened, and kept if it is voided; null for a draft. */
@@ -45,7 +46,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   corrects: string | null;
   /** The day the claim is due by (yyyy-MM-dd): fixed when it was created, from the terms of its person's
    *  grade in force on its date; it does not change when the terms or its date change later. */
-  dueBy: string };
+  dueBy: string;
+  /** The claim's status log, oldest first: one line per status it has had, as
+   *  `<STATUS> by <user> on <date> due=<due>` (the sheet's today and the claim's due at that moment). */
+  log: string[] };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -292,6 +296,9 @@ function ClaimRow({ sheet, claim: c, pct, others, onEdit }: {
               || (move.error instanceof HttpError && move.error.reason) || 'The claim could not be changed.')}
         </span>
       )}
+      <ol>
+        {c.log.map((line, i) => <li key={i} data-testid="claim-log-line">{line}</li>)}
+      </ol>
     </li>
   );
 }
