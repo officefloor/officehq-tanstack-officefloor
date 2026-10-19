@@ -59,9 +59,9 @@ public class ClaimRepository {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?,"
+        jdbc.update("UPDATE claim SET person_id = ?, amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?,"
                 + " stated = ?, stated_due = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
+                claim.getPersonId(), claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.isStated(), claim.getStatedDue(), claim.getCorrects(), claim.getSheetId(), claim.getId());
     }
 

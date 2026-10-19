@@ -200,6 +200,7 @@ export function People({ sheet }: { sheet: string }) {
               <td data-testid="person-backing">{backingOf(p)}</td>
               <td>
                 <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
+                  others={people.filter((o) => o.id !== p.id)}
                   pctOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
               </td>
               <td>

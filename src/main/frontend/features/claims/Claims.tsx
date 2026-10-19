@@ -27,6 +27,8 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // same person that it corrects (the server refuses it otherwise). Its due has no floor and no late charge.
 // Claims can be selected (URL state `selectedClaims`, their ids) and opened together: each that can be
 // opened is opened, numbered in list order; each that cannot is left as it is. The counts are shown.
+// A steward can move a DRAFT, OPEN or PENDING claim to another person on the sheet. It keeps its number and
+// date but loses any figure a statement bound it to: it follows its live figure at its new person's grade.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened, and kept if it is voided; null for a draft. */
@@ -49,6 +51,9 @@ const ACTIONS = [
   { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
 ];
+
+/** Another person on the sheet, whom a claim can be moved to. */
+export type Other = { id: number; name: string };
 
 type ClaimBody = { amount: string; date: string; note: string; corrects: string };
 
@@ -143,8 +148,8 @@ export function ClaimedTotal({ sheet, held }: { sheet: string; held: (personId: 
 
 /** The claims cell of a person's row: the claim form and the person's claims, newest first, each
  *  with its due at the person's grade's rate in force on its date (`pctOn`, undefined when none is). */
-export function PersonClaims({ sheet, personId, claims, pctOn }: {
-  sheet: string; personId: number; claims: Claim[]; pctOn: (date: string) => string | undefined;
+export function PersonClaims({ sheet, personId, claims, others, pctOn }: {
+  sheet: string; personId: number; claims: Claim[]; others: Other[]; pctOn: (date: string) => string | undefined;
 }) {
   const [editId, setEditId] = useSearchParam('editClaim', asNumber);
   const editing = claims.find((c) => c.id === editId);
@@ -156,7 +161,7 @@ export function PersonClaims({ sheet, personId, claims, pctOn }: {
         editing={editing} onDone={() => setEditId(undefined)} />
       <ul>
         {claims.map((c) => (
-          <ClaimRow key={c.id} sheet={sheet} claim={c} pct={pctOn(c.date)} onEdit={() => setEditId(c.id)} />
+          <ClaimRow key={c.id} sheet={sheet} claim={c} pct={pctOn(c.date)} others={others} onEdit={() => setEditId(c.id)} />
         ))}
       </ul>
     </>
@@ -210,8 +215,8 @@ export function BulkOpen({ sheet }: { sheet: string }) {
   );
 }
 
-function ClaimRow({ sheet, claim: c, pct, onEdit }: {
-  sheet: string; claim: Claim; pct: string | undefined; onEdit: () => void;
+function ClaimRow({ sheet, claim: c, pct, others, onEdit }: {
+  sheet: string; claim: Claim; pct: string | undefined; others: Other[]; onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
   const [user] = useCurrentUser();
@@ -225,8 +230,16 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       + (action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : ''), {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
+  // The person the claim is to be moved to; the first other person until one is chosen.
+  const [moveTo, setMoveTo] = useState<number | undefined>(undefined);
+  const move = useMutation({
+    mutationFn: (personId: number | undefined) =>
+      putJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/person${by}`, { personId: personId ?? null }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
   // Why the last press of Edit was refused; null when it was not.
   const [editRefused, setEditRefused] = useState<string | null>(null);
+  const resetAll = () => { change.reset(); move.reset(); setEditRefused(null); };
   // Why a PENDING claim is rejected; sent with Reject.
   const [reason, setReason] = useState('');
   const [selected, setSelected] = useSelectedClaims();
@@ -249,6 +262,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       Corrects <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => {
         change.reset();
+        move.reset();
         // Only a draft dated outside every closed period can be edited (the server refuses the rest).
         const refused = c.status !== 'DRAFT'
           ? `Only a draft claim can be edited; this one is ${c.status}. To change it, void it and add a new one.`
@@ -259,18 +273,27 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
         Edit
       </button>
       <input data-testid="claim-reject-reason" placeholder="Reject reason" value={reason}
-        onChange={(e) => { change.reset(); setReason(e.target.value); }} />{' '}
+        onChange={(e) => { change.reset(); move.reset(); setReason(e.target.value); }} />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button key={action} type="button" data-testid={`claim-${action}`} disabled={change.isPending}
-          onClick={() => { change.reset(); setEditRefused(null); change.mutate(action); }}>
+          onClick={() => { resetAll(); change.mutate(action); }}>
           {label}
         </button>
       ))}
-      {(change.isError || editRefused) && (
+      <select data-testid="claim-reassign-to" value={moveTo ?? others[0]?.id ?? ''}
+        onChange={(e) => { resetAll(); setMoveTo(Number(e.target.value)); }}>
+        {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>{' '}
+      <button type="button" data-testid="claim-reassign" disabled={move.isPending}
+        onClick={() => { resetAll(); move.mutate(moveTo ?? others[0]?.id); }}>
+        Move
+      </button>
+      {(change.isError || move.isError || editRefused) && (
         <span role="alert" data-testid="claim-error">
           {' '}
           {editRefused
-            ?? ((change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.')}
+            ?? ((change.error instanceof HttpError && change.error.reason)
+              || (move.error instanceof HttpError && move.error.reason) || 'The claim could not be changed.')}
         </span>
       )}
     </li>
