@@ -11,11 +11,11 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
- *  Opening gives the claim the sheet's next number; voiding clears it. Settling fixes the claim's
+ *  Opening gives the claim the sheet's next number, which it keeps when voided. Settling fixes the claim's
  *  due at the person's grade's rate in force on the claim's date (none when there is none, so it stays live).
  *  A claim a statement binds is settled at its bound figure.
  *  The user who opened a claim may not settle it (four eyes).
- *  Publishes the number the audit line carries (for a void, the number the claim had). */
+ *  Publishes the number the audit line carries. */
 public class ApplyClaimAction {
     public void apply(@Val ClaimAction action, @Val Claim claim, ClaimRepository repository,
             PersonRepository people, RateRepository rates, Out<ClaimNumber> numberOut,
@@ -28,18 +28,16 @@ public class ApplyClaimAction {
         if (action == ClaimAction.SETTLE && claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it.");
         }
-        Integer had = claim.getNumber();
         claim.setStatus(action.to());
         switch (action) {
             case OPEN -> {
                 claim.setNumber(repository.nextNumber(claim.getSheetId()));
                 claim.setOpenedBy(user);
             }
-            case VOID -> claim.setNumber(null);
             case SETTLE -> claim.setSettledDue(claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates));
             default -> { }
         }
-        numberOut.set(new ClaimNumber(action == ClaimAction.VOID ? had : claim.getNumber()));
+        numberOut.set(new ClaimNumber(claim.getNumber()));
     }
 
     /** amount × pct / 100, rounded half to even to two decimals; null when no rate is in force on the claim's date. */
