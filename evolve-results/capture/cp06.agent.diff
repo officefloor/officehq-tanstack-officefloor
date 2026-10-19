@@ -1,0 +1,218 @@
+diff --git a/src/main/frontend/features/claims/Claims.tsx b/src/main/frontend/features/claims/Claims.tsx
+index 78308b6..cbb4168 100644
+--- a/src/main/frontend/features/claims/Claims.tsx
++++ b/src/main/frontend/features/claims/Claims.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, getJson, postJson, putJson } from '../../api/http';
+ import { asNumber, useSearchParam } from '../../url/useSearchParam';
++import { useCurrentUser } from '../session/SignIn';
+ import { useSheetToday } from '../sheet/SheetToday';
+ 
+ // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
+@@ -79,11 +80,13 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
+   // Undefined until changed: the sheet's today, which the server fills in when the date is blank.
+   const [date, setDate] = useState<string | undefined>(editing?.date);
+   const [note, setNote] = useState(editing?.note ?? '');
++  const [user] = useCurrentUser();
++  const by = `?user=${encodeURIComponent(user ?? '')}`;
+   const save = useMutation({
+     mutationFn: (body: ClaimBody) =>
+       editing
+-        ? putJson<Claim>(`${sheetPath(sheet)}/claims/${editing.id}`, body)
+-        : postJson<Claim>(`${sheetPath(sheet)}/people/${personId}/claims`, body),
++        ? putJson<Claim>(`${sheetPath(sheet)}/claims/${editing.id}${by}`, body)
++        : postJson<Claim>(`${sheetPath(sheet)}/people/${personId}/claims${by}`, body),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+       if (editing) {
+diff --git a/src/main/frontend/features/people/People.tsx b/src/main/frontend/features/people/People.tsx
+index 3b6dd22..f649b05 100644
+--- a/src/main/frontend/features/people/People.tsx
++++ b/src/main/frontend/features/people/People.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, getJson, postJson, putJson } from '../../api/http';
+ import { asNumber, useSearchParam } from '../../url/useSearchParam';
++import { useCurrentUser } from '../session/SignIn';
+ import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
+ 
+ // The people on the sheet, in the order they were added. One form adds a person, or edits the
+@@ -76,11 +77,13 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
+   const queryClient = useQueryClient();
+   const [name, setName] = useState(editing?.name ?? '');
+   const [grade, setGrade] = useState(editing?.grade ?? 'A');
++  const [user] = useCurrentUser();
++  const by = `?user=${encodeURIComponent(user ?? '')}`;
+   const save = useMutation({
+     mutationFn: (body: { name: string; grade: string }) =>
+       editing
+-        ? putJson<Person>(`${peoplePath(sheet)}/${editing.id}`, body)
+-        : postJson<Person>(peoplePath(sheet), body),
++        ? putJson<Person>(`${peoplePath(sheet)}/${editing.id}${by}`, body)
++        : postJson<Person>(`${peoplePath(sheet)}${by}`, body),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+       if (editing) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+new file mode 100644
+index 0000000..e6ff1cd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the added claim once every rule has passed and it is stored. */
++public class AuditClaimAdded {
++    public void audit(@Val Claim claim, @Val Person person,
++            @RequestParam(value = "user", required = false) String user, Audit audit) {
++        audit.record("CLAIM_ADDED sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
++                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+new file mode 100644
+index 0000000..4cb4535
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the edited claim once every rule has passed and it is saved. */
++public class AuditClaimEdited {
++    public void audit(@Val Claim claim, @RequestParam(value = "user", required = false) String user,
++            PersonRepository people, Audit audit) {
++        Person person = people.findById(claim.getSheetId(), claim.getPersonId());
++        audit.record("CLAIM_EDITED sheet=" + claim.getSheetId() + " by=" + user + " person=" + person.getName()
++                + " amount=" + claim.getAmount().toPlainString() + " date=" + claim.getDate());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+new file mode 100644
+index 0000000..a39faf2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the added person once every rule has passed and it is stored. */
++public class AuditPersonAdded {
++    public void audit(@Val Person person, @RequestParam(value = "user", required = false) String user, Audit audit) {
++        audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + user
++                + " name=" + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+new file mode 100644
+index 0000000..7200c65
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the edited person once every rule has passed and it is saved. */
++public class AuditPersonEdited {
++    public void audit(@Val Person person, @RequestParam(value = "user", required = false) String user, Audit audit) {
++        audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + user
++                + " name=" + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 5761e49..9765215 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,3 +1,4 @@
++# The audit line is written last, once every rule has passed, so a refused change writes none.
+ # Validate before Load so an invalid body is a 400, not masked by a 404 for a missing claim.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+@@ -13,6 +14,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 81fd7fd..2885868 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,3 +1,4 @@
++# The audit line is written last, once every rule has passed, so a refused change writes none.
+ # Validate first so a blank name or unknown grade is a 400 and nothing is written; a name already
+ # in use on the sheet is also a 400.
+ validate:
+@@ -10,6 +11,10 @@ check:
+ create:
+   class: net.officefloor.hq.app.person.CreatePerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPersonCreated
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 42397d3..0b9a520 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,3 +1,4 @@
++# The audit line is written last, once every rule has passed, so a refused change writes none.
+ # Validate before Load so an invalid body is a 400, not masked by a 404 for a missing person.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+@@ -17,6 +18,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 8bcbdba..815f733 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,3 +1,4 @@
++# The audit line is written last, once every rule has passed, so a refused change writes none.
+ # Validate first so a bad amount or date is a 400 and nothing is written; then the person must exist.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+@@ -9,6 +10,10 @@ load:
+ create:
+   class: net.officefloor.hq.app.claim.CreateClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaimCreated
