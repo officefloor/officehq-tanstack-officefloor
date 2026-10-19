@@ -6,6 +6,7 @@ import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
 import { NA, due } from '../rates/Rates';
+import { periodOf, usePeriods } from '../periods/usePeriods';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
 // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
@@ -15,7 +16,7 @@ import { NA, due } from '../rates/Rates';
 // The user who opens a claim is recorded and may not settle it.
 // Settling fixes a claim's due at the rate of that moment. A person's statement binds each of their
 // counting claims to the figure it has then, until their next statement; every other claim's due
-// follows the current rate.
+// follows the current rate. Each claim shows the period its date falls in, if any.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened; null for a draft or a voided claim. */
@@ -111,6 +112,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   const queryClient = useQueryClient();
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const period = periodOf(usePeriods(sheet), c.date);
   const change = useMutation({
     mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
@@ -121,6 +123,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       #<span data-testid="claim-number">{c.number ?? ''}</span>{' '}
       <span data-testid="claim-amount">{c.amount}</span>{' '}
       <span data-testid="claim-date">{c.date}</span>{' '}
+      Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}

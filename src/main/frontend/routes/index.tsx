@@ -4,6 +4,7 @@ import { SheetPicker, useSheetId } from '../features/session/SheetPicker';
 import { SheetToday } from '../features/sheet/SheetToday';
 import { People } from '../features/people/People';
 import { Rates } from '../features/rates/Rates';
+import { Periods } from '../features/periods/Periods';
 
 // The one screen. Sign in by name, then load a sheet by id; everything else is per sheet.
 export const Route = createFileRoute('/')({
@@ -19,6 +20,7 @@ function Home() {
       {user && <SheetPicker />}
       {user && sheet && <SheetToday sheet={sheet} />}
       {user && sheet && <Rates sheet={sheet} />}
+      {user && sheet && <Periods sheet={sheet} />}
       {user && sheet && <People sheet={sheet} />}
       {user && !sheet && <p data-testid="home-empty">Nothing here yet.</p>}
     </>
