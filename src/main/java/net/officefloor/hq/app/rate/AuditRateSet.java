@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class AuditRateSet {
     public void audit(@Val Rate rate, @RequestParam(value = "user", required = false) String user, Audit audit) {
         audit.record("RATE_SET sheet=" + rate.sheetId() + " by=" + user
-                + " grade=" + rate.grade() + " rate=" + rate.pct().toPlainString());
+                + " grade=" + rate.grade() + " rate=" + rate.pct().toPlainString()
+                + (rate.from() == null ? "" : " from=" + rate.from()));
     }
 }

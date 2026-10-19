@@ -64,9 +64,9 @@ export function ClaimedTotal({ sheet }: { sheet: string }) {
 }
 
 /** The claims cell of a person's row: the claim form and the person's claims, newest first, each
- *  with its due at the person's grade's rate (`pct`, undefined when the grade has none). */
-export function PersonClaims({ sheet, personId, claims, pct }: {
-  sheet: string; personId: number; claims: Claim[]; pct: string | undefined;
+ *  with its due at the person's grade's rate in force on its date (`pctOn`, undefined when none is). */
+export function PersonClaims({ sheet, personId, claims, pctOn }: {
+  sheet: string; personId: number; claims: Claim[]; pctOn: (date: string) => string | undefined;
 }) {
   const [editId, setEditId] = useSearchParam('editClaim', asNumber);
   const editing = claims.find((c) => c.id === editId);
@@ -78,7 +78,7 @@ export function PersonClaims({ sheet, personId, claims, pct }: {
         editing={editing} onDone={() => setEditId(undefined)} />
       <ul>
         {claims.map((c) => (
-          <ClaimRow key={c.id} sheet={sheet} claim={c} pct={pct} onEdit={() => setEditId(c.id)} />
+          <ClaimRow key={c.id} sheet={sheet} claim={c} pct={pctOn(c.date)} onEdit={() => setEditId(c.id)} />
         ))}
       </ul>
     </>

@@ -4,7 +4,8 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
-import { due, rateOf, total, useRates } from '../rates/Rates';
+import { due, rateOn, total, useRates } from '../rates/Rates';
+import { useSheetToday } from '../sheet/SheetToday';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
@@ -35,9 +36,11 @@ export function People({ sheet }: { sheet: string }) {
   const editing = people.find((p) => p.id === editId);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
-  // A person's due-total is on their claimed total, not the sum of their claims' rounded dues.
-  const dueTotalOf = (p: Person) => due(claimed(claimsOf(p)), rateOf(rates, p.grade));
+  // A person's due-total is on their claimed total, not the sum of their claims' rounded dues, at the
+  // rate in force on the sheet's today.
+  const dueTotalOf = (p: Person) => due(claimed(claimsOf(p)), rateOn(rates, p.grade, today));
 
   return (
     <section>
@@ -64,7 +67,8 @@ export function People({ sheet }: { sheet: string }) {
               <td data-testid="person-claimed">{claimed(claimsOf(p))}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
               <td>
-                <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)} pct={rateOf(rates, p.grade)} />
+                <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
+                  pctOn={(date) => rateOn(rates, p.grade, date)} />
               </td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditId(p.id)}>
