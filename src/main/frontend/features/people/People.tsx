@@ -51,7 +51,7 @@ export function gradeOn(person: Person, date: string | undefined): string {
   return grade;
 }
 
-const GRADES = ['A', 'B', 'C'];
+export const GRADES = ['A', 'B', 'C'];
 
 export const peopleKey = (sheet: string) => ['sheet', sheet, 'people'];
 const peoplePath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/people`;
@@ -86,6 +86,24 @@ function ShowRetired() {
   );
 }
 
+/** A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
+ *  It is n/a when the grade in force on the sheet's today has no rate there, unless a counted claim has
+ *  a figure (settled, bound by a statement, or at the grade in force on its date): then it is the sum
+ *  of the figures there are. */
+export function useDueTotalOf(sheet: string): (p: Person) => string {
+  const claims = useClaims(sheet);
+  const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
+  const floor = useFloor(sheet);
+  const late = useLate(sheet);
+  return (p: Person) => {
+    const dues = claims.filter((c) => c.personId === p.id && counts(c, p.held))
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late));
+    if (rateOn(rates, gradeOn(p, today), today) === undefined && dues.every((d) => d === NA)) return NA;
+    return total(dues);
+  };
+}
+
 export function People({ sheet }: { sheet: string }) {
   const people = usePeople(sheet);
   const [showRetired] = useShowRetired();
@@ -102,16 +120,7 @@ export function People({ sheet }: { sheet: string }) {
   const { terms } = late;
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
   const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
-  // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
-  // It is n/a when the grade in force on the sheet's today has no rate there, unless a counted claim has
-  // a figure (settled, bound by a statement, or at the grade in force on its date): then it is the sum
-  // of the figures there are.
-  const dueTotalOf = (p: Person) => {
-    const dues = claimsOf(p).filter((c) => counts(c, p.held))
-      .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late));
-    if (rateOn(rates, gradeOn(p, today), today) === undefined && dues.every((d) => d === NA)) return NA;
-    return total(dues);
-  };
+  const dueTotalOf = useDueTotalOf(sheet);
   // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
   // their figures, skipping n/a.
   const overdueOf = (p: Person) =>

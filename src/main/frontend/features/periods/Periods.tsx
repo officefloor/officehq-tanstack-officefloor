@@ -15,17 +15,7 @@ import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './us
 // A closed period shows the due-total it was closed at instead, whatever rates do later, until a steward reopens it.
 export function Periods({ sheet }: { sheet: string }) {
   const periods = usePeriods(sheet);
-  const people = usePeople(sheet);
-  const claims = useClaims(sheet);
-  const rates = useRates(sheet);
-  const floor = useFloor(sheet);
-  const late = useLate(sheet);
-  const personOf = new Map(people.map((p) => [p.id, p]));
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  const dueTotalOf = (period: Period) =>
-    total(claims
-      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && personOf.has(c.personId))
-      .map((c) => claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late)));
+  const dueTotalOf = usePeriodDueTotal(sheet);
 
   return (
     <section>
@@ -45,12 +35,28 @@ export function Periods({ sheet }: { sheet: string }) {
         <tbody>
           {periods.map((p) => (
             <PeriodRow key={p.name} sheet={sheet} period={p}
-              dueTotal={p.closed && p.closedTotal != null ? p.closedTotal : dueTotalOf(p)} />
+              dueTotal={dueTotalOf(p)} />
           ))}
         </tbody>
       </table>
     </section>
   );
+}
+
+/** A period's due-total as its row shows it: the one it was closed at while it is closed, else
+ *  worked out from the claims that count. */
+export function usePeriodDueTotal(sheet: string): (period: Period) => string {
+  const people = usePeople(sheet);
+  const claims = useClaims(sheet);
+  const rates = useRates(sheet);
+  const floor = useFloor(sheet);
+  const late = useLate(sheet);
+  const personOf = new Map(people.map((p) => [p.id, p]));
+  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
+  return (period: Period) =>
+    period.closed && period.closedTotal != null ? period.closedTotal : total(claims
+      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && personOf.has(c.personId))
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late)));
 }
 
 /** One period: its dates, due-total and whether it is closed, with its close and reopen buttons. A refused close or reopen
