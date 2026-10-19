@@ -46,7 +46,10 @@ const toCents = (amount: string) => {
 };
 
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
-const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+
+/** A claim's figure: the due fixed when it was settled, else its live due at `pct` (n/a without one). */
+export const claimDue = (c: Claim, pct: string | undefined): string => c.settledDue ?? due(c.amount, pct);
 
 /** The counted claims' amounts added up, with two decimals. */
 export function claimed(claims: Claim[]): string {
@@ -105,7 +108,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       <span data-testid="claim-date">{c.date}</span>{' '}
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
-      Due <span data-testid="claim-due">{c.settledDue ?? due(c.amount, pct)}</span>{' '}
+      Due <span data-testid="claim-due">{claimDue(c, pct)}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
         Edit
       </button>

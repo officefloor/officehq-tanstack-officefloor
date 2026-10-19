@@ -32,11 +32,11 @@ public class ApplyClaimAction {
         numberOut.set(new ClaimNumber(action == ClaimAction.VOID ? had : claim.getNumber()));
     }
 
-    /** amount × pct / 100, rounded half up to two decimals; null when no rate is in force on the claim's date. */
+    /** amount × pct / 100, rounded half to even to two decimals; null when no rate is in force on the claim's date. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
         return Rate.inForce(rates.findBySheet(claim.getSheetId()), person.getGrade(), claim.getDate())
-                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
+                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
                 .orElse(null);
     }
 }

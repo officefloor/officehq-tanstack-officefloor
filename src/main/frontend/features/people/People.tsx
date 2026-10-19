@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
-import { due, rateOn, total, useRates } from '../rates/Rates';
+import { ClaimedTotal, PersonClaims, claimDue, claimed, counts, useClaims } from '../claims/Claims';
+import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
@@ -38,9 +38,14 @@ export function People({ sheet }: { sheet: string }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
-  // A person's due-total is on their claimed total, not the sum of their claims' rounded dues, at the
-  // rate in force on the sheet's today.
-  const dueTotalOf = (p: Person) => due(claimed(claimsOf(p)), rateOn(rates, p.grade, today));
+  // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
+  // It is n/a when their grade has no rate on the sheet's today, unless a counted settled claim keeps
+  // a figure: then it is the sum of the figures there are.
+  const dueTotalOf = (p: Person) => {
+    const counted = claimsOf(p).filter(counts);
+    if (rateOn(rates, p.grade, today) === undefined && !counted.some((c) => c.settledDue !== null)) return NA;
+    return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date))));
+  };
 
   return (
     <section>

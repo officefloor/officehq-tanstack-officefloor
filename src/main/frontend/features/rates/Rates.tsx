@@ -49,11 +49,14 @@ export const toHundredths = (value: string): bigint => {
 export const fromHundredths = (h: bigint): string =>
   `${h / 100n}.${String(h % 100n).padStart(2, '0')}`;
 
-/** amount × pct / 100, rounded half up to two decimals; n/a without a rate. Amounts are never negative. */
+/** amount × pct / 100, rounded half to even to two decimals; n/a without a rate. Amounts are never negative. */
 export function due(amount: string, pct: string | undefined): string {
   if (pct === undefined) return NA;
   // cents × hundredths-of-a-percent gives cents × 10000.
-  return fromHundredths((toHundredths(amount) * toHundredths(pct) + 5000n) / 10000n);
+  const scaled = toHundredths(amount) * toHundredths(pct);
+  const cents = scaled / 10000n;
+  const rest = scaled % 10000n;
+  return fromHundredths(rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents);
 }
 
 /** Two-decimal values added up, skipping n/a. */
