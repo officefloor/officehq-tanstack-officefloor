@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
-import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, useClaims } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
@@ -11,13 +11,19 @@ import { useSheetToday } from '../sheet/SheetToday';
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
 // A statement taken for a person records their due-total and binds their counting claims' figures.
+// A retired person's row is left out unless "show retired" (URL state `showRetired`) is on; their
+// claims keep counting in every total.
 export type Person = { id: number; name: string; grade: string; version: number;
   /** How many statements have been taken for the person. */
   statementCount: number;
   /** The last statement's due-total; null when none was taken, or it was n/a. */
   statedTotal: string | null;
   /** The sheet's today when the last statement was taken; null when none was. */
-  statementDate: string | null };
+  statementDate: string | null;
+  /** Whether the person is retired; no claim of theirs may be dated after `retiredFrom`. */
+  retired: boolean;
+  /** The date the person is retired from; null when they are not retired. */
+  retiredFrom: string | null };
 
 const GRADES = ['A', 'B', 'C'];
 
@@ -38,8 +44,26 @@ function useEditPerson() {
   return useSearchParam('editPerson', asNumber);
 }
 
+function useShowRetired() {
+  return useSearchParam('showRetired', asFlag);
+}
+
+/** The "show retired" toggle: off when the screen is first opened, left as it is by loading a sheet. */
+function ShowRetired() {
+  const [show, setShow] = useShowRetired();
+  return (
+    <label>
+      <input type="checkbox" data-testid="show-retired" checked={show}
+        onChange={(e) => setShow(e.target.checked || undefined)} />{' '}
+      Show retired
+    </label>
+  );
+}
+
 export function People({ sheet }: { sheet: string }) {
   const people = usePeople(sheet);
+  const [showRetired] = useShowRetired();
+  const listed = people.filter((p) => showRetired || !p.retired);
   const [editId, setEditId] = useEditPerson();
   // Counts each press of an Edit button, so opening the editor again reloads it with the current values.
   const [opened, setOpened] = useState(0);
@@ -64,6 +88,7 @@ export function People({ sheet }: { sheet: string }) {
       <PersonForm key={editing ? `edit-${editing.id}-${opened}` : 'add'} sheet={sheet} editing={editing}
         onDone={() => setEditId(undefined)} />
       <QuickAdd sheet={sheet} />
+      <ShowRetired />
       <table>
         <thead>
           <tr>
@@ -72,20 +97,19 @@ export function People({ sheet }: { sheet: string }) {
             <th>Claimed</th>
             <th>Due</th>
             <th>Statements</th>
+            <th>Retired</th>
             <th>Claims</th>
             <th />
           </tr>
         </thead>
         <tbody>
-          {people.map((p) => (
+          {listed.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-claimed">{claimed(claimsOf(p))}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
-              <td>
-                <PersonStatement sheet={sheet} person={p} />
-              </td>
+              <PersonActions sheet={sheet} person={p} />
               <td>
                 <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
                   pctOn={(date) => rateOn(rates, p.grade, date)} />
@@ -107,34 +131,62 @@ export function People({ sheet }: { sheet: string }) {
   );
 }
 
-/** The person's statements: how many, the last one's due-total and date, and the button that takes
- *  one. A refused statement shows the row's error, which the next statement clears. */
-function PersonStatement({ sheet, person: p }: { sheet: string; person: Person }) {
+/** The person's statements (how many, the last one's due-total and date, and the button that takes
+ *  one) and their retirement (yes/no, the date, and the control that retires them from a date; blank
+ *  is the sheet's today). A refused action shows the row's error, which the row's next action clears. */
+function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const [retireFrom, setRetireFrom] = useState('');
+  const refetch = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+    queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+  ]);
   const take = useMutation({
     mutationFn: () => postJson<Person>(`${peoplePath(sheet)}/${p.id}/statement${by}`, {}),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
-      queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
-    ]),
+    onSuccess: refetch,
   });
+  const retire = useMutation({
+    mutationFn: (from: string) => postJson<Person>(`${peoplePath(sheet)}/${p.id}/retire${by}`, { from }),
+    onSuccess: async () => {
+      await refetch();
+      setRetireFrom('');
+    },
+  });
+  const reset = () => {
+    take.reset();
+    retire.reset();
+  };
+  const failed = take.isError ? take : retire.isError ? retire : undefined;
   return (
     <>
-      <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
-      Last <span data-testid="person-stated-total">{p.statementCount > 0 ? p.statedTotal ?? NA : ''}</span>{' '}
-      on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>{' '}
-      <button type="button" data-testid="person-statement" disabled={take.isPending}
-        onClick={() => { take.reset(); take.mutate(); }}>
-        Statement
-      </button>
-      {take.isError && (
-        <span role="alert" data-testid="person-error">
-          {' '}
-          {(take.error instanceof HttpError && take.error.reason) || 'The statement could not be taken.'}
-        </span>
-      )}
+      <td>
+        <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
+        Last <span data-testid="person-stated-total">{p.statementCount > 0 ? p.statedTotal ?? NA : ''}</span>{' '}
+        on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>{' '}
+        <button type="button" data-testid="person-statement" disabled={take.isPending}
+          onClick={() => { reset(); take.mutate(); }}>
+          Statement
+        </button>
+      </td>
+      <td>
+        <span data-testid="person-retired">{p.retired ? 'yes' : 'no'}</span>{' '}
+        from <span data-testid="person-retired-from">{p.retiredFrom ?? ''}</span>{' '}
+        <input type="date" data-testid="person-retire-date" value={retireFrom}
+          onChange={(e) => { reset(); setRetireFrom(e.target.value); }} />{' '}
+        <button type="button" data-testid="person-retire" disabled={retire.isPending}
+          onClick={() => { reset(); retire.mutate(retireFrom); }}>
+          Retire
+        </button>
+        {failed && (
+          <span role="alert" data-testid="person-error">
+            {' '}
+            {(failed.error instanceof HttpError && failed.error.reason)
+              || (failed === take ? 'The statement could not be taken.' : 'The person could not be retired.')}
+          </span>
+        )}
+      </td>
     </>
   );
 }

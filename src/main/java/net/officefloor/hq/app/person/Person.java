@@ -14,6 +14,7 @@ public class Person {
     private int statementCount;
     private BigDecimal statedTotal;
     private LocalDate statementDate;
+    private LocalDate retiredFrom;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this(id, sheetId, name, grade, version, 0, null, null);
@@ -49,4 +50,9 @@ public class Person {
     /** The sheet's today when the last statement was taken: null when none was. */
     public LocalDate getStatementDate() { return statementDate; }
     public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
+    /** The date the person is retired from: null when they are not retired. */
+    public LocalDate getRetiredFrom() { return retiredFrom; }
+    public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
+    /** Whether a claim of the person may be dated this day: not after their retirement date. */
+    public boolean claimAllowedOn(LocalDate date) { return retiredFrom == null || !date.isAfter(retiredFrom); }
 }

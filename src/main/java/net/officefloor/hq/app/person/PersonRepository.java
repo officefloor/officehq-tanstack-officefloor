@@ -12,10 +12,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-            rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
-            rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate());
+    private static final RowMapper<Person> ROW = (rs, i) -> {
+        Person person = new Person(rs.getLong("id"),
+                rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
+                rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
+                rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate());
+        person.setRetiredFrom(rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate());
+        return person;
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -77,5 +81,11 @@ public class PersonRepository {
                         + " WHERE sheet_id = ? AND id = ?",
                 person.getStatementCount(), person.getStatedTotal(), Date.valueOf(person.getStatementDate()),
                 person.getSheetId(), person.getId());
+    }
+
+    /** Stores the person's retirement date. Retiring is not an edit, so the version stays. */
+    public void saveRetired(Person person) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
+                Date.valueOf(person.getRetiredFrom()), person.getSheetId(), person.getId());
     }
 }
