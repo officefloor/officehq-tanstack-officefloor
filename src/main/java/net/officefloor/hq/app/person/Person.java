@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import net.officefloor.hq.app.claim.ClaimStatus;
 
@@ -12,7 +13,7 @@ public class Person {
     private final long id;
     private final String sheetId;
     private String name;
-    private String grade;
+    private List<DatedGrade> grades = new ArrayList<>();
     private long version;
     private int statementCount;
     private BigDecimal statedTotal;
@@ -30,7 +31,7 @@ public class Person {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
-        this.grade = grade;
+        this.grades.add(new DatedGrade(grade, null));
         this.version = version;
         this.statementCount = statementCount;
         this.statedTotal = statedTotal;
@@ -41,8 +42,28 @@ public class Person {
     public String getSheetId() { return sheetId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
-    public String getGrade() { return grade; }
-    public void setGrade(String grade) { this.grade = grade; }
+    /** The person's grades, each in force from its from-date, earliest first (the first one from the
+     *  beginning of time). */
+    public List<DatedGrade> getGrades() { return grades; }
+    public void setGrades(List<DatedGrade> grades) {
+        this.grades = new ArrayList<>(grades);
+        this.grades.sort(Comparator.comparing(DatedGrade::from, Comparator.nullsFirst(Comparator.naturalOrder())));
+    }
+    /** The grade in force on the date: the one with the latest from-date on or before it. */
+    public String gradeOn(LocalDate date) {
+        String grade = grades.get(0).grade();
+        for (DatedGrade dated : grades) {
+            if (dated.from() == null || !dated.from().isAfter(date)) grade = dated.grade();
+        }
+        return grade;
+    }
+    /** Records the grade from the date, keeping the ones already recorded (replacing one from the same date). */
+    public void gradeFrom(String grade, LocalDate from) {
+        List<DatedGrade> next = new ArrayList<>(grades);
+        next.removeIf(dated -> from.equals(dated.from()));
+        next.add(new DatedGrade(grade, from));
+        setGrades(next);
+    }
     /** The version as loaded from the store; moves on once the person is saved. */
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }

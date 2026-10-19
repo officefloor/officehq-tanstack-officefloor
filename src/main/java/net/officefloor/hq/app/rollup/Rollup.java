@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
  * bound it to, else its live due at the person's grade's rate in force on its date, at least the sheet's floor
  * (n/a without a rate), plus the late charge of an overdue OPEN claim (see {@link LatePct}).
  * A person's due-total adds up their counting claims' figures, skipping n/a; it is n/a when the grade
- * has no rate on the sheet's today and no counting claim keeps a fixed figure. The sheet's due-total
+ * in force on the sheet's today has no rate there and no counting claim has a figure. The sheet's due-total
  * adds up the people's due-totals, skipping n/a.
  */
 @Service
@@ -78,16 +78,18 @@ public class Rollup {
         for (Person person : people.findBySheet(sheetId)) {
             BigDecimal claimed = zero();
             BigDecimal due = zero();
-            boolean fixed = false;
+            boolean figured = false;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!person.counts(claim.getStatus())) continue;
                 claimed = claimed.add(claim.getAmount());
-                if (claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)) fixed = true;
                 BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least));
-                if (figure != null) due = due.add(figure);
+                if (figure != null) {
+                    due = due.add(figure);
+                    figured = true;
+                }
             }
-            boolean na = Rate.inForce(sheetRates, person.getGrade(), today).isEmpty() && !fixed;
+            boolean na = Rate.inForce(sheetRates, person.gradeOn(today), today).isEmpty() && !figured;
             claimedTotal = claimedTotal.add(claimed);
             if (!na) dueTotal = dueTotal.add(due);
             figures.put(person.getId(), new Figures(person.getName(), text(claimed), na ? NA : text(due)));
@@ -135,7 +137,7 @@ public class Rollup {
     private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
-        return Floor.raise(Rate.inForce(rates, person.getGrade(), claim.getDate())
+        return Floor.raise(Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
                 .orElse(null), least);
     }

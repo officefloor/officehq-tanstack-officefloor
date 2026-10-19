@@ -4,7 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, isOverdue, useClaims, useLate } from '../claims/Claims';
+import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, isOverdue, useClaims, useLate } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
 import { useFloor } from '../settings/Settings';
@@ -17,7 +17,12 @@ import { useFloor } from '../settings/Settings';
 // but their OPEN claims count in none.
 // A person may name other people on the sheet as their patrons; their backing is their patrons'
 // due-totals added up, skipping n/a (0.00 with no patrons).
-export type Person = { id: number; name: string; grade: string; version: number;
+export type Person = { id: number; name: string;
+  /** The grade in force on the sheet's today. */
+  grade: string;
+  /** Every grade the person was given, each in force from its from-date (null: from the beginning of time). */
+  grades: DatedGrade[];
+  version: number;
   /** How many statements have been taken for the person. */
   statementCount: number;
   /** The last statement's due-total; null when none was taken, or it was n/a. */
@@ -32,6 +37,19 @@ export type Person = { id: number; name: string; grade: string; version: number;
   held: boolean;
   /** The names of the other people the person has named as their patrons, sorted. */
   patrons: string[] };
+
+export type DatedGrade = { grade: string; from: string | null };
+
+/** The person's grade in force on the date (yyyy-MM-dd): the one with the latest from-date on or
+ *  before it. The grade in force on the sheet's today when the date is not known yet. */
+export function gradeOn(person: Person, date: string | undefined): string {
+  if (date === undefined) return person.grade;
+  let grade = person.grades[0]?.grade ?? person.grade;
+  for (const g of person.grades) {
+    if (g.from === null || g.from <= date) grade = g.grade;
+  }
+  return grade;
+}
 
 const GRADES = ['A', 'B', 'C'];
 
@@ -85,12 +103,14 @@ export function People({ sheet }: { sheet: string }) {
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
   const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
   // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
-  // It is n/a when their grade has no rate on the sheet's today, unless a counted claim keeps a figure
-  // (settled, or bound by a statement): then it is the sum of the figures there are.
+  // It is n/a when the grade in force on the sheet's today has no rate there, unless a counted claim has
+  // a figure (settled, bound by a statement, or at the grade in force on its date): then it is the sum
+  // of the figures there are.
   const dueTotalOf = (p: Person) => {
-    const counted = claimsOf(p).filter((c) => counts(c, p.held));
-    if (rateOn(rates, p.grade, today) === undefined && !counted.some(hasFixedDue)) return NA;
-    return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor, late)));
+    const dues = claimsOf(p).filter((c) => counts(c, p.held))
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late));
+    if (rateOn(rates, gradeOn(p, today), today) === undefined && dues.every((d) => d === NA)) return NA;
+    return total(dues);
   };
   // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
   // their figures, skipping n/a.
@@ -99,7 +119,7 @@ export function People({ sheet }: { sheet: string }) {
   const backingOf = (p: Person) =>
     total(people.filter((o) => p.patrons.includes(o.name)).map(dueTotalOf));
   const overdueTotalOf = (p: Person) =>
-    total(overdueOf(p).map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor, late)));
+    total(overdueOf(p).map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late)));
 
   return (
     <section>
@@ -131,7 +151,7 @@ export function People({ sheet }: { sheet: string }) {
           {listed.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
-              <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-grade">{gradeOn(p, today)}</td>
               <td data-testid="person-claimed">{claimed(claimsOf(p), isHeld)}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
               <td data-testid="person-overdue-count">{overdueOf(p).length}</td>
@@ -140,7 +160,7 @@ export function People({ sheet }: { sheet: string }) {
               <td data-testid="person-backing">{backingOf(p)}</td>
               <td>
                 <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
-                  pctOn={(date) => rateOn(rates, p.grade, date)} />
+                  pctOn={(date) => rateOn(rates, gradeOn(p, date), date)} />
               </td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => { setOpened((n) => n + 1); setEditId(p.id); }}>
@@ -342,6 +362,11 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
   const queryClient = useQueryClient();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  // The date a save records the grade from: the sheet's today until one is entered. The first grade
+  // a person is given applies from the beginning of time, whatever this says.
+  const today = useSheetToday(sheet);
+  const [gradeFrom, setGradeFrom] = useState<string | undefined>(undefined);
+  const shownGradeFrom = gradeFrom ?? today ?? '';
   // The version of the person the editor loaded; the server refuses the save (409) when someone
   // else has saved the person since.
   const [version, setVersion] = useState(editing?.version);
@@ -349,7 +374,7 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const submitOnce = useSingleSubmit();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: string; version?: number }) =>
+    mutationFn: (body: { name: string; grade: string; gradeFrom: string; version?: number }) =>
       editing
         ? putJson<Person>(`${peoplePath(sheet)}/${editing.id}${by}`, body)
         : postJson<Person>(`${peoplePath(sheet)}${by}`, body),
@@ -360,6 +385,7 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
       } else {
         setName('');
         setGrade('A');
+        setGradeFrom(undefined);
       }
     },
     onError: (error) => {
@@ -382,7 +408,8 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
         submitOnce(() => {
           save.reset();
           // A blank or already-used name is refused by the server (400), which shows the form's error.
-          return save.mutateAsync({ name, grade, version });
+          // A grade from-date that is not a date is refused by the server (400); a blank one is the sheet's today.
+          return save.mutateAsync({ name, grade, gradeFrom: shownGradeFrom.trim(), version });
         });
       }}
     >
@@ -413,6 +440,18 @@ function PersonForm({ sheet, editing, onDone }: { sheet: string; editing?: Perso
             </option>
           ))}
         </select>
+      </label>{' '}
+      <label>
+        Grade from{' '}
+        <input
+          type="date"
+          data-testid="person-form-grade-from"
+          value={shownGradeFrom}
+          onChange={(e) => {
+            save.reset();
+            setGradeFrom(e.target.value);
+          }}
+        />
       </label>{' '}
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing ? 'Save' : 'Add'}

@@ -4,14 +4,14 @@ import { HttpError, postJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { useCurrentUser } from '../session/SignIn';
 import { claimDue, counts, useClaims, useLate } from '../claims/Claims';
-import { usePeople } from '../people/People';
+import { gradeOn, usePeople } from '../people/People';
 import { rateOn, total, useRates } from '../rates/Rates';
 import { useFloor } from '../settings/Settings';
 import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './usePeriods';
 
 // The sheet's periods, added here, each with its due-total: the figures of the claims that count
 // (not a held person's OPEN claims)
-// whose date falls in it, each at its person's grade's rate in force on its date, skipping n/a.
+// whose date falls in it, each at the rate in force on its date of its person's grade in force on that date, skipping n/a.
 // A closed period shows the due-total it was closed at instead, whatever rates do later.
 export function Periods({ sheet }: { sheet: string }) {
   const periods = usePeriods(sheet);
@@ -20,12 +20,12 @@ export function Periods({ sheet }: { sheet: string }) {
   const rates = useRates(sheet);
   const floor = useFloor(sheet);
   const late = useLate(sheet);
-  const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
+  const personOf = new Map(people.map((p) => [p.id, p]));
   const held = new Set(people.filter((p) => p.held).map((p) => p.id));
   const dueTotalOf = (period: Period) =>
     total(claims
-      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && gradeOf.has(c.personId))
-      .map((c) => claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor, late)));
+      .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && personOf.has(c.personId))
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(personOf.get(c.personId)!, c.date), c.date), floor, late)));
 
   return (
     <section>

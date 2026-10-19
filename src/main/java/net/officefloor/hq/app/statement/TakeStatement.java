@@ -24,10 +24,10 @@ import net.officefloor.plugin.variable.Val;
  * the person's statement count, last due-total and date (the sheet's today) on.
  *
  * A claim's figure is its settled due, else the figure a statement bound it to, else its live due at
- * the person's grade's rate in force on its date, at least the sheet's floor (n/a without a rate). The due-total adds up the counting
+ * the rate of the person's grade in force on its date (the grade in force on that date too), at least the sheet's floor (n/a without a rate). The due-total adds up the counting
  * claims' figures, each with its late charge on top (see {@link LatePct}; the bound figure leaves it out, so it
- * keeps following the sheet's today), skipping n/a; it is n/a when the grade has no rate on today and no counting claim
- * keeps a fixed figure.
+ * keeps following the sheet's today), skipping n/a; it is n/a when the grade in force on today has no rate there and no counting claim
+ * has a figure.
  */
 public class TakeStatement {
     public void take(@Val Person person, ClaimRepository claims, PersonRepository people, RateRepository rateRepository,
@@ -38,7 +38,7 @@ public class TakeStatement {
         BigDecimal least = floor.of(sheetId);
         LatePct.Charge late = latePct.of(sheetId);
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
-        boolean fixed = false;
+        boolean figured = false;
         int counted = 0;
         for (Claim claim : claims.findByPerson(sheetId, person.getId())) {
             boolean counts = claim.getStatus() == ClaimStatus.OPEN || claim.getStatus() == ClaimStatus.SETTLED;
@@ -49,7 +49,7 @@ public class TakeStatement {
                 claim.setStatedDue(null);
             } else {
                 BigDecimal figure = figure(claim, person, rates, least);
-                if (claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)) fixed = true;
+                if (figure != null) figured = true;
                 BigDecimal due = late.addTo(claim, figure);
                 if (due != null) sum = sum.add(due);
                 claim.setStated(true);
@@ -58,7 +58,7 @@ public class TakeStatement {
             }
             claims.save(claim);
         }
-        BigDecimal dueTotal = Rate.inForce(rates, person.getGrade(), today).isEmpty() && !fixed ? null : sum;
+        BigDecimal dueTotal = Rate.inForce(rates, person.gradeOn(today), today).isEmpty() && !figured ? null : sum;
         person.setStatementCount(person.getStatementCount() + 1);
         person.setStatedTotal(dueTotal);
         person.setStatementDate(today);
@@ -70,7 +70,7 @@ public class TakeStatement {
     private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
-        return Floor.raise(Rate.inForce(rates, person.getGrade(), claim.getDate())
+        return Floor.raise(Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
                 .orElse(null), least);
     }
