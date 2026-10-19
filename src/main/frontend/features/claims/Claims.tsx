@@ -1,0 +1,135 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { HttpError, getJson, postJson, putJson } from '../../api/http';
+import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { useSheetToday } from '../sheet/SheetToday';
+
+// A person's claims, listed under their row newest first. One form per row adds a claim, or edits
+// the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
+// server as strings with two decimals and are added up in whole cents, never as floats.
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+
+type ClaimBody = { amount: string; date: string; note: string };
+
+export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'];
+const sheetPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}`;
+
+export function useClaims(sheet: string): Claim[] {
+  return (
+    useQuery({
+      queryKey: claimsKey(sheet),
+      queryFn: () => getJson<Claim[]>(`${sheetPath(sheet)}/claims`),
+      enabled: !!sheet,
+    }).data ?? []
+  );
+}
+
+const toCents = (amount: string) => {
+  const [whole, frac = ''] = amount.split('.');
+  return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+};
+
+/** The claims' amounts added up, with two decimals. */
+export function claimed(claims: Claim[]): string {
+  const cents = claims.reduce((sum, c) => sum + toCents(c.amount), 0);
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+}
+
+export function ClaimedTotal({ sheet }: { sheet: string }) {
+  const claims = useClaims(sheet);
+  return (
+    <p>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims)}</strong>
+    </p>
+  );
+}
+
+/** The claims cell of a person's row: the claim form and the person's claims, newest first. */
+export function PersonClaims({ sheet, personId, claims }: { sheet: string; personId: number; claims: Claim[] }) {
+  const [editId, setEditId] = useSearchParam('editClaim', asNumber);
+  const editing = claims.find((c) => c.id === editId);
+
+  return (
+    <>
+      {/* Keyed so opening another claim's editor (or closing it) refills the form. */}
+      <ClaimForm key={editing ? `edit-${editing.id}` : 'add'} sheet={sheet} personId={personId}
+        editing={editing} onDone={() => setEditId(undefined)} />
+      <ul>
+        {claims.map((c) => (
+          <li key={c.id} data-testid={`claim-row-${c.id}`}>
+            <span data-testid="claim-amount">{c.amount}</span>{' '}
+            <span data-testid="claim-date">{c.date}</span>{' '}
+            <span data-testid="claim-note">{c.note}</span>{' '}
+            <button type="button" data-testid="claim-edit" onClick={() => setEditId(c.id)}>
+              Edit
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function ClaimForm({ sheet, personId, editing, onDone }: {
+  sheet: string; personId: number; editing?: Claim; onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const today = useSheetToday(sheet);
+  const [amount, setAmount] = useState(editing?.amount ?? '');
+  // Undefined until changed: the sheet's today, which the server fills in when the date is blank.
+  const [date, setDate] = useState<string | undefined>(editing?.date);
+  const [note, setNote] = useState(editing?.note ?? '');
+  const save = useMutation({
+    mutationFn: (body: ClaimBody) =>
+      editing
+        ? putJson<Claim>(`${sheetPath(sheet)}/claims/${editing.id}`, body)
+        : postJson<Claim>(`${sheetPath(sheet)}/people/${personId}/claims`, body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      if (editing) {
+        onDone();
+      } else {
+        setAmount('');
+        setDate(undefined);
+        setNote('');
+      }
+    },
+  });
+  const changed = <T,>(set: (v: T) => void) => (v: T) => {
+    save.reset();
+    set(v);
+  };
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.reset();
+        // A missing, negative or over-precise amount is refused by the server (400).
+        save.mutate({ amount, date: date ?? '', note });
+      }}
+    >
+      <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={amount}
+        onChange={(e) => changed(setAmount)(e.target.value)} />{' '}
+      <input type="date" data-testid="claim-form-date" value={date ?? today ?? ''}
+        onChange={(e) => changed(setDate)(e.target.value)} />{' '}
+      <input data-testid="claim-form-note" placeholder="Note" value={note}
+        onChange={(e) => changed(setNote)(e.target.value)} />{' '}
+      <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+        {editing ? 'Save claim' : 'Add claim'}
+      </button>
+      {editing && (
+        <button type="button" onClick={onDone}>
+          Cancel
+        </button>
+      )}
+      {save.isError && (
+        <span role="alert" data-testid="claim-form-error">
+          {' '}
+          {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
+            || 'The claim could not be saved.'}
+        </span>
+      )}
+    </form>
+  );
+}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
@@ -30,6 +31,7 @@ export function People({ sheet }: { sheet: string }) {
   const people = usePeople(sheet);
   const [editId, setEditId] = useEditPerson();
   const editing = people.find((p) => p.id === editId);
+  const claims = useClaims(sheet);
 
   return (
     <section>
@@ -42,6 +44,8 @@ export function People({ sheet }: { sheet: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Claimed</th>
+            <th>Claims</th>
             <th />
           </tr>
         </thead>
@@ -50,6 +54,10 @@ export function People({ sheet }: { sheet: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-claimed">{claimed(claims.filter((c) => c.personId === p.id))}</td>
+              <td>
+                <PersonClaims sheet={sheet} personId={p.id} claims={claims.filter((c) => c.personId === p.id)} />
+              </td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditId(p.id)}>
                   Edit
@@ -59,6 +67,7 @@ export function People({ sheet }: { sheet: string }) {
           ))}
         </tbody>
       </table>
+      <ClaimedTotal sheet={sheet} />
     </section>
   );
 }
