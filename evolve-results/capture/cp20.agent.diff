@@ -1,0 +1,171 @@
+diff --git a/src/main/frontend/features/claims/Claims.tsx b/src/main/frontend/features/claims/Claims.tsx
+index 2b36782..a741bf8 100644
+--- a/src/main/frontend/features/claims/Claims.tsx
++++ b/src/main/frontend/features/claims/Claims.tsx
+@@ -12,14 +12,15 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
+ // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
+ // server as strings with two decimals and are added up in whole cents, never as floats. A claim's
+ // status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
+-// Opening gives a claim the sheet's next number, which voiding clears; a draft has none.
++// Opening gives a claim the sheet's next number, which a voided claim keeps; a draft has none.
++// Only a draft can be edited: to change an open claim, void it and add a new one.
+ // The user who opens a claim is recorded and may not settle it.
+ // Settling fixes a claim's due at the rate of that moment. A person's statement binds each of their
+ // counting claims to the figure it has then, until their next statement; every other claim's due
+ // follows the current rate. Each claim shows the period its date falls in, if any.
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+-  /** Given when the claim is opened; null for a draft or a voided claim. */
++  /** Given when the claim is opened, and kept if it is voided; null for a draft. */
+   number: number | null;
+   /** The due fixed when the claim was settled; null while it is live (not settled, or settled without a rate). */
+   settledDue: string | null;
+@@ -104,8 +105,8 @@ export function PersonClaims({ sheet, personId, claims, pctOn }: {
+   );
+ }
+ 
+-/** One claim: its fields, status and due, with its edit and status buttons. A refused status change
+- *  shows the row's error, which the row's next action clears. */
++/** One claim: its fields, status and due, with its edit and status buttons. A refused status change,
++ *  or editing a claim that is not a draft, shows the row's error, which the row's next action clears. */
+ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
+   sheet: string; claim: Claim; pct: string | undefined; onEdit: () => void;
+ }) {
+@@ -117,6 +118,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
+     mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+   });
++  const [editRefused, setEditRefused] = useState(false);
+ 
+   return (
+     <li data-testid={`claim-row-${c.id}`}>
+@@ -129,19 +131,25 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
+       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+       Due <span data-testid="claim-due">{claimDue(c, pct)}</span>{' '}
+       Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+-      <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
++      <button type="button" data-testid="claim-edit" onClick={() => {
++        change.reset();
++        setEditRefused(c.status !== 'DRAFT');
++        if (c.status === 'DRAFT') onEdit();
++      }}>
+         Edit
+       </button>
+       {ACTIONS.map(({ action, label }) => (
+         <button key={action} type="button" data-testid={`claim-${action}`} disabled={change.isPending}
+-          onClick={() => { change.reset(); change.mutate(action); }}>
++          onClick={() => { change.reset(); setEditRefused(false); change.mutate(action); }}>
+           {label}
+         </button>
+       ))}
+-      {change.isError && (
++      {(change.isError || editRefused) && (
+         <span role="alert" data-testid="claim-error">
+           {' '}
+-          {(change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.'}
++          {editRefused
++            ? `Only a draft claim can be edited; this one is ${c.status}. To change it, void it and add a new one.`
++            : (change.error instanceof HttpError && change.error.reason) || 'The claim could not be changed.'}
+         </span>
+       )}
+     </li>
+@@ -209,7 +217,7 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
+       {save.isError && (
+         <span role="alert" data-testid="claim-form-error">
+           {' '}
+-          {(save.error instanceof HttpError && save.error.status === 400 && save.error.reason)
++          {(save.error instanceof HttpError && (save.error.status === 400 || save.error.status === 409) && save.error.reason)
+             || 'The claim could not be saved.'}
+         </span>
+       )}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index 07d8e2d..8b0c225 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -11,11 +11,11 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Moves the claim to the action's status, refusing a change its current status does not allow.
+- *  Opening gives the claim the sheet's next number; voiding clears it. Settling fixes the claim's
++ *  Opening gives the claim the sheet's next number, which it keeps when voided. Settling fixes the claim's
+  *  due at the person's grade's rate in force on the claim's date (none when there is none, so it stays live).
+  *  A claim a statement binds is settled at its bound figure.
+  *  The user who opened a claim may not settle it (four eyes).
+- *  Publishes the number the audit line carries (for a void, the number the claim had). */
++ *  Publishes the number the audit line carries. */
+ public class ApplyClaimAction {
+     public void apply(@Val ClaimAction action, @Val Claim claim, ClaimRepository repository,
+             PersonRepository people, RateRepository rates, Out<ClaimNumber> numberOut,
+@@ -28,18 +28,16 @@ public class ApplyClaimAction {
+         if (action == ClaimAction.SETTLE && claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
+             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it.");
+         }
+-        Integer had = claim.getNumber();
+         claim.setStatus(action.to());
+         switch (action) {
+             case OPEN -> {
+                 claim.setNumber(repository.nextNumber(claim.getSheetId()));
+                 claim.setOpenedBy(user);
+             }
+-            case VOID -> claim.setNumber(null);
+             case SETTLE -> claim.setSettledDue(claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates));
+             default -> { }
+         }
+-        numberOut.set(new ClaimNumber(action == ClaimAction.VOID ? had : claim.getNumber()));
++        numberOut.set(new ClaimNumber(claim.getNumber()));
+     }
+ 
+     /** amount × pct / 100, rounded half to even to two decimals; null when no rate is in force on the claim's date. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimEditDraft.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimEditDraft.java
+new file mode 100644
+index 0000000..1dd87a4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimEditDraft.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses editing any claim but a draft: to change an open claim, void it and add a new one. */
++public class CheckClaimEditDraft {
++    public void check(@Val Claim claim) throws InvalidClaimStatusException {
++        if (claim.getStatus() != ClaimStatus.DRAFT) {
++            throw new InvalidClaimStatusException("Only a draft claim can be edited; this one is "
++                    + claim.getStatus() + ". To change it, void it and add a new one.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 4212c12..2af2469 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -47,7 +47,7 @@ public class Claim {
+     public void setNote(String note) { this.note = note; }
+     public ClaimStatus getStatus() { return status; }
+     public void setStatus(ClaimStatus status) { this.status = status; }
+-    /** The claim's number on the sheet: null for a draft or a voided claim. */
++    /** The claim's number on the sheet: null for a draft (a voided claim keeps its number). */
+     public Integer getNumber() { return number; }
+     public void setNumber(Integer number) { this.number = number; }
+     /** The due fixed when the claim was settled: null while it is live (not settled, or settled without a rate). */
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 50bfebc..144b14c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,5 @@
+ # The audit line is written last, once every rule has passed, so a refused change writes none.
++# Only a draft can be edited (409 otherwise).
+ # Validate before Load so an invalid body is a 400, not masked by a 404 for a missing claim.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+@@ -10,6 +11,10 @@ before:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: draft
++draft:
++  class: net.officefloor.hq.app.claim.CheckClaimEditDraft
++  govern: [ transaction ]
+   next: unclosed
+ unclosed:
+   class: net.officefloor.hq.app.claim.CheckClaimEditOpen
