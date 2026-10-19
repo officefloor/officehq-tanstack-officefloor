@@ -4,6 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { ClaimedTotal, PersonClaims, claimed, useClaims } from '../claims/Claims';
+import { due, rateOf, total, useRates } from '../rates/Rates';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
@@ -33,6 +34,10 @@ export function People({ sheet }: { sheet: string }) {
   const [editId, setEditId] = useEditPerson();
   const editing = people.find((p) => p.id === editId);
   const claims = useClaims(sheet);
+  const rates = useRates(sheet);
+  const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
+  // A person's due-total is on their claimed total, not the sum of their claims' rounded dues.
+  const dueTotalOf = (p: Person) => due(claimed(claimsOf(p)), rateOf(rates, p.grade));
 
   return (
     <section>
@@ -46,6 +51,7 @@ export function People({ sheet }: { sheet: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th>Claimed</th>
+            <th>Due</th>
             <th>Claims</th>
             <th />
           </tr>
@@ -55,9 +61,10 @@ export function People({ sheet }: { sheet: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-claimed">{claimed(claims.filter((c) => c.personId === p.id))}</td>
+              <td data-testid="person-claimed">{claimed(claimsOf(p))}</td>
+              <td data-testid="person-due-total">{dueTotalOf(p)}</td>
               <td>
-                <PersonClaims sheet={sheet} personId={p.id} claims={claims.filter((c) => c.personId === p.id)} />
+                <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)} pct={rateOf(rates, p.grade)} />
               </td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditId(p.id)}>
@@ -69,6 +76,9 @@ export function People({ sheet }: { sheet: string }) {
         </tbody>
       </table>
       <ClaimedTotal sheet={sheet} />
+      <p>
+        Due total: <strong data-testid="rollup-due-total">{total(people.map(dueTotalOf))}</strong>
+      </p>
     </section>
   );
 }

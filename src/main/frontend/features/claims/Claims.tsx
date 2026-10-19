@@ -4,6 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
+import { due } from '../rates/Rates';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
 // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
@@ -45,8 +46,11 @@ export function ClaimedTotal({ sheet }: { sheet: string }) {
   );
 }
 
-/** The claims cell of a person's row: the claim form and the person's claims, newest first. */
-export function PersonClaims({ sheet, personId, claims }: { sheet: string; personId: number; claims: Claim[] }) {
+/** The claims cell of a person's row: the claim form and the person's claims, newest first, each
+ *  with its due at the person's grade's rate (`pct`, undefined when the grade has none). */
+export function PersonClaims({ sheet, personId, claims, pct }: {
+  sheet: string; personId: number; claims: Claim[]; pct: string | undefined;
+}) {
   const [editId, setEditId] = useSearchParam('editClaim', asNumber);
   const editing = claims.find((c) => c.id === editId);
 
@@ -61,6 +65,7 @@ export function PersonClaims({ sheet, personId, claims }: { sheet: string; perso
             <span data-testid="claim-amount">{c.amount}</span>{' '}
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note">{c.note}</span>{' '}
+            Due <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
             <button type="button" data-testid="claim-edit" onClick={() => setEditId(c.id)}>
               Edit
             </button>
