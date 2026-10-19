@@ -16,9 +16,12 @@ public class Claim {
     private Integer number;
     private BigDecimal settledDue;
     private String openedBy;
+    private boolean stated;
+    private BigDecimal statedDue;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy) {
+            ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
+            boolean stated, BigDecimal statedDue) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -29,6 +32,8 @@ public class Claim {
         this.number = number;
         this.settledDue = settledDue;
         this.openedBy = openedBy;
+        this.stated = stated;
+        this.statedDue = statedDue;
     }
 
     public long getId() { return id; }
@@ -51,4 +56,10 @@ public class Claim {
     /** The user who opened the claim: null until it is opened. */
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+    /** Whether the person's last statement bound the claim to {@link #getStatedDue()}. */
+    public boolean isStated() { return stated; }
+    public void setStated(boolean stated) { this.stated = stated; }
+    /** The figure the last statement bound the claim to: null when unbound, or bound without a rate (n/a). */
+    public BigDecimal getStatedDue() { return statedDue; }
+    public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
 }

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
  *  Opening gives the claim the sheet's next number; voiding clears it. Settling fixes the claim's
  *  due at the person's grade's rate in force on the claim's date (none when there is none, so it stays live).
+ *  A claim a statement binds is settled at its bound figure.
  *  The user who opened a claim may not settle it (four eyes).
  *  Publishes the number the audit line carries (for a void, the number the claim had). */
 public class ApplyClaimAction {
@@ -35,7 +36,7 @@ public class ApplyClaimAction {
                 claim.setOpenedBy(user);
             }
             case VOID -> claim.setNumber(null);
-            case SETTLE -> claim.setSettledDue(dueNow(claim, people, rates));
+            case SETTLE -> claim.setSettledDue(claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates));
             default -> { }
         }
         numberOut.set(new ClaimNumber(action == ClaimAction.VOID ? had : claim.getNumber()));

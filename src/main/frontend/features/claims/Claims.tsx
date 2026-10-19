@@ -5,7 +5,7 @@ import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
-import { due } from '../rates/Rates';
+import { NA, due } from '../rates/Rates';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
 // the claim whose editor is open (URL state `editClaim`, the claim's id). Amounts come from the
@@ -13,7 +13,9 @@ import { due } from '../rates/Rates';
 // status moves DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN -> VOID; the server refuses any other change.
 // Opening gives a claim the sheet's next number, which voiding clears; a draft has none.
 // The user who opens a claim is recorded and may not settle it.
-// Settling fixes a claim's due at the rate of that moment; every other claim's due follows the current rate.
+// Settling fixes a claim's due at the rate of that moment. A person's statement binds each of their
+// counting claims to the figure it has then, until their next statement; every other claim's due
+// follows the current rate.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened; null for a draft or a voided claim. */
@@ -21,7 +23,11 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The due fixed when the claim was settled; null while it is live (not settled, or settled without a rate). */
   settledDue: string | null;
   /** The user who opened the claim; null until it is opened. That user may not settle it. */
-  openedBy: string | null };
+  openedBy: string | null;
+  /** Whether the person's last statement bound the claim to `statedDue`. */
+  stated: boolean;
+  /** The figure the last statement bound the claim to; null when unbound, or bound without a rate (n/a). */
+  statedDue: string | null };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -52,8 +58,13 @@ const toCents = (amount: string) => {
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
-/** A claim's figure: the due fixed when it was settled, else its live due at `pct` (n/a without one). */
-export const claimDue = (c: Claim, pct: string | undefined): string => c.settledDue ?? due(c.amount, pct);
+/** A claim's figure: the due fixed when it was settled, else the figure a statement bound it to, else
+ *  its live due at `pct` (n/a without one). */
+export const claimDue = (c: Claim, pct: string | undefined): string =>
+  c.settledDue ?? (c.stated ? c.statedDue ?? NA : due(c.amount, pct));
+
+/** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
+export const hasFixedDue = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null);
 
 /** The counted claims' amounts added up, with two decimals. */
 export function claimed(claims: Claim[]): string {
@@ -114,6 +125,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       <span data-testid="claim-status">{c.status}</span>{' '}
       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
       Due <span data-testid="claim-due">{claimDue(c, pct)}</span>{' '}
+      Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => { change.reset(); onEdit(); }}>
         Edit
       </button>

@@ -4,13 +4,20 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { ClaimedTotal, PersonClaims, claimDue, claimed, counts, useClaims } from '../claims/Claims';
+import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, useClaims } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
-export type Person = { id: number; name: string; grade: string; version: number };
+// A statement taken for a person records their due-total and binds their counting claims' figures.
+export type Person = { id: number; name: string; grade: string; version: number;
+  /** How many statements have been taken for the person. */
+  statementCount: number;
+  /** The last statement's due-total; null when none was taken, or it was n/a. */
+  statedTotal: string | null;
+  /** The sheet's today when the last statement was taken; null when none was. */
+  statementDate: string | null };
 
 const GRADES = ['A', 'B', 'C'];
 
@@ -42,11 +49,11 @@ export function People({ sheet }: { sheet: string }) {
   const today = useSheetToday(sheet);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
   // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
-  // It is n/a when their grade has no rate on the sheet's today, unless a counted settled claim keeps
-  // a figure: then it is the sum of the figures there are.
+  // It is n/a when their grade has no rate on the sheet's today, unless a counted claim keeps a figure
+  // (settled, or bound by a statement): then it is the sum of the figures there are.
   const dueTotalOf = (p: Person) => {
     const counted = claimsOf(p).filter(counts);
-    if (rateOn(rates, p.grade, today) === undefined && !counted.some((c) => c.settledDue !== null)) return NA;
+    if (rateOn(rates, p.grade, today) === undefined && !counted.some(hasFixedDue)) return NA;
     return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date))));
   };
 
@@ -63,6 +70,7 @@ export function People({ sheet }: { sheet: string }) {
             <th>Grade</th>
             <th>Claimed</th>
             <th>Due</th>
+            <th>Statements</th>
             <th>Claims</th>
             <th />
           </tr>
@@ -74,6 +82,9 @@ export function People({ sheet }: { sheet: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-claimed">{claimed(claimsOf(p))}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
+              <td>
+                <PersonStatement sheet={sheet} person={p} />
+              </td>
               <td>
                 <PersonClaims sheet={sheet} personId={p.id} claims={claimsOf(p)}
                   pctOn={(date) => rateOn(rates, p.grade, date)} />
@@ -92,6 +103,38 @@ export function People({ sheet }: { sheet: string }) {
         Due total: <strong data-testid="rollup-due-total">{total(people.map(dueTotalOf))}</strong>
       </p>
     </section>
+  );
+}
+
+/** The person's statements: how many, the last one's due-total and date, and the button that takes
+ *  one. A refused statement shows the row's error, which the next statement clears. */
+function PersonStatement({ sheet, person: p }: { sheet: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const [user] = useCurrentUser();
+  const by = `?user=${encodeURIComponent(user ?? '')}`;
+  const take = useMutation({
+    mutationFn: () => postJson<Person>(`${peoplePath(sheet)}/${p.id}/statement${by}`, {}),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+      queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+    ]),
+  });
+  return (
+    <>
+      <span data-testid="person-statement-count">{p.statementCount}</span>{' '}
+      Last <span data-testid="person-stated-total">{p.statementCount > 0 ? p.statedTotal ?? NA : ''}</span>{' '}
+      on <span data-testid="person-statement-date">{p.statementDate ?? ''}</span>{' '}
+      <button type="button" data-testid="person-statement" disabled={take.isPending}
+        onClick={() => { take.reset(); take.mutate(); }}>
+        Statement
+      </button>
+      {take.isError && (
+        <span role="alert" data-testid="person-error">
+          {' '}
+          {(take.error instanceof HttpError && take.error.reason) || 'The statement could not be taken.'}
+        </span>
+      )}
+    </>
   );
 }
 

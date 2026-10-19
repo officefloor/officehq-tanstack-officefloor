@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.person;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 /** A person on a sheet. Mutable so an Apply step changes it in place. */
 public class Person {
 
@@ -8,13 +11,24 @@ public class Person {
     private String name;
     private String grade;
     private long version;
+    private int statementCount;
+    private BigDecimal statedTotal;
+    private LocalDate statementDate;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
+        this(id, sheetId, name, grade, version, 0, null, null);
+    }
+
+    public Person(long id, String sheetId, String name, String grade, long version, int statementCount,
+            BigDecimal statedTotal, LocalDate statementDate) {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
         this.grade = grade;
         this.version = version;
+        this.statementCount = statementCount;
+        this.statedTotal = statedTotal;
+        this.statementDate = statementDate;
     }
 
     public long getId() { return id; }
@@ -26,4 +40,13 @@ public class Person {
     /** The version as loaded from the store; moves on once the person is saved. */
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }
+    /** How many statements have been taken for the person. */
+    public int getStatementCount() { return statementCount; }
+    public void setStatementCount(int statementCount) { this.statementCount = statementCount; }
+    /** The last statement's due-total: null when none was taken, or it was n/a. */
+    public BigDecimal getStatedTotal() { return statedTotal; }
+    public void setStatedTotal(BigDecimal statedTotal) { this.statedTotal = statedTotal; }
+    /** The sheet's today when the last statement was taken: null when none was. */
+    public LocalDate getStatementDate() { return statementDate; }
+    public void setStatementDate(LocalDate statementDate) { this.statementDate = statementDate; }
 }

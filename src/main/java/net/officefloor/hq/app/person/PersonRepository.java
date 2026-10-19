@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -12,7 +13,9 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
+            rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
+            rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate());
 
     private final JdbcTemplate jdbc;
 
@@ -59,5 +62,13 @@ public class PersonRepository {
         if (updated == 0) return false;
         person.setVersion(person.getVersion() + 1);
         return true;
+    }
+
+    /** Stores the person's statement fields. A statement is not an edit, so the version stays. */
+    public void saveStatement(Person person) {
+        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ?"
+                        + " WHERE sheet_id = ? AND id = ?",
+                person.getStatementCount(), person.getStatedTotal(), Date.valueOf(person.getStatementDate()),
+                person.getSheetId(), person.getId());
     }
 }
