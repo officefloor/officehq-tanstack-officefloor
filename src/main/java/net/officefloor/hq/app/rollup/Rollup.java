@@ -15,6 +15,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Floor;
+import net.officefloor.hq.app.setting.LatePct;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +25,7 @@ import org.springframework.stereotype.Service;
  *
  * Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. A claim's figure is its settled due, else the figure a statement
  * bound it to, else its live due at the person's grade's rate in force on its date, at least the sheet's floor
- * (n/a without a rate).
+ * (n/a without a rate), plus the late charge of an overdue OPEN claim (see {@link LatePct}).
  * A person's due-total adds up their counting claims' figures, skipping n/a; it is n/a when the grade
  * has no rate on the sheet's today and no counting claim keeps a fixed figure. The sheet's due-total
  * adds up the people's due-totals, skipping n/a.
@@ -53,9 +54,12 @@ public class Rollup {
     private final RateRepository rates;
     private final SheetClock clock;
     private final Floor floor;
+    private final LatePct latePct;
 
-    public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetClock clock, Floor floor) {
+    public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetClock clock, Floor floor,
+            LatePct latePct) {
         this.floor = floor;
+        this.latePct = latePct;
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -67,6 +71,7 @@ public class Rollup {
         List<Rate> sheetRates = rates.findBySheet(sheetId);
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         BigDecimal least = floor.of(sheetId);
+        LatePct.Charge late = latePct.of(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = zero();
         BigDecimal dueTotal = zero();
@@ -79,7 +84,7 @@ public class Rollup {
                 if (!person.counts(claim.getStatus())) continue;
                 claimed = claimed.add(claim.getAmount());
                 if (claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)) fixed = true;
-                BigDecimal figure = figure(claim, person, sheetRates, least);
+                BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least));
                 if (figure != null) due = due.add(figure);
             }
             boolean na = Rate.inForce(sheetRates, person.getGrade(), today).isEmpty() && !fixed;
@@ -96,13 +101,14 @@ public class Rollup {
         List<Rate> sheetRates = rates.findBySheet(sheetId);
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         BigDecimal least = floor.of(sheetId);
+        LatePct.Charge late = latePct.of(sheetId);
         BigDecimal sum = zero();
         for (Person person : people.findBySheet(sheetId)) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!person.counts(claim.getStatus())) continue;
                 if (claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) continue;
-                BigDecimal figure = figure(claim, person, sheetRates, least);
+                BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least));
                 if (figure != null) sum = sum.add(figure);
             }
         }

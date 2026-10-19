@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { useCurrentUser } from '../session/SignIn';
-import { claimDue, counts, useClaims } from '../claims/Claims';
+import { claimDue, counts, useClaims, useLate } from '../claims/Claims';
 import { usePeople } from '../people/People';
 import { rateOn, total, useRates } from '../rates/Rates';
 import { useFloor } from '../settings/Settings';
@@ -19,12 +19,13 @@ export function Periods({ sheet }: { sheet: string }) {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const floor = useFloor(sheet);
+  const late = useLate(sheet);
   const gradeOf = new Map(people.map((p) => [p.id, p.grade]));
   const held = new Set(people.filter((p) => p.held).map((p) => p.id));
   const dueTotalOf = (period: Period) =>
     total(claims
       .filter((c) => counts(c, held.has(c.personId)) && inPeriod(period, c.date) && gradeOf.has(c.personId))
-      .map((c) => claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor)));
+      .map((c) => claimDue(c, rateOn(rates, gradeOf.get(c.personId)!, c.date), floor, late)));
 
   return (
     <section>

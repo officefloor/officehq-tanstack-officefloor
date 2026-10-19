@@ -7,6 +7,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Floor;
+import net.officefloor.hq.app.setting.LatePct;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,12 +15,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** Moves the claim to the action's status, refusing a change its current status does not allow.
  *  Opening gives the claim the sheet's next number, which it keeps when voided. Settling fixes the claim's
  *  due at the person's grade's rate in force on the claim's date (none when there is none, so it stays live).
- *  A claim a statement binds is settled at its bound figure.
+ *  A claim a statement binds is settled at its bound figure. An overdue claim's late charge is frozen in on top.
  *  The user who opened a claim may not settle it (four eyes).
  *  Publishes the number the audit line carries. */
 public class ApplyClaimAction {
     public void apply(@Val ClaimAction action, @Val Claim claim, ClaimRepository repository,
-            PersonRepository people, RateRepository rates, Floor floor, Out<ClaimNumber> numberOut,
+            PersonRepository people, RateRepository rates, Floor floor, LatePct latePct, Out<ClaimNumber> numberOut,
             @RequestParam(value = "user", required = false) String user)
             throws InvalidClaimStatusException {
         if (!action.allowedFrom(claim.getStatus())) {
@@ -29,13 +30,16 @@ public class ApplyClaimAction {
         if (action == ClaimAction.SETTLE && claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it.");
         }
+        // The late charge is worked out while the claim is still OPEN, so settling freezes it in.
+        BigDecimal settledDue = action != ClaimAction.SETTLE ? null : latePct.of(claim.getSheetId())
+                .addTo(claim, claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates, floor));
         claim.setStatus(action.to());
         switch (action) {
             case OPEN -> {
                 claim.setNumber(repository.nextNumber(claim.getSheetId()));
                 claim.setOpenedBy(user);
             }
-            case SETTLE -> claim.setSettledDue(claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates, floor));
+            case SETTLE -> claim.setSettledDue(settledDue);
             default -> { }
         }
         numberOut.set(new ClaimNumber(claim.getNumber()));

@@ -8,16 +8,19 @@ import { useCurrentUser } from '../session/SignIn';
 // a clerk may settle; a steward settles anything. Every user name is a clerk unless assigned steward
 // here. The server enforces both when a claim is settled. The floor (two decimals, 1.00 until set) is
 // the least live due a claim has; see `claimDue`. The terms (whole days, 14 until set) are how long
-// after its date a claim is due by; see `dueBy`.
+// after its date a claim is due by; see `dueBy`. The late percent (two decimals, 0.00 until set) is
+// charged on an overdue claim's figure for every full 30 days it is overdue; see `lateCharge`.
 type Setting = { key: string; value: string };
 type Role = { user: string; role: string };
 
 const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }, { key: 'floor', label: 'Floor' },
-  { key: 'terms', label: 'Terms (days)' }];
+  { key: 'terms', label: 'Terms (days)' }, { key: 'late-pct', label: 'Late %' }];
 
 const DEFAULT_FLOOR = '1.00';
 
 const DEFAULT_TERMS = '14';
+
+const DEFAULT_LATE_PCT = '0.00';
 
 const settingsKey = (sheet: string) => ['sheet', sheet, 'settings'];
 const settingsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/settings`;
@@ -40,6 +43,11 @@ export function useFloor(sheet: string): string {
 /** The sheet's terms: how many days after its date a claim is due by. */
 export function useTerms(sheet: string): number {
   return Number(useSettings(sheet).find((s) => s.key === 'terms')?.value || DEFAULT_TERMS);
+}
+
+/** The sheet's late percent, with two decimals. */
+export function useLatePct(sheet: string): string {
+  return useSettings(sheet).find((s) => s.key === 'late-pct')?.value || DEFAULT_LATE_PCT;
 }
 
 export function Settings({ sheet }: { sheet: string }) {

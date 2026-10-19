@@ -12,6 +12,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Floor;
+import net.officefloor.hq.app.setting.LatePct;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -24,16 +25,18 @@ import net.officefloor.plugin.variable.Val;
  *
  * A claim's figure is its settled due, else the figure a statement bound it to, else its live due at
  * the person's grade's rate in force on its date, at least the sheet's floor (n/a without a rate). The due-total adds up the counting
- * claims' figures, skipping n/a; it is n/a when the grade has no rate on today and no counting claim
+ * claims' figures, each with its late charge on top (see {@link LatePct}; the bound figure leaves it out, so it
+ * keeps following the sheet's today), skipping n/a; it is n/a when the grade has no rate on today and no counting claim
  * keeps a fixed figure.
  */
 public class TakeStatement {
     public void take(@Val Person person, ClaimRepository claims, PersonRepository people, RateRepository rateRepository,
-            SheetClock clock, Floor floor, Out<Statement> statementOut) {
+            SheetClock clock, Floor floor, LatePct latePct, Out<Statement> statementOut) {
         String sheetId = person.getSheetId();
         LocalDate today = clock.today(sheetId);
         List<Rate> rates = rateRepository.findBySheet(sheetId);
         BigDecimal least = floor.of(sheetId);
+        LatePct.Charge late = latePct.of(sheetId);
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
@@ -47,7 +50,8 @@ public class TakeStatement {
             } else {
                 BigDecimal figure = figure(claim, person, rates, least);
                 if (claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)) fixed = true;
-                if (figure != null) sum = sum.add(figure);
+                BigDecimal due = late.addTo(claim, figure);
+                if (due != null) sum = sum.add(due);
                 claim.setStated(true);
                 claim.setStatedDue(figure);
                 counted++;

@@ -5,8 +5,8 @@ import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
-import { NA, due, toHundredths } from '../rates/Rates';
-import { useFloor, useTerms } from '../settings/Settings';
+import { NA, due, fromHundredths, toHundredths } from '../rates/Rates';
+import { useFloor, useLatePct, useTerms } from '../settings/Settings';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
@@ -62,10 +62,34 @@ const toCents = (amount: string) => {
  *  person on hold (`held`) count in none. */
 export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
 
-/** A claim's figure: the due fixed when it was settled, else the figure a statement bound it to, else
- *  its live due at `pct`, at least the sheet's `floor` (n/a without a rate). */
-export const claimDue = (c: Claim, pct: string | undefined, floor: string): string =>
-  c.settledDue ?? (c.stated ? c.statedDue ?? NA : atLeast(due(c.amount, pct), floor));
+/** What the late charge is worked out from: the sheet's late percent, terms and today. */
+export type Late = { pct: string; terms: number; today: string | undefined };
+
+export function useLate(sheet: string): Late {
+  return { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
+}
+
+/** A claim's due: the due fixed when it was settled (any late charge frozen in), else the figure a
+ *  statement bound it to, else its live due at `pct`, at least the sheet's `floor` (n/a without a rate);
+ *  an overdue claim's late charge goes on top of the bound or live figure. */
+export const claimDue = (c: Claim, pct: string | undefined, floor: string, late: Late): string =>
+  c.settledDue ?? lateCharge(c, c.stated ? c.statedDue ?? NA : atLeast(due(c.amount, pct), floor), late);
+
+/** The figure plus the late percent of it for every full 30 days the claim is overdue, rounded half to
+ *  even to two decimals. A statement never binds the charge: it follows the sheet's today. */
+function lateCharge(c: Claim, figure: string, late: Late): string {
+  if (figure === NA || !isOverdue(c, late.terms, late.today)) return figure;
+  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
+  const periods = BigInt(Math.floor(days / 30));
+  return fromHundredths(toHundredths(figure) + roundedCharge(toHundredths(figure) * toHundredths(late.pct) * periods));
+}
+
+/** cents × hundredths-of-a-percent (× 10000) to cents, rounded half to even. */
+function roundedCharge(scaled: bigint): bigint {
+  const cents = scaled / 10000n;
+  const rest = scaled % 10000n;
+  return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+}
 
 const atLeast = (value: string, floor: string) =>
   value !== NA && toHundredths(value) < toHundredths(floor) ? floor : value;
@@ -132,8 +156,8 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const period = periodOf(usePeriods(sheet), c.date);
   const floor = useFloor(sheet);
-  const terms = useTerms(sheet);
-  const today = useSheetToday(sheet);
+  const late = useLate(sheet);
+  const { terms, today } = late;
   const change = useMutation({
     mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
@@ -150,7 +174,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       <span data-testid="claim-note">{c.note}</span>{' '}
       <span data-testid="claim-status">{c.status}</span>{' '}
       Opened by <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
-      Due <span data-testid="claim-due">{claimDue(c, pct, floor)}</span>{' '}
+      Due <span data-testid="claim-due">{claimDue(c, pct, floor, late)}</span>{' '}
       Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
       Overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

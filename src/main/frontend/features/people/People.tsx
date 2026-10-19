@@ -4,10 +4,10 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
-import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, isOverdue, useClaims } from '../claims/Claims';
+import { ClaimedTotal, PersonClaims, claimDue, claimed, claimsKey, counts, hasFixedDue, isOverdue, useClaims, useLate } from '../claims/Claims';
 import { NA, rateOn, total, useRates } from '../rates/Rates';
 import { useSheetToday } from '../sheet/SheetToday';
-import { useFloor, useTerms } from '../settings/Settings';
+import { useFloor } from '../settings/Settings';
 
 // The people on the sheet, in the order they were added. One form adds a person, or edits the
 // person whose editor is open (URL state `editPerson`, the person's id).
@@ -76,7 +76,8 @@ export function People({ sheet }: { sheet: string }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const floor = useFloor(sheet);
-  const terms = useTerms(sheet);
+  const late = useLate(sheet);
+  const { terms } = late;
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
   const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
   // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
@@ -85,14 +86,14 @@ export function People({ sheet }: { sheet: string }) {
   const dueTotalOf = (p: Person) => {
     const counted = claimsOf(p).filter((c) => counts(c, p.held));
     if (rateOn(rates, p.grade, today) === undefined && !counted.some(hasFixedDue)) return NA;
-    return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor)));
+    return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor, late)));
   };
   // A person's overdue claims are their counted claims that are overdue; the overdue-total adds up
   // their figures, skipping n/a.
   const overdueOf = (p: Person) =>
     claimsOf(p).filter((c) => counts(c, p.held) && isOverdue(c, terms, today));
   const overdueTotalOf = (p: Person) =>
-    total(overdueOf(p).map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor)));
+    total(overdueOf(p).map((c) => claimDue(c, rateOn(rates, p.grade, c.date), floor, late)));
 
   return (
     <section>
