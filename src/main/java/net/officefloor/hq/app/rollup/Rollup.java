@@ -16,6 +16,7 @@ import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Floor;
 import net.officefloor.hq.app.setting.LatePct;
+import net.officefloor.hq.app.setting.PolicyDate;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +26,8 @@ import org.springframework.stereotype.Service;
  *
  * Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. A claim's figure is its settled due, else the figure a statement
  * bound it to, else its live due at the person's grade's rate in force on its date, at least the sheet's floor
- * (n/a without a rate), plus the late charge of an overdue OPEN claim (see {@link LatePct}).
+ * (n/a without a rate), plus the late charge of an overdue OPEN claim (see {@link LatePct}), each rounded by the
+ * claim's rounding (see {@link PolicyDate}).
  * A person's due-total adds up their counting claims' figures, skipping n/a; it is n/a when the grade
  * in force on the sheet's today has no rate there and no counting claim has a figure. The sheet's due-total
  * adds up the people's due-totals, skipping n/a.
@@ -55,9 +57,11 @@ public class Rollup {
     private final SheetClock clock;
     private final Floor floor;
     private final LatePct latePct;
+    private final PolicyDate policyDate;
 
     public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetClock clock, Floor floor,
-            LatePct latePct) {
+            LatePct latePct, PolicyDate policyDate) {
+        this.policyDate = policyDate;
         this.floor = floor;
         this.latePct = latePct;
         this.people = people;
@@ -72,6 +76,7 @@ public class Rollup {
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         BigDecimal least = floor.of(sheetId);
         LatePct.Charge late = latePct.of(sheetId);
+        PolicyDate.Policy policy = policyDate.of(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = zero();
         BigDecimal dueTotal = zero();
@@ -83,7 +88,8 @@ public class Rollup {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!person.counts(claim.getStatus())) continue;
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least));
+                RoundingMode mode = policy.modeFor(claim);
+                BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least, mode), mode);
                 if (figure != null) {
                     due = due.add(figure);
                     figured = true;
@@ -104,13 +110,15 @@ public class Rollup {
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         BigDecimal least = floor.of(sheetId);
         LatePct.Charge late = latePct.of(sheetId);
+        PolicyDate.Policy policy = policyDate.of(sheetId);
         BigDecimal sum = zero();
         for (Person person : people.findBySheet(sheetId)) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!person.counts(claim.getStatus())) continue;
                 if (claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) continue;
-                BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least));
+                RoundingMode mode = policy.modeFor(claim);
+                BigDecimal figure = late.addTo(claim, figure(claim, person, sheetRates, least, mode), mode);
                 if (figure != null) sum = sum.add(figure);
             }
         }
@@ -134,11 +142,11 @@ public class Rollup {
         return lines;
     }
 
-    private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least) {
+    private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least, RoundingMode mode) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
         return Floor.raise(claim, Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
-                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, mode))
                 .orElse(null), least);
     }
 

@@ -13,6 +13,7 @@ import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Floor;
 import net.officefloor.hq.app.setting.LatePct;
+import net.officefloor.hq.app.setting.PolicyDate;
 import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -31,12 +32,13 @@ import net.officefloor.plugin.variable.Val;
  */
 public class TakeStatement {
     public void take(@Val Person person, ClaimRepository claims, PersonRepository people, RateRepository rateRepository,
-            SheetClock clock, Floor floor, LatePct latePct, Out<Statement> statementOut) {
+            SheetClock clock, Floor floor, LatePct latePct, PolicyDate policyDate, Out<Statement> statementOut) {
         String sheetId = person.getSheetId();
         LocalDate today = clock.today(sheetId);
         List<Rate> rates = rateRepository.findBySheet(sheetId);
         BigDecimal least = floor.of(sheetId);
         LatePct.Charge late = latePct.of(sheetId);
+        PolicyDate.Policy policy = policyDate.of(sheetId);
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
         boolean figured = false;
         int counted = 0;
@@ -48,9 +50,10 @@ public class TakeStatement {
                 claim.setStated(false);
                 claim.setStatedDue(null);
             } else {
-                BigDecimal figure = figure(claim, person, rates, least);
+                RoundingMode mode = policy.modeFor(claim);
+                BigDecimal figure = figure(claim, person, rates, least, mode);
                 if (figure != null) figured = true;
-                BigDecimal due = late.addTo(claim, figure);
+                BigDecimal due = late.addTo(claim, figure, mode);
                 if (due != null) sum = sum.add(due);
                 claim.setStated(true);
                 claim.setStatedDue(figure);
@@ -66,12 +69,12 @@ public class TakeStatement {
         statementOut.set(new Statement(dueTotal, counted));
     }
 
-    /** amount × pct / 100, rounded half to even to two decimals and at least the floor, unless already fixed; null when n/a. */
-    private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least) {
+    /** amount × pct / 100, rounded by {@code mode} to two decimals and at least the floor, unless already fixed; null when n/a. */
+    private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least, RoundingMode mode) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
         return Floor.raise(claim, Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
-                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, mode))
                 .orElse(null), least);
     }
 }

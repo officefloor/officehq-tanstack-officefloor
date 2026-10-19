@@ -8,6 +8,7 @@ import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Floor;
 import net.officefloor.hq.app.setting.LatePct;
+import net.officefloor.hq.app.setting.PolicyDate;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -16,11 +17,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  Opening gives the claim the sheet's next number, which it keeps when voided. Settling fixes the claim's
  *  due at the person's grade's rate in force on the claim's date (none when there is none, so it stays live).
  *  A claim a statement binds is settled at its bound figure. An overdue claim's late charge is frozen in on top.
+ *  Both are rounded by the claim's rounding (see {@link PolicyDate}).
  *  The user who opened a claim may not settle it (four eyes).
  *  Publishes the number the audit line carries. */
 public class ApplyClaimAction {
     public void apply(@Val ClaimAction action, @Val Claim claim, ClaimRepository repository,
-            PersonRepository people, RateRepository rates, Floor floor, LatePct latePct, Out<ClaimNumber> numberOut,
+            PersonRepository people, RateRepository rates, Floor floor, LatePct latePct, PolicyDate policyDate,
+            Out<ClaimNumber> numberOut,
             @RequestParam(value = "user", required = false) String user)
             throws InvalidClaimStatusException {
         if (!action.allowedFrom(claim.getStatus())) {
@@ -31,8 +34,9 @@ public class ApplyClaimAction {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it.");
         }
         // The late charge is worked out while the claim is still OPEN, so settling freezes it in.
+        RoundingMode mode = action != ClaimAction.SETTLE ? null : policyDate.of(claim.getSheetId()).modeFor(claim);
         BigDecimal settledDue = action != ClaimAction.SETTLE ? null : latePct.of(claim.getSheetId())
-                .addTo(claim, claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates, floor));
+                .addTo(claim, claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates, floor, mode), mode);
         claim.setStatus(action.to());
         switch (action) {
             case OPEN -> {
@@ -45,11 +49,11 @@ public class ApplyClaimAction {
         numberOut.set(new ClaimNumber(claim.getNumber()));
     }
 
-    /** amount × pct / 100, rounded half to even to two decimals and at least the floor; null when no rate is in force on the claim's date. */
-    private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates, Floor floor) {
+    /** amount × pct / 100, rounded by {@code mode} to two decimals and at least the floor; null when no rate is in force on the claim's date. */
+    private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates, Floor floor, RoundingMode mode) {
         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
         return Floor.raise(claim, Rate.inForce(rates.findBySheet(claim.getSheetId()), person.gradeOn(claim.getDate()), claim.getDate())
-                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, mode))
                 .orElse(null), floor.of(claim.getSheetId()));
     }
 }

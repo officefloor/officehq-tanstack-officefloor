@@ -3,8 +3,8 @@ package net.officefloor.hq.app.claim;
 import java.util.List;
 
 /** A claim with a negative amount is a correction: it is allowed only when it names, by number, a
- *  SETTLED claim of the same person. Its due is its amount times the rate, rounded like any claim,
- *  with no floor and no late charge. */
+ *  SETTLED claim of the same person. Its due is its amount times the rate, rounded by the date of the
+ *  claim it corrects, with no floor and no late charge. */
 final class Correction {
 
     private Correction() {

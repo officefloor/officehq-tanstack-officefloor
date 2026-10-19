@@ -5,8 +5,8 @@ import { useSingleSubmit } from '../../api/useSingleSubmit';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useCurrentUser } from '../session/SignIn';
 import { useSheetToday } from '../sheet/SheetToday';
-import { NA, due, fromHundredths, toHundredths } from '../rates/Rates';
-import { useFloor, useLatePct, useTerms } from '../settings/Settings';
+import { NA, due, fromHundredths, roundScaled, toHundredths } from '../rates/Rates';
+import { useFloor, useLatePct, usePolicyDate, useTerms } from '../settings/Settings';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 
 // A person's claims, listed under their row newest first. One form per row adds a claim, or edits
@@ -61,33 +61,38 @@ export function useClaims(sheet: string): Claim[] {
  *  person on hold (`held`) count in none. */
 export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
 
-/** What the late charge is worked out from: the sheet's late percent, terms and today. */
-export type Late = { pct: string; terms: number; today: string | undefined };
+/** What the late charge is worked out from: the sheet's late percent, terms and today; and what a live
+ *  figure's rounding is decided by: the policy date (the sheet's today while blank) and the sheet's claims. */
+export type Late = { pct: string; terms: number; today: string | undefined; policy: string | undefined; claims: Claim[] };
 
 export function useLate(sheet: string): Late {
-  return { pct: useLatePct(sheet), terms: useTerms(sheet), today: useSheetToday(sheet) };
+  const today = useSheetToday(sheet);
+  return { pct: useLatePct(sheet), terms: useTerms(sheet), today, policy: usePolicyDate(sheet) ?? today,
+    claims: useClaims(sheet) };
+}
+
+/** Whether the claim's live figures (the rate step and the late charge) round half up: it is dated before
+ *  the policy date (a correction by the date of the claim it corrects); otherwise they round half to even. */
+function roundsHalfUp(c: Claim, late: Late): boolean {
+  const corrected = c.corrects === null ? undefined
+    : late.claims.find((o) => o.personId === c.personId && o.number === c.corrects);
+  return late.policy !== undefined && (corrected ?? c).date < late.policy;
 }
 
 /** A claim's due: the due fixed when it was settled (any late charge frozen in), else the figure a
  *  statement bound it to, else its live due at `pct`, at least the sheet's `floor` (n/a without a rate);
  *  an overdue claim's late charge goes on top of the bound or live figure. A correction has no floor and no late charge. */
 export const claimDue = (c: Claim, pct: string | undefined, floor: string, late: Late): string =>
-  c.settledDue ?? lateCharge(c, c.stated ? c.statedDue ?? NA : atLeast(due(c.amount, pct), c.corrects === null ? floor : undefined), late);
+  c.settledDue ?? lateCharge(c, c.stated ? c.statedDue ?? NA
+    : atLeast(due(c.amount, pct, roundsHalfUp(c, late)), c.corrects === null ? floor : undefined), late);
 
-/** The figure plus the late percent of it for every full 30 days the claim is overdue, rounded half to
- *  even to two decimals. A statement never binds the charge: it follows the sheet's today. */
+/** The figure plus the late percent of it for every full 30 days the claim is overdue, rounded to two
+ *  decimals by the claim's rounding (see `roundsHalfUp`). A statement never binds the charge: it follows the sheet's today. */
 function lateCharge(c: Claim, figure: string, late: Late): string {
   if (figure === NA || c.corrects !== null || !isOverdue(c, late.terms, late.today)) return figure;
   const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
   const periods = BigInt(Math.floor(days / 30));
-  return fromHundredths(toHundredths(figure) + roundedCharge(toHundredths(figure) * toHundredths(late.pct) * periods));
-}
-
-/** cents × hundredths-of-a-percent (× 10000) to cents, rounded half to even. */
-function roundedCharge(scaled: bigint): bigint {
-  const cents = scaled / 10000n;
-  const rest = scaled % 10000n;
-  return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  return fromHundredths(toHundredths(figure) + roundScaled(toHundredths(figure) * toHundredths(late.pct) * periods, roundsHalfUp(c, late)));
 }
 
 /** The value raised to the floor; no floor (a correction's) leaves it as it is. */

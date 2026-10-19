@@ -9,12 +9,14 @@ import { useCurrentUser } from '../session/SignIn';
 // here. The server enforces both when a claim is settled. The floor (two decimals, 1.00 until set) is
 // the least live due a claim has; see `claimDue`. The terms (whole days, 14 until set) are how long
 // after its date a claim is due by; see `dueBy`. The late percent (two decimals, 0.00 until set) is
-// charged on an overdue claim's figure for every full 30 days it is overdue; see `lateCharge`.
+// charged on an overdue claim's figure for every full 30 days it is overdue; see `lateCharge`. The policy
+// date (yyyy-MM-dd; blank: the sheet's today) decides how a claim's live figures round; see `roundsHalfUp`.
 type Setting = { key: string; value: string };
 type Role = { user: string; role: string };
 
 const SETTINGS = [{ key: 'clerk-limit', label: 'Clerk limit' }, { key: 'floor', label: 'Floor' },
-  { key: 'terms', label: 'Terms (days)' }, { key: 'late-pct', label: 'Late %' }];
+  { key: 'terms', label: 'Terms (days)' }, { key: 'late-pct', label: 'Late %' },
+  { key: 'policy-date', label: 'Policy date' }];
 
 const DEFAULT_FLOOR = '1.00';
 
@@ -48,6 +50,11 @@ export function useTerms(sheet: string): number {
 /** The sheet's late percent, with two decimals. */
 export function useLatePct(sheet: string): string {
   return useSettings(sheet).find((s) => s.key === 'late-pct')?.value || DEFAULT_LATE_PCT;
+}
+
+/** The sheet's policy date as set (yyyy-MM-dd); undefined while it is blank. */
+export function usePolicyDate(sheet: string): string | undefined {
+  return useSettings(sheet).find((s) => s.key === 'policy-date')?.value || undefined;
 }
 
 export function Settings({ sheet }: { sheet: string }) {

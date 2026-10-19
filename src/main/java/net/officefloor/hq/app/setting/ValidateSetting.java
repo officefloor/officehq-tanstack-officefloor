@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,10 +20,18 @@ public class ValidateSetting {
             @RequestBody SettingRequest request, Out<Setting> setting) throws InvalidSettingException {
         String value = request == null || request.value() == null ? "" : request.value().strip();
         if (!ClerkLimit.KEY.equals(key) && !Floor.KEY.equals(key) && !Terms.KEY.equals(key)
-                && !LatePct.KEY.equals(key)) {
+                && !LatePct.KEY.equals(key) && !PolicyDate.KEY.equals(key)) {
             throw new InvalidSettingException("No such setting: " + key);
         }
-        if (Terms.KEY.equals(key)) {
+        if (PolicyDate.KEY.equals(key)) {
+            if (!value.isEmpty()) {
+                try {
+                    value = LocalDate.parse(value).toString();
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("The policy date must be blank or a date (yyyy-MM-dd).");
+                }
+            }
+        } else if (Terms.KEY.equals(key)) {
             if (!DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms must be a whole number of days.");
             }

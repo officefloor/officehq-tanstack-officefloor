@@ -54,17 +54,22 @@ export const fromHundredths = (h: bigint): string => {
   return `${h < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
 };
 
-/** amount × pct / 100, rounded half to even to two decimals; n/a without a rate. A correction's negative
- *  amount rounds like any other, by its size, keeping its sign. */
-export function due(amount: string, pct: string | undefined): string {
+/** amount × pct / 100, rounded half to even (or half up, `halfUp`) to two decimals; n/a without a rate.
+ *  A correction's negative amount rounds like any other, by its size, keeping its sign. */
+export function due(amount: string, pct: string | undefined, halfUp = false): string {
   if (pct === undefined) return NA;
   // cents × hundredths-of-a-percent gives cents × 10000.
   const signed = toHundredths(amount) * toHundredths(pct);
   const scaled = signed < 0n ? -signed : signed;
+  const rounded = roundScaled(scaled, halfUp);
+  return fromHundredths(signed < 0n ? -rounded : rounded);
+}
+
+/** A non-negative cents × 10000 to cents, rounded half to even, or half up when `halfUp`. */
+export function roundScaled(scaled: bigint, halfUp: boolean): bigint {
   const cents = scaled / 10000n;
   const rest = scaled % 10000n;
-  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
-  return fromHundredths(signed < 0n ? -rounded : rounded);
+  return rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n)) ? cents + 1n : cents;
 }
 
 /** Two-decimal values added up, skipping n/a. */
