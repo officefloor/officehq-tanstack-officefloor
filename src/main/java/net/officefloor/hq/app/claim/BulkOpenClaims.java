@@ -9,6 +9,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Floor;
 import net.officefloor.hq.app.setting.LatePct;
@@ -25,7 +26,7 @@ public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenRequest request,
             @RequestParam(value = "user", required = false) String user, ClaimRepository claims,
             PersonRepository people, PeriodRepository periods, RateRepository rates, Floor floor, LatePct latePct,
-            PolicyDate policyDate, ClaimNumbering numbering, Rollup rollup, Audit audit, Out<BulkOpenResult> resultOut) {
+            PolicyDate policyDate, ClaimNumbering numbering, RoleRepository roles, Rollup rollup, Audit audit, Out<BulkOpenResult> resultOut) {
         Set<Long> selected = new HashSet<>(request.claimIds());
         List<Claim> sheetClaims = claims.findBySheet(sheetId);
         List<Claim> ordered = new ArrayList<>();
@@ -41,12 +42,12 @@ public class BulkOpenClaims {
             try {
                 new CheckClaimActionOpen().check(claim, periods);
                 new ApplyClaimAction().apply(ClaimAction.OPEN, claim, numbering, people, rates, floor, latePct, policyDate,
-                        n -> number[0] = n, user);
+                        roles, n -> number[0] = n, user, null);
             } catch (InvalidClaimStatusException refused) {
                 continue;
             }
             claims.save(claim);
-            new AuditClaimStatus().audit(ClaimAction.OPEN, claim, number[0], user, people, audit);
+            new AuditClaimStatus().audit(ClaimAction.OPEN, claim, number[0], user, null, people, audit);
             rollup.changes(sheetId, user, before, rollup.take(sheetId)).forEach(audit::record);
             opened++;
         }

@@ -24,9 +24,9 @@ import org.springframework.stereotype.Service;
  * The sheet's figures as the screen shows them: each person's claimed and due-total, in the order
  * they were added, and the sheet's claimed-total and due-total.
  *
- * Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. A claim's figure is its settled due, else the figure a statement
- * bound it to, else its live due at the person's grade's rate in force on its date, at least the sheet's floor
- * (n/a without a rate), plus the late charge of an overdue OPEN claim (see {@link LatePct}), each rounded by the
+ * Only OPEN, PENDING and SETTLED claims count, and a held person's OPEN and PENDING claims do not. A claim's figure is its settled due, else the figure a statement
+ * bound it to (never while PENDING), else its live due at the person's grade's rate in force on its date, at least the sheet's floor
+ * (n/a without a rate), plus the late charge of an overdue OPEN or PENDING claim (see {@link LatePct}), each rounded by the
  * claim's rounding (see {@link PolicyDate}).
  * A person's due-total adds up their counting claims' figures, skipping n/a; it is n/a when the grade
  * in force on the sheet's today has no rate there and no counting claim has a figure. The sheet's due-total
@@ -144,7 +144,7 @@ public class Rollup {
 
     private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least, RoundingMode mode) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
-        if (claim.isStated()) return claim.getStatedDue();
+        if (claim.isBound()) return claim.getStatedDue();
         return Floor.raise(claim, Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, mode))
                 .orElse(null), least);

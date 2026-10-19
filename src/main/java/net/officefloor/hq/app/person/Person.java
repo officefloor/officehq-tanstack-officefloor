@@ -79,16 +79,16 @@ public class Person {
     /** The date the person is retired from: null when they are not retired. */
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
-    /** Whether the person is on hold: their OPEN claims count in no live total. */
+    /** Whether the person is on hold: their OPEN and PENDING claims count in no live total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
     /** The names of the person's patrons, sorted. */
     public List<String> getPatrons() { return patrons; }
     public void setPatrons(List<String> patrons) { this.patrons = new ArrayList<>(patrons); }
-    /** Whether a claim of the person in this status counts in the live totals: SETTLED, and OPEN
-     *  unless they are held. */
+    /** Whether a claim of the person in this status counts in the live totals: SETTLED, and OPEN or
+     *  PENDING unless they are held. */
     public boolean counts(ClaimStatus status) {
-        return status == ClaimStatus.SETTLED || (status == ClaimStatus.OPEN && !held);
+        return status == ClaimStatus.SETTLED || (status.isOpen() && !held);
     }
     /** Whether a claim of the person may be dated this day: not after their retirement date. */
     public boolean claimAllowedOn(LocalDate date) { return retiredFrom == null || !date.isAfter(retiredFrom); }

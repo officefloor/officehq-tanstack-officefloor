@@ -9,7 +9,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
 
-/** The sheet's late percent (two decimals, 0.00 until set). An overdue claim (OPEN, its due-by — its
+/** The sheet's late percent (two decimals, 0.00 until set). An overdue claim (OPEN or PENDING, its due-by — its
  *  date plus the terms — before the sheet's today) gains the late percent of its figure for every full
  *  30 days it is overdue, rounded to two decimals by the claim's rounding (see {@link PolicyDate}), on top. The charge is never bound by a
  *  statement; settling freezes it into the settled due. A correction (a negative amount) has no late charge. */
@@ -39,7 +39,7 @@ public class LatePct {
 
         /** The figure with the claim's late charge, rounded by {@code mode}, on top; null (n/a) stays null. */
         public BigDecimal addTo(Claim claim, BigDecimal figure, RoundingMode mode) {
-            if (figure == null || claim.getStatus() != ClaimStatus.OPEN || claim.isCorrection()) return figure;
+            if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) return figure;
             long late = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today);
             if (late <= 0) return figure;
             long periods = late / 30;

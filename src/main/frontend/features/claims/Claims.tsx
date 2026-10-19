@@ -17,6 +17,9 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // P1-1, X-1, ...), which a voided claim keeps; a draft has none.
 // Only a draft can be edited: to change an open claim, void it and add a new one.
 // The user who opens a claim is recorded and may not settle it.
+// A clerk settling a claim whose due is above the clerk limit sends it to PENDING instead. A steward (not
+// its opener) approves it (SETTLED, its due fixed at that moment) or rejects it with a reason (back to OPEN).
+// A PENDING claim is handled like an OPEN one, except that no statement binds it: it follows its live figure.
 // Settling fixes a claim's due at the rate of that moment. A person's statement binds each of their
 // counting claims to the figure it has then, until their next statement; every other claim's due
 // follows the current rate. Each claim shows the period its date falls in, if any.
@@ -24,7 +27,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // same person that it corrects (the server refuses it otherwise). Its due has no floor and no late charge.
 // Claims can be selected (URL state `selectedClaims`, their ids) and opened together: each that can be
 // opened is opened, numbered in list order; each that cannot is left as it is. The counts are shown.
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened, and kept if it is voided; null for a draft. */
   number: string | null;
@@ -42,6 +45,8 @@ export type Claim = { id: number; personId: number; amount: string; date: string
 const ACTIONS = [
   { action: 'open', label: 'Open' },
   { action: 'settle', label: 'Settle' },
+  { action: 'approve', label: 'Approve' },
+  { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
 ];
 
@@ -60,9 +65,15 @@ export function useClaims(sheet: string): Claim[] {
   );
 }
 
-/** Only OPEN and SETTLED claims count toward claimed, due-total and every total; the OPEN claims of a
- *  person on hold (`held`) count in none. */
-export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
+/** Whether the claim is open: OPEN, or PENDING (handled like OPEN in every total). */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+
+/** Only OPEN, PENDING and SETTLED claims count toward claimed, due-total and every total; the open claims
+ *  of a person on hold (`held`) count in none. */
+export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (isOpen(c) && !held);
+
+/** Whether the statement binding holds now: stated, and not PENDING (which follows its live figure). */
+const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
 /** What the late charge is worked out from: the sheet's late percent, terms and today; and what a live
  *  figure's rounding is decided by: the policy date (the sheet's today while blank) and the sheet's claims. */
@@ -86,7 +97,7 @@ function roundsHalfUp(c: Claim, late: Late): boolean {
  *  statement bound it to, else its live due at `pct`, at least the sheet's `floor` (n/a without a rate);
  *  an overdue claim's late charge goes on top of the bound or live figure. A correction has no floor and no late charge. */
 export const claimDue = (c: Claim, pct: string | undefined, floor: string, late: Late): string =>
-  c.settledDue ?? lateCharge(c, c.stated ? c.statedDue ?? NA
+  c.settledDue ?? lateCharge(c, isBound(c) ? c.statedDue ?? NA
     : atLeast(due(c.amount, pct, roundsHalfUp(c, late)), c.corrects === null ? floor : undefined), late);
 
 /** The figure plus the late percent of it for every full 30 days the claim is overdue, rounded to two
@@ -103,7 +114,7 @@ const atLeast = (value: string, floor: string | undefined) =>
   floor !== undefined && value !== NA && toHundredths(value) < toHundredths(floor) ? floor : value;
 
 /** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
-export const hasFixedDue = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null);
+export const hasFixedDue = (c: Claim) => c.settledDue !== null || (isBound(c) && c.statedDue !== null);
 
 /** The claim's due-by (yyyy-MM-dd): its date plus the sheet's `terms` in days. */
 export function dueBy(c: Claim, terms: number): string {
@@ -112,9 +123,9 @@ export function dueBy(c: Claim, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether the claim is overdue: OPEN, with its due-by before the sheet's `today`. */
+/** Whether the claim is overdue: OPEN or PENDING, with its due-by before the sheet's `today`. */
 export const isOverdue = (c: Claim, terms: number, today: string | undefined) =>
-  c.status === 'OPEN' && !!today && dueBy(c, terms) < today;
+  isOpen(c) && !!today && dueBy(c, terms) < today;
 
 /** The counted claims' amounts added up, with two decimals; `held` says whose person is on hold. */
 export function claimed(claims: Claim[], held: (personId: number) => boolean = () => false): string {
@@ -210,11 +221,14 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
   const late = useLate(sheet);
   const { terms, today } = late;
   const change = useMutation({
-    mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`, {}),
+    mutationFn: (action: string) => postJson<Claim>(`${sheetPath(sheet)}/claims/${c.id}/${action}${by}`
+      + (action === 'reject' ? `&reason=${encodeURIComponent(reason)}` : ''), {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
   });
   // Why the last press of Edit was refused; null when it was not.
   const [editRefused, setEditRefused] = useState<string | null>(null);
+  // Why a PENDING claim is rejected; sent with Reject.
+  const [reason, setReason] = useState('');
   const [selected, setSelected] = useSelectedClaims();
 
   return (
@@ -244,6 +258,8 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       }}>
         Edit
       </button>
+      <input data-testid="claim-reject-reason" placeholder="Reject reason" value={reason}
+        onChange={(e) => { change.reset(); setReason(e.target.value); }} />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button key={action} type="button" data-testid={`claim-${action}`} disabled={change.isPending}
           onClick={() => { change.reset(); setEditRefused(null); change.mutate(action); }}>

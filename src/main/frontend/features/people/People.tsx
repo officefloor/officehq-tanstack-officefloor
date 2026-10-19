@@ -14,7 +14,7 @@ import { useFloor } from '../settings/Settings';
 // A statement taken for a person records their due-total and binds their counting claims' figures.
 // A retired person's row is left out unless "show retired" (URL state `showRetired`) is on; their
 // claims keep counting in every total. A person on hold keeps their SETTLED claims in every total,
-// but their OPEN claims count in none.
+// but their OPEN and PENDING claims count in none.
 // A person may name other people on the sheet as their patrons; their backing is their patrons'
 // due-totals added up, skipping n/a (0.00 with no patrons).
 export type Person = { id: number; name: string;
@@ -33,7 +33,7 @@ export type Person = { id: number; name: string;
   retired: boolean;
   /** The date the person is retired from; null when they are not retired. */
   retiredFrom: string | null;
-  /** Whether the person is on hold: their OPEN claims count in no total. */
+  /** Whether the person is on hold: their OPEN and PENDING claims count in no total. */
   held: boolean;
   /** The names of the other people the person has named as their patrons, sorted. */
   patrons: string[] };

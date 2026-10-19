@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Takes a statement for the person: works out their due-total as the screen shows it, binds each of
- * their claims that counts (OPEN or SETTLED) to the figure it has now, unbinds the rest
+ * their claims that counts (OPEN, PENDING or SETTLED) to the figure it has now (a PENDING claim's live one), unbinds the rest
  * (leaving a held person's OPEN claims, which count in no total, as they are), and moves
  * the person's statement count, last due-total and date (the sheet's today) on.
  *
@@ -43,9 +43,9 @@ public class TakeStatement {
         boolean figured = false;
         int counted = 0;
         for (Claim claim : claims.findByPerson(sheetId, person.getId())) {
-            boolean counts = claim.getStatus() == ClaimStatus.OPEN || claim.getStatus() == ClaimStatus.SETTLED;
+            boolean counts = claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED;
             if (counts && !person.counts(claim.getStatus())) {
-                continue;           // a held person's OPEN claim: in no total, and left as it is
+                continue;           // a held person's OPEN or PENDING claim: in no total, and left as it is
             } else if (!counts) {
                 claim.setStated(false);
                 claim.setStatedDue(null);
@@ -72,7 +72,7 @@ public class TakeStatement {
     /** amount × pct / 100, rounded by {@code mode} to two decimals and at least the floor, unless already fixed; null when n/a. */
     private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least, RoundingMode mode) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
-        if (claim.isStated()) return claim.getStatedDue();
+        if (claim.isBound()) return claim.getStatedDue();
         return Floor.raise(claim, Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, mode))
                 .orElse(null), least);

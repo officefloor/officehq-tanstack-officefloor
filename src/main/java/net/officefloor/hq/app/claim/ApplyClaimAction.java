@@ -2,10 +2,13 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Locale;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.Floor;
 import net.officefloor.hq.app.setting.LatePct;
 import net.officefloor.hq.app.setting.PolicyDate;
@@ -19,12 +22,16 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  A claim a statement binds is settled at its bound figure. An overdue claim's late charge is frozen in on top.
  *  Both are rounded by the claim's rounding (see {@link PolicyDate}).
  *  The user who opened a claim may not settle it (four eyes).
+ *  Only a steward approves or rejects a PENDING claim, and never the user who opened it approves it. Approving
+ *  fixes the due at its live figure of that moment (a PENDING claim is not bound by a statement), late charge
+ *  frozen in; rejecting needs a reason and moves the claim back to OPEN, bound again by its statement.
  *  Publishes the number the audit line carries. */
 public class ApplyClaimAction {
     public void apply(@Val ClaimAction action, @Val Claim claim, ClaimNumbering numbering,
             PersonRepository people, RateRepository rates, Floor floor, LatePct latePct, PolicyDate policyDate,
-            Out<ClaimNumber> numberOut,
-            @RequestParam(value = "user", required = false) String user)
+            RoleRepository roles, Out<ClaimNumber> numberOut,
+            @RequestParam(value = "user", required = false) String user,
+            @RequestParam(value = "reason", required = false) String reason)
             throws InvalidClaimStatusException {
         if (!action.allowedFrom(claim.getStatus())) {
             throw new InvalidClaimStatusException(
@@ -33,17 +40,29 @@ public class ApplyClaimAction {
         if (action == ClaimAction.SETTLE && claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
             throw new InvalidClaimStatusException("The user who opened a claim cannot settle it.");
         }
-        // The late charge is worked out while the claim is still OPEN, so settling freezes it in.
-        RoundingMode mode = action != ClaimAction.SETTLE ? null : policyDate.of(claim.getSheetId()).modeFor(claim);
-        BigDecimal settledDue = action != ClaimAction.SETTLE ? null : latePct.of(claim.getSheetId())
-                .addTo(claim, claim.isStated() ? claim.getStatedDue() : dueNow(claim, people, rates, floor, mode), mode);
+        if ((action == ClaimAction.APPROVE || action == ClaimAction.REJECT)
+                && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user))) {
+            throw new InvalidClaimStatusException("Only a steward can " + action.name().toLowerCase(Locale.ROOT)
+                    + " a PENDING claim.");
+        }
+        if (action == ClaimAction.APPROVE && claim.getOpenedBy() != null && claim.getOpenedBy().equals(user)) {
+            throw new InvalidClaimStatusException("The user who opened a claim cannot approve it.");
+        }
+        if (action == ClaimAction.REJECT && (reason == null || reason.isBlank())) {
+            throw new InvalidClaimStatusException("A reason is needed to reject a claim.");
+        }
+        // The late charge is worked out while the claim is still OPEN (or PENDING), so settling freezes it in.
+        boolean fixes = action == ClaimAction.SETTLE || action == ClaimAction.APPROVE;
+        RoundingMode mode = !fixes ? null : policyDate.of(claim.getSheetId()).modeFor(claim);
+        BigDecimal settledDue = !fixes ? null : latePct.of(claim.getSheetId())
+                .addTo(claim, claim.isBound() ? claim.getStatedDue() : dueNow(claim, people, rates, floor, mode), mode);
         claim.setStatus(action.to());
         switch (action) {
             case OPEN -> {
                 claim.setNumber(numbering.next(claim));
                 claim.setOpenedBy(user);
             }
-            case SETTLE -> claim.setSettledDue(settledDue);
+            case SETTLE, APPROVE -> claim.setSettledDue(settledDue);
             default -> { }
         }
         numberOut.set(new ClaimNumber(claim.getNumber()));

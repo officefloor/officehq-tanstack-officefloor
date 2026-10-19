@@ -10,7 +10,7 @@ import { useFloor } from '../settings/Settings';
 import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './usePeriods';
 
 // The sheet's periods, added here, each with its due-total: the figures of the claims that count
-// (not a held person's OPEN claims)
+// (not a held person's OPEN or PENDING claims)
 // whose date falls in it, each at the rate in force on its date of its person's grade in force on that date, skipping n/a.
 // A closed period shows the due-total it was closed at instead, whatever rates do later, until a steward reopens it.
 export function Periods({ sheet }: { sheet: string }) {

@@ -64,6 +64,9 @@ public class Claim {
     /** The figure the last statement bound the claim to: null when unbound, or bound without a rate (n/a). */
     public BigDecimal getStatedDue() { return statedDue; }
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
+    /** Whether the statement binding holds now: stated, and not PENDING (a PENDING claim keeps its binding
+     *  but follows its live figure until it is rejected back to OPEN). */
+    public boolean isBound() { return stated && status != ClaimStatus.PENDING; }
     /** The number of the SETTLED claim this correction (a negative amount) corrects: null for any other claim. */
     public String getCorrects() { return corrects; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
