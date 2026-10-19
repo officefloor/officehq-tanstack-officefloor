@@ -1,0 +1,185 @@
+diff --git a/src/main/frontend/features/periods/Periods.tsx b/src/main/frontend/features/periods/Periods.tsx
+index 77adf94..e42ef99 100644
+--- a/src/main/frontend/features/periods/Periods.tsx
++++ b/src/main/frontend/features/periods/Periods.tsx
+@@ -12,7 +12,7 @@ import { type Period, inPeriod, periodsKey, periodsPath, usePeriods } from './us
+ // The sheet's periods, added here, each with its due-total: the figures of the claims that count
+ // (not a held person's OPEN claims)
+ // whose date falls in it, each at the rate in force on its date of its person's grade in force on that date, skipping n/a.
+-// A closed period shows the due-total it was closed at instead, whatever rates do later.
++// A closed period shows the due-total it was closed at instead, whatever rates do later, until a steward reopens it.
+ export function Periods({ sheet }: { sheet: string }) {
+   const periods = usePeriods(sheet);
+   const people = usePeople(sheet);
+@@ -53,7 +53,7 @@ export function Periods({ sheet }: { sheet: string }) {
+   );
+ }
+ 
+-/** One period: its dates, due-total and whether it is closed, with its close button. A refused close
++/** One period: its dates, due-total and whether it is closed, with its close and reopen buttons. A refused close or reopen
+  *  shows the row's error, which the row's next action clears. */
+ function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Period; dueTotal: string }) {
+   const queryClient = useQueryClient();
+@@ -63,6 +63,12 @@ function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Peri
+     mutationFn: () => postJson<Period>(`${periodsPath(sheet)}/${encodeURIComponent(p.name)}/close${by}`, {}),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+   });
++  // Only a steward may reopen a closed period (the server refuses anyone else, and a period not closed).
++  const reopen = useMutation({
++    mutationFn: () => postJson<Period>(`${periodsPath(sheet)}/${encodeURIComponent(p.name)}/reopen${by}`, {}),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
++  });
++  const failed = close.isError ? close.error : reopen.isError ? reopen.error : null;
+ 
+   return (
+     <tr data-testid={`period-row-${p.name}`}>
+@@ -73,13 +79,18 @@ function PeriodRow({ sheet, period: p, dueTotal }: { sheet: string; period: Peri
+       <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+       <td>
+         <button type="button" data-testid="period-close" disabled={close.isPending}
+-          onClick={() => { close.reset(); close.mutate(); }}>
++          onClick={() => { close.reset(); reopen.reset(); close.mutate(); }}>
+           Close
++        </button>{' '}
++        <button type="button" data-testid="period-reopen" disabled={reopen.isPending}
++          onClick={() => { close.reset(); reopen.reset(); reopen.mutate(); }}>
++          Reopen
+         </button>
+-        {close.isError && (
++        {failed && (
+           <span role="alert" data-testid="period-error">
+             {' '}
+-            {(close.error instanceof HttpError && close.error.reason) || 'The period could not be closed.'}
++            {(failed instanceof HttpError && failed.reason)
++              || (close.isError ? 'The period could not be closed.' : 'The period could not be reopened.')}
+           </span>
+         )}
+       </td>
+diff --git a/src/main/java/net/officefloor/hq/app/period/AuditPeriodReopened.java b/src/main/java/net/officefloor/hq/app/period/AuditPeriodReopened.java
+new file mode 100644
+index 0000000..84f743f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/AuditPeriodReopened.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the reopened period. */
++public class AuditPeriodReopened {
++    public void audit(@Val ReopenedPeriod reopened, @RequestParam(value = "user", required = false) String user, Audit audit) {
++        Period period = reopened.period();
++        audit.record("PERIOD_REOPENED sheet=" + period.sheetId() + " by=" + user + " period=" + period.name());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java b/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java
+index 42fc298..539fff3 100644
+--- a/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java
++++ b/src/main/java/net/officefloor/hq/app/period/InvalidPeriodException.java
+@@ -1,7 +1,7 @@
+ package net.officefloor.hq.app.period;
+ 
+ /** The period form was refused: a blank name or one already used on the sheet, a from or to that is
+- *  not a date, a from after its to, or dates overlapping another period of the sheet. */
++ *  not a date, a from after its to, or dates overlapping another period of the sheet; or a close or reopen was refused. */
+ public class InvalidPeriodException extends Exception {
+     public InvalidPeriodException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 8a0f1a4..43ca324 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -24,4 +24,9 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to,
+     public Period close(BigDecimal total) {
+         return new Period(sheetId, name, from, to, true, total);
+     }
++
++    /** The period open again, its due-total live once more. */
++    public Period reopen() {
++        return new Period(sheetId, name, from, to, false, null);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+new file mode 100644
+index 0000000..db3e9be
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Reopens a closed period, so its due-total is live again. Only a steward may reopen; a period that
++ *  is not closed cannot be reopened. */
++public class ReopenPeriod {
++    public void reopen(@Val Period period, RoleRepository roles, PeriodRepository repository,
++            @RequestParam(value = "user", required = false) String user, Out<ReopenedPeriod> reopenedOut)
++            throws InvalidPeriodException {
++        if (!Role.STEWARD.equals(roles.roleOf(period.sheetId(), user))) {
++            throw new InvalidPeriodException("Only a steward can reopen a period.");
++        }
++        if (!period.closed()) {
++            throw new InvalidPeriodException("The period " + period.name() + " is not closed.");
++        }
++        Period reopened = period.reopen();
++        repository.saveClosed(reopened);
++        reopenedOut.set(new ReopenedPeriod(reopened));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenedPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenedPeriod.java
+new file mode 100644
+index 0000000..0cc4179
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenedPeriod.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** The period just reopened, as stored. */
++public record ReopenedPeriod(Period period) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithReopenedPeriod.java b/src/main/java/net/officefloor/hq/app/period/RespondWithReopenedPeriod.java
+new file mode 100644
+index 0000000..fe72989
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithReopenedPeriod.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithReopenedPeriod {
++    public void respond(@Val ReopenedPeriod reopened, ObjectResponse<PeriodResponse> response) {
++        response.send(PeriodResponse.from(reopened.period()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+new file mode 100644
+index 0000000..8e64e22
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+@@ -0,0 +1,18 @@
++# Reopen a closed period, making its due-total live again. Only a steward may reopen. The audit line
++# is written last, once it is saved, so a refused reopen (no such period, not closed, or not a
++# steward: 400) writes none. Reopening moves no person's figures, so no rollup is written.
++load:
++  class: net.officefloor.hq.app.period.LoadPeriod
++  govern: [ transaction ]
++  next: reopen
++reopen:
++  class: net.officefloor.hq.app.period.ReopenPeriod
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.period.AuditPeriodReopened
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithReopenedPeriod
++  govern: [ transaction ]
