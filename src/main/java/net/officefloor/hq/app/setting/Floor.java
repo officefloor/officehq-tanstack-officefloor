@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import net.officefloor.hq.app.claim.Claim;
 import org.springframework.stereotype.Service;
 
 /** The sheet's floor: the least live due a claim has (two decimals). It is 1.00 until it is set.
@@ -27,5 +28,10 @@ public class Floor {
     /** The live due raised to the floor; null (n/a) stays null. */
     public static BigDecimal raise(BigDecimal due, BigDecimal floor) {
         return due == null || due.compareTo(floor) >= 0 ? due : floor;
+    }
+
+    /** The claim's live due raised to the floor, except a correction's, which has no floor; null (n/a) stays null. */
+    public static BigDecimal raise(Claim claim, BigDecimal due, BigDecimal floor) {
+        return claim.isCorrection() ? due : raise(due, floor);
     }
 }

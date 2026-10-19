@@ -19,6 +19,8 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 // Settling fixes a claim's due at the rate of that moment. A person's statement binds each of their
 // counting claims to the figure it has then, until their next statement; every other claim's due
 // follows the current rate. Each claim shows the period its date falls in, if any.
+// A claim with a negative amount is a correction: the form must name, by number, a SETTLED claim of the
+// same person that it corrects (the server refuses it otherwise). Its due has no floor and no late charge.
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened, and kept if it is voided; null for a draft. */
@@ -30,7 +32,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** Whether the person's last statement bound the claim to `statedDue`. */
   stated: boolean;
   /** The figure the last statement bound the claim to; null when unbound, or bound without a rate (n/a). */
-  statedDue: string | null };
+  statedDue: string | null;
+  /** The number of the SETTLED claim this correction (a negative amount) corrects; null for any other claim. */
+  corrects: number | null };
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
@@ -38,7 +42,7 @@ const ACTIONS = [
   { action: 'void', label: 'Void' },
 ];
 
-type ClaimBody = { amount: string; date: string; note: string };
+type ClaimBody = { amount: string; date: string; note: string; corrects: string };
 
 export const claimsKey = (sheet: string) => ['sheet', sheet, 'claims'];
 const sheetPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -53,11 +57,6 @@ export function useClaims(sheet: string): Claim[] {
   );
 }
 
-const toCents = (amount: string) => {
-  const [whole, frac = ''] = amount.split('.');
-  return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
-};
-
 /** Only OPEN and SETTLED claims count toward claimed, due-total and every total; the OPEN claims of a
  *  person on hold (`held`) count in none. */
 export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
@@ -71,14 +70,14 @@ export function useLate(sheet: string): Late {
 
 /** A claim's due: the due fixed when it was settled (any late charge frozen in), else the figure a
  *  statement bound it to, else its live due at `pct`, at least the sheet's `floor` (n/a without a rate);
- *  an overdue claim's late charge goes on top of the bound or live figure. */
+ *  an overdue claim's late charge goes on top of the bound or live figure. A correction has no floor and no late charge. */
 export const claimDue = (c: Claim, pct: string | undefined, floor: string, late: Late): string =>
-  c.settledDue ?? lateCharge(c, c.stated ? c.statedDue ?? NA : atLeast(due(c.amount, pct), floor), late);
+  c.settledDue ?? lateCharge(c, c.stated ? c.statedDue ?? NA : atLeast(due(c.amount, pct), c.corrects === null ? floor : undefined), late);
 
 /** The figure plus the late percent of it for every full 30 days the claim is overdue, rounded half to
  *  even to two decimals. A statement never binds the charge: it follows the sheet's today. */
 function lateCharge(c: Claim, figure: string, late: Late): string {
-  if (figure === NA || !isOverdue(c, late.terms, late.today)) return figure;
+  if (figure === NA || c.corrects !== null || !isOverdue(c, late.terms, late.today)) return figure;
   const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
   const periods = BigInt(Math.floor(days / 30));
   return fromHundredths(toHundredths(figure) + roundedCharge(toHundredths(figure) * toHundredths(late.pct) * periods));
@@ -91,8 +90,9 @@ function roundedCharge(scaled: bigint): bigint {
   return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
 }
 
-const atLeast = (value: string, floor: string) =>
-  value !== NA && toHundredths(value) < toHundredths(floor) ? floor : value;
+/** The value raised to the floor; no floor (a correction's) leaves it as it is. */
+const atLeast = (value: string, floor: string | undefined) =>
+  floor !== undefined && value !== NA && toHundredths(value) < toHundredths(floor) ? floor : value;
 
 /** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
 export const hasFixedDue = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null);
@@ -110,8 +110,7 @@ export const isOverdue = (c: Claim, terms: number, today: string | undefined) =>
 
 /** The counted claims' amounts added up, with two decimals; `held` says whose person is on hold. */
 export function claimed(claims: Claim[], held: (personId: number) => boolean = () => false): string {
-  const cents = claims.filter((c) => counts(c, held(c.personId))).reduce((sum, c) => sum + toCents(c.amount), 0);
-  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+  return fromHundredths(claims.filter((c) => counts(c, held(c.personId))).reduce((sum, c) => sum + toHundredths(c.amount), 0n));
 }
 
 export function ClaimedTotal({ sheet, held }: { sheet: string; held: (personId: number) => boolean }) {
@@ -178,6 +177,7 @@ function ClaimRow({ sheet, claim: c, pct, onEdit }: {
       Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
       Overdue <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+      Corrects <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
       <button type="button" data-testid="claim-edit" onClick={() => {
         change.reset();
         // Only a draft dated outside every closed period can be edited (the server refuses the rest).
@@ -215,6 +215,8 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
   // Undefined until changed: the sheet's today, which the server fills in when the date is blank.
   const [date, setDate] = useState<string | undefined>(editing?.date);
   const [note, setNote] = useState(editing?.note ?? '');
+  // The number of the settled claim a correction (a negative amount) corrects; blank for any other claim.
+  const [corrects, setCorrects] = useState(editing?.corrects?.toString() ?? '');
   const [user] = useCurrentUser();
   const by = `?user=${encodeURIComponent(user ?? '')}`;
   const submitOnce = useSingleSubmit();
@@ -231,6 +233,7 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
         setAmount('');
         setDate(undefined);
         setNote('');
+        setCorrects('');
       }
     },
   });
@@ -245,8 +248,9 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
         e.preventDefault();
         submitOnce(() => {
           save.reset();
-          // A missing, negative or over-precise amount is refused by the server (400).
-          return save.mutateAsync({ amount, date: date ?? '', note });
+          // A missing or over-precise amount, or a correction not naming a settled claim of the person,
+          // is refused by the server (400).
+          return save.mutateAsync({ amount, date: date ?? '', note, corrects });
         });
       }}
     >
@@ -256,6 +260,8 @@ function ClaimForm({ sheet, personId, editing, onDone }: {
         onChange={(e) => changed(setDate)(e.target.value)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note}
         onChange={(e) => changed(setNote)(e.target.value)} />{' '}
+      <input data-testid="claim-form-corrects" placeholder="Corrects claim #" inputMode="numeric" value={corrects}
+        onChange={(e) => changed(setCorrects)(e.target.value)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>

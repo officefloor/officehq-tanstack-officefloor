@@ -137,7 +137,7 @@ public class Rollup {
     private static BigDecimal figure(Claim claim, Person person, List<Rate> rates, BigDecimal least) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
-        return Floor.raise(Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
+        return Floor.raise(claim, Rate.inForce(rates, person.gradeOn(claim.getDate()), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
                 .orElse(null), least);
     }

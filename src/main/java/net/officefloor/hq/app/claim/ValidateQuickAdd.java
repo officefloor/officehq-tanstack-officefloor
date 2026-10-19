@@ -13,7 +13,7 @@ public class ValidateQuickAdd {
         if (name == null || name.isBlank()) {
             throw new InvalidPersonException("A name is required.");
         }
-        claim.set(ValidateClaim.of(new ClaimRequest(request.amount(), null, "")));
+        claim.set(ValidateClaim.of(new ClaimRequest(request.amount(), null, "", null)));
         // Stored without surrounding spaces, as the person form does.
         quick.set(new QuickAdd(name.strip()));
     }

@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 /** The sheet's late percent (two decimals, 0.00 until set). An overdue claim (OPEN, its due-by — its
  *  date plus the terms — before the sheet's today) gains the late percent of its figure for every full
  *  30 days it is overdue, rounded half to even to two decimals, on top. The charge is never bound by a
- *  statement; settling freezes it into the settled due. */
+ *  statement; settling freezes it into the settled due. A correction (a negative amount) has no late charge. */
 @Service
 public class LatePct {
 
@@ -39,7 +39,7 @@ public class LatePct {
 
         /** The figure with the claim's late charge on top; null (n/a) stays null. */
         public BigDecimal addTo(Claim claim, BigDecimal figure) {
-            if (figure == null || claim.getStatus() != ClaimStatus.OPEN) return figure;
+            if (figure == null || claim.getStatus() != ClaimStatus.OPEN || claim.isCorrection()) return figure;
             long late = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today);
             if (late <= 0) return figure;
             long periods = late / 30;

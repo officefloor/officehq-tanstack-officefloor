@@ -40,24 +40,31 @@ export function rateOn(rates: Rate[], grade: string, date: string | undefined): 
   return best?.pct;
 }
 
-/** A two-decimal string as a whole number of hundredths. */
+/** A two-decimal string (a correction's is negative) as a whole number of hundredths. */
 export const toHundredths = (value: string): bigint => {
-  const [whole, frac = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt(frac.padEnd(2, '0') || '0');
+  const negative = value.startsWith('-');
+  const [whole, frac = ''] = (negative ? value.slice(1) : value).split('.');
+  const h = BigInt(whole) * 100n + BigInt(frac.padEnd(2, '0') || '0');
+  return negative ? -h : h;
 };
 
-/** Hundredths as a two-decimal string. */
-export const fromHundredths = (h: bigint): string =>
-  `${h / 100n}.${String(h % 100n).padStart(2, '0')}`;
+/** Hundredths as a two-decimal string, with a minus sign when negative. */
+export const fromHundredths = (h: bigint): string => {
+  const abs = h < 0n ? -h : h;
+  return `${h < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
+};
 
-/** amount × pct / 100, rounded half to even to two decimals; n/a without a rate. Amounts are never negative. */
+/** amount × pct / 100, rounded half to even to two decimals; n/a without a rate. A correction's negative
+ *  amount rounds like any other, by its size, keeping its sign. */
 export function due(amount: string, pct: string | undefined): string {
   if (pct === undefined) return NA;
   // cents × hundredths-of-a-percent gives cents × 10000.
-  const scaled = toHundredths(amount) * toHundredths(pct);
+  const signed = toHundredths(amount) * toHundredths(pct);
+  const scaled = signed < 0n ? -signed : signed;
   const cents = scaled / 10000n;
   const rest = scaled % 10000n;
-  return fromHundredths(rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents);
+  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  return fromHundredths(signed < 0n ? -rounded : rounded);
 }
 
 /** Two-decimal values added up, skipping n/a. */

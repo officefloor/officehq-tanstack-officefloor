@@ -48,7 +48,7 @@ public class ApplyClaimAction {
     /** amount × pct / 100, rounded half to even to two decimals and at least the floor; null when no rate is in force on the claim's date. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates, Floor floor) {
         Person person = people.findById(claim.getSheetId(), claim.getPersonId());
-        return Floor.raise(Rate.inForce(rates.findBySheet(claim.getSheetId()), person.gradeOn(claim.getDate()), claim.getDate())
+        return Floor.raise(claim, Rate.inForce(rates.findBySheet(claim.getSheetId()), person.gradeOn(claim.getDate()), claim.getDate())
                 .map(r -> claim.getAmount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
                 .orElse(null), floor.of(claim.getSheetId()));
     }

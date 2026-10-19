@@ -18,10 +18,11 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
+    private Integer corrects;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
-            boolean stated, BigDecimal statedDue) {
+            boolean stated, BigDecimal statedDue, Integer corrects) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -34,6 +35,7 @@ public class Claim {
         this.openedBy = openedBy;
         this.stated = stated;
         this.statedDue = statedDue;
+        this.corrects = corrects;
     }
 
     public long getId() { return id; }
@@ -62,4 +64,9 @@ public class Claim {
     /** The figure the last statement bound the claim to: null when unbound, or bound without a rate (n/a). */
     public BigDecimal getStatedDue() { return statedDue; }
     public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
+    /** The number of the SETTLED claim this correction (a negative amount) corrects: null for any other claim. */
+    public Integer getCorrects() { return corrects; }
+    public void setCorrects(Integer corrects) { this.corrects = corrects; }
+    /** Whether the claim is a correction: its due has no floor and no late charge. */
+    public boolean isCorrection() { return corrects != null; }
 }
