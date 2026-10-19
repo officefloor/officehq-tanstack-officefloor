@@ -57,8 +57,9 @@ const toCents = (amount: string) => {
   return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
 };
 
-/** Only OPEN and SETTLED claims count toward claimed, due-total and every total. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/** Only OPEN and SETTLED claims count toward claimed, due-total and every total; the OPEN claims of a
+ *  person on hold (`held`) count in none. */
+export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
 
 /** A claim's figure: the due fixed when it was settled, else the figure a statement bound it to, else
  *  its live due at `pct` (n/a without one). */
@@ -68,17 +69,17 @@ export const claimDue = (c: Claim, pct: string | undefined): string =>
 /** Whether the claim keeps a figure of its own, whatever the rates: settled, or bound by a statement. */
 export const hasFixedDue = (c: Claim) => c.settledDue !== null || (c.stated && c.statedDue !== null);
 
-/** The counted claims' amounts added up, with two decimals. */
-export function claimed(claims: Claim[]): string {
-  const cents = claims.filter(counts).reduce((sum, c) => sum + toCents(c.amount), 0);
+/** The counted claims' amounts added up, with two decimals; `held` says whose person is on hold. */
+export function claimed(claims: Claim[], held: (personId: number) => boolean = () => false): string {
+  const cents = claims.filter((c) => counts(c, held(c.personId))).reduce((sum, c) => sum + toCents(c.amount), 0);
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
-export function ClaimedTotal({ sheet }: { sheet: string }) {
+export function ClaimedTotal({ sheet, held }: { sheet: string; held: (personId: number) => boolean }) {
   const claims = useClaims(sheet);
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims)}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims, held)}</strong>
     </p>
   );
 }

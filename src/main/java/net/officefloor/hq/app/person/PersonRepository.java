@@ -18,6 +18,7 @@ public class PersonRepository {
                 rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
                 rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate());
         person.setRetiredFrom(rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate());
+        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -87,5 +88,11 @@ public class PersonRepository {
     public void saveRetired(Person person) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
                 Date.valueOf(person.getRetiredFrom()), person.getSheetId(), person.getId());
+    }
+
+    /** Stores whether the person is on hold. Holding is not an edit, so the version stays. */
+    public void saveHeld(Person person) {
+        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?",
+                person.isHeld(), person.getSheetId(), person.getId());
     }
 }

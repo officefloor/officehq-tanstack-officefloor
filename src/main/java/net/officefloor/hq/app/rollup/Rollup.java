@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Objects;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -22,7 +21,7 @@ import org.springframework.stereotype.Service;
  * The sheet's figures as the screen shows them: each person's claimed and due-total, in the order
  * they were added, and the sheet's claimed-total and due-total.
  *
- * Only OPEN and SETTLED claims count. A claim's figure is its settled due, else the figure a statement
+ * Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. A claim's figure is its settled due, else the figure a statement
  * bound it to, else its live due at the person's grade's rate in force on its date (n/a without one).
  * A person's due-total adds up their counting claims' figures, skipping n/a; it is n/a when the grade
  * has no rate on the sheet's today and no counting claim keeps a fixed figure. The sheet's due-total
@@ -72,7 +71,7 @@ public class Rollup {
             boolean fixed = false;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED) continue;
+                if (!person.counts(claim.getStatus())) continue;
                 claimed = claimed.add(claim.getAmount());
                 if (claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)) fixed = true;
                 BigDecimal figure = figure(claim, person, sheetRates);
@@ -95,7 +94,7 @@ public class Rollup {
         for (Person person : people.findBySheet(sheetId)) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED) continue;
+                if (!person.counts(claim.getStatus())) continue;
                 if (claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) continue;
                 BigDecimal figure = figure(claim, person, sheetRates);
                 if (figure != null) sum = sum.add(figure);

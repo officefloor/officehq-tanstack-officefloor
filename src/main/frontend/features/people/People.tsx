@@ -12,7 +12,8 @@ import { useSheetToday } from '../sheet/SheetToday';
 // person whose editor is open (URL state `editPerson`, the person's id).
 // A statement taken for a person records their due-total and binds their counting claims' figures.
 // A retired person's row is left out unless "show retired" (URL state `showRetired`) is on; their
-// claims keep counting in every total.
+// claims keep counting in every total. A person on hold keeps their SETTLED claims in every total,
+// but their OPEN claims count in none.
 export type Person = { id: number; name: string; grade: string; version: number;
   /** How many statements have been taken for the person. */
   statementCount: number;
@@ -23,7 +24,9 @@ export type Person = { id: number; name: string; grade: string; version: number;
   /** Whether the person is retired; no claim of theirs may be dated after `retiredFrom`. */
   retired: boolean;
   /** The date the person is retired from; null when they are not retired. */
-  retiredFrom: string | null };
+  retiredFrom: string | null;
+  /** Whether the person is on hold: their OPEN claims count in no total. */
+  held: boolean };
 
 const GRADES = ['A', 'B', 'C'];
 
@@ -72,11 +75,12 @@ export function People({ sheet }: { sheet: string }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
+  const isHeld = (personId: number) => people.some((p) => p.id === personId && p.held);
   // A person's due-total is the sum of their counted claims' already-rounded figures (0.00 with none).
   // It is n/a when their grade has no rate on the sheet's today, unless a counted claim keeps a figure
   // (settled, or bound by a statement): then it is the sum of the figures there are.
   const dueTotalOf = (p: Person) => {
-    const counted = claimsOf(p).filter(counts);
+    const counted = claimsOf(p).filter((c) => counts(c, p.held));
     if (rateOn(rates, p.grade, today) === undefined && !counted.some(hasFixedDue)) return NA;
     return total(counted.map((c) => claimDue(c, rateOn(rates, p.grade, c.date))));
   };
@@ -98,6 +102,7 @@ export function People({ sheet }: { sheet: string }) {
             <th>Due</th>
             <th>Statements</th>
             <th>Retired</th>
+            <th>Hold</th>
             <th>Claims</th>
             <th />
           </tr>
@@ -107,7 +112,7 @@ export function People({ sheet }: { sheet: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-claimed">{claimed(claimsOf(p))}</td>
+              <td data-testid="person-claimed">{claimed(claimsOf(p), isHeld)}</td>
               <td data-testid="person-due-total">{dueTotalOf(p)}</td>
               <PersonActions sheet={sheet} person={p} />
               <td>
@@ -123,7 +128,7 @@ export function People({ sheet }: { sheet: string }) {
           ))}
         </tbody>
       </table>
-      <ClaimedTotal sheet={sheet} />
+      <ClaimedTotal sheet={sheet} held={isHeld} />
       <p>
         Due total: <strong data-testid="rollup-due-total">{total(people.map(dueTotalOf))}</strong>
       </p>
@@ -133,7 +138,8 @@ export function People({ sheet }: { sheet: string }) {
 
 /** The person's statements (how many, the last one's due-total and date, and the button that takes
  *  one) and their retirement (yes/no, the date, and the control that retires them from a date; blank
- *  is the sheet's today). A refused action shows the row's error, which the row's next action clears. */
+ *  is the sheet's today), and their hold (yes/no, and the button that puts them on hold or takes
+ *  them off it). A refused action shows the row's error, which the row's next action clears. */
 function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useCurrentUser();
@@ -154,11 +160,16 @@ function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) 
       setRetireFrom('');
     },
   });
+  const hold = useMutation({
+    mutationFn: () => postJson<Person>(`${peoplePath(sheet)}/${p.id}/hold${by}`, {}),
+    onSuccess: refetch,
+  });
   const reset = () => {
     take.reset();
     retire.reset();
+    hold.reset();
   };
-  const failed = take.isError ? take : retire.isError ? retire : undefined;
+  const failed = take.isError ? take : retire.isError ? retire : hold.isError ? hold : undefined;
   return (
     <>
       <td>
@@ -183,9 +194,17 @@ function PersonActions({ sheet, person: p }: { sheet: string; person: Person }) 
           <span role="alert" data-testid="person-error">
             {' '}
             {(failed.error instanceof HttpError && failed.error.reason)
-              || (failed === take ? 'The statement could not be taken.' : 'The person could not be retired.')}
+              || (failed === take ? 'The statement could not be taken.'
+                : failed === hold ? 'The hold could not be changed.' : 'The person could not be retired.')}
           </span>
         )}
+      </td>
+      <td>
+        <span data-testid="person-hold">{p.held ? 'yes' : 'no'}</span>{' '}
+        <button type="button" data-testid="person-hold-toggle" disabled={hold.isPending}
+          onClick={() => { reset(); hold.mutate(); }}>
+          {p.held ? 'Release' : 'Hold'}
+        </button>
       </td>
     </>
   );
