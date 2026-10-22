@@ -16,7 +16,8 @@ public class ClaimRepository {
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+            rs.getObject("corrects", Integer.class));
 
     private final JdbcTemplate jdbc;
 
@@ -38,23 +39,30 @@ public class ClaimRepository {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
             ps.setBigDecimal(3, claim.amount());
             ps.setObject(4, claim.date());
             ps.setString(5, claim.note());
+            ps.setObject(6, claim.corrects(), java.sql.Types.INTEGER);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
-                claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null);
+                claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects());
     }
 
     /** The person's claims, newest first. */
     public List<Claim> listForPerson(String sheetId, long personId) {
         return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW, sheetId,
                 personId);
+    }
+
+    /** Whether the person has a SETTLED claim with this number on the sheet. */
+    public boolean settledNumbered(String sheetId, long personId, int number) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ? AND status = ?",
+                Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
     }
 
     /** Bind the claim to a statement's figure (null: n/a, its due stays live), or unbind it (stated false). */
@@ -64,8 +72,8 @@ public class ClaimRepository {
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ?",
-                claim.amount(), claim.date(), claim.note(), claim.sheetId(), claim.id());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
+                claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.sheetId(), claim.id());
     }
 
     /** Move the claim from one status to another, with its settled due and who opened it: false when it no longer has

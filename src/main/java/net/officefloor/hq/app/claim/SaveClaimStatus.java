@@ -51,7 +51,7 @@ public class SaveClaimStatus {
         }
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), input.to(), number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue())));
+                loaded.statedDue(), loaded.corrects())));
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its

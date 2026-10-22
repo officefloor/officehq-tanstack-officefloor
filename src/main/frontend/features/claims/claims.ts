@@ -10,10 +10,11 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
  *  its number on the sheet (null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled
  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
  *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
- *  it to (null when not bound, or n/a then: its due stays live). */
+ *  it to (null when not bound, or n/a then: its due stays live), and for a correction (a negative amount) the
+ *  number of the SETTLED claim of the same person it corrects (null otherwise). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: number | null; settledDue: string | null; openedBy: string | null; stated: boolean;
-  statedDue: string | null };
+  statedDue: string | null; corrects: number | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
 export function counts(c: Claim): boolean {
@@ -58,5 +59,6 @@ export function useEditingClaim() {
  *  with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
-  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+  const abs = Math.abs(cents);
+  return `${cents < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
 }

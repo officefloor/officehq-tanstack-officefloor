@@ -34,6 +34,6 @@ public class ValidateQuickAdd {
         }
         String user = request.user().trim();
         person.set(new PersonRequest(user, name, "A", null, null));
-        claim.set(new ClaimInput(user, new BigDecimal(amount).setScale(2), null, ""));
+        claim.set(new ClaimInput(user, new BigDecimal(amount).setScale(2), null, "", null));
     }
 }

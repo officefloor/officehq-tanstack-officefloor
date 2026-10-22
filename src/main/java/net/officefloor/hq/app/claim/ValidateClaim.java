@@ -7,7 +7,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: the amount is required, a
- *  number 0.00 or more with up to two decimals; the date, when given, is a real yyyy-mm-dd date. */
+ *  number with up to two decimals, below 0.00 only for a correction, which names (by a whole number) the claim it
+ *  corrects, and only a correction names one; the date, when given, is a real yyyy-mm-dd date. */
 public class ValidateClaim {
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> body) throws InvalidClaimException {
         if (request == null || request.user() == null || request.user().isBlank()) {
@@ -17,8 +18,24 @@ public class ValidateClaim {
         if (amount.isEmpty()) {
             throw new InvalidClaimException("An amount is required.");
         }
-        if (!amount.matches("\\d{1,12}(\\.\\d{1,2})?")) {
-            throw new InvalidClaimException("The amount must be a number, 0.00 or more, with up to two decimals.");
+        if (!amount.matches("-?\\d{1,12}(\\.\\d{1,2})?")) {
+            throw new InvalidClaimException("The amount must be a number with up to two decimals.");
+        }
+        BigDecimal value = new BigDecimal(amount).setScale(2);
+        String rawCorrects = request.corrects() == null ? "" : request.corrects().trim();
+        Integer corrects = null;
+        if (!rawCorrects.isEmpty()) {
+            if (!rawCorrects.matches("\\d{1,9}")) {
+                throw new InvalidClaimException("The claim corrected must be named by its number.");
+            }
+            corrects = Integer.valueOf(rawCorrects);
+        }
+        if (value.signum() < 0 && corrects == null) {
+            throw new InvalidClaimException(
+                    "A negative amount is a correction: name the number of the SETTLED claim it corrects.");
+        }
+        if (value.signum() >= 0 && corrects != null) {
+            throw new InvalidClaimException("Only a correction (a negative amount) names a claim it corrects.");
         }
         String rawDate = request.date() == null ? "" : request.date().trim();
         LocalDate date = null;
@@ -36,6 +53,6 @@ public class ValidateClaim {
         if (note.length() > 1000) {
             throw new InvalidClaimException("A note is at most 1000 characters.");
         }
-        body.set(new ClaimInput(request.user().trim(), new BigDecimal(amount).setScale(2), date, note));
+        body.set(new ClaimInput(request.user().trim(), value, date, note, corrects));
     }
 }

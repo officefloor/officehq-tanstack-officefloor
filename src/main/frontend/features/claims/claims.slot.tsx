@@ -13,10 +13,12 @@ import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, dueBy, live, overdue, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 
-const AMOUNT = /^\d+(\.\d{1,2})?$/;
+const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+const NUMBER = /^\d+$/;
 
 /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
- *  date means the sheet's today. */
+ *  date means the sheet's today. A negative amount is a correction, which names the number of the SETTLED claim
+ *  of the same person it corrects (the server checks that claim). */
 function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
 }) {
@@ -26,11 +28,12 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const [amount, setAmount] = useState(editing?.amount ?? '');
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
+  const [corrects, setCorrects] = useState(editing?.corrects != null ? String(editing.corrects) : '');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { user: string; amount: string; date: string; note: string }) =>
+    mutationFn: (body: { user: string; amount: string; date: string; note: string; corrects: string }) =>
       editing
         ? putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${editing.id}`, body)
         : postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/claims`, body),
@@ -40,7 +43,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       else onAdded();
     },
     onError: (e) =>
-      setError(e instanceof HttpError && e.status === 409 && e.body
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400) && e.body
         ? e.body
         : 'Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.'),
     onSettled: once.done,
@@ -50,11 +53,20 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
     e.preventDefault();
     setError('');
     if (!AMOUNT.test(amount.trim())) {
-      setError('The amount must be a number, 0.00 or more, with up to two decimals.');
+      setError('The amount must be a number with up to two decimals.');
+      return;
+    }
+    const negative = amount.trim().startsWith('-') && Number(amount.trim()) < 0;
+    if (negative && !NUMBER.test(corrects.trim())) {
+      setError('A negative amount is a correction: name the number of the SETTLED claim it corrects.');
+      return;
+    }
+    if (!negative && corrects.trim() !== '') {
+      setError('Only a correction (a negative amount) names a claim it corrects.');
       return;
     }
     if (!once.start()) return;
-    save.mutate({ user, amount: amount.trim(), date: date.trim(), note });
+    save.mutate({ user, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim() });
   };
 
   const change = (set: (v: string) => void) => (e: { target: { value: string } }) => {
@@ -67,6 +79,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       <input data-testid="claim-form-amount" placeholder="Amount" value={amount} onChange={change(setAmount)} />{' '}
       <input data-testid="claim-form-date" placeholder={today || 'yyyy-mm-dd'} value={date} onChange={change(setDate)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={change(setNote)} />{' '}
+      <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={change(setCorrects)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
@@ -120,6 +133,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
+      Corrects <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-due">{claimDue(claim, rate, floor, late)}</span>{' '}

@@ -39,11 +39,11 @@ public final class Dues {
     }
 
     /** A claim's live due: its amount times its person's rate in force on its date for their grade then, divided by 100, rounded
-     *  half to even to two decimals, raised to the floor when below it; null (n/a) when no rate applies. */
+     *  half to even to two decimals, raised to the floor when below it (a correction, a negative amount, has no floor); null (n/a) when no rate applies. */
     public static BigDecimal live(Claim claim, Grades grades, RateRepository rates, BigDecimal floor) {
         return rates.on(claim.sheetId(), grades.on(claim.date()), claim.date())
                 .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
-                .map(due -> due.max(floor))
+                .map(due -> claim.amount().signum() < 0 ? due : due.max(floor))
                 .orElse(null);
     }
 

@@ -30,9 +30,9 @@ public record LateCharge(int terms, BigDecimal pct, LocalDate today) {
     }
 
     /** The charge on a claim whose figure is `figure`: the late percent of the figure for every full 30 days it
-     *  is overdue, rounded half to even to two decimals; 0.00 when it is not overdue. */
+     *  is overdue, rounded half to even to two decimals; 0.00 when it is not overdue, or it is a correction (a negative amount). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
-        if (!overdue(claim) || pct.signum() == 0) {
+        if (!overdue(claim) || pct.signum() == 0 || claim.amount().signum() < 0) {
             return new BigDecimal("0.00");
         }
         long periods = ChronoUnit.DAYS.between(claim.date().plusDays(terms), today) / 30;

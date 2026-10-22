@@ -32,14 +32,18 @@ export function useRateFor(sheetId: string, grade: string, date: string): string
   return rateOn(useRates(sheetId).data ?? [], grade, date);
 }
 
-/** A two-decimal amount as whole cents, exactly. */
+/** A two-decimal amount (may be negative) as whole cents, exactly. */
 function toCents(amount: string): bigint {
-  const [whole, frac = ''] = amount.trim().split('.');
-  return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  const trimmed = amount.trim();
+  const negative = trimmed.startsWith('-');
+  const [whole, frac = ''] = (negative ? trimmed.slice(1) : trimmed).split('.');
+  const cents = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -cents : cents;
 }
 
 function fromCents(cents: bigint): string {
-  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+  const abs = cents < 0n ? -cents : cents;
+  return `${cents < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
 }
 
 /** Due on an amount: amount times rate, divided by 100, rounded half to even to two decimals (exact,
@@ -76,19 +80,23 @@ export type Late = { terms: number; pct: string; today: string };
 
 /** A claim's due: the one fixed when it was settled (its late charge frozen in), else its figure — the one its
  *  person's last statement bound it to, else live on its amount at the rate, raised to the sheet's floor when
- *  below it — with the late charge on that figure added on top. */
+ *  below it — with the late charge on that figure added on top. A correction (a negative amount) has no floor
+ *  and no late charge. */
 export function claimDue(claim: Claim, rate: string | undefined, floor: string, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
-  const figure = claim.statedDue ?? floored(dueOn(claim.amount, rate), floor);
+  const correction = toCents(claim.amount) < 0n;
+  const figure = claim.statedDue ?? (correction ? dueOn(claim.amount, rate) : floored(dueOn(claim.amount, rate), floor));
+  if (correction) return figure;
   return figure === 'n/a' ? figure : fromCents(toCents(figure) + toCents(lateCharge(claim, figure, late)));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The late charge on a claim whose figure is `figure`: the late percent of it for every full 30 days the
- *  claim is overdue (past its due-by, on the sheet's today), rounded like a due; 0.00 when not overdue. */
+ *  claim is overdue (past its due-by, on the sheet's today), rounded like a due; 0.00 when not overdue, or a
+ *  correction (a negative amount). */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
-  if (!overdue(claim, late.terms, late.today)) return '0.00';
+  if (!overdue(claim, late.terms, late.today) || toCents(claim.amount) < 0n) return '0.00';
   const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim, late.terms)}T00:00:00Z`)) / DAY_MS);
   const periods = BigInt(Math.floor(days / 30));
   return dueOn(figure, fromCents(toCents(late.pct) * periods));
