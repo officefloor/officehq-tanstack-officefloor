@@ -134,6 +134,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
+  const [splitAmount, setSplitAmount] = useState('');
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -181,6 +182,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not defer this ${claim.status} claim.`),
   });
 
+  const split = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/split`, { user, amount }),
+    onSuccess: async () => {
+      setSplitAmount('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not split this ${claim.status} claim.`),
+  });
+
   return (
     <li data-testid={`claim-row-${claim.id}`}>
       <input
@@ -204,6 +217,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
       until <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
       Proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+      Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
           <li key={i} data-testid="claim-log-line">{line}</li>
@@ -314,6 +328,30 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-split-amount"
+        placeholder="Split off amount"
+        value={splitAmount}
+        onChange={(e) => {
+          setError('');
+          setSplitAmount(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-split"
+        disabled={split.isPending}
+        onClick={() => {
+          setError('');
+          if (!/^\d+(\.\d{1,2})?$/.test(splitAmount.trim())) {
+            setError('The amount to split off must be a number with up to two decimals.');
+            return;
+          }
+          split.mutate(splitAmount.trim());
+        }}
+      >
+        Split
       </button>
       {error && (
         <p data-testid="claim-error" role="alert">

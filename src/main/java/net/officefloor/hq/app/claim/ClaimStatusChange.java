@@ -87,7 +87,7 @@ final class ClaimStatusChange {
         log.record(loaded, input.user());
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs()));
+                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom()));
     }
 
     /** Record the stored status change in the audit file as {@link AuditClaimStatus} describes. */
@@ -118,7 +118,7 @@ final class ClaimStatusChange {
      *  figure. */
     private static Claim asOpenUnstated(Claim c) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), ClaimStatus.OPEN,
-                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs());
+                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs(), c.splitFrom());
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its

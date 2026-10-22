@@ -43,6 +43,6 @@ public class SaveReassign {
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), to.id(), loaded.amount(),
                 loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
                 loaded.openedBy(), false, null, loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
-                loaded.proofs())));
+                loaded.proofs(), loaded.splitFrom())));
     }
 }

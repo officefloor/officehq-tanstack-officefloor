@@ -20,7 +20,7 @@ public class SaveNewClaim {
         var date = input.date() != null ? input.date() : sheets.today(person.sheetId());
         var dueBy = date.plusDays(settings.termsFor(person.sheetId(), person.grades().on(date), date));
         Claim added = repository.insert(new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
-                ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0));
+                ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0, null));
         log.record(added, input.user());
         return added;
     }

@@ -18,7 +18,7 @@ public class ClaimRepository {
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"));
+            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"));
 
     private final JdbcTemplate jdbc;
 
@@ -40,7 +40,7 @@ public class ClaimRepository {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, split_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -49,11 +49,12 @@ public class ClaimRepository {
             ps.setString(5, claim.note());
             ps.setString(6, claim.corrects());
             ps.setObject(7, claim.dueBy());
+            ps.setString(8, claim.splitFrom());
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy(), null, 0);
+                claim.dueBy(), null, 0, claim.splitFrom());
     }
 
     /** The person's claims, newest first. */
@@ -87,6 +88,15 @@ public class ClaimRepository {
     public boolean defer(Claim claim, LocalDate until) {
         return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 until, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1;
+    }
+
+    /** Leave the OPEN claim with the rest of its amount after a split, unbinding it from any statement: false when
+     *  it is no longer OPEN with the amount it was loaded with (another user changed it first), and nothing is
+     *  written. */
+    public boolean splitRest(Claim claim, BigDecimal rest) {
+        return jdbc.update(
+                "UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND status = ? AND amount = ?",
+                rest, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), claim.amount()) == 1;
     }
 
     /** Raise the claim's proofs count by one: false when it no longer has the status it was loaded with (another user
