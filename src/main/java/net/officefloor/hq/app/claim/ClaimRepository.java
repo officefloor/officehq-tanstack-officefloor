@@ -120,6 +120,22 @@ public class ClaimRepository {
                 to.name(), number, settledDue, openedBy, claim.sheetId(), claim.id(), claim.status().name()) == 1;
     }
 
+    /** Re-date the claim with its number (a new one when its period changed): false when it no longer has the
+     *  date and status it was loaded with (another user changed it first), and nothing is written. */
+    public boolean redate(Claim claim, LocalDate date, String number) {
+        return jdbc.update(
+                "UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND claim_date = ? AND status = ?",
+                date, number, claim.sheetId(), claim.id(), claim.date(), claim.status().name()) == 1;
+    }
+
+    /** Whether the sheet numbers claims within their period now: its period numbering from is a date and its today
+     *  is on or after it. */
+    public boolean numberingByPeriod(String sheetId) {
+        return Boolean.TRUE.equals(jdbc.query(
+                "SELECT period_numbering_from IS NOT NULL AND today >= period_numbering_from FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBoolean(1) : false, sheetId));
+    }
+
     /** Take the next number for a claim dated on the date, as it is opened. While the sheet's period numbering from
      *  is a date and the sheet's today is on or after it, that is the next in the claim's period (<period name>-<n>),
      *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the sheet's next number.

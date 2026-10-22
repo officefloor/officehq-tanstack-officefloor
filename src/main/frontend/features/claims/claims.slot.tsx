@@ -120,7 +120,8 @@ const ACTIONS = [
  *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure). A change the status does not
  *  allow, a settle (or approve) by the user who opened it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
  *  so is editing a claim that is no longer a DRAFT, or one dated in a closed period (the server refuses those
- *  edits too). */
+ *  edits too). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
+ *  retirement, and a claim or new date inside a closed period. */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingClaim();
@@ -134,6 +135,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
+  const [redateTo, setRedateTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
 
   const change = useMutation({
@@ -180,6 +182,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
         ? e.body : `Could not defer this ${claim.status} claim.`),
+  });
+
+  const redate = useMutation({
+    mutationFn: (date: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/redate`, { user, date }),
+    onSuccess: async () => {
+      setRedateTo('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not re-date this ${claim.status} claim.`),
   });
 
   const split = useMutation({
@@ -328,6 +342,30 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-date-new"
+        placeholder="Re-date to yyyy-mm-dd"
+        value={redateTo}
+        onChange={(e) => {
+          setError('');
+          setRedateTo(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-redate"
+        disabled={redate.isPending}
+        onClick={() => {
+          setError('');
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(redateTo.trim())) {
+            setError('Give the new date of this claim as yyyy-mm-dd.');
+            return;
+          }
+          redate.mutate(redateTo.trim());
+        }}
+      >
+        Re-date
       </button>{' '}
       <input
         data-testid="claim-split-amount"
