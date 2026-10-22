@@ -5,12 +5,12 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { live, useClaims } from '../claims/claims';
-import { GRADES, gradeOn, usePeople } from '../people/people';
+import { useClaims } from '../claims/claims';
+import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../settings/settings';
-import { personDue, rateOn, ratesKey, sumDue, useRates } from './rates';
+import { personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
@@ -128,35 +128,25 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-/** A person's due-total: the figures of their claims that count added up (see personDue). */
+/** A person's due-total: the figures of their claims that count added up (see personDueTotal). */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
-  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+  const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const due = personDue(live(claims, [person]), (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today),
-    floor, late);
-  return <td data-testid="person-due-total">{due}</td>;
+  return <td data-testid="person-due-total">{personDueTotal(person, claims, rates, today, floor, late)}</td>;
 }
 
 /** The sheet's due-total: every person's due-total added up, skipping n/a. */
 function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
-  const claims = live(useClaims(sheetId).data ?? [], people);
+  const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const dues = people.map((p) =>
-    personDue(
-      claims.filter((c) => c.personId === p.id),
-      (d) => rateOn(rates, gradeOn(p, d), d),
-      rateOn(rates, gradeOn(p, today), today),
-      floor,
-      late,
-    ),
-  );
+  const dues = people.map((p) => personDueTotal(p, claims, rates, today, floor, late));
   return (
     <p>
       Due total <strong data-testid="rollup-due-total">{sumDue(dues)}</strong>

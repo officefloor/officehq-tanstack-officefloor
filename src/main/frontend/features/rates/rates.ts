@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts, dueBy, overdue, type Claim } from '../claims/claims';
+import { counts, dueBy, live, overdue, type Claim } from '../claims/claims';
+import { gradeOn, type Person } from '../people/people';
 
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
  *  null: from the beginning of time). A grade may have several, one per from-date; none when it has no rate. */
@@ -73,6 +74,14 @@ export function personDue(claims: Claim[], rateOnDate: (date: string) => string 
   const dues = counted.map((c) => claimDue(c, rateOnDate(c.date), floor, late));
   if (rateToday === undefined && dues.every((d) => d === 'n/a')) return 'n/a';
   return sumDue(dues);
+}
+
+/** A person's due-total as shown on their row: their live claims among these (see live) through personDue, at
+ *  the grade in force on each claim's date and on the sheet's today. */
+export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: string,
+    late: Late): string {
+  return personDue(live(claims.filter((c) => c.personId === person.id), [person]),
+    (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
 /** What the late charge follows: the sheet's terms in days, its late percent (two decimals) and its today. */

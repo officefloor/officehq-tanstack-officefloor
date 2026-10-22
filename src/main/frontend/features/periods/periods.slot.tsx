@@ -4,17 +4,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { live, useClaims } from '../claims/claims';
-import { gradeOn, usePeople } from '../people/people';
+import { useClaims } from '../claims/claims';
+import { usePeople } from '../people/people';
 import { useFloor, useLate } from '../settings/settings';
-import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
-import { periodOf, periodsKey, usePeriods } from './periods';
+import { useRates } from '../rates/rates';
+import { periodDueTotal, periodsKey, usePeriods } from './periods';
 import type { Period } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** One period with its due-total — fixed when it was closed, else the dues (as shown on their rows) of the
- *  claims that count (see live) whose date falls in it — whether it is closed, and the buttons that close it and
+/** One period with its due-total (see periodDueTotal), whether it is closed, and the buttons that close it and
  *  (a steward only) reopen it. */
 function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
@@ -44,7 +43,7 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
       <td data-testid="period-from">{period.from}</td>
       <td data-testid="period-to">{period.to}</td>
       <td>
-        Due total <span data-testid="period-due-total">{period.closedTotal ?? dueTotal}</span>
+        Due total <span data-testid="period-due-total">{dueTotal}</span>
       </td>
       <td>
         Closed <span data-testid="period-closed">{period.closed ? 'yes' : 'no'}</span>
@@ -87,7 +86,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId).data ?? [];
   const people = usePeople(sheetId).data ?? [];
-  const claims = live(useClaims(sheetId).data ?? [], people);
+  const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
@@ -135,16 +134,6 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
     setError('');
   };
 
-  const dueTotal = (period: Period) =>
-    sumDue(
-      claims
-        .filter((c) => periodOf([period], c.date))
-        .map((c) => {
-          const grade = gradeOn(people.find((p) => p.id === c.personId), c.date);
-          return claimDue(c, rateOn(rates, grade, c.date), floor, late);
-        }),
-    );
-
   return (
     <section data-testid="periods">
       <h2>Periods</h2>
@@ -170,7 +159,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
       <table>
         <tbody>
           {periods.map((p) => (
-            <PeriodRow key={p.name} sheetId={sheetId} user={user} period={p} dueTotal={dueTotal(p)} />
+            <PeriodRow key={p.name} sheetId={sheetId} user={user} period={p} dueTotal={periodDueTotal(p, claims, people, rates, floor, late)} />
           ))}
         </tbody>
       </table>
