@@ -326,6 +326,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
       Reminded <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
+      Batch <span data-testid="claim-batch">{claim.batch ?? ''}</span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
           <li key={i} data-testid="claim-log-line">{line}</li>

@@ -19,18 +19,21 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Settle each selected claim by the signed-in user, in list order (people in the order they were added, newest
  *  claim first within a person), by exactly the rules of settling one claim: each that goes through (SETTLED, or
  *  PENDING for a clerk's settle above the clerk limit) gets its status log line, its CLAIM_SETTLED or CLAIM_PENDING
- *  line (with its NOTIFY lines for the person's watchers when SETTLED) and then how the sheet's figures moved over it. A selected claim that cannot be settled (the sheet is archived, not on the sheet,
+ *  line (with its NOTIFY lines for the person's watchers when SETTLED) and then how the sheet's figures moved over it.
+ *  When at least one goes through, the bulk settle is the sheet's next batch and each that went through is settled by
+ *  it. A selected claim that cannot be settled (the sheet is archived, not on the sheet,
  *  not allowed from its status or by this user, or dated in a closed period) is left as it is and counted as
  *  refused. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimRepository claims,
             ClaimLogRepository log, PersonRepository people, PeriodRepository periods, RateRepository rates,
             RoleRepository roles, SettingRepository settings, SheetRepository sheets, Rollups rollups,
-            WatchRepository watches, Audit audit, Out<BulkSettleResponse> result) {
+            WatchRepository watches, SettleBatchRepository batches, Audit audit, Out<BulkSettleResponse> result) {
         String sheet = sheetId.trim();
         periods.lockSheet(sheet);
         ClaimStatusInput settle = new ClaimStatusInput(input.user(), "settle", ClaimStatus.SETTLED, null);
         int settled = 0;
+        Integer batch = null;
         if (sheets.archived(sheet)) {
             result.set(new BulkSettleResponse(0, input.claimIds().size()));
             return;
@@ -49,6 +52,10 @@ public class BulkSettleClaims {
                 } catch (ClaimStatusNotAllowedException refused) {
                     continue;
                 }
+                if (batch == null) {
+                    batch = batches.start(sheet);
+                }
+                batches.settledBy(sheet, claim.id(), batch);
                 ClaimStatusChange.audit(settle, claim, saved, people, watches, audit);
                 rollups.record(sheet, input.user(), before);
                 settled++;

@@ -3,18 +3,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { claimsKey, useClaims } from './claims';
+import { claimsKey, useClaims, useLastBatch } from './claims';
 import { clearSelected, useSelectedClaims } from './selection';
 
 type BulkSettleResult = { settled: number; refused: number };
 
 /** The button that settles every selected claim together, by the signed-in user. The server settles each that can
  *  be settled, in list order and by the rules of settling one (a clerk's settle that leaves it PENDING counts as
- *  settled), and leaves the rest as they are; the bar then shows how many were settled and how many refused. */
+ *  settled), and leaves the rest as they are; the bar then shows how many were settled and how many refused. One that
+ *  settles at least one is the sheet's next batch; beside the button is the number of its last (nothing when none). */
 function BulkSettle({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const claims = useClaims(sheetId).data ?? [];
   const chosen = useSelectedClaims(sheetId);
+  const lastBatch = useLastBatch(sheetId).data?.last ?? null;
   const ids = claims.filter((c) => chosen.has(c.id)).map((c) => c.id);
   const [result, setResult] = useState<BulkSettleResult | null>(null);
   const [error, setError] = useState('');
@@ -51,6 +53,7 @@ function BulkSettle({ sheetId, user }: { sheetId: string; user: string }) {
       >
         Settle selected
       </button>
+      {' '}Last batch <span data-testid="bulk-settle-batch">{lastBatch ?? ''}</span>
       {result && (
         <>
           {' '}Settled <span data-testid="bulk-settled">{result.settled}</span>, refused{' '}

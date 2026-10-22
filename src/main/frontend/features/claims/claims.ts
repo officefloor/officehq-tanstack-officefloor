@@ -28,13 +28,14 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  (yyyy-mm-dd; null when never: only an OPEN or PENDING claim, once per sheet-today), and its external reference
  *  (null when none: unique on the sheet without regard to case — the server refuses a repeat), and its tags (trimmed,
  *  lower-cased, without repeats, sorted; empty when none), and its comments, oldest first, as <user> on <date>: <text>
- *  (the date being the sheet's today when it was written). */
+ *  (the date being the sheet's today when it was written), and the number of the settle batch that settled it (null when
+ *  none did: it was settled one at a time, or is not settled). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
-  comments: string[] };
+  comments: string[]; batch: number | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */
@@ -130,6 +131,15 @@ export function useTagsUsed(sheetId: string) {
   return useQuery({
     queryKey: [...claimsKey(sheetId), 'tags'] as const,
     queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/tags`),
+  });
+}
+
+/** The number of the sheet's last settle batch (null when there has been none): each bulk settle that settled at
+ *  least one claim (one left PENDING counts) is the next, numbered 1, 2, ... on the sheet. */
+export function useLastBatch(sheetId: string) {
+  return useQuery({
+    queryKey: [...claimsKey(sheetId), 'settle-batch'] as const,
+    queryFn: () => getJson<{ last: number | null }>(`/api/sheets/${encodeURIComponent(sheetId)}/settle-batch`),
   });
 }
 

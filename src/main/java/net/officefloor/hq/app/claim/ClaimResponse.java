@@ -12,11 +12,11 @@ import java.util.List;
  *  (null when never deferred) and whether it is deferred on the sheet's today (see Claim.deferredOn; false when
  *  shown without a today), and its proofs count, and the number of the claim it was split from (null when
  *  it was not split off one), and whether it is a late entry, and the last day it was reminded as yyyy-mm-dd (null when never), and its external reference (null when none), and its tags, sorted (empty when none), and its comments, oldest first, as <user> on <date>: <text> (empty when not
- *  loaded with them). */
+ *  loaded with them), and the number of the settle batch that settled it (null when none settled it). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
         String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
         List<String> log, String deferredUntil, boolean deferred, int proofs, String splitFrom, boolean lateEntry, String reminded, String ref,
-        List<String> tags, List<String> comments) {
+        List<String> tags, List<String> comments, Integer batch) {
     public static ClaimResponse from(Claim c) {
         return from(c, List.of(), null);
     }
@@ -26,12 +26,17 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
     }
 
     public static ClaimResponse from(Claim c, List<String> log, LocalDate today, List<String> comments) {
+        return from(c, log, today, comments, null);
+    }
+
+    public static ClaimResponse from(Claim c, List<String> log, LocalDate today, List<String> comments,
+            Integer batch) {
         return new ClaimResponse(c.id(), c.personId(), c.amount().toPlainString(), c.date().toString(), c.note(),
                 c.status().name(), c.number(), c.settledDue() != null ? c.settledDue().toPlainString() : null,
                 c.openedBy(), c.stated(), c.statedDue() != null ? c.statedDue().toPlainString() : null,
                 c.corrects(), c.dueBy().toString(), log,
                 c.deferredUntil() != null ? c.deferredUntil().toString() : null, c.deferredOn(today), c.proofs(),
                 c.splitFrom(), c.lateEntry(), c.reminded() != null ? c.reminded().toString() : null, c.ref(),
-                c.tags() != null ? List.of(c.tags().split(",")) : List.of(), comments);
+                c.tags() != null ? List.of(c.tags().split(",")) : List.of(), comments, batch);
     }
 }
