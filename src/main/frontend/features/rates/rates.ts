@@ -67,6 +67,11 @@ function fromCents(cents: bigint): string {
   return `${cents < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
 }
 
+/** One due figure minus another, two decimals, a minus sign when negative. */
+export function diffDue(a: string, b: string): string {
+  return fromCents(toCents(a) - toCents(b));
+}
+
 /** Due on an amount: amount times rate, divided by 100, rounded to two decimals half to even, or half up (away
  *  from zero) when `halfUp` (exact, in integers); 'n/a' when there is no rate. */
 export function dueOn(amount: string, rate: string | undefined, halfUp = false): string {
