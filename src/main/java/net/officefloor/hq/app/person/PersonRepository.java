@@ -18,13 +18,19 @@ public class PersonRepository {
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
-            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"), Grades.NONE);
+            rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE);
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
 
     private static final RowMapper<GradeRow> GRADE_ROW = (rs, i) -> new GradeRow(rs.getLong("person_id"),
             new Grades.Grade(rs.getString("grade"), rs.getObject("from_date", LocalDate.class)));
+
+    private record HoldRow(long personId, Holds.Hold hold) {
+    }
+
+    private static final RowMapper<HoldRow> HOLD_ROW = (rs, i) -> new HoldRow(rs.getLong("person_id"),
+            new Holds.Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
 
     private final JdbcTemplate jdbc;
 
@@ -48,7 +54,7 @@ public class PersonRepository {
                 sheetId, name)).stream().findFirst().orElse(null);
     }
 
-    /** The people with their dated grades, and the grade in force on the sheet's today. */
+    /** The people with their dated grades, the grade in force on the sheet's today, and their holds. */
     private List<Person> graded(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return people;
@@ -59,10 +65,15 @@ public class PersonRepository {
                 "SELECT * FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_date NULLS FIRST", GRADE_ROW,
                 sheetId).stream().collect(Collectors.groupingBy(GradeRow::personId,
                         Collectors.mapping(GradeRow::grade, Collectors.toList())));
+        Map<Long, List<Holds.Hold>> holdsByPerson = jdbc.query(
+                "SELECT * FROM person_hold WHERE sheet_id = ? ORDER BY person_id, id", HOLD_ROW, sheetId).stream()
+                .collect(Collectors.groupingBy(HoldRow::personId,
+                        Collectors.mapping(HoldRow::hold, Collectors.toList())));
         return people.stream().map(p -> {
             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
-                    p.statedTotal(), p.statementDate(), p.retiredFrom(), p.held(), grades);
+                    p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
+                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())));
         }).toList();
     }
 
@@ -87,8 +98,8 @@ public class PersonRepository {
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, NULL)",
                 sheetId, id, grade);
-        return new Person(id, sheetId, name, grade, 0, 0, null, null, null, false,
-                new Grades(List.of(new Grades.Grade(grade, null))));
+        return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
+                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE);
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -108,9 +119,11 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", from, person.sheetId(), person.id());
     }
 
-    /** Put the person on hold, or take them off it. Leaves the version alone: holding is not an edit of the person. */
-    public void hold(Person person, boolean held) {
-        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?", held, person.sheetId(), person.id());
+    /** Add a hold to the person from the from-date to the to-date (null: open-ended), keeping the holds they have.
+     *  Leaves the version alone: holding is not an edit of the person. */
+    public void hold(Person person, LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.sheetId(), person.id(), from, to);
     }
 
     /** Store the person's name at its new version, only while the stored person is still at version

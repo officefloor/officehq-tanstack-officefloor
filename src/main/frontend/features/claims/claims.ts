@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { heldOn } from '../people/people';
 import type { Person } from '../people/people';
 
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
@@ -24,16 +25,16 @@ export function counts(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'PENDING' || c.status === 'SETTLED';
 }
 
-/** Whether a claim is still to be settled: OPEN or PENDING (it goes overdue, and a hold takes it out of the totals). */
+/** Whether a claim is still to be settled: OPEN or PENDING (it goes overdue). */
 export function unsettled(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'PENDING';
 }
 
-/** The claims that count in the live totals among these: those that count, except the OPEN or PENDING claims of a person
- *  (among the people given) who is on hold; their SETTLED claims still count. */
+/** The claims that count in the live totals among these: those that count, except an OPEN claim dated within a hold
+ *  of its person (among the people given) and not bound by a statement; their other claims still count. */
 export function live(claims: Claim[], people: Person[]): Claim[] {
-  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => counts(c) && !(unsettled(c) && held.has(c.personId)));
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date)));
 }
 
 /** A claim's due-by (yyyy-mm-dd), as fixed when it was created. */

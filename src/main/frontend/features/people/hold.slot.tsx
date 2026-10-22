@@ -1,40 +1,66 @@
 import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
+import { useSheetToday } from '../sheet/sheet';
 import { peopleKey } from './people';
 import type { Person } from './people';
 
-/** Whether the person is on hold, and the button that puts them on hold or takes them off it. While held,
- *  their OPEN and PENDING claims count in no live total; their SETTLED claims still count. */
+/** Whether the person has any hold, their holds, and the form that adds one from a from-date (blank: the sheet's
+ *  today) to an optional to-date (blank: open-ended). Only their OPEN claims dated within a hold, and not bound by
+ *  a statement, count in no live total; a hold ends on its to-date. */
 function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
+  const today = useSheetToday(sheetId);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
+  const once = useSubmitOnce();
 
-  const toggle = useMutation({
-    mutationFn: () =>
-      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/hold`, { user }),
+  const hold = useMutation({
+    mutationFn: (body: { user: string; from: string; to: string }) =>
+      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/hold`, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      setFrom('');
+      setTo('');
     },
     onError: (e) =>
-      setError(e instanceof HttpError && e.body ? e.body : `Could not change the hold on ${person.name}.`),
+      setError(e instanceof HttpError && e.body ? e.body : `Could not hold ${person.name}: the dates must be yyyy-mm-dd.`),
+    onSettled: once.done,
   });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!once.start()) return;
+    hold.mutate({ user, from: from.trim(), to: to.trim() });
+  };
+
+  const change = (set: (v: string) => void) => (e: { target: { value: string } }) => {
+    set(e.target.value);
+    setError('');
+  };
 
   return (
     <td>
-      Hold <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>{' '}
-      <button
-        type="button"
-        data-testid="person-hold-toggle"
-        disabled={toggle.isPending}
-        onClick={() => {
-          setError('');
-          toggle.mutate();
-        }}
-      >
-        {person.held ? 'Release' : 'Hold'}
-      </button>
+      Hold <span data-testid="person-hold">{person.holds.length > 0 ? 'yes' : 'no'}</span>
+      <ul>
+        {person.holds.map((h, i) => (
+          <li key={i} data-testid="person-hold-line">
+            {h.from ?? 'start'} to {h.to ?? 'open'}
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={submit} style={{ display: 'inline' }}>
+        <input data-testid="person-hold-from" placeholder={today || 'yyyy-mm-dd'} value={from} onChange={change(setFrom)} />{' '}
+        <input data-testid="person-hold-to" placeholder="to (optional)" value={to} onChange={change(setTo)} />{' '}
+        <button type="submit" data-testid="person-hold-toggle" disabled={hold.isPending}>
+          Hold
+        </button>
+      </form>
       {error && (
         <p data-testid="person-error" role="alert">
           {error}

@@ -12,7 +12,7 @@ public enum ClaimStatus {
     }
 
     /** Whether a claim with this status is still to be settled: OPEN or PENDING (it goes overdue, bears the late
-     *  charge, and a hold takes it out of the totals). */
+     *  charge). */
     public boolean unsettled() {
         return this == OPEN || this == PENDING;
     }

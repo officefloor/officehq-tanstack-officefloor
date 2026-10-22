@@ -6,6 +6,7 @@ import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Grades;
+import net.officefloor.hq.app.person.Holds;
 import net.officefloor.hq.app.rate.RateRepository;
 
 /** Claim figures and due-totals, as the screen shows them. */
@@ -50,17 +51,18 @@ public final class Dues {
     }
 
     /** Whether a claim counts toward its person's figures and every live total: an OPEN, PENDING or SETTLED one,
-     *  except an OPEN or PENDING one while its person is on hold. */
-    public static boolean counts(Claim claim, boolean held) {
-        return claim.status().counts() && !(held && claim.status().unsettled());
+     *  except an OPEN one dated within one of its person's holds and not bound by a statement. */
+    public static boolean counts(Claim claim, Holds holds) {
+        return claim.status().counts()
+                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()));
     }
 
     /** A person's due-total: the dues (as shown) of their claims that count added up, skipping n/a; null (n/a) when
      *  their grade today has no rate today, unless a claim that counts has a figure (settled, stated, or live at
      *  the grade in force on its date). */
-    public static BigDecimal total(String sheetId, List<Claim> claims, Grades grades, boolean held, LocalDate today,
+    public static BigDecimal total(String sheetId, List<Claim> claims, Grades grades, Holds holds, LocalDate today,
             RateRepository rates, BigDecimal floor, LateCharge late) {
-        List<Claim> counted = claims.stream().filter(c -> counts(c, held)).toList();
+        List<Claim> counted = claims.stream().filter(c -> counts(c, holds)).toList();
         List<BigDecimal> figures = counted.stream().map(c -> shown(c, grades, rates, floor, late))
                 .filter(f -> f != null).toList();
         if (figures.isEmpty() && rates.on(sheetId, grades.on(today), today).isEmpty()) {

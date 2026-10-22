@@ -4,11 +4,20 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 /** A person on a sheet: a name and a grade (A, B or C: the one in force on the sheet's today), the version stored (one more on each edit), how many
  *  statements have been taken of them, and the last one's due-total (null when n/a, or none taken) and date
- *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), and whether
- *  they are on hold (their OPEN and PENDING claims then count in no live total), and their dated grades, earliest first. */
+ *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), whether
+ *  they have any hold, their dated grades, earliest first, and their holds in the order they were put on (their OPEN
+ *  claims dated within one, not bound by a statement, count in no live total). */
 export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
   statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
-  grades: Grade[] };
+  grades: Grade[]; holds: Hold[] };
+
+/** A hold on a person, from its from-date to its to-date, both included (yyyy-mm-dd, or null: unbounded on that side). */
+export type Hold = { from: string | null; to: string | null };
+
+/** Whether one of the person's holds covers the date (yyyy-mm-dd). */
+export function heldOn(person: Person | undefined, date: string): boolean {
+  return (person?.holds ?? []).some((h) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to));
+}
 
 /** A grade a person was given, in force from its from-date (yyyy-mm-dd, or null: from the beginning of time). */
 export type Grade = { grade: string; from: string | null };

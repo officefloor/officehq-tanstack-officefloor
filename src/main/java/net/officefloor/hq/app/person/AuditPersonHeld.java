@@ -3,10 +3,10 @@ package net.officefloor.hq.app.person;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.plugin.variable.Val;
 
-/** Record the stored hold, or release, in the audit file. */
+/** Record the stored hold in the audit file, with the date it runs from. */
 public class AuditPersonHeld {
-    public void audit(@Val HoldRequest request, @Val Person loaded, @Val PersonResponse saved, Audit audit) {
-        audit.record((saved.held() ? "PERSON_HELD" : "PERSON_RELEASED") + " sheet=" + loaded.sheetId()
-                + " by=" + request.user() + " name=" + saved.name());
+    public void audit(@Val HoldInput input, @Val Person loaded, @Val Holds.Hold hold, Audit audit) {
+        audit.record("PERSON_HELD sheet=" + loaded.sheetId() + " by=" + input.user() + " name=" + loaded.name()
+                + " from=" + hold.from());
     }
 }

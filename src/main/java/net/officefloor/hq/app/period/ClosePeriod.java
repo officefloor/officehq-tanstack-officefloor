@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Grades;
+import net.officefloor.hq.app.person.Holds;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Close the named period, fixing its due-total as it is now: the figures (as shown on their rows) of the claims
- *  that count (an OPEN one of a held person does not) whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
+ *  that count (an OPEN one dated within a hold of its person, not bound by a statement, does not) whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
  *  closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
@@ -40,7 +41,7 @@ public class ClosePeriod {
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());
-            if (!Dues.counts(c, person != null && person.held()) || !period.contains(c.date())) {
+            if (!Dues.counts(c, person != null ? person.holds() : Holds.NONE) || !period.contains(c.date())) {
                 continue;
             }
             BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);
