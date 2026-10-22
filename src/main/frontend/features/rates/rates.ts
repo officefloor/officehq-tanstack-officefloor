@@ -95,6 +95,19 @@ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], t
   return capped(personDueSum(person, claims, rates, today, floor, late), cap);
 }
 
+/** These people's settled figures (each SETTLED claim's due as shown on its row: the one frozen when it was settled)
+ *  over their SETTLED claims that count, dated within the 90 days up to and including the sheet's today, added up,
+ *  skipping n/a; 0.00 with none (or while today is loading). */
+export function recentSettledSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+    late: Late): string {
+  if (today === '') return '0.00';
+  const since = new Date(Date.parse(`${today}T00:00:00Z`) - 89 * DAY_MS).toISOString().slice(0, 10);
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return sumDue(claims
+    .filter((c) => byId.has(c.personId) && c.status === 'SETTLED' && counts(c) && c.date >= since && c.date <= today)
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late)));
+}
+
 /** A sum of figures at most the cap ('' when none); 'n/a' is not capped. */
 export function capped(sum: string, cap: string): string {
   return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? sum : fromCents(toCents(cap));

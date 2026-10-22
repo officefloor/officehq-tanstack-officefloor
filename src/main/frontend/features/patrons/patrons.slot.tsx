@@ -6,14 +6,15 @@ import { PersonRow } from '../../slots/defs/personRow';
 import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { recentSettledSum, useRates } from '../rates/rates';
+import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, usePatrons } from './patrons';
 import type { Patron } from './patrons';
 
-/** A person's patrons (their names, sorted), their backing — the patrons' due-totals added up, skipping n/a;
- *  0.00 with no patrons — and the picker that names one more. */
+/** A person's patrons (their names, sorted), their backing — the patrons' settled figures over their SETTLED claims
+ *  dated within the 90 days up to and including the sheet's today (see recentSettledSum); 0.00 with none — and the
+ *  picker that names one more. */
 function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const people = usePeople(sheetId).data ?? [];
@@ -22,13 +23,12 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
   const patrons = (usePatrons(sheetId).data ?? [])
     .filter((p) => p.personId === person.id)
     .map((p) => people.find((q) => q.id === p.patronId))
     .filter((p): p is Person => p !== undefined)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const backing = sumDue(patrons.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
+  const backing = recentSettledSum(patrons, claims, rates, today, floor, late);
   const [chosen, setChosen] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
