@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Move the loaded claim to its new status, refusing a change its status does not allow (or one
  *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
- *  clears it. Settling fixes its due at the person's grade rate as it is now. */
+ *  clears it. Settling fixes its due at the person's grade rate now in force on the claim's date. */
 public class SaveClaimStatus {
     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
             PersonRepository people, RateRepository rates, Out<ClaimResponse> saved)
@@ -31,11 +31,11 @@ public class SaveClaimStatus {
                 loaded.date(), loaded.note(), input.to(), number, settledDue)));
     }
 
-    /** The claim's due now: amount times its person's grade rate, divided by 100, rounded half up to two
-     *  decimals; null when the grade has no rate. */
+    /** The claim's due now: amount times its person's grade rate in force on the claim's date, divided by
+     *  100, rounded half up to two decimals; null when no rate of the grade applies on that date. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
         var person = people.find(claim.sheetId(), claim.personId());
-        return rates.list(claim.sheetId()).stream().filter(r -> r.grade().equals(person.grade())).findFirst()
+        return rates.on(claim.sheetId(), person.grade(), claim.date())
                 .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
                 .orElse(null);
     }

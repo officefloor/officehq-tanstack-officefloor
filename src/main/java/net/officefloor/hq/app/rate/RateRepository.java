@@ -1,17 +1,21 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/** Rates by sheet, one per grade at most. */
+/** Rates by sheet: per grade, at most one per from-date (and at most one with no from-date). */
 @Repository
 public class RateRepository {
 
     private static final RowMapper<Rate> ROW = (rs, i) -> new Rate(rs.getString("sheet_id"),
-            rs.getString("grade"), rs.getBigDecimal("pct"));
+            rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -19,14 +23,26 @@ public class RateRepository {
         this.jdbc = jdbc;
     }
 
+    /** The sheet's rates by grade, each grade's earliest first (the one with no from-date before all). */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT * FROM rate WHERE sheet_id = ? ORDER BY grade", ROW, sheetId);
+        return jdbc.query("SELECT * FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
-    /** Set the grade's rate, replacing any it had. */
-    public Rate set(String sheetId, String grade, BigDecimal pct) {
-        jdbc.update("MERGE INTO rate (sheet_id, grade, pct) KEY (sheet_id, grade) VALUES (?, ?, ?)",
-                sheetId, grade, pct);
-        return new Rate(sheetId, grade, pct);
+    /** The grade's rate in force on the date: the one whose from-date is the latest on or before it (no
+     *  from-date counting as the beginning of time); empty when none applies. */
+    public Optional<Rate> on(String sheetId, String grade, LocalDate date) {
+        return list(sheetId).stream().filter(r -> r.grade().equals(grade) && r.appliesOn(date))
+                .max(Comparator.comparing(Rate::from, Comparator.nullsFirst(Comparator.naturalOrder())));
+    }
+
+    /** Set the grade's rate from the from-date (null: from the beginning of time), replacing any it had
+     *  from that same date. */
+    public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from) {
+        Date fromDate = from != null ? Date.valueOf(from) : null;
+        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                sheetId, grade, fromDate);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date) VALUES (?, ?, ?, ?)",
+                sheetId, grade, pct, fromDate);
+        return new Rate(sheetId, grade, pct, from);
     }
 }

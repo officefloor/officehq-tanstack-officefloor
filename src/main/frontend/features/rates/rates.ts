@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Claim } from '../claims/claims';
 
-/** A grade's rate on the sheet: a percent with two decimals. A grade with no rate is not listed. */
-export type Rate = { grade: string; rate: string };
+/** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
+ *  null: from the beginning of time). A grade may have several, one per from-date; none when it has no rate. */
+export type Rate = { grade: string; rate: string; from: string | null };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
-/** The sheet's rate for each grade that has one. */
+/** The sheet's rates, every grade's every from-date. */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -15,9 +16,20 @@ export function useRates(sheetId: string) {
   });
 }
 
-/** The rate for a grade, or undefined when the grade has none (or the rates are still loading). */
-export function useRateFor(sheetId: string, grade: string): string | undefined {
-  return useRates(sheetId).data?.find((r) => r.grade === grade)?.rate;
+/** A grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or before
+ *  it, a rate with no from-date applying from the beginning of time; undefined when none applies. */
+export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
+  let found: Rate | undefined;
+  for (const r of rates) {
+    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+    if (!found || (found.from ?? '') < (r.from ?? '')) found = r;
+  }
+  return found?.rate;
+}
+
+/** A grade's rate in force on a date, or undefined when none applies (or the rates are still loading). */
+export function useRateFor(sheetId: string, grade: string, date: string): string | undefined {
+  return rateOn(useRates(sheetId).data ?? [], grade, date);
 }
 
 /** A two-decimal amount as whole cents, exactly. */

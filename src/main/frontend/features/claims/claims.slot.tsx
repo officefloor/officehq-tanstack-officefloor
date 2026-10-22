@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
-import { claimDue, useRateFor } from '../rates/rates';
+import { claimDue, rateOn, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
@@ -143,7 +143,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const [editingId] = useEditingClaim();
   const editing = claims.find((c) => String(c.id) === editingId);
   const [added, setAdded] = useState(0);
-  const rate = useRateFor(sheetId, person.grade);
+  const rates = useRates(sheetId).data ?? [];
 
   return (
     <>
@@ -160,7 +160,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
         />
         <ul>
           {claims.map((c) => (
-            <ClaimRow key={c.id} sheetId={sheetId} user={user} claim={c} rate={rate} />
+            <ClaimRow key={c.id} sheetId={sheetId} user={user} claim={c} rate={rateOn(rates, person.grade, c.date)} />
           ))}
         </ul>
       </td>
