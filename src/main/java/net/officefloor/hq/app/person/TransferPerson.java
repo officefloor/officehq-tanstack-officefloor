@@ -12,7 +12,10 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Transfer the loaded person to another sheet: only a steward may, a person not retired, to a sheet other than this
- *  one (created when never loaded) that is not archived and has none of their name, aliases or contact. They arrive
+ *  one (created when never loaded) that is not archived. When one person there has their name or one of their aliases (as names are compared; more
+ *  than one is refused), they are merged into that person as MergePerson merges (not retired; their claims after
+ *  theirs, their name and aliases joined to theirs, their contact and figures bound to statements dropped);
+ *  otherwise the other sheet must not have their contact. They arrive
  *  with every grade they were given (and its from-date), their terms, contact and aliases, and their claims (status,
  *  dates, notes, settled dues and logs kept; each claim that had a number takes the next number of the other sheet,
  *  in the order the claims were added; unbound from any statement; references dropped), with no statement taken.
@@ -42,15 +45,27 @@ public class TransferPerson {
         if (sheets.archived(to)) {
             throw new InvalidPersonException("Sheet " + to + " is archived: nobody can be transferred to it.");
         }
-        if (people.nameInUse(to, person.name(), null)) {
-            throw new InvalidPersonException("Sheet " + to + " already has the name " + person.name() + ".");
-        }
-        for (String alias : person.aliases()) {
-            if (people.nameInUse(to, alias, null)) {
-                throw new InvalidPersonException("Sheet " + to + " already has the name " + alias + ".");
+        java.util.Set<Long> named = new java.util.LinkedHashSet<>();
+        for (String name : java.util.stream.Stream.concat(java.util.stream.Stream.of(person.name()),
+                person.aliases().stream()).toList()) {
+            Person there = people.findByName(to, name);
+            if (there != null) {
+                named.add(there.id());
             }
         }
-        if (person.contact() != null && people.contactInUse(to, person.contact(), null)) {
+        if (named.size() > 1) {
+            throw new InvalidPersonException("Sheet " + to + " has more than one person of the names of "
+                    + person.name() + ".");
+        }
+        Person into = named.isEmpty() ? null : people.find(to, named.iterator().next());
+        if (into != null) {
+            people.lock(into);
+            into = people.find(to, into.id());
+            if (into.retiredFrom() != null) {
+                throw new InvalidPersonException(into.name() + " is retired: nobody can be merged into them.");
+            }
+        }
+        if (into == null && person.contact() != null && people.contactInUse(to, person.contact(), null)) {
             throw new InvalidPersonException("Sheet " + to + " already has someone with the contact "
                     + person.contact() + ".");
         }
@@ -60,7 +75,11 @@ public class TransferPerson {
         watches.drop(from, person.id());
         claims.transfer(from, person.id(), to);
         people.transfer(person, to);
-        transfer.set(new Transfer(from, to, person.name(), toBefore));
-        saved.set(PersonResponse.from(people.find(to, person.id())));
+        if (into != null) {
+            claims.moveAll(to, person.id(), into.id());
+            people.merge(people.find(to, person.id()), into);
+        }
+        transfer.set(new Transfer(from, to, person.name(), toBefore, into != null ? into.name() : null));
+        saved.set(PersonResponse.from(people.find(to, into != null ? into.id() : person.id())));
     }
 }
