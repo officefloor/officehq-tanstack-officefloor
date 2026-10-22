@@ -83,6 +83,12 @@ final class ClaimStatusChange {
                         + threshold + "; add a proof before it is " + input.action() + "d.");
             }
         }
+        if (input.action().equals("open")) {
+            String refused = noteRequired(loaded, repository, people, rates, settings, sheets);
+            if (refused != null) {
+                throw new ClaimStatusNotAllowedException(refused);
+            }
+        }
         if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
             BigDecimal limit = settings.clerkLimit(loaded.sheetId());
             BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
@@ -151,6 +157,25 @@ final class ClaimStatusChange {
      *  person's grade rate in force on the claim's date, divided by 100, rounded to two decimals as the claim rounds), with
      *  the late charge on it as of the sheet's today added, at least the sheet's floor in force on its date; null
      *  when it has no figure. */
+    /** Why the claim cannot be opened as it is: its note is empty and its due is above the sheet's note threshold
+     *  in force on its date; null when it may be opened. */
+    static String noteRequired(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
+            SettingRepository settings, SheetRepository sheets) {
+        if (claim.note() != null && !claim.note().isBlank()) {
+            return null;
+        }
+        BigDecimal threshold = settings.noteThreshold(claim.sheetId()).on(claim.date());
+        if (threshold == null) {
+            return null;
+        }
+        BigDecimal due = dueNow(claim, claims, people, rates, settings, sheets);
+        if (due == null || due.compareTo(threshold) <= 0) {
+            return null;
+        }
+        return "This claim's due " + due + " is above the note threshold " + threshold
+                + "; give it a note before it is opened.";
+    }
+
     private static BigDecimal dueNow(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets) {
         var person = people.find(claim.sheetId(), claim.personId());

@@ -41,6 +41,9 @@ public class SaveSettings {
         if (input.setsProofThreshold()) {
             repository.setDated(id, "proof-threshold", text(input.proofThreshold()), from(input, "proof-threshold", today));
         }
+        if (input.setsNoteThreshold()) {
+            repository.setDated(id, "note-threshold", text(input.noteThreshold()), from(input, "note-threshold", today));
+        }
         if (input.setsGraceDays()) {
             repository.setGraceDays(id, input.graceDays());
         }

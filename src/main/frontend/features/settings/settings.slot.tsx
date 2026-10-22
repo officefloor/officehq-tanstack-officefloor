@@ -13,11 +13,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 /** The settings that carry a figure, and so are saved from a from-date. */
-const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap', 'proof-threshold'];
+const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap', 'proof-threshold', 'note-threshold'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
-  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; from?: Record<string, string>;
+  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
@@ -29,7 +29,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
  *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none).
  *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
- *  while it has no proofs; the server enforces it.
+ *  while it has no proofs; the server enforces it. A claim whose due is above the note threshold (blank: none) in
+ *  force on its date cannot be opened while its note is empty; the server enforces it.
  *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles that may take
  *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
  *  The grace days (blank: off; not dated): when the sheet's today is changed, each open period whose to-date plus
@@ -48,6 +49,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentNumberingFrom = settings.data?.periodNumberingFrom ?? '';
   const currentCap = settings.data?.cap ?? '';
   const currentProofThreshold = settings.data?.proofThreshold ?? '';
+  const currentNoteThreshold = settings.data?.noteThreshold ?? '';
   const currentGraceDays = settings.data?.graceDays ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
@@ -58,6 +60,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedNumberingFrom, setTypedNumberingFrom] = useState<string | null>(null);
   const [typedCap, setTypedCap] = useState<string | null>(null);
   const [typedProofThreshold, setTypedProofThreshold] = useState<string | null>(null);
+  const [typedNoteThreshold, setTypedNoteThreshold] = useState<string | null>(null);
   const [typedGraceDays, setTypedGraceDays] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
@@ -81,6 +84,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedNumberingFrom(null);
       setTypedCap(null);
       setTypedProofThreshold(null);
+      setTypedNoteThreshold(null);
       setTypedGraceDays(null);
       setTypedGradeTerms({});
       setTypedPerms({});
@@ -161,6 +165,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.proofThreshold = threshold;
     }
+    if (typedNoteThreshold !== null) {
+      const threshold = typedNoteThreshold.trim();
+      if (threshold !== '' && !LIMIT.test(threshold)) {
+        setError('The note threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.');
+        return;
+      }
+      changes.noteThreshold = threshold;
+    }
     if (typedGraceDays !== null) {
       const graceDays = typedGraceDays.trim();
       if (graceDays !== '' && !DAYS.test(graceDays)) {
@@ -197,6 +209,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       'late-pct': () => { changes.latePct ??= currentLatePct; },
       cap: () => { changes.cap ??= currentCap; },
       'proof-threshold': () => { changes.proofThreshold ??= currentProofThreshold; },
+      'note-threshold': () => { changes.noteThreshold ??= currentNoteThreshold; },
       ...Object.fromEntries(GRADES.map((grade) => [`terms-${grade}`, () => {
         if (changes.gradeTerms?.[grade] === undefined) {
           changes.gradeTerms = { ...changes.gradeTerms, [grade]: currentGradeTerms(grade) };
@@ -255,6 +268,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>{' '}
         Cap <strong data-testid="setting-cap-current">{currentCap}</strong>{' '}
         Proof threshold <strong data-testid="setting-proof-threshold-current">{currentProofThreshold}</strong>{' '}
+        Note threshold <strong data-testid="setting-note-threshold-current">{currentNoteThreshold}</strong>{' '}
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>
       </p>
       <p>
@@ -372,6 +386,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           />
         </label>
         {fromInput('proof-threshold')}{' '}
+        <label>
+          Note threshold{' '}
+          <input
+            data-testid="setting-note-threshold"
+            placeholder="none"
+            value={typedNoteThreshold ?? currentNoteThreshold}
+            onInput={typed(setTypedNoteThreshold)}
+            onChange={typed(setTypedNoteThreshold)}
+            onFocus={() => setTypedNoteThreshold((v) => v ?? currentNoteThreshold)}
+          />
+        </label>
+        {fromInput('note-threshold')}{' '}
         <label>
           Grace days{' '}
           <input

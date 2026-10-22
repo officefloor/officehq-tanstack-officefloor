@@ -12,13 +12,14 @@ import { useSheetToday } from '../sheet/sheet';
  *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
  *  grade has none: it uses the sheet's terms), and the cap with two decimals ('' when there is none: a person's
  *  due-total is at most it), and the proof threshold with two decimals ('' when there is none: a claim whose due is
- *  above the one in force on its date cannot be settled or approved without a proof). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
+ *  above the one in force on its date cannot be settled or approved without a proof), and the note threshold with two decimals ('' when there is none: a
+ *  claim whose due is above the one in force on its date cannot be opened with an empty note). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
  *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
- *  terms-A/B/C, late-pct, cap, proof-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
+ *  terms-A/B/C, late-pct, cap, proof-threshold, note-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
  *  each action the roles that may take it, comma separated ('' when blank: the standing rule). `graceDays` is the grace days (not dated; '' when off): when the sheet's
  *  today is changed, each open period whose to-date plus them is before the new today is closed. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
-  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; dated?: Record<string, Dated[]>;
+  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */

@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Rollups;
@@ -17,10 +18,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Open each selected claim that can be opened, in list order (people in the order they were added, newest
  *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
  *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
- *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, or dated in a closed period) is left as it is and counted as refused. */
+ *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, dated in a closed period, or with an empty note and a due above the note threshold in force on its date) is left as it is and counted as refused. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims, ClaimLogRepository log,
-            PersonRepository people, PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+            PersonRepository people, PeriodRepository periods, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             Rollups rollups, Audit audit, Out<BulkOpenResponse> result) {
         String sheet = sheetId.trim();
         periods.lockSheet(sheet);
@@ -37,7 +38,8 @@ public class BulkOpenClaims {
             List<Claim> theirs = claims.listForPerson(sheet, person.id()).stream()
                     .filter(c -> input.claimIds().contains(c.id())).toList();
             for (Claim claim : theirs) {
-                if (claim.status().canBecome(ClaimStatus.OPEN) && periods.closedOn(sheet, claim.date()) == null) {
+                if (claim.status().canBecome(ClaimStatus.OPEN) && periods.closedOn(sheet, claim.date()) == null
+                        && ClaimStatusChange.noteRequired(claim, claims, people, rates, settings, sheets) == null) {
                     Rollup before = rollups.take(sheet);
                     String number = claims.nextNumber(sheet, claim.date());
                     claims.changeStatus(claim, ClaimStatus.OPEN, number, claim.settledDue(), input.user());

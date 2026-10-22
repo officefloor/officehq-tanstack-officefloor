@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days. */
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
     static final List<String> GRADES = List.of("A", "B", "C");
@@ -71,6 +71,10 @@ public class ValidateSettings {
         String threshold = request.proofThreshold() == null ? null : request.proofThreshold().trim();
         if (threshold != null && !threshold.isEmpty() && !threshold.matches(AMOUNT)) {
             throw new InvalidSettingException("The proof threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
+        }
+        String noteThreshold = request.noteThreshold() == null ? null : request.noteThreshold().trim();
+        if (noteThreshold != null && !noteThreshold.isEmpty() && !noteThreshold.matches(AMOUNT)) {
+            throw new InvalidSettingException("The note threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
         }
         String grace = request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && !grace.matches("\\d{1,4}")) {
@@ -148,6 +152,8 @@ public class ValidateSettings {
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
                 threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2),
-                perms, grace != null, grace == null || grace.isEmpty() ? null : Integer.valueOf(grace)));
+                perms, grace != null, grace == null || grace.isEmpty() ? null : Integer.valueOf(grace),
+                noteThreshold != null,
+                noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2)));
     }
 }

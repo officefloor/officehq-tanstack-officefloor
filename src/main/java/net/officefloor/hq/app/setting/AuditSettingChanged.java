@@ -36,6 +36,10 @@ public class AuditSettingChanged {
             audit.record(head + "proof-threshold value=" + SettingsResponse.text(input.proofThreshold())
                     + from(input, "proof-threshold"));
         }
+        if (input.setsNoteThreshold()) {
+            audit.record(head + "note-threshold value=" + SettingsResponse.text(input.noteThreshold())
+                    + from(input, "note-threshold"));
+        }
         if (input.setsGraceDays()) {
             audit.record(head + "grace-days value=" + (input.graceDays() != null ? input.graceDays() : ""));
         }
