@@ -12,6 +12,7 @@ import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, dueBy, live, overdue, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
+import { setSelected, useSelectedClaims } from './selection';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 const NUMBER = /^\d+$/;
@@ -116,6 +117,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
+  const selected = useSelectedClaims(sheetId).has(claim.id);
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -129,6 +131,12 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
 
   return (
     <li data-testid={`claim-row-${claim.id}`}>
+      <input
+        type="checkbox"
+        data-testid="claim-select"
+        checked={selected}
+        onChange={(e) => setSelected(sheetId, claim.id, e.target.checked)}
+      />{' '}
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
