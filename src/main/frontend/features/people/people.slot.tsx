@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
@@ -36,10 +36,16 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
   const today = useSheetToday(sheetId);
   const [gradeFromEntered, setGradeFrom] = useState<string>();
   const gradeFrom = gradeFromEntered ?? today;
-  const [error, setError] = useState(editing ? '' : carried);
-  useEffect(() => {
-    if (carried) onRefused('');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [own, showError] = useState('');
+  /** The refusal of an editor just closed shows on the form (now adding) until the form is changed, submitted or
+   *  an editor opened. Read as it is now, not copied as the form opens: the editor closes (a URL change) and the
+   *  refusal is carried in separate updates, either of which may render first. */
+  const error = own || (editing ? '' : carried);
+  /** Show (or with '' remove) the form's error; removing it also drops a carried refusal. */
+  const setError = (message: string) => {
+    showError(message);
+    if (message === '' && carried) onRefused('');
+  };
   const once = useSubmitOnce();
 
   const save = useMutation({
@@ -200,7 +206,10 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
         {editing ? 'Save' : 'Add person'}
       </button>
       {editing && (
-        <button type="button" data-testid="person-form-cancel" onClick={() => setEditing(undefined)}>
+        <button type="button" data-testid="person-form-cancel" onClick={() => {
+          onRefused('');
+          setEditing(undefined);
+        }}>
           Cancel
         </button>
       )}
@@ -329,7 +338,10 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
               <td>
-                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
+                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => {
+                  setCarried('');
+                  setEditing(String(p.id));
+                }}>
                   Edit
                 </button>
               </td>

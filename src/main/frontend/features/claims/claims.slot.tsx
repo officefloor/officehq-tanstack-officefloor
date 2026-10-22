@@ -147,8 +147,8 @@ const ACTIONS = [
  *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure). A change the status does not
  *  allow, a settle (or approve) by the user who opened it or last edited it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
  *  so is editing a claim that is no longer a DRAFT, or one whose editor another user holds open (opening the editor locks
- *  the claim until it is saved or cancelled, or the sheet's today changes), or one whose due-by falls in a closed period (its period: the server refuses those
- *  edits too). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
+ *  the claim until it is saved or cancelled, or the sheet's today changes), or one dated in a closed period (the server refuses those too; it refuses saving
+ *  an edit of one whose due-by, its period, falls in a closed period). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
  *  retirement, and a claim whose due-by is inside a closed period. */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
@@ -162,7 +162,10 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [reason, setReason] = useState('');
   const voidReasons = useVoidReasons(sheetId).data ?? [];
   const [voidReason, setVoidReason] = useState('');
-  const period = periodOf(usePeriods(sheetId).data ?? [], dueBy(claim));
+  const periods = usePeriods(sheetId).data ?? [];
+  const period = periodOf(periods, dueBy(claim));
+  // The editor opens for a claim dated outside a closed period; saving it is refused when its due-by is inside one.
+  const datedIn = periodOf(periods, claim.date);
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
@@ -369,8 +372,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
             setError(`A ${claim.status} claim cannot be edited; only a DRAFT can. Void it and add a new one.`);
             return;
           }
-          if (period?.closed) {
-            setError(`This claim is due by in the closed period ${period.name}; it cannot be edited.`);
+          if (datedIn?.closed) {
+            setError(`This claim is dated in the closed period ${datedIn.name}; it cannot be edited.`);
             return;
           }
           clearError();
