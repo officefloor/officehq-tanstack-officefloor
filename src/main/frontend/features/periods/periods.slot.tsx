@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
+import { useFloor } from '../settings/settings';
 import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
 import { periodOf, periodsKey, usePeriods } from './periods';
 import type { Period } from './periods';
@@ -67,6 +68,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = live(useClaims(sheetId).data ?? [], people);
   const rates = useRates(sheetId).data ?? [];
+  const floor = useFloor(sheetId);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -117,7 +119,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         .filter((c) => periodOf([period], c.date))
         .map((c) => {
           const grade = people.find((p) => p.id === c.personId)?.grade ?? '';
-          return claimDue(c, rateOn(rates, grade, c.date));
+          return claimDue(c, rateOn(rates, grade, c.date), floor);
         }),
     );
 

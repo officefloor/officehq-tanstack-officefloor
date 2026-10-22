@@ -64,15 +64,20 @@ export function sumDue(dues: string[]): string {
  *  'n/a' when their grade has no rate today (rateToday undefined), unless a settled or stated claim keeps a
  *  figure, then the figures there are added up. */
 export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
-    rateToday: string | undefined): string {
+    rateToday: string | undefined, floor: string): string {
   const counted = claims.filter(counts);
   if (rateToday === undefined && !counted.some((c) => c.settledDue !== null || c.statedDue !== null)) return 'n/a';
-  return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date))));
+  return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date), floor)));
 }
 
 /** A claim's due: the one fixed when it was settled, else the one its person's last statement bound it to,
- *  else live on its amount at the rate. */
-export function claimDue(claim: Claim, rate: string | undefined): string {
-  return claim.settledDue ?? claim.statedDue ?? dueOn(claim.amount, rate);
+ *  else live on its amount at the rate, raised to the sheet's floor when below it. */
+export function claimDue(claim: Claim, rate: string | undefined, floor: string): string {
+  return claim.settledDue ?? claim.statedDue ?? floored(dueOn(claim.amount, rate), floor);
+}
+
+/** A live due raised to the floor when below it; 'n/a' stays 'n/a'. */
+export function floored(due: string, floor: string): string {
+  return due === 'n/a' || toCents(due) >= toCents(floor) ? due : fromCents(toCents(floor));
 }
 

@@ -5,6 +5,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
+import { useFloor } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
@@ -96,6 +97,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [, setEditing] = useEditingClaim();
   const [error, setError] = useState('');
   const period = periodOf(usePeriods(sheetId).data ?? [], claim.date);
+  const floor = useFloor(sheetId);
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -115,7 +117,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
-      <span data-testid="claim-due">{claimDue(claim, rate)}</span>{' '}
+      <span data-testid="claim-due">{claimDue(claim, rate, floor)}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       <button

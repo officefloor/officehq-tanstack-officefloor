@@ -15,16 +15,23 @@ public final class Dues {
 
     /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to, else
      *  live: its amount times its person's grade rate in force on its date, divided by 100, rounded half to
-     *  even to two decimals; null (n/a) when no rate applies. */
-    public static BigDecimal figure(Claim claim, String grade, RateRepository rates) {
+     *  even to two decimals, and at least the sheet's floor; null (n/a) when no rate applies. */
+    public static BigDecimal figure(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
         if (claim.statedDue() != null) {
             return claim.statedDue();
         }
+        return live(claim, grade, rates, floor);
+    }
+
+    /** A claim's live due: its amount times its person's grade rate in force on its date, divided by 100, rounded
+     *  half to even to two decimals, raised to the floor when below it; null (n/a) when no rate applies. */
+    public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
         return rates.on(claim.sheetId(), grade, claim.date())
                 .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                .map(due -> due.max(floor))
                 .orElse(null);
     }
 
@@ -37,13 +44,13 @@ public final class Dues {
     /** A person's due-total: the figures of their claims that count added up, skipping n/a; null (n/a) when
      *  their grade has no rate today, unless a claim that counts keeps a figure (settled or stated). */
     public static BigDecimal total(String sheetId, List<Claim> claims, String grade, boolean held, LocalDate today,
-            RateRepository rates) {
+            RateRepository rates, BigDecimal floor) {
         List<Claim> counted = claims.stream().filter(c -> counts(c, held)).toList();
         boolean kept = counted.stream().anyMatch(c -> c.settledDue() != null || c.statedDue() != null);
         if (!kept && rates.on(sheetId, grade, today).isEmpty()) {
             return null;
         }
-        return counted.stream().map(c -> figure(c, grade, rates)).filter(f -> f != null)
+        return counted.stream().map(c -> figure(c, grade, rates, floor)).filter(f -> f != null)
                 .reduce(new BigDecimal("0.00"), BigDecimal::add);
     }
 }

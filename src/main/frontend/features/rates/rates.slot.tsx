@@ -9,6 +9,7 @@ import { live, useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
+import { useFloor } from '../settings/settings';
 import { personDue, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
@@ -132,7 +133,9 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; pe
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
-  const due = personDue(live(claims, [person]), (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today));
+  const floor = useFloor(sheetId);
+  const due = personDue(live(claims, [person]), (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today),
+    floor);
   return <td data-testid="person-due-total">{due}</td>;
 }
 
@@ -142,11 +145,13 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const claims = live(useClaims(sheetId).data ?? [], people);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
   const dues = people.map((p) =>
     personDue(
       claims.filter((c) => c.personId === p.id),
       (d) => rateOn(rates, p.grade, d),
       rateOn(rates, p.grade, today),
+      floor,
     ),
   );
   return (

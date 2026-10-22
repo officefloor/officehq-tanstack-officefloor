@@ -8,6 +8,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.PersonResponse;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -17,17 +18,18 @@ import net.officefloor.plugin.variable.Val;
  *  fixed due is left as it is. */
 public class SaveStatement {
     public void save(@Val Person loaded, PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, Out<Statement> statement, Out<PersonResponse> saved) {
+            SheetRepository sheets, SettingRepository settings, Out<Statement> statement, Out<PersonResponse> saved) {
         people.lock(loaded);
         Person person = people.find(loaded.sheetId(), loaded.id());
         var today = sheets.today(person.sheetId());
+        BigDecimal floor = settings.floor(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
-        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), person.held(), today, rates);
+        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), person.held(), today, rates, floor);
         int counted = 0;
         for (Claim c : theirs) {
             if (Dues.counts(c, person.held())) {
                 counted++;
-                claims.state(c, true, Dues.figure(c, person.grade(), rates));
+                claims.state(c, true, Dues.figure(c, person.grade(), rates, floor));
             } else if (c.stated()) {
                 claims.state(c, false, null);
             }

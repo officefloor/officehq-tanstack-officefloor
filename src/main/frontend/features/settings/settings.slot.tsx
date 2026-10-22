@@ -1,62 +1,81 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJson, HttpError, putJson } from '../../api/http';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-
-/** The sheet's settings: the clerk limit with two decimals ('' when there is none). */
-export type Settings = { clerkLimit: string };
-
-export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
+import { DEFAULT_FLOOR, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
 
-/** The sheet's settings — the clerk limit in force, and the form that saves it (blank: no limit). A clerk may
- *  settle only claims whose due is at or below it; the server enforces it. */
+/** The settings a save changes: only those typed into since the last save are sent (and recorded). */
+type Changes = { clerkLimit?: string; floor?: string };
+
+/** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
+ *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
+ *  A claim's live due is at least the floor. */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
-  const settings = useQuery({
-    queryKey: settingsKey(sheetId),
-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
-  });
-  const current = settings.data?.clerkLimit ?? '';
-  // null: not typed in since the last save, so the field shows the limit in force.
-  const [typed, setTyped] = useState<string | null>(null);
+  const settings = useSettings(sheetId);
+  const currentLimit = settings.data?.clerkLimit ?? '';
+  const currentFloor = settings.data?.floor ?? DEFAULT_FLOOR;
+  // null: not typed in since the last save, so the field shows the setting in force.
+  const [typedLimit, setTypedLimit] = useState<string | null>(null);
+  const [typedFloor, setTypedFloor] = useState<string | null>(null);
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (clerkLimit: string) =>
-      putJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, { user, clerkLimit }),
+    mutationFn: (changes: Changes) =>
+      putJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, { user, ...changes }),
     onSuccess: (saved) => {
       queryClient.setQueryData(settingsKey(sheetId), saved);
-      setTyped(null);
+      setTypedLimit(null);
+      setTypedFloor(null);
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body
         ? e.body
-        : 'Could not save the settings: the clerk limit must be an amount with up to two decimals, or blank.'),
+        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals.'),
     onSettled: once.done,
   });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    const limit = (typed ?? current).trim();
-    if (limit !== '' && !LIMIT.test(limit)) {
-      setError('The clerk limit must be an amount, 0.00 or more, with up to two decimals, or blank for no limit.');
-      return;
+    const changes: Changes = {};
+    if (typedLimit !== null) {
+      const limit = typedLimit.trim();
+      if (limit !== '' && !LIMIT.test(limit)) {
+        setError('The clerk limit must be an amount, 0.00 or more, with up to two decimals, or blank for no limit.');
+        return;
+      }
+      changes.clerkLimit = limit;
+    }
+    if (typedFloor !== null) {
+      const floor = typedFloor.trim();
+      if (!LIMIT.test(floor)) {
+        setError('The floor must be an amount, 0.00 or more, with up to two decimals.');
+        return;
+      }
+      changes.floor = floor;
     }
     if (!once.start()) return;
-    save.mutate(limit);
+    save.mutate(changes);
+  };
+
+  // onInput as well as onChange: retyping the value in force still counts as setting it.
+  const typed = (set: (v: string) => void) => (e: FormEvent<HTMLInputElement>) => {
+    set(e.currentTarget.value);
+    setError('');
   };
 
   return (
     <section data-testid="settings">
       <h2>Settings</h2>
       <p>
-        Clerk limit <strong data-testid="setting-clerk-limit-current">{current}</strong>
+        Clerk limit <strong data-testid="setting-clerk-limit-current">{currentLimit}</strong>{' '}
+        Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -64,11 +83,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           <input
             data-testid="setting-clerk-limit"
             placeholder="no limit"
-            value={typed ?? current}
-            onChange={(e) => {
-              setTyped(e.target.value);
-              setError('');
-            }}
+            value={typedLimit ?? currentLimit}
+            onInput={typed(setTypedLimit)}
+            onChange={typed(setTypedLimit)}
+          />
+        </label>{' '}
+        <label>
+          Floor{' '}
+          <input
+            data-testid="setting-floor"
+            value={typedFloor ?? currentFloor}
+            onInput={typed(setTypedFloor)}
+            onChange={typed(setTypedFloor)}
           />
         </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

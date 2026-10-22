@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.Dues;
 import org.springframework.stereotype.Service;
@@ -26,20 +27,23 @@ public class Rollups {
     private final ClaimRepository claims;
     private final RateRepository rates;
     private final SheetRepository sheets;
+    private final SettingRepository settings;
     private final Audit audit;
 
     public Rollups(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            Audit audit) {
+            SettingRepository settings, Audit audit) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
+        this.settings = settings;
         this.audit = audit;
     }
 
     /** The sheet's figures as they are now. */
     public Rollup take(String sheetId) {
         var today = sheets.today(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = new BigDecimal("0.00");
@@ -48,7 +52,7 @@ public class Rollups {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.held())).map(Claim::amount)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
-            BigDecimal due = Dues.total(sheetId, theirs, p.grade(), p.held(), today, rates);
+            BigDecimal due = Dues.total(sheetId, theirs, p.grade(), p.held(), today, rates, floor);
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) {
                 dueTotal = dueTotal.add(due);

@@ -8,6 +8,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SettingRepository {
 
+    /** The floor of a sheet that has none stored yet. */
+    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -16,7 +19,7 @@ public class SettingRepository {
 
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
-        return new Settings(sheetId, clerkLimit(sheetId));
+        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -27,5 +30,16 @@ public class SettingRepository {
 
     public void setClerkLimit(String sheetId, BigDecimal limit) {
         jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
+    }
+
+    /** The sheet's floor: two decimals; a claim's live due is at least it. */
+    public BigDecimal floor(String sheetId) {
+        BigDecimal floor = jdbc.query("SELECT due_floor FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
+        return floor != null ? floor.setScale(2) : DEFAULT_FLOOR;
+    }
+
+    public void setFloor(String sheetId, BigDecimal floor) {
+        jdbc.update("UPDATE sheet SET due_floor = ? WHERE id = ?", floor, sheetId);
     }
 }
