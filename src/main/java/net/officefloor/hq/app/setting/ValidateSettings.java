@@ -127,6 +127,26 @@ public class ValidateSettings {
                 gradeGrace.put(grade, days.isEmpty() ? null : Integer.valueOf(days));
             }
         }
+        Map<String, BigDecimal> gradeProofThreshold = new LinkedHashMap<>();
+        if (request.gradeProofThreshold() != null) {
+            for (String grade : request.gradeProofThreshold().keySet()) {
+                if (!GRADES.contains(grade)) {
+                    throw new InvalidSettingException("A proof threshold may be set only for grade A, B or C.");
+                }
+            }
+            for (String grade : GRADES) {
+                if (!request.gradeProofThreshold().containsKey(grade)) {
+                    continue;
+                }
+                String amount = request.gradeProofThreshold().get(grade) == null ? ""
+                        : request.gradeProofThreshold().get(grade).trim();
+                if (!amount.isEmpty() && !amount.matches(AMOUNT)) {
+                    throw new InvalidSettingException("The proof threshold of grade " + grade
+                            + " must be an amount, 0.00 or more, with up to two decimals, or blank for the sheet's.");
+                }
+                gradeProofThreshold.put(grade, amount.isEmpty() ? null : new BigDecimal(amount).setScale(2));
+            }
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request.perms() != null) {
             for (String action : request.perms().keySet()) {
@@ -183,6 +203,6 @@ public class ValidateSettings {
                 perms, grace != null, grace == null || grace.isEmpty() ? null : Integer.valueOf(grace),
                 noteThreshold != null,
                 noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
-                entered != null, entryDate, gradeGrace));
+                entered != null, entryDate, gradeGrace, gradeProofThreshold));
     }
 }

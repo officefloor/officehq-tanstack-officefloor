@@ -48,6 +48,8 @@ public class AuditSettingChanged {
         }
         input.gradeGrace().forEach((grade, days) -> audit.record(head + "grace-" + grade + " value="
                 + (days != null ? days : "") + from(input, "grace-" + grade)));
+        input.gradeProofThreshold().forEach((grade, amount) -> audit.record(head + "proof-threshold-" + grade + " value="
+                + SettingsResponse.text(amount) + from(input, "proof-threshold-" + grade)));
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

@@ -14,12 +14,14 @@ const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 /** The settings that carry a figure, and so are saved from a from-date. */
 const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`),
-  ...GRADES.map((grade) => `grace-${grade}`), 'late-pct', 'cap', 'proof-threshold', 'note-threshold'];
+  ...GRADES.map((grade) => `grace-${grade}`), 'late-pct', 'cap', 'proof-threshold',
+  ...GRADES.map((grade) => `proof-threshold-${grade}`), 'note-threshold'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
-  perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string> };
+  perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
+  gradeProofThreshold?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -32,7 +34,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  on its date has a grace in force on that date is overdue only past its due-by plus them, and its late charge's
  *  30-day boundaries count from there; its due-by is unchanged. A person's due-total is at most the cap (blank: none).
  *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
- *  while it has no proofs; the server enforces it. A claim whose due is above the note threshold (blank: none) in
+ *  while it has no proofs; the server enforces it. A grade may have a proof threshold of its own (blank: the sheet's);
+ *  a claim whose person's grade on its date has one in force on that date takes it instead of the sheet's. A claim whose due is above the note threshold (blank: none) in
  *  force on its date cannot be opened while its note is empty; the server enforces it.
  *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles that may take
  *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
@@ -73,6 +76,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const currentGradeGrace = (grade: string) => settings.data?.gradeGrace?.[grade] ?? '';
   const [typedGradeGrace, setTypedGradeGrace] = useState<Record<string, string>>({});
+  const currentGradeProofThreshold = (grade: string) => settings.data?.gradeProofThreshold?.[grade] ?? '';
+  const [typedGradeProofThreshold, setTypedGradeProofThreshold] = useState<Record<string, string>>({});
   const currentPerm = (action: string) => settings.data?.perms?.[action] ?? '';
   const [typedPerms, setTypedPerms] = useState<Record<string, string>>({});
   // From-dates typed in since the last save, by dated setting key.
@@ -98,6 +103,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedEntryDate(null);
       setTypedGradeTerms({});
       setTypedGradeGrace({});
+      setTypedGradeProofThreshold({});
       setTypedPerms({});
       setTypedFrom({});
     },
@@ -220,6 +226,16 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.gradeGrace = { ...changes.gradeGrace, [grade]: grace };
     }
+    for (const grade of GRADES) {
+      const typedThreshold = typedGradeProofThreshold[grade];
+      if (typedThreshold === undefined) continue;
+      const threshold = typedThreshold.trim();
+      if (threshold !== '' && !LIMIT.test(threshold)) {
+        setError(`The proof threshold of grade ${grade} must be an amount, 0.00 or more, with up to two decimals, or blank for the sheet's.`);
+        return;
+      }
+      changes.gradeProofThreshold = { ...changes.gradeProofThreshold, [grade]: threshold };
+    }
     for (const action of PERM_ACTIONS) {
       const typedRoles = typedPerms[action];
       if (typedRoles === undefined) continue;
@@ -247,6 +263,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       ...Object.fromEntries(GRADES.map((grade) => [`grace-${grade}`, () => {
         if (changes.gradeGrace?.[grade] === undefined) {
           changes.gradeGrace = { ...changes.gradeGrace, [grade]: currentGradeGrace(grade) };
+        }
+      }])),
+      ...Object.fromEntries(GRADES.map((grade) => [`proof-threshold-${grade}`, () => {
+        if (changes.gradeProofThreshold?.[grade] === undefined) {
+          changes.gradeProofThreshold = { ...changes.gradeProofThreshold, [grade]: currentGradeProofThreshold(grade) };
         }
       }])),
     };
@@ -307,6 +328,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>{' '}
         Cap <strong data-testid="setting-cap-current">{currentCap}</strong>{' '}
         Proof threshold <strong data-testid="setting-proof-threshold-current">{currentProofThreshold}</strong>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            Grade {grade} proof threshold <strong data-testid={`setting-proof-threshold-${grade}-current`}>{currentGradeProofThreshold(grade)}</strong>{' '}
+          </span>
+        ))}
         Note threshold <strong data-testid="setting-note-threshold-current">{currentNoteThreshold}</strong>{' '}
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>
@@ -442,6 +468,22 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           />
         </label>
         {fromInput('proof-threshold')}{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Grade {grade} proof threshold{' '}
+              <input
+                data-testid={`setting-proof-threshold-${grade}`}
+                placeholder="sheet's"
+                value={typedGradeProofThreshold[grade] ?? currentGradeProofThreshold(grade)}
+                onInput={typed((v) => setTypedGradeProofThreshold((t) => ({ ...t, [grade]: v })))}
+                onChange={typed((v) => setTypedGradeProofThreshold((t) => ({ ...t, [grade]: v })))}
+                onFocus={() => setTypedGradeProofThreshold((t) => (grade in t ? t : { ...t, [grade]: currentGradeProofThreshold(grade) }))}
+              />
+            </label>
+            {fromInput(`proof-threshold-${grade}`)}{' '}
+          </span>
+        ))}
         <label>
           Note threshold{' '}
           <input

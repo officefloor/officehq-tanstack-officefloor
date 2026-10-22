@@ -28,6 +28,8 @@ public class SaveSettings {
                 days != null ? String.valueOf(days) : null, from(input, "terms-" + grade, today)));
         input.gradeGrace().forEach((grade, days) -> repository.setDated(id, "grace-" + grade,
                 days != null ? String.valueOf(days) : null, from(input, "grace-" + grade, today)));
+        input.gradeProofThreshold().forEach((grade, amount) -> repository.setDated(id, "proof-threshold-" + grade,
+                text(amount), from(input, "proof-threshold-" + grade, today)));
         if (input.latePct() != null) {
             repository.setDated(id, "late-pct", text(input.latePct()), from(input, "late-pct", today));
         }

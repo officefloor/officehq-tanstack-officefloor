@@ -82,7 +82,9 @@ final class ClaimStatusChange {
             throw new ClaimStatusNotAllowedException("The user who last edited a claim cannot settle it.");
         }
         if ((input.action().equals("settle") || input.action().equals("approve")) && loaded.proofs() == 0) {
-            BigDecimal threshold = settings.proofThreshold(loaded.sheetId()).on(loaded.date());
+            var person = people.find(loaded.sheetId(), loaded.personId());
+            String grade = person != null ? person.grades().on(loaded.date()) : null;
+            BigDecimal threshold = settings.proofThresholdFor(loaded.sheetId(), grade, loaded.date());
             BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
             if (threshold != null && due != null && due.compareTo(threshold) > 0) {
                 throw new ClaimStatusNotAllowedException("This claim's due " + due + " is above the proof threshold "

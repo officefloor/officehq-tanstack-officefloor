@@ -8,7 +8,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, grace-A/B/C, clerk-limit, cap,
- *  proof-threshold, note-threshold), each value recorded
+ *  proof-threshold, note-threshold, proof-threshold-A/B/C), each value recorded
  *  by its from-date (null: blank). The value in force on a date is the one with the latest from-date on or before
  *  it; before every from-date the sheet's starting value applies. */
 public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values) {
@@ -16,7 +16,7 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     /** The keys of the settings that are dated. */
     public static final List<String> KEYS = List.of("clerk-limit", "floor", "terms", "terms-A",
             "terms-B", "terms-C", "grace-A", "grace-B", "grace-C", "late-pct", "cap", "proof-threshold",
-            "note-threshold");
+            "note-threshold", "proof-threshold-A", "proof-threshold-B", "proof-threshold-C");
 
     /** The key's values, oldest from-date first (empty when it has none). */
     public NavigableMap<LocalDate, String> of(String key) {
@@ -84,6 +84,19 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     /** The proof threshold in force on the date: two decimals, or null when there is none. */
     public BigDecimal proofThresholdOn(LocalDate date) {
         return amountOn("proof-threshold", date);
+    }
+
+    /** The grade's own proof threshold in force on the date: two decimals, or null when it has none then (it uses
+     *  the sheet's). */
+    public BigDecimal gradeProofThresholdOn(String grade, LocalDate date) {
+        return amountOn("proof-threshold-" + grade, date);
+    }
+
+    /** The proof threshold a claim of the grade dated on the date has: the grade's own in force then when it has
+     *  one, else the sheet's then; null when there is none. */
+    public BigDecimal proofThresholdFor(String grade, LocalDate date) {
+        BigDecimal own = grade != null && !grade.isEmpty() ? gradeProofThresholdOn(grade, date) : null;
+        return own != null ? own : proofThresholdOn(date);
     }
 
     /** The note threshold in force on the date: two decimals, or null when there is none. */

@@ -8,11 +8,11 @@ import java.util.Map;
 /** The settings as the screen shows them: the clerk limit with two decimals ('' when there is none) and the floor
  *  with two decimals and the terms in days and the late percent with two decimals and the policy date (yyyy-mm-dd; '' when blank) and the period numbering from (yyyy-mm-dd; '' when off) and each grade's own
  *  terms in days ('' when it has none: it uses the sheet's terms) and the cap with two decimals ('' when there is none) and the proof threshold with two decimals ('' when there is none), all as in force on the sheet's today; and every value
- *  recorded for each dated setting, by key, oldest from-date first; and the permission matrix, by action ('' when blank); and the grace days ('' when off); and the note threshold with two decimals ('' when there is none), in force on the sheet's today; and the entry date (yyyy-mm-dd; '' when off); and each grade's grace in days ('' when it has none), in force on the sheet's today. */
+ *  recorded for each dated setting, by key, oldest from-date first; and the permission matrix, by action ('' when blank); and the grace days ('' when off); and the note threshold with two decimals ('' when there is none), in force on the sheet's today; and the entry date (yyyy-mm-dd; '' when off); and each grade's grace in days ('' when it has none) and each grade's own proof threshold with two decimals ('' when it has none: it uses the sheet's), in force on the sheet's today. */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct,
         String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String cap,
         Map<String, List<Dated>> dated, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
-        String entryDate, Map<String, String> gradeGrace) {
+        String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold) {
 
     /** A dated setting's value ('' when blank) and the date (yyyy-mm-dd) it is in force from. */
     public record Dated(String from, String value) {
@@ -26,7 +26,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 SettingsResponse.text(s.cap()), dated(s), SettingsResponse.text(s.proofThreshold()),
                 s.permissions().entries(), s.graceDays() != null ? String.valueOf(s.graceDays()) : "",
                 SettingsResponse.text(s.noteThreshold()), s.entryDate() != null ? s.entryDate().toString() : "",
-                byGrade(s.gradeGrace()));
+                byGrade(s.gradeGrace()), amountsByGrade(s.gradeProofThreshold()));
     }
 
     private static Map<String, List<Dated>> dated(Settings s) {
@@ -48,6 +48,14 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         for (String grade : ValidateSettings.GRADES) {
             Integer d = days.get(grade);
             shown.put(grade, d != null ? String.valueOf(d) : "");
+        }
+        return shown;
+    }
+
+    private static Map<String, String> amountsByGrade(Map<String, java.math.BigDecimal> amounts) {
+        Map<String, String> shown = new LinkedHashMap<>();
+        for (String grade : ValidateSettings.GRADES) {
+            shown.put(grade, SettingsResponse.text(amounts.get(grade)));
         }
         return shown;
     }

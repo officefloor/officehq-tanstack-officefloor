@@ -56,10 +56,17 @@ public class SettingRepository {
                 gradeGrace.put(grade, days);
             }
         }
+        Map<String, BigDecimal> gradeProofThreshold = new LinkedHashMap<>();
+        for (String grade : ValidateSettings.GRADES) {
+            BigDecimal amount = history.gradeProofThresholdOn(grade, today);
+            if (amount != null) {
+                gradeProofThreshold.put(grade, amount);
+            }
+        }
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
-                entryDate(sheetId), gradeGrace);
+                entryDate(sheetId), gradeGrace, gradeProofThreshold);
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -109,6 +116,12 @@ public class SettingRepository {
      *  in force on its date cannot be settled or approved while it has no proofs. */
     public DatedAmount proofThreshold(String sheetId) {
         return history(sheetId)::proofThresholdOn;
+    }
+
+    /** The proof threshold a claim of the grade dated on the date has: the grade's own in force then when it has one,
+     *  else the sheet's in force then; null when there is none. */
+    public BigDecimal proofThresholdFor(String sheetId, String grade, LocalDate date) {
+        return history(sheetId).proofThresholdFor(grade, date);
     }
 
     /** The sheet's note threshold by date (null on a date when there is none then): a claim whose due is above the one
