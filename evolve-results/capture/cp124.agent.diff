@@ -1,0 +1,95 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 6abb56c..81ea870 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -210,7 +210,7 @@ function PoolForm({ sheetId, user }: { sheetId: string; user: string }) {
+ }
+ 
+ /** The sheet's pools: each with its members and their shares, its total share (a member retired by the sheet's
+- *  today counts 0.00) and whether it is balanced, and the entry a pool is added with. */
++ *  today counts their share as given) and whether it is balanced, and the entry a pool is added with. */
+ function Pools({ sheetId, user }: { sheetId: string; user: string }) {
+   const pools = usePools(sheetId).data ?? [];
+   return (
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 596873e..9986a62 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+ /** A member of a pool — a person, or another pool (poolId; personId then null) — with their share percent, whether
+- *  they are retired by the sheet's today (their share then counts 0.00 toward the pool's total), and their cut of the
+- *  pool's pot ('' when the pool is unbalanced or there is no pot). A pool that is a member of none has the sheet's
++ *  they are retired by the sheet's today (their share still counts toward the pool's total but they cut 0.00, their
++ *  share spread over the others), and their cut of the pool's pot ('' when the pool is unbalanced, there is no pot
++ *  or every member is retired). A pool that is a member of none has the sheet's
+  *  pot; a member pool's pot is its cut in the pool above. A membership may carry a from- and a to-date ('' when
+  *  open); a member whose dates leave out the sheet's today (outside) counts nothing toward the total and has no cut. */
+ export type PoolMember = {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 8bf6fb7..ae8b075 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -9,7 +9,7 @@ import java.util.Map;
+ import java.util.Set;
+ 
+ /** A pool as the screen shows it: its members in the order they were added, the total of their shares (a member
+- *  retired by the date counts 0.00) and whether it is balanced (the total is exactly 100.00). */
++ *  retired by the date counts their share as given) and whether it is balanced (the total is exactly 100.00). */
+ public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced) {
+ 
+     /** A member: the person (or, for a member pool, null and the pool's id in poolId), their name, their share,
+@@ -30,11 +30,12 @@ public record PoolResponse(long id, String name, List<Member> members, String to
+ 
+     /** The pool with its members; retiredFrom gives each person's retirement date (absent: not retired), held the
+      *  people with a hold in force on the date, and on is the date it is judged by (null: none retired). When the
+-     *  pool is balanced and there is a pot (null: none), a retired or held member cuts 0.00 and each other member's
++     *  pool is balanced and there is a pot (null: none), a retired or held member cuts 0.00 (their share spread over the others) and each other member's
+      *  cut is the pot (the sheet's, or for a member pool its cut in the pool above) times their share divided by the
+      *  shares of the members with a cut, added up, rounded half to even to two decimals, and the pot less the cuts
+      *  goes to the member with a cut with the largest share (the earliest added on a tie), so the cuts total exactly
+-     *  the pot. A hold leaves the total share and balance alone. A member whose membership dates do not include the
++     *  the pot; when every member is retired there are no cuts ('' shown). A hold or a retirement leaves the total
++     *  share and balance alone. A member whose membership dates do not include the
+      *  date is left out entirely: not in the total share, not in the balance, and no cut ('' shown). */
+     public static PoolResponse from(Pool pool, List<PoolMember> members, Map<Long, LocalDate> retiredFrom,
+             Set<Long> held, LocalDate on, BigDecimal pot) {
+@@ -49,17 +50,19 @@ public record PoolResponse(long id, String name, List<Member> members, String to
+             }
+             LocalDate from = m.isPool() ? null : retiredFrom.get(m.personId());
+             retired[i] = on != null && from != null && !from.isAfter(on);
+-            if (!retired[i]) {
+-                total = total.add(m.share());
+-            }
++            total = total.add(m.share());
+         }
+         boolean balanced = total.compareTo(FULL) == 0;
+         boolean[] noCut = new boolean[members.size()];
++        boolean allRetired = true;
+         for (int i = 0; i < members.size(); i++) {
+             PoolMember m = members.get(i);
+             noCut[i] = outside[i] || retired[i] || (!m.isPool() && held.contains(m.personId()));
++            if (!outside[i] && !retired[i]) {
++                allRetired = false;
++            }
+         }
+-        BigDecimal[] cuts = balanced && pot != null ? cuts(members, noCut, pot) : null;
++        BigDecimal[] cuts = balanced && pot != null && !allRetired ? cuts(members, noCut, pot) : null;
+         List<Member> shown = new ArrayList<>();
+         for (int i = 0; i < members.size(); i++) {
+             PoolMember m = members.get(i);
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 4a4d475..d6e8ac5 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's pools in the order they were added, with their members, total share and whether balanced; a member
+- *  retired by the sheet's today (or the as-of date, when one is given) counts 0.00 toward the total; each member of a balanced pool
++ *  retired by the sheet's today (or the as-of date, when one is given) cuts 0.00, their share still counted toward the total
++ *  and spread over the members with a cut (no cuts at all when every member is retired); each member of a balanced pool
+  *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot; a pool
+  *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
+  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
