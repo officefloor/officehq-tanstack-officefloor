@@ -1,0 +1,329 @@
+diff --git a/src/main/frontend/features/audit/audit.slot.tsx b/src/main/frontend/features/audit/audit.slot.tsx
+new file mode 100644
+index 0000000..23bfa74
+--- /dev/null
++++ b/src/main/frontend/features/audit/audit.slot.tsx
+@@ -0,0 +1,48 @@
++import { useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheet';
++
++/** The audit viewer: the sheet's audit lines exactly as the audit file holds them, newest first. A name in the
++ *  filter shows only the lines about that person (name= or person= that name, compared as names are). Each press
++ *  of Show re-reads the file. */
++function AuditViewer({ sheetId }: { sheetId: string; user: string }) {
++  const [filter, setFilter] = useState('');
++  const [shown, setShown] = useState<{ name: string; n: number } | null>(null);
++  const lines = useQuery({
++    queryKey: ['sheet', sheetId, 'audit', shown?.name ?? '', shown?.n ?? 0],
++    queryFn: () =>
++      getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/audit?name=${encodeURIComponent(shown!.name)}`),
++    enabled: shown !== null,
++  });
++
++  return (
++    <section>
++      <h2>Audit</h2>
++      <input
++        data-testid="audit-filter"
++        placeholder="Name (blank for all)"
++        value={filter}
++        onChange={(e) => setFilter(e.target.value)}
++      />{' '}
++      <button
++        type="button"
++        data-testid="audit-show"
++        onClick={() => setShown((s) => ({ name: filter.trim(), n: (s?.n ?? 0) + 1 }))}
++      >
++        Show
++      </button>
++      {shown && lines.data && (
++        <ol>
++          {lines.data.map((line, i) => (
++            <li key={i} data-testid="audit-line">
++              {line}
++            </li>
++          ))}
++        </ol>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 90, Component: AuditViewer });
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 9f1c086..fb4aa55 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -147,8 +147,8 @@ const ACTIONS = [
+  *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure). A change the status does not
+  *  allow, a settle (or approve) by the user who opened it or last edited it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
+  *  so is editing a claim that is no longer a DRAFT, or one whose editor another user holds open (opening the editor locks
+- *  the claim until it is saved or cancelled, or the sheet's today changes), or one whose due-by falls in a closed period (its period: the server refuses those
+- *  edits too). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
++ *  the claim until it is saved or cancelled, or the sheet's today changes), or one dated in a closed period (the server refuses those too; it refuses saving
++ *  an edit of one whose due-by, its period, falls in a closed period). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
+  *  retirement, and a claim whose due-by is inside a closed period. */
+ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
+   const queryClient = useQueryClient();
+@@ -162,7 +162,10 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+   const [reason, setReason] = useState('');
+   const voidReasons = useVoidReasons(sheetId).data ?? [];
+   const [voidReason, setVoidReason] = useState('');
+-  const period = periodOf(usePeriods(sheetId).data ?? [], dueBy(claim));
++  const periods = usePeriods(sheetId).data ?? [];
++  const period = periodOf(periods, dueBy(claim));
++  // The editor opens for a claim dated outside a closed period; saving it is refused when its due-by is inside one.
++  const datedIn = periodOf(periods, claim.date);
+   const floor = useFloor(sheetId);
+   const today = useSheetToday(sheetId);
+   const late = useLate(sheetId);
+@@ -369,8 +372,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+             setError(`A ${claim.status} claim cannot be edited; only a DRAFT can. Void it and add a new one.`);
+             return;
+           }
+-          if (period?.closed) {
+-            setError(`This claim is due by in the closed period ${period.name}; it cannot be edited.`);
++          if (datedIn?.closed) {
++            setError(`This claim is dated in the closed period ${datedIn.name}; it cannot be edited.`);
+             return;
+           }
+           clearError();
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 6a94d37..953fbcb 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useState } from 'react';
++import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, getJson, postJson, putJson } from '../../api/http';
+@@ -36,10 +36,16 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
+   const today = useSheetToday(sheetId);
+   const [gradeFromEntered, setGradeFrom] = useState<string>();
+   const gradeFrom = gradeFromEntered ?? today;
+-  const [error, setError] = useState(editing ? '' : carried);
+-  useEffect(() => {
+-    if (carried) onRefused('');
+-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
++  const [own, showError] = useState('');
++  /** The refusal of an editor just closed shows on the form (now adding) until the form is changed, submitted or
++   *  an editor opened. Read as it is now, not copied as the form opens: the editor closes (a URL change) and the
++   *  refusal is carried in separate updates, either of which may render first. */
++  const error = own || (editing ? '' : carried);
++  /** Show (or with '' remove) the form's error; removing it also drops a carried refusal. */
++  const setError = (message: string) => {
++    showError(message);
++    if (message === '' && carried) onRefused('');
++  };
+   const once = useSubmitOnce();
+ 
+   const save = useMutation({
+@@ -200,7 +206,10 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
+         {editing ? 'Save' : 'Add person'}
+       </button>
+       {editing && (
+-        <button type="button" data-testid="person-form-cancel" onClick={() => setEditing(undefined)}>
++        <button type="button" data-testid="person-form-cancel" onClick={() => {
++          onRefused('');
++          setEditing(undefined);
++        }}>
+           Cancel
+         </button>
+       )}
+@@ -329,7 +338,10 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+               <td data-testid="person-terms">{p.terms ?? ''}</td>
+               <td data-testid="person-contact">{p.contact ?? ''}</td>
+               <td>
+-                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
++                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => {
++                  setCarried('');
++                  setEditing(String(p.id));
++                }}>
+                   Edit
+                 </button>
+               </td>
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 8513c21..314a604 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.nio.file.StandardOpenOption;
++import java.util.List;
+ import net.officefloor.hq.app.delegation.DelegationRepository;
+ import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.stereotype.Service;
+@@ -70,6 +71,18 @@ public class Audit {
+         return steward == null ? "" : " for=" + steward;
+     }
+ 
++    /** Every record the file holds now, in file order (none when there is no file). */
++    public synchronized List<String> lines() {
++        try {
++            if (!Files.exists(file)) {
++                return List.of();
++            }
++            return Files.readAllLines(file, StandardCharsets.UTF_8).stream().filter(l -> !l.isEmpty()).toList();
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+new file mode 100644
+index 0000000..c21a2ab
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -0,0 +1,54 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Locale;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The sheet's audit lines as the file holds them, newest first; with a name, only the lines about that person (a
++ *  name= or person= field holding it, case and surrounding spaces ignored). Reads the file; keeps no copy. */
++public class RespondWithAuditLines {
++    public void respond(@PathVariable("sheetId") String sheetId, @RequestParam(name = "name", required = false) String name,
++            Audit audit, ObjectResponse<List<String>> response) {
++        String sheet = sheetId.trim();
++        String key = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
++        List<String> lines = new ArrayList<>();
++        for (String line : audit.lines()) {
++            if (onSheet(line, sheet) && (key.isEmpty() || about(line, key))) {
++                lines.add(line);
++            }
++        }
++        Collections.reverse(lines);
++        response.send(lines);
++    }
++
++    /** Whether the line's sheet= field is the sheet. */
++    private static boolean onSheet(String line, String sheet) {
++        for (String field : line.split(" ")) {
++            if (field.startsWith("sheet=")) {
++                return field.substring("sheet=".length()).equals(sheet);
++            }
++        }
++        return false;
++    }
++
++    /** Whether a name= or person= field of the line holds the name (already in comparison form). */
++    private static boolean about(String line, String key) {
++        String lower = line.toLowerCase(Locale.ROOT);
++        for (String label : new String[] { " name=", " person=" }) {
++            int at = lower.indexOf(label);
++            while (at >= 0) {
++                String rest = lower.substring(at + label.length());
++                if (rest.startsWith(key) && (rest.length() == key.length() || rest.charAt(key.length()) == ' ')) {
++                    return true;
++                }
++                at = lower.indexOf(label, at + 1);
++            }
++        }
++        return false;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedClaimLock.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedClaimLock.java
+new file mode 100644
+index 0000000..3cb6801
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedClaimLock.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuse opening the editor of (locking) a claim dated inside a closed period. Saving the edit is then refused
++ *  when its due-by falls inside one (see RefuseClosedClaimEdit). */
++public class RefuseClosedClaimLock {
++    public void refuse(@Val Claim loaded, PeriodRepository periods) throws ClosedPeriodException {
++        periods.lockSheet(loaded.sheetId());
++        Period closed = periods.closedOn(loaded.sheetId(), loaded.date());
++        if (closed != null) {
++            throw new ClosedPeriodException(closed);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+index 5b81d92..04606a9 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+@@ -1,31 +1,19 @@
+ package net.officefloor.hq.app.quickadd;
+ 
+-import net.officefloor.hq.app.claim.DueBy;
+-import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.ClosedPeriodException;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+-import net.officefloor.hq.app.person.Person;
+-import net.officefloor.hq.app.person.PersonRepository;
+-import net.officefloor.hq.app.person.PersonRequest;
+-import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+-import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Refuse the quick-add when the claim's due-by (the terms-th business day after its date — the sheet's entry date, else its today — with the terms it would
+- *  get: the named person's, or a new grade A person's) is inside a closed period — before any
+- *  person is added, so a refused quick-add leaves nothing behind. */
++/** Refuse the quick-add when the claim's date (the sheet's entry date, else its today) is inside a closed period —
++ *  before any person is added, so a refused quick-add leaves nothing behind. */
+ public class RefuseClosedQuickAdd {
+-    public void refuse(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, PersonRepository people,
+-            SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods) throws ClosedPeriodException {
++    public void refuse(@PathVariable("sheetId") String sheetId, SheetRepository sheets, PeriodRepository periods)
++            throws ClosedPeriodException {
+         String id = sheetId.trim();
+         periods.lockSheet(id);
+-        var date = sheets.newClaimDate(id);
+-        Person found = people.findByName(id, request.name());
+-        var dueBy = found != null ? DueBy.of(found, date, settings, holidays)
+-                : holidays.dueBy(id, date, settings.termsFor(id, request.grade(), date));
+-        Period closed = periods.closedOn(id, dueBy);
++        Period closed = periods.closedOn(id, sheets.newClaimDate(id));
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+new file mode 100644
+index 0000000..8cb8834
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -0,0 +1,9 @@
++# The sheet's audit lines exactly as the audit file holds them, newest first; with ?name= only the lines carrying
++# name=<the name> or person=<the name> (compared as names are). 404 for an id never loaded.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithAuditLines
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml
+index c4c4972..464e3a0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.PUT.yml
+@@ -11,7 +11,7 @@ draft:
+   govern: [ transaction ]
+   next: closed
+ closed:
+-  class: net.officefloor.hq.app.period.RefuseClosedClaim
++  class: net.officefloor.hq.app.period.RefuseClosedClaimLock
+   govern: [ transaction ]
+   next: save
+ save:
