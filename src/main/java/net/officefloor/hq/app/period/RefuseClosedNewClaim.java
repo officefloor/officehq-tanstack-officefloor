@@ -2,6 +2,7 @@ package net.officefloor.hq.app.period;
 
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.DueBy;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -11,11 +12,11 @@ import net.officefloor.plugin.variable.Val;
  *  would get) falls inside a closed period. */
 public class RefuseClosedNewClaim {
     public void refuse(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
-            PeriodRepository periods)
+            HolidayRepository holidays, PeriodRepository periods)
             throws ClosedPeriodException {
         periods.lockSheet(person.sheetId());
         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
-        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings));
+        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
         if (closed != null) {
             throw new ClosedPeriodException(closed);
         }

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.ClosedPeriodException;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -24,7 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  CLAIM_ADDED line and then how the sheet's figures moved over it. */
 public class PasteClaims {
     public void paste(@PathVariable("sheetId") String sheetId, @Val PasteInput input, PersonRepository people,
-            SheetRepository sheets, SettingRepository settings, PeriodRepository periods, ClaimRepository claims,
+            SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods, ClaimRepository claims,
             ClaimLogRepository log, Rollups rollups, Audit audit, Out<PasteResponse> result)
             throws InvalidClaimException {
         String sheet = sheetId.trim();
@@ -41,7 +42,7 @@ public class PasteClaims {
             } catch (RetiredPersonException e) {
                 throw new InvalidClaimException("Line " + line.number() + ": " + e.getMessage());
             }
-            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings));
+            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings, holidays));
             if (closed != null) {
                 throw new InvalidClaimException("Line " + line.number() + ": " + new ClosedPeriodException(closed).getMessage());
             }
@@ -51,7 +52,7 @@ public class PasteClaims {
             ClaimInput claim = input.lines().get(i).claim();
             Person person = owners.get(i);
             Rollup before = rollups.take(sheet);
-            Claim added = SaveNewClaim.insert(claim, person, sheets, settings, periods, claims, log);
+            Claim added = SaveNewClaim.insert(claim, person, sheets, settings, holidays, periods, claims, log);
             AuditClaimAdded.record(claim, person, added, audit);
             rollups.record(sheet, input.user(), before);
         }

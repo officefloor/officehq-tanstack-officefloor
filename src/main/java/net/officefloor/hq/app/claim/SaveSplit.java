@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.util.List;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -16,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
  *  refused. */
 public class SaveSplit {
     public void save(@Val SplitInput input, @Val Claim loaded, SheetRepository sheets, SettingRepository settings,
-            PersonRepository people, PeriodRepository periods, ClaimRepository repository, ClaimLogRepository log, Out<Split> split,
+            HolidayRepository holidays, PersonRepository people, PeriodRepository periods, ClaimRepository repository, ClaimLogRepository log, Out<Split> split,
             Out<ClaimResponse> saved) throws ClaimStatusNotAllowedException, InvalidClaimException {
         if (loaded.status() != ClaimStatus.OPEN) {
             throw new ClaimStatusNotAllowedException("A " + loaded.status()
@@ -36,7 +37,7 @@ public class SaveSplit {
             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
         }
         var person = people.find(loaded.sheetId(), loaded.personId());
-        var dueBy = DueBy.of(person, loaded.date(), settings);
+        var dueBy = DueBy.of(person, loaded.date(), settings, holidays);
         Claim inserted = repository.insert(new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
                 loaded.number(), periods.softClosedOn(loaded.sheetId(), dueBy) != null, null));
