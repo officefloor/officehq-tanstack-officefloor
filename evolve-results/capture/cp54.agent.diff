@@ -1,0 +1,387 @@
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index 5997377..9ee12a2 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { useSheetToday } from '../sheet/sheet';
+ import { peopleKey } from './people';
++import { usePersonError } from './rowError';
+ import type { Person } from './people';
+ 
+ /** Whether the person has any hold, their holds, and the form that adds one from a from-date (blank: the sheet's
+@@ -16,7 +17,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string;
+   const today = useSheetToday(sheetId);
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+-  const [error, setError] = useState('');
++  const { error, setError, begin } = usePersonError(sheetId, person.id);
+   const once = useSubmitOnce();
+ 
+   const hold = useMutation({
+@@ -34,7 +35,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string;
+ 
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+-    setError('');
++    begin();
+     if (!once.start()) return;
+     hold.mutate({ user, from: from.trim(), to: to.trim() });
+   };
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index 2189707..0d3c07f 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { useSheetToday } from '../sheet/sheet';
+ import { peopleKey } from './people';
++import { usePersonError } from './rowError';
+ import type { Person } from './people';
+ 
+ /** Whether the person is retired and from when, and the form that retires them from a date (blank: the
+@@ -14,7 +15,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+   const queryClient = useQueryClient();
+   const today = useSheetToday(sheetId);
+   const [from, setFrom] = useState('');
+-  const [error, setError] = useState('');
++  const { error, setError, begin } = usePersonError(sheetId, person.id);
+   const once = useSubmitOnce();
+ 
+   const retire = useMutation({
+@@ -31,7 +32,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+ 
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+-    setError('');
++    begin();
+     if (!once.start()) return;
+     retire.mutate({ user, from: from.trim() });
+   };
+diff --git a/src/main/frontend/features/people/rowError.ts b/src/main/frontend/features/people/rowError.ts
+new file mode 100644
+index 0000000..4003f6e
+--- /dev/null
++++ b/src/main/frontend/features/people/rowError.ts
+@@ -0,0 +1,24 @@
++import { useEffect, useState } from 'react';
++
++// Every action on a person's row shows its refusal in the row's one person-error; taking any action on the
++// row clears the error an earlier one left, so a row never shows a stale refusal next to a new one.
++const clearers = new Map<string, Set<() => void>>();
++
++/** This cell's error on the person's row, its setter, and `begin`: call it as an action on the row is taken
++ *  to clear every error the row's cells show. */
++export function usePersonError(sheetId: string, personId: number | string) {
++  const key = `${sheetId}/${personId}`;
++  const [error, setError] = useState('');
++  useEffect(() => {
++    const clear = () => setError('');
++    const set = clearers.get(key) ?? new Set();
++    set.add(clear);
++    clearers.set(key, set);
++    return () => {
++      set.delete(clear);
++      if (set.size === 0) clearers.delete(key);
++    };
++  }, [key]);
++  const begin = () => clearers.get(key)?.forEach((clear) => clear());
++  return { error, setError, begin };
++}
+diff --git a/src/main/frontend/features/roles/roles.slot.tsx b/src/main/frontend/features/roles/roles.slot.tsx
+index 770c540..01c6e3f 100644
+--- a/src/main/frontend/features/roles/roles.slot.tsx
++++ b/src/main/frontend/features/roles/roles.slot.tsx
+@@ -5,12 +5,12 @@ import { getJson, HttpError, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { SheetBody } from '../../slots/defs/sheet';
+ 
+-/** A user name's role on the sheet: clerk or steward. A name with no role assigned is a clerk. */
++/** A user name's role on the sheet: clerk, steward or viewer. A name with no role assigned is a clerk. */
+ export type Role = { user: string; role: string };
+ 
+ export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
+ 
+-const ROLES = ['clerk', 'steward'];
++const ROLES = ['clerk', 'steward', 'viewer'];
+ 
+ /** The sheet's assigned roles and the form that assigns one (replacing any the name had). */
+ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+@@ -33,7 +33,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+       setRole('');
+     },
+     onError: (e) =>
+-      setError(e instanceof HttpError && e.body ? e.body : 'Could not set this role: give a user name and clerk or steward.'),
++      setError(e instanceof HttpError && e.body ? e.body : 'Could not set this role: give a user name and clerk, steward or viewer.'),
+     onSettled: once.done,
+   });
+ 
+@@ -45,7 +45,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+       return;
+     }
+     if (!ROLES.includes(role.trim())) {
+-      setError('The role must be clerk or steward.');
++      setError('The role must be clerk, steward or viewer.');
+       return;
+     }
+     if (!once.start()) return;
+@@ -62,7 +62,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+       <h2>Roles</h2>
+       <form data-testid="role-form" onSubmit={submit}>
+         <input data-testid="role-form-user" placeholder="User name" value={name} onChange={change(setName)} />{' '}
+-        <input data-testid="role-form-role" placeholder="clerk or steward" list="role-options" value={role}
++        <input data-testid="role-form-role" placeholder="clerk, steward or viewer" list="role-options" value={role}
+           onChange={change(setRole)} />
+         <datalist id="role-options">
+           {ROLES.map((r) => (
+@@ -78,7 +78,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
+           </p>
+         )}
+       </form>
+-      <p>Anyone not listed is a clerk.</p>
++      <p>Anyone not listed is a clerk. A viewer sees everything and can change nothing.</p>
+       <ul>
+         {roles.map((r) => (
+           <li key={r.user} data-testid={`role-row-${r.user}`}>
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index de8dade..5e13082 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -1,16 +1,16 @@
+-import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson } from '../../api/http';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { claimsKey } from '../claims/claims';
+ import { peopleKey } from '../people/people';
++import { usePersonError } from '../people/rowError';
+ import type { Person } from '../people/people';
+ 
+ /** A person's statements: how many have been taken, the last one's due-total and date, and the button that
+  *  takes one (recording their due-total now and binding their claims that count to the figures they show). */
+ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+-  const [error, setError] = useState('');
++  const { error, setError, begin } = usePersonError(sheetId, person.id);
+ 
+   const take = useMutation({
+     mutationFn: () =>
+@@ -36,7 +36,7 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
+         data-testid="person-statement"
+         disabled={take.isPending}
+         onClick={() => {
+-          setError('');
++          begin();
+           take.mutate();
+         }}
+       >
+diff --git a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+index d584aa8..d7aac7c 100644
+--- a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
++++ b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A role assignment with no user name, a role that is not clerk or steward, or no signed-in user. */
++/** A role assignment with no user name, a role that is not clerk, steward or viewer, or no signed-in user. */
+ public class InvalidRoleException extends Exception {
+     public InvalidRoleException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java b/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
+new file mode 100644
+index 0000000..f9b59aa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
+@@ -0,0 +1,125 @@
++package net.officefloor.hq.app.role;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ReadListener;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.ServletInputStream;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletRequestWrapper;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.BufferedReader;
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.io.InputStreamReader;
++import java.net.URLDecoder;
++import java.nio.charset.StandardCharsets;
++import java.util.Map;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++import tools.jackson.databind.json.JsonMapper;
++
++/** Refuse every change a viewer asks for on a sheet, before any endpoint reads or writes anything: each POST or
++ *  PUT under a sheet (all but loading the sheet itself) whose signed-in user (the body's {@code user}) is a viewer
++ *  on that sheet is answered 403 with the reason, and nothing is written or audited. */
++@Component
++public class RefuseViewerChanges extends OncePerRequestFilter {
++
++    /** A change under a sheet: /api/sheets/{sheetId}/... (loading the sheet, /api/sheets/{sheetId}, is not one). */
++    private static final Pattern CHANGE = Pattern.compile("^/api/sheets/([^/]+)/.+$");
++
++    private final RoleRepository roles;
++    private final JsonMapper json = JsonMapper.builder().build();
++
++    public RefuseViewerChanges(RoleRepository roles) {
++        this.roles = roles;
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String method = request.getMethod();
++        Matcher change = CHANGE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
++        if (method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS") || !change.matches()) {
++            chain.doFilter(request, response);
++            return;
++        }
++        byte[] body = request.getInputStream().readAllBytes();
++        String sheetId = URLDecoder.decode(change.group(1), StandardCharsets.UTF_8).trim();
++        String user = user(body);
++        if (user != null && Role.VIEWER.equals(roles.of(sheetId, user))) {
++            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
++            response.setContentType("text/plain;charset=UTF-8");
++            response.getWriter().write("A viewer can change nothing on this sheet.");
++            return;
++        }
++        chain.doFilter(new Rereadable(request, body), response);
++    }
++
++    /** The signed-in user the body names (trimmed), or null when there is none. */
++    private String user(byte[] body) {
++        try {
++            Object user = json.readValue(body, Map.class).get("user");
++            return user instanceof String name && !name.isBlank() ? name.trim() : null;
++        } catch (RuntimeException e) {
++            return null; // not a JSON object: left to the endpoint to refuse
++        }
++    }
++
++    /** The request with its body, already read here, readable again by the endpoint. */
++    private static final class Rereadable extends HttpServletRequestWrapper {
++        private final byte[] body;
++
++        Rereadable(HttpServletRequest request, byte[] body) {
++            super(request);
++            this.body = body;
++        }
++
++        @Override
++        public ServletInputStream getInputStream() {
++            ByteArrayInputStream in = new ByteArrayInputStream(body);
++            return new ServletInputStream() {
++                @Override
++                public int read() {
++                    return in.read();
++                }
++
++                @Override
++                public int read(byte[] b, int off, int len) {
++                    return in.read(b, off, len);
++                }
++
++                @Override
++                public boolean isFinished() {
++                    return in.available() == 0;
++                }
++
++                @Override
++                public boolean isReady() {
++                    return true;
++                }
++
++                @Override
++                public void setReadListener(ReadListener listener) {
++                    throw new UnsupportedOperationException();
++                }
++            };
++        }
++
++        @Override
++        public BufferedReader getReader() {
++            return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
++        }
++
++        @Override
++        public int getContentLength() {
++            return body.length;
++        }
++
++        @Override
++        public long getContentLengthLong() {
++            return body.length;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index f2cea1e..843644d 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -1,7 +1,8 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A user's role on a sheet: the user name and clerk or steward. */
++/** A user's role on a sheet: the user name and clerk, steward or viewer (sees everything, changes nothing). */
+ public record Role(String sheetId, String user, String role) {
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    public static final String VIEWER = "viewer";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRequest.java b/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
+index bc8a57f..7caabf6 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** Body of a role assignment: who is making it, the user name it is for, and the role (clerk or steward). */
++/** Body of a role assignment: who is making it, the user name it is for, and the role (clerk, steward or viewer). */
+ public record RoleRequest(String user, String name, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index 5e540bf..3c1092f 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -5,9 +5,9 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Bind the body and refuse it before anything is read or written: a signed-in user, a user name, and a role
+- *  of clerk or steward. */
++ *  of clerk, steward or viewer. */
+ public class ValidateRole {
+-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
++    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
+ 
+     public void validate(@RequestBody RoleRequest request, Out<RoleInput> body) throws InvalidRoleException {
+         if (request == null || request.user() == null || request.user().isBlank()) {
+@@ -19,7 +19,7 @@ public class ValidateRole {
+         }
+         String role = request.role() == null ? "" : request.role().trim();
+         if (!ROLES.contains(role)) {
+-            throw new InvalidRoleException("The role must be clerk or steward.");
++            throw new InvalidRoleException("The role must be clerk, steward or viewer.");
+         }
+         body.set(new RoleInput(request.user().trim(), name, role));
+     }
+diff --git a/src/main/resources/db/migration/V37__role_viewer.sql b/src/main/resources/db/migration/V37__role_viewer.sql
+new file mode 100644
+index 0000000..dda3679
+--- /dev/null
++++ b/src/main/resources/db/migration/V37__role_viewer.sql
+@@ -0,0 +1,11 @@
++-- A third role, viewer: sees everything on the sheet and may change nothing. The role check is widened by
++-- rebuilding the table (its CHECK constraint was unnamed).
++CREATE TABLE sheet_role_new (
++    sheet_id  VARCHAR(100) NOT NULL REFERENCES sheet(id),
++    user_name VARCHAR(100) NOT NULL,
++    role      VARCHAR(20)  NOT NULL CHECK (role IN ('clerk', 'steward', 'viewer')),
++    PRIMARY KEY (sheet_id, user_name)
++);
++INSERT INTO sheet_role_new (sheet_id, user_name, role) SELECT sheet_id, user_name, role FROM sheet_role;
++DROP TABLE sheet_role;
++ALTER TABLE sheet_role_new RENAME TO sheet_role;
