@@ -4,7 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /** A validated settings save: who is making it, and the settings it changes, in order — whether it sets the clerk
- *  limit and to what (two decimals; null: no limit), and the floor it sets (two decimals; null: left as it is) and the terms it sets (days; null: left as it is) and the late percent it sets (two decimals; null: left as it is), and whether it sets the policy date and to what (null: blank, the sheet's today). */
+ *  limit and to what (two decimals; null: no limit), and the floor it sets (two decimals; null: left as it is) and the terms it sets (days; null: left as it is) and the late percent it sets (two decimals; null: left as it is), and whether it sets the policy date and to what (null: blank, the sheet's today), and whether it sets the period numbering from and to what (null: blank, off). */
 public record SettingsInput(String user, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor,
-        Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate) {
+        Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate,
+        boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom) {
 }

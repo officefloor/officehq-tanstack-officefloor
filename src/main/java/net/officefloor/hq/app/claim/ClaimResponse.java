@@ -6,7 +6,7 @@ package net.officefloor.hq.app.claim;
  *  whether its person's last statement bound it and the figure it bound it to (two decimals; null when not
  *  bound, or n/a then), and the number a correction corrects (null when it is not one). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
-        Integer number, String settledDue, String openedBy, boolean stated, String statedDue, Integer corrects) {
+        String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects) {
     public static ClaimResponse from(Claim c) {
         return new ClaimResponse(c.id(), c.personId(), c.amount().toPlainString(), c.date().toString(), c.note(),
                 c.status().name(), c.number(), c.settledDue() != null ? c.settledDue().toPlainString() : null,

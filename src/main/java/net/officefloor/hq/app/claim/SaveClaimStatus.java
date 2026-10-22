@@ -40,8 +40,8 @@ public class SaveClaimStatus {
             }
         }
         String openedBy = input.to() == ClaimStatus.OPEN ? input.user() : loaded.openedBy();
-        Integer number = switch (input.to()) {
-            case OPEN -> repository.nextNumber(loaded.sheetId());
+        String number = switch (input.to()) {
+            case OPEN -> repository.nextNumber(loaded.sheetId(), loaded.date());
             default -> loaded.number();
         };
         BigDecimal settledDue = input.to() == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;

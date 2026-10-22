@@ -17,7 +17,7 @@ public class AuditClaimStatus {
             case VOID -> "CLAIM_VOIDED";
             case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT.");
         };
-        Integer number = saved.number() != null ? saved.number() : loaded.number();
+        String number = saved.number() != null ? saved.number() : loaded.number();
         audit.record(event + " sheet=" + loaded.sheetId() + " by=" + input.user()
                 + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
                 + (number != null ? " number=" + number : "")

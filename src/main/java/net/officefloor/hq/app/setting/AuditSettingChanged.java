@@ -26,5 +26,10 @@ public class AuditSettingChanged {
             audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
                     + " key=policy-date value=" + (settings.policyDate() != null ? settings.policyDate() : ""));
         }
+        if (input.setsPeriodNumberingFrom()) {
+            audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
+                    + " key=period-numbering-from value="
+                    + (settings.periodNumberingFrom() != null ? settings.periodNumberingFrom() : ""));
+        }
     }
 }

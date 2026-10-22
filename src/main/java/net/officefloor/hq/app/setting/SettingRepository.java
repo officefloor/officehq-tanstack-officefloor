@@ -27,7 +27,7 @@ public class SettingRepository {
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
         return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId),
-                policyDate(sheetId));
+                policyDate(sheetId), periodNumberingFrom(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -77,6 +77,16 @@ public class SettingRepository {
 
     public void setPolicyDate(String sheetId, LocalDate date) {
         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", date, sheetId);
+    }
+
+    /** The sheet's period numbering from: null when blank (off). */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        return jdbc.query("SELECT period_numbering_from FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+    }
+
+    public void setPeriodNumberingFrom(String sheetId, LocalDate date) {
+        jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", date, sheetId);
     }
 
     public void setFloor(String sheetId, BigDecimal floor) {

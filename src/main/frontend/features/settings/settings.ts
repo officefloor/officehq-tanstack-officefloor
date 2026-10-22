@@ -8,8 +8,10 @@ import { useSheetToday } from '../sheet/sheet';
 /** The sheet's settings: the clerk limit with two decimals ('' when there is none) and the floor with two
  *  decimals (a claim's live due is at least it), and the terms in days (a claim's due-by is its date plus them), and
  *  the late percent with two decimals (an overdue claim gains it, of its figure, every full 30 days), and the
- *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
+ *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
+ *  the sheet's today, a claim opened is numbered within its period). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
+  periodNumberingFrom: string };
 
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
 
@@ -47,7 +49,7 @@ export function useLate(sheetId: string): Late {
   const today = useSheetToday(sheetId);
   const claims = useClaims(sheetId).data;
   const numbered = useMemo(
-    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as number, c.date])),
+    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date])),
     [claims],
   );
   return { terms: useTerms(sheetId), pct: settings?.latePct ?? DEFAULT_LATE_PCT, today,

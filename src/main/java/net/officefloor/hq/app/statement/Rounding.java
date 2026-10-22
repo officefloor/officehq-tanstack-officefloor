@@ -12,13 +12,13 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 /** How the sheet rounds a claim's live figures: by its policy date (the policy-date setting, else the sheet's today;
  *  null: none, everything rounds half to even), and the dates of its numbered claims (a correction rounds by the
  *  date of the claim it corrects). */
-public record Rounding(LocalDate policy, Map<Integer, LocalDate> numbered) {
+public record Rounding(LocalDate policy, Map<String, LocalDate> numbered) {
 
     /** The sheet's rounding as it is now. */
     public static Rounding of(String sheetId, SettingRepository settings, SheetRepository sheets,
             ClaimRepository claims) {
         LocalDate policy = settings.policyDate(sheetId);
-        Map<Integer, LocalDate> numbered = new HashMap<>();
+        Map<String, LocalDate> numbered = new HashMap<>();
         for (Claim c : claims.list(sheetId)) {
             if (c.number() != null) {
                 numbered.put(c.number(), c.date());

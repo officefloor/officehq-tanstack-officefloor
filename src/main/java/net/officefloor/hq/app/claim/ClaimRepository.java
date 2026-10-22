@@ -15,9 +15,9 @@ public class ClaimRepository {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+            rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getObject("corrects", Integer.class));
+            rs.getString("corrects"));
 
     private final JdbcTemplate jdbc;
 
@@ -46,7 +46,7 @@ public class ClaimRepository {
             ps.setBigDecimal(3, claim.amount());
             ps.setObject(4, claim.date());
             ps.setString(5, claim.note());
-            ps.setObject(6, claim.corrects(), java.sql.Types.INTEGER);
+            ps.setString(6, claim.corrects());
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
@@ -60,7 +60,7 @@ public class ClaimRepository {
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet. */
-    public boolean settledNumbered(String sheetId, long personId, int number) {
+    public boolean settledNumbered(String sheetId, long personId, String number) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ? AND status = ?",
                 Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
     }
@@ -78,18 +78,39 @@ public class ClaimRepository {
 
     /** Move the claim from one status to another, with its settled due and who opened it: false when it no longer has
      *  the status it was loaded with (another user changed it first), and nothing is written. */
-    public boolean changeStatus(Claim claim, ClaimStatus to, Integer number, BigDecimal settledDue,
+    public boolean changeStatus(Claim claim, ClaimStatus to, String number, BigDecimal settledDue,
             String openedBy) {
         return jdbc.update(
                 "UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 to.name(), number, settledDue, openedBy, claim.sheetId(), claim.id(), claim.status().name()) == 1;
     }
 
-    /** Take the next claim number on the sheet. The update locks the sheet's row until the transaction
-     *  ends, so concurrent openings are numbered one after the other; a rolled-back one gives its number
-     *  back, so there are no gaps. */
-    public int nextNumber(String sheetId) {
-        jdbc.update("UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?", sheetId);
-        return jdbc.queryForObject("SELECT last_claim_number FROM sheet WHERE id = ?", Integer.class, sheetId);
+    /** Take the next number for a claim dated on the date, as it is opened. While the sheet's period numbering from
+     *  is a date and the sheet's today is on or after it, that is the next in the claim's period (<period name>-<n>),
+     *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the sheet's next number.
+     *  Taking a number locks the sheet's row until the transaction ends, so concurrent openings are numbered one
+     *  after the other; a rolled-back one gives its number back, so there are no gaps. */
+    public String nextNumber(String sheetId, LocalDate date) {
+        jdbc.query("SELECT id FROM sheet WHERE id = ? FOR UPDATE", rs -> null, sheetId);
+        Boolean byPeriod = jdbc.query(
+                "SELECT period_numbering_from IS NOT NULL AND today >= period_numbering_from FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBoolean(1) : false, sheetId);
+        if (!Boolean.TRUE.equals(byPeriod)) {
+            jdbc.update("UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?", sheetId);
+            return String.valueOf(jdbc.queryForObject("SELECT last_claim_number FROM sheet WHERE id = ?",
+                    Integer.class, sheetId));
+        }
+        String[] period = jdbc.query(
+                "SELECT name, name_key FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ? ORDER BY from_date",
+                rs -> rs.next() ? new String[] { rs.getString(1), rs.getString(2) } : null, sheetId, date, date);
+        String prefix = period != null ? period[0] : "X";
+        String key = period != null ? "p:" + period[1] : "x";
+        if (jdbc.update("UPDATE period_number SET last_number = last_number + 1 WHERE sheet_id = ? AND seq_key = ?",
+                sheetId, key) == 0) {
+            jdbc.update("INSERT INTO period_number (sheet_id, seq_key, last_number) VALUES (?, ?, 1)", sheetId, key);
+        }
+        int n = jdbc.queryForObject("SELECT last_number FROM period_number WHERE sheet_id = ? AND seq_key = ?",
+                Integer.class, sheetId, key);
+        return prefix + "-" + n;
     }
 }

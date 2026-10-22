@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  that is blank (no limit) or an amount 0.00 or more with up to two decimals, and a floor (when given) that is an
  *  amount 0.00 or more with up to two decimals, and terms (when given) that
  *  are a whole number of days, and a late percent (when given) that is a percent 0.00 or more with up to two decimals, and a policy date (when given) that is
- *  blank (the sheet's today) or a date yyyy-mm-dd. */
+ *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd. */
 public class ValidateSettings {
     private static final String PERCENT = "\\d{1,3}(\\.\\d{1,2})?";
     private static final String AMOUNT = "\\d{1,12}(\\.\\d{1,2})?";
@@ -44,11 +44,20 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The policy date must be a date, yyyy-mm-dd, or blank for the sheet's today.");
             }
         }
+        String numbering = request.periodNumberingFrom() == null ? null : request.periodNumberingFrom().trim();
+        LocalDate numberingFrom = null;
+        if (numbering != null && !numbering.isEmpty()) {
+            try {
+                numberingFrom = LocalDate.parse(numbering);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The period numbering from must be a date, yyyy-mm-dd, or blank for off.");
+            }
+        }
         body.set(new SettingsInput(request.user().trim(), limit != null,
                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
                 floor == null ? null : new BigDecimal(floor).setScale(2),
                 terms == null ? null : Integer.valueOf(terms),
                 latePct == null ? null : new BigDecimal(latePct).setScale(2),
-                policy != null, policyDate));
+                policy != null, policyDate, numbering != null, numberingFrom));
     }
 }

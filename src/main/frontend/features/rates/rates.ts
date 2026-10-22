@@ -87,7 +87,7 @@ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], t
 /** What the late charge follows: the sheet's terms in days, its late percent (two decimals) and its today; and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
-export type Late = { terms: number; pct: string; today: string; policy: string; numbered: Map<number, string> };
+export type Late = { terms: number; pct: string; today: string; policy: string; numbered: Map<string, string> };
 
 /** Whether a claim's live figures round half up: it (a correction: the claim it corrects) is dated before the
  *  policy date; else they round half to even. */

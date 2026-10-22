@@ -28,7 +28,7 @@ public class BulkOpenClaims {
             for (Claim claim : theirs) {
                 if (claim.status().canBecome(ClaimStatus.OPEN) && periods.closedOn(sheet, claim.date()) == null) {
                     Rollup before = rollups.take(sheet);
-                    int number = claims.nextNumber(sheet);
+                    String number = claims.nextNumber(sheet, claim.date());
                     claims.changeStatus(claim, ClaimStatus.OPEN, number, claim.settledDue(), input.user());
                     audit.record("CLAIM_OPENED sheet=" + sheet + " by=" + input.user() + " person=" + person.name()
                             + " amount=" + claim.amount().toPlainString() + " date=" + claim.date() + " number=" + number);

@@ -22,6 +22,9 @@ public class SaveSettings {
         if (input.setsPolicyDate()) {
             repository.setPolicyDate(sheetId.trim(), input.policyDate());
         }
+        if (input.setsPeriodNumberingFrom()) {
+            repository.setPeriodNumberingFrom(sheetId.trim(), input.periodNumberingFrom());
+        }
         settings.set(repository.of(sheetId.trim()));
     }
 }

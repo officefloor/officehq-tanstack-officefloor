@@ -12,13 +12,15 @@ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
-type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string };
+type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
+  periodNumberingFrom?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
  *  A claim's live due is at least the floor; its due-by is its date plus the terms; once overdue it gains the late
  *  percent of its figure for every full 30 days. A claim dated before the policy date (blank: the sheet's today)
- *  rounds its live figures half up, one on or after it half to even. */
+ *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
+ *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none). */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
@@ -27,12 +29,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentTerms = settings.data?.terms ?? DEFAULT_TERMS;
   const currentLatePct = settings.data?.latePct ?? DEFAULT_LATE_PCT;
   const currentPolicyDate = settings.data?.policyDate ?? '';
+  const currentNumberingFrom = settings.data?.periodNumberingFrom ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
   const [typedTerms, setTypedTerms] = useState<string | null>(null);
   const [typedLatePct, setTypedLatePct] = useState<string | null>(null);
   const [typedPolicyDate, setTypedPolicyDate] = useState<string | null>(null);
+  const [typedNumberingFrom, setTypedNumberingFrom] = useState<string | null>(null);
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
@@ -46,11 +50,12 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedTerms(null);
       setTypedLatePct(null);
       setTypedPolicyDate(null);
+      setTypedNumberingFrom(null);
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body
         ? e.body
-        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals, the terms whole days, the late percent a percent, the policy date a date or blank.'),
+        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals, the terms whole days, the late percent a percent, the policy date and period numbering from dates or blank.'),
     onSettled: once.done,
   });
 
@@ -98,6 +103,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.policyDate = policyDate;
     }
+    if (typedNumberingFrom !== null) {
+      const numberingFrom = typedNumberingFrom.trim();
+      if (numberingFrom !== '' && !DATE.test(numberingFrom)) {
+        setError('The period numbering from must be a date, yyyy-mm-dd, or blank for off.');
+        return;
+      }
+      changes.periodNumberingFrom = numberingFrom;
+    }
     if (!once.start()) return;
     save.mutate(changes);
   };
@@ -117,7 +130,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>{' '}
         Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> days{' '}
         Late <strong data-testid="setting-late-pct-current">{currentLatePct}</strong>%{' '}
-        Policy date <strong data-testid="setting-policy-date-current">{currentPolicyDate}</strong>
+        Policy date <strong data-testid="setting-policy-date-current">{currentPolicyDate}</strong>{' '}
+        Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -170,6 +184,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedPolicyDate)}
             onChange={typed(setTypedPolicyDate)}
             onFocus={() => setTypedPolicyDate((v) => v ?? currentPolicyDate)}
+          />
+        </label>{' '}
+        <label>
+          Period numbering from{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="off"
+            value={typedNumberingFrom ?? currentNumberingFrom}
+            onInput={typed(setTypedNumberingFrom)}
+            onChange={typed(setTypedNumberingFrom)}
+            onFocus={() => setTypedNumberingFrom((v) => v ?? currentNumberingFrom)}
           />
         </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

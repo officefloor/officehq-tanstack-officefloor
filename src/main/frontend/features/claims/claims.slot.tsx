@@ -15,7 +15,7 @@ import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
-const NUMBER = /^\d+$/;
+const NUMBER = /^(\d+|.+-\d+)$/;
 
 /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
  *  date means the sheet's today. A negative amount is a correction, which names the number of the SETTLED claim
@@ -29,7 +29,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const [amount, setAmount] = useState(editing?.amount ?? '');
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
-  const [corrects, setCorrects] = useState(editing?.corrects != null ? String(editing.corrects) : '');
+  const [corrects, setCorrects] = useState(editing?.corrects ?? '');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
