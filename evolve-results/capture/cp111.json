@@ -1,0 +1,64 @@
+{
+  "checkpoint": 111,
+  "stack": {
+    "repo": "/home/daniel/officehq-tanstack-officefloor",
+    "origin": "git@github.com:officefloor/officehq-tanstack-officefloor.git",
+    "name": "officehq-tanstack-officefloor",
+    "base_ref": "base-empty",
+    "base_commit": "d02df45a636396c0783d74216dda7ad927f0c28f"
+  },
+  "checkpoint_id": "cp111_transfer-person",
+  "phase": "mid",
+  "type": "additive",
+  "mutates": [],
+  "replaced_tests": [],
+  "request": {
+    "spec": "A steward can transfer a person to another sheet by id (an entry and a button on the row;\nanyone else, a retired person, this sheet's own id, is refused with an error on the row). The person arrives on the other sheet with every grade they were given (and its from-date), their\nterms, contact, aliases and tags, and their claims with their status, dates, notes, frozen figures\nand logs; each claim that had a number\nreceives the next number of the other sheet, in the order the claims were opened; figures a\nstatement bound are lost and the statement count starts at 0; references are not carried. A name,\nalias or contact already on the other sheet refuses the transfer. The person leaves this sheet\nentirely (patron links, pool memberships, plans and watches dropped). This sheet writes\nPERSON_TRANSFERRED name=<name> to=<sheet id>, the other PERSON_TRANSFERRED name=<name>\nfrom=<sheet id>, each followed by that sheet's rollup lines.\n",
+    "prompt": "You are implementing ONE change to this application.\n\nFIRST read AGENTS.md \u2014 it states the working rules and how the app is tested, and sends you to\nDESIGN.md for the app's stack and conventions. Follow both.\n\nTHE CHANGE REQUEST:\nA steward can transfer a person to another sheet by id (an entry and a button on the row;\nanyone else, a retired person, this sheet's own id, is refused with an error on the row). The person arrives on the other sheet with every grade they were given (and its from-date), their\nterms, contact, aliases and tags, and their claims with their status, dates, notes, frozen figures\nand logs; each claim that had a number\nreceives the next number of the other sheet, in the order the claims were opened; figures a\nstatement bound are lost and the statement count starts at 0; references are not carried. A name,\nalias or contact already on the other sheet refuses the transfer. The person leaves this sheet\nentirely (patron links, pool memberships, plans and watches dropped). This sheet writes\nPERSON_TRANSFERRED name=<name> to=<sheet id>, the other PERSON_TRANSFERRED name=<name>\nfrom=<sheet id>, each followed by that sheet's rollup lines.\n\nYour work is verified by an automated Playwright UI test already installed under e2e/specs/.\nRead that spec: it declares the exact data-testid anchors, values, test data and any audit\nrecords it expects \u2014 match them. Run `bin/e2e` to build the app, start it, and run the test as\nyou work; iterate until it passes. Change whatever the request needs across the app \u2014 its stored\ndata, its server and its front end. Do NOT edit bin/build, bin/start, bin/stop, bin/e2e,\nAGENTS.md, CLAUDE.md, DESIGN.md, e2e/support/ or the test spec.\n"
+  },
+  "commit_sha": "f8d49ccd1cd70bc15ec666cf0ea67454234b0d05",
+  "reset_sha": "",
+  "preagent_sha": "b62b2927d9cfc33b714a4d0cde028d4e56e8b21b",
+  "prev_sha": "b62b2927d9cfc33b714a4d0cde028d4e56e8b21b",
+  "base_sha": "d02df45a636396c0783d74216dda7ad927f0c28f",
+  "agent": {
+    "ok": true,
+    "cost_usd": 1.7393062000000001,
+    "input_tokens": 54,
+    "output_tokens": 19772,
+    "cache_read_tokens": 2111851,
+    "cache_creation_tokens": 115160,
+    "num_turns": 29,
+    "duration_ms": 436671,
+    "duration_api_ms": 214878,
+    "model": "claude-opus-5-5",
+    "session_id": "a2bef864-05e0-48f3-983b-d854b5c61bb7",
+    "stop_reason": "success",
+    "result_text": "Transfer is working: a steward can move a person to another sheet from their row. `bin/e2e` passes 3 of the 4 tests. The fourth, \"transfer person scenario 3\", fails on a mistake in the spec itself, not in the app.\n\n**Why scenario 3 fails:** at lines 988 and 1074 the spec expects `sheet-parent` to read the literal text `\"__SHEET__-p\"`. That's a placeholder that was never filled in. The app correctly shows the real id (e.g. `smvk02nxrstw5-p`). This is the existing parent-sheet display, not part of the transfer. I didn't edit the spec and didn't make the app print the placeholder. I ran a temporary copy with just that string replaced by the real id, and the whole scenario passed; I then deleted the copy. Someone with access should fix those two lines in the spec.\n\n**What I built**\n- **Endpoint:** `POST /api/sheets/{sheetId}/people/{personId}/transfer`, defined in `transfer.POST.yml`. The new step classes are `ValidateTransfer`, `TransferPerson` and `AuditPersonTransferred`, built the same way as the existing merge.\n- **Refusals:** the transfer is refused, with nothing written and no audit line, when:\n  - the user isn't a steward,\n  - the person is retired,\n  - the target is this sheet's own id,\n  - the target sheet is archived,\n  - the person's name, one of their aliases, or their contact is already on the target sheet.\n- **What travels:** the person and their claims are moved to the other sheet rather than copied, so they keep their ids and their order in the list. They take their grades with from-dates, terms, contact, aliases, and each claim's status, dates, note, tags, frozen settled figure and log.\n- **What doesn't:**\n  - statements are cleared and the count starts at 0;\n  - claim references are removed;\n  - patron links, pool memberships, holds and watches are dropped;\n  - their history on the old sheet is deleted and started fresh on the new one.\n- **Numbering:** each claim that had a number gets the next number on the target sheet. I numbered them in the order the claims were *added*, because that's what the test expects. Read literally, the request says \"the order the claims were opened\", which would give the opposite numbers in the test.\n- **Audit:** the old sheet writes `PERSON_TRANSFERRED \u2026 to=<id>` followed by its rollup lines, and the target writes `PERSON_TRANSFERRED \u2026 from=<id>` followed by its own.\n- **Front end:** the new `features/people/transfer.slot.tsx` puts the `person-transfer-to` entry and the `person-transfer` button on each row. Errors show in the row's `person-error`.\n\n**Choices the request didn't settle** (easy to change):\n- Transferring to an id that was never used creates that sheet, just as loading it would.\n- I also carried claim comments and void reasons across.\n- Any settle-batch link on a claim is dropped.",
+    "error": "",
+    "attempts": [
+      {
+        "ok": true,
+        "limit_reached": false,
+        "retryable": false,
+        "timed_out": false,
+        "cost_usd": 1.7393062000000001,
+        "num_turns": 29,
+        "duration_ms": 436671,
+        "duration_api_ms": 214878,
+        "error": ""
+      }
+    ]
+  },
+  "agent_stream_file": "cp111.agent.jsonl",
+  "agent_diff_file": "cp111.agent.diff",
+  "build_log_file": null,
+  "tests": {
+    "gated": false,
+    "queued": true
+  },
+  "probe": null,
+  "pinned_touched": [],
+  "acceptance_touched": [],
+  "impact_gate": null
+}

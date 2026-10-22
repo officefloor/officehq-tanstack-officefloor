@@ -1,0 +1,359 @@
+diff --git a/src/main/frontend/features/people/transfer.slot.tsx b/src/main/frontend/features/people/transfer.slot.tsx
+new file mode 100644
+index 0000000..b4df229
+--- /dev/null
++++ b/src/main/frontend/features/people/transfer.slot.tsx
+@@ -0,0 +1,68 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, postJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { PersonRow } from '../../slots/defs/personRow';
++import { usePersonError } from './rowError';
++import type { Person } from './people';
++
++/** The entry and button that transfer the person to another sheet by id (a steward only; not a retired person, not
++ *  to this sheet). They arrive there with their grades, terms, contact, aliases and claims, and leave the list. */
++function PersonTransfer({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [toSheet, setToSheet] = useState('');
++  const { error, setError, begin } = usePersonError(sheetId, person.id);
++  const once = useSubmitOnce();
++
++  const transfer = useMutation({
++    mutationFn: (to: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/transfer`, { user, toSheet: to }),
++    onSuccess: async (_, to) => {
++      // the person and their claims leave this sheet for the other: everything shown of both follows
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] }),
++        queryClient.invalidateQueries({ queryKey: ['sheet', to] }),
++      ]);
++    },
++    onError: (e) =>
++      setError(e instanceof HttpError && e.body ? e.body : `Could not transfer ${person.name}.`),
++    onSettled: once.done,
++  });
++
++  return (
++    <td>
++      <input
++        data-testid="person-transfer-to"
++        placeholder="Sheet id"
++        value={toSheet}
++        onChange={(e) => {
++          setToSheet(e.target.value);
++          setError('');
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="person-transfer"
++        disabled={transfer.isPending}
++        onClick={() => {
++          begin();
++          if (toSheet.trim() === '') {
++            setError('Enter the id of the sheet to transfer to.');
++            return;
++          }
++          if (!once.start()) return;
++          transfer.mutate(toSheet.trim());
++        }}
++      >
++        Transfer
++      </button>
++      {error && (
++        <p data-testid="person-error" role="alert">
++          {error}
++        </p>
++      )}
++    </td>
++  );
++}
++
++export const contribution = PersonRow.fill({ order: 49, Component: PersonTransfer });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 6035cdf..4728d26 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -160,6 +160,30 @@ public class ClaimRepository {
+         }
+     }
+ 
++    /** Move every claim of the person to another sheet, keeping its place in their list, its status, dates, note,
++     *  settled due, tags, comments and log: each claim that had a number takes the next number of the other sheet,
++     *  in the order the claims were added; each is unbound from any statement, loses its reference, editor lock and
++     *  settle batch, and its history here is dropped (it is kept anew on the other sheet). */
++    public void transfer(String sheetId, long personId, String toSheet) {
++        List<Claim> theirs = listForPerson(sheetId, personId).stream()
++                .sorted(java.util.Comparator.comparingLong(Claim::id)).toList();
++        for (Claim c : theirs) {
++            String number = c.number() != null ? nextNumber(toSheet, c.dueBy()) : null;
++            jdbc.update("UPDATE claim SET sheet_id = ?, claim_number = ?, due_by = ?, stated = FALSE, stated_due = NULL, "
++                    + "ref = NULL, locked_by = NULL WHERE sheet_id = ? AND id = ?", toSheet, number, c.dueBy(), sheetId,
++                    c.id());
++            for (String table : List.of("claim_log", "claim_comment", "claim_void_reason")) {
++                jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", toSheet,
++                        sheetId, c.id());
++            }
++            for (String table : List.of("claim_batch", "claim_history")) {
++                jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND claim_id = ?", sheetId, c.id());
++            }
++            kept(toSheet, c.id());
++            used(toSheet, c.tags());
++        }
++    }
++
+     /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing
+      *  is written. */
+     public boolean defer(Claim claim, LocalDate until) {
+diff --git a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+index c47316a..3faa028 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
++++ b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+@@ -39,6 +39,12 @@ public class PatronRepository {
+ 
+     /** On merging one person into another: the first's patrons are added to the other's (not the other themselves,
+      *  no repeats), anyone naming the first as patron names the other instead (no repeats), and the first has none. */
++    /** Drop every patron link of the person: their patrons, and their being anyone's patron. */
++    public void drop(String sheetId, long personId) {
++        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId,
++                personId, personId);
++    }
++
+     public void merge(String sheetId, long fromId, long intoId) {
+         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id "
+                 + "FROM person_patron pp WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS "
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
+new file mode 100644
+index 0000000..052ee7d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Rollups;
++import net.officefloor.plugin.variable.Val;
++
++/** Record the transfer in the audit file: on this sheet, then how its figures moved; on the other sheet, then how
++ *  its figures moved. */
++public class AuditPersonTransferred {
++    public void audit(@Val TransferInput input, @Val Transfer transfer, @Val Rollup before, Audit audit,
++            Rollups rollups) {
++        audit.record("PERSON_TRANSFERRED sheet=" + transfer.fromSheet() + " by=" + input.user() + " name="
++                + transfer.name() + " to=" + transfer.toSheet());
++        rollups.record(transfer.fromSheet(), input.user(), before);
++        audit.record("PERSON_TRANSFERRED sheet=" + transfer.toSheet() + " by=" + input.user() + " name="
++                + transfer.name() + " from=" + transfer.fromSheet());
++        rollups.record(transfer.toSheet(), input.user(), transfer.toBefore());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 2c83450..1575239 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -213,6 +213,23 @@ public class PersonRepository {
+         alias(into, from.name());
+     }
+ 
++    /** Transfer the person (their claims, patrons, pools and watchers already dealt with) to another sheet: their
++     *  grades (with their log) and aliases go with them; their holds, statements, retirement and figures in closed
++     *  periods are dropped; they arrive with no statement taken, added on the other sheet's today. */
++    public void transfer(Person person, String toSheet) {
++        String sheetId = person.sheetId();
++        for (String table : List.of("person_hold", "person_statement", "person_retire_log", "period_person_total")) {
++            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
++        }
++        for (String table : List.of("person_grade", "person_grade_log", "person_alias")) {
++            jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", toSheet, sheetId,
++                    person.id());
++        }
++        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
++                + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?) WHERE sheet_id = ? AND id = ?",
++                toSheet, toSheet, sheetId, person.id());
++    }
++
+     /** Set the person's own terms in days (null: none). */
+     public void terms(Person person, Integer terms) {
+         jdbc.update("UPDATE person SET terms = ? WHERE sheet_id = ? AND id = ?", terms, person.sheetId(), person.id());
+diff --git a/src/main/java/net/officefloor/hq/app/person/Transfer.java b/src/main/java/net/officefloor/hq/app/person/Transfer.java
+new file mode 100644
+index 0000000..de645d2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Transfer.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.rollup.Rollup;
++
++/** A transfer that went through: the sheet left, the sheet arrived on, the person's name, and the other sheet's
++ *  figures before the person arrived. */
++public record Transfer(String fromSheet, String toSheet, String name, Rollup toBefore) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferInput.java b/src/main/java/net/officefloor/hq/app/person/TransferInput.java
+new file mode 100644
+index 0000000..e71eb78
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A validated transfer: the signed-in user, and the id of the sheet transferred to (trimmed). */
++public record TransferInput(String user, String toSheet) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+new file mode 100644
+index 0000000..bcf6a24
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -0,0 +1,66 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.patron.PatronRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollups;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.watch.WatchRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Transfer the loaded person to another sheet: only a steward may, a person not retired, to a sheet other than this
++ *  one (created when never loaded) that is not archived and has none of their name, aliases or contact. They arrive
++ *  with every grade they were given (and its from-date), their terms, contact and aliases, and their claims (status,
++ *  dates, notes, settled dues and logs kept; each claim that had a number takes the next number of the other sheet,
++ *  in the order the claims were added; unbound from any statement; references dropped), with no statement taken.
++ *  They leave this sheet entirely: their patron links, pool memberships, holds, statements and watchers are dropped. */
++public class TransferPerson {
++    public void transfer(@Val TransferInput input, @Val Person loaded, PersonRepository people, ClaimRepository claims,
++            PatronRepository patrons, PoolRepository pools, WatchRepository watches, RoleRepository roles,
++            SheetRepository sheets, Rollups rollups, Out<Transfer> transfer, Out<PersonResponse> saved)
++            throws InvalidPersonException {
++        String from = loaded.sheetId();
++        String to = input.toSheet();
++        if (!Role.STEWARD.equals(roles.of(from, input.user()))) {
++            throw new InvalidPersonException("Only a steward may transfer people.");
++        }
++        if (to.equals(from)) {
++            throw new InvalidPersonException(loaded.name() + " is already on this sheet.");
++        }
++        people.lock(loaded);
++        Person person = people.find(from, loaded.id());
++        if (person == null) {
++            throw new InvalidPersonException("That person is no longer on this sheet.");
++        }
++        if (person.retiredFrom() != null) {
++            throw new InvalidPersonException(person.name() + " is retired and cannot be transferred.");
++        }
++        sheets.ensure(to, input.user());
++        if (sheets.archived(to)) {
++            throw new InvalidPersonException("Sheet " + to + " is archived: nobody can be transferred to it.");
++        }
++        if (people.nameInUse(to, person.name(), null)) {
++            throw new InvalidPersonException("Sheet " + to + " already has the name " + person.name() + ".");
++        }
++        for (String alias : person.aliases()) {
++            if (people.nameInUse(to, alias, null)) {
++                throw new InvalidPersonException("Sheet " + to + " already has the name " + alias + ".");
++            }
++        }
++        if (person.contact() != null && people.contactInUse(to, person.contact(), null)) {
++            throw new InvalidPersonException("Sheet " + to + " already has someone with the contact "
++                    + person.contact() + ".");
++        }
++        var toBefore = rollups.take(to);
++        patrons.drop(from, person.id());
++        pools.drop(from, person.id());
++        watches.drop(from, person.id());
++        claims.transfer(from, person.id(), to);
++        people.transfer(person, to);
++        transfer.set(new Transfer(from, to, person.name(), toBefore));
++        saved.set(PersonResponse.from(people.find(to, person.id())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferRequest.java b/src/main/java/net/officefloor/hq/app/person/TransferRequest.java
+new file mode 100644
+index 0000000..1d35b3c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of transferring a person to another sheet: who is doing it, and the id of the other sheet. */
++public record TransferRequest(String user, String toSheet) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateTransfer.java b/src/main/java/net/officefloor/hq/app/person/ValidateTransfer.java
+new file mode 100644
+index 0000000..60ef56d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateTransfer.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the body and refuse it before anything is read or written: a signed-in user and a sheet to transfer to. */
++public class ValidateTransfer {
++    public void validate(@RequestBody TransferRequest request, Out<TransferInput> body) throws InvalidPersonException {
++        if (request == null || request.user() == null || request.user().isBlank()) {
++            throw new InvalidPersonException("Sign in before transferring people.");
++        }
++        if (request.toSheet() == null || request.toSheet().isBlank()) {
++            throw new InvalidPersonException("Enter the id of the sheet to transfer to.");
++        }
++        body.set(new TransferInput(request.user().trim(), request.toSheet().trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 747d482..6b0d7e3 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -74,6 +74,11 @@ public class PoolRepository {
+ 
+     /** On merging one person into another: the first's pool memberships move to the other, their share added to the
+      *  other's where the other is already a member. */
++    /** Drop the person from every pool they are a member of. */
++    public void drop(String sheetId, long personId) {
++        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
++    }
++
+     public void merge(String sheetId, long fromId, long intoId) {
+         jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f WHERE f.pool_id = m.pool_id "
+                 + "AND f.person_id = ?) WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM pool_member f "
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+new file mode 100644
+index 0000000..96ebd23
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+@@ -0,0 +1,26 @@
++# Transfer a person to another sheet (see TransferPerson): they arrive there with their grades, terms, contact,
++# aliases and claims, and leave this sheet entirely; both sheets' figures follow. A refused transfer (no signed-in
++# user, not a steward, unknown person, retired, this sheet's own id, an archived sheet, a name, alias or contact
++# already on the other sheet) writes nothing, not even an audit line.
++validate:
++  class: net.officefloor.hq.app.person.ValidateTransfer
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: transfer
++transfer:
++  class: net.officefloor.hq.app.person.TransferPerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonTransferred
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
