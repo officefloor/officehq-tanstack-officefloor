@@ -101,17 +101,21 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
 const ACTIONS = [
   { action: 'open', label: 'Open' },
   { action: 'settle', label: 'Settle' },
+  { action: 'approve', label: 'Approve' },
+  { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
 ] as const;
 
-/** One claim with its status, its due-by and whether it is overdue, who opened it and the buttons that change it. A change the status does not
- *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error;
+/** One claim with its status, its due-by and whether it is overdue, who opened it and the buttons that change it
+ *  (a steward approves or rejects, with a reason, a PENDING claim). A change the status does not
+ *  allow, a settle (or approve) by the user who opened it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
  *  so is editing a claim that is no longer a DRAFT, or one dated in a closed period (the server refuses those
  *  edits too). */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingClaim();
   const [error, setError] = useState('');
+  const [reason, setReason] = useState('');
   const period = periodOf(usePeriods(sheetId).data ?? [], claim.date);
   const floor = useFloor(sheetId);
   const terms = useTerms(sheetId);
@@ -121,12 +125,13 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
 
   const change = useMutation({
     mutationFn: (action: string) =>
-      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, { user, action }),
-    onSuccess: async () => {
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, action === 'reject' ? { user, action, reason } : { user, action }),
+    onSuccess: async (_, action) => {
+      if (action === 'reject') setReason('');
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
     onError: (e, action) =>
-      setError(e instanceof HttpError && e.status === 409 && e.body ? e.body : `Could not ${action} this ${claim.status} claim.`),
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400) && e.body ? e.body : `Could not ${action} this ${claim.status} claim.`),
   });
 
   return (
@@ -167,6 +172,15 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       >
         Edit
       </button>
+      <input
+        data-testid="claim-reject-reason"
+        placeholder="Reject reason"
+        value={reason}
+        onChange={(e) => {
+          setError('');
+          setReason(e.target.value);
+        }}
+      />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
           key={action}

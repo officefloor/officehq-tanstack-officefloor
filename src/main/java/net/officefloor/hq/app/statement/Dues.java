@@ -13,7 +13,8 @@ public final class Dues {
     private Dues() {
     }
 
-    /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to, else
+    /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to (not while
+     *  it is PENDING: then it is live), else
      *  live: its amount times its person's rate in force on its date for their grade then, divided by 100, rounded to two
      *  decimals as the claim rounds (see Rounding), and at least the sheet's floor; null (n/a) when no rate applies. */
     public static BigDecimal figure(Claim claim, Grades grades, RateRepository rates, BigDecimal floor,
@@ -21,7 +22,7 @@ public final class Dues {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
-        if (claim.statedDue() != null) {
+        if (claim.statedDue() != null && claim.status() != ClaimStatus.PENDING) {
             return claim.statedDue();
         }
         return live(claim, grades, rates, floor, rounding);
@@ -48,10 +49,10 @@ public final class Dues {
                 .orElse(null);
     }
 
-    /** Whether a claim counts toward its person's figures and every live total: an OPEN or SETTLED one, except an
-     *  OPEN one while its person is on hold. */
+    /** Whether a claim counts toward its person's figures and every live total: an OPEN, PENDING or SETTLED one,
+     *  except an OPEN or PENDING one while its person is on hold. */
     public static boolean counts(Claim claim, boolean held) {
-        return claim.status().counts() && !(held && claim.status() == ClaimStatus.OPEN);
+        return claim.status().counts() && !(held && claim.status().unsettled());
     }
 
     /** A person's due-total: the dues (as shown) of their claims that count added up, skipping n/a; null (n/a) when

@@ -3,8 +3,9 @@ import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import type { Person } from '../people/people';
 
-/** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
+ *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
  *  its number (sheet-wide digits, or <period name>-<n> / X-<n> when numbered within its period; null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled
@@ -16,16 +17,21 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null };
 
-/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do. */
 export function counts(c: Claim): boolean {
-  return c.status === 'OPEN' || c.status === 'SETTLED';
+  return c.status === 'OPEN' || c.status === 'PENDING' || c.status === 'SETTLED';
 }
 
-/** The claims that count in the live totals among these: those that count, except the OPEN claims of a person
+/** Whether a claim is still to be settled: OPEN or PENDING (it goes overdue, and a hold takes it out of the totals). */
+export function unsettled(c: Claim): boolean {
+  return c.status === 'OPEN' || c.status === 'PENDING';
+}
+
+/** The claims that count in the live totals among these: those that count, except the OPEN or PENDING claims of a person
  *  (among the people given) who is on hold; their SETTLED claims still count. */
 export function live(claims: Claim[], people: Person[]): Claim[] {
   const held = new Set(people.filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId)));
+  return claims.filter((c) => counts(c) && !(unsettled(c) && held.has(c.personId)));
 }
 
 /** A claim's due-by (yyyy-mm-dd): its date plus the terms in days. */
@@ -35,9 +41,9 @@ export function dueBy(claim: Claim, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before the sheet's today. */
 export function overdue(claim: Claim, terms: number, today: string): boolean {
-  return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+  return unsettled(claim) && today !== '' && dueBy(claim, terms) < today;
 }
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
@@ -55,7 +61,7 @@ export function useEditingClaim() {
   return useSearchParam('editClaim', asString);
 }
 
-/** The amounts of the claims that count (OPEN and SETTLED) added up exactly (in cents) and shown
+/** The amounts of the claims that count (OPEN, PENDING and SETTLED) added up exactly (in cents) and shown
  *  with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);

@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
@@ -25,9 +24,9 @@ public record LateCharge(int terms, BigDecimal pct, LocalDate today, Rounding ro
         return new LateCharge(0, BigDecimal.ZERO, null, Rounding.none());
     }
 
-    /** Whether a claim is overdue: it is OPEN and its due-by is before today. */
+    /** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before today. */
     public boolean overdue(Claim claim) {
-        return claim.status() == ClaimStatus.OPEN && today != null
+        return claim.status().unsettled() && today != null
                 && claim.date().plusDays(terms).isBefore(today);
     }
 

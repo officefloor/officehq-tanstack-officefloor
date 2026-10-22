@@ -16,41 +16,54 @@ import net.officefloor.plugin.variable.Val;
  *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
  *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it. Settling fixes its due
  *  as its row shows it now: the bound figure, else live at the person's grade rate now in force on the claim's date,
- *  at least the sheet's floor, with the late charge as of today frozen in. A clerk (any user not made a steward) may settle
- *  only a claim whose due (as shown: bound by a statement, else live, plus any late charge) is at or below the sheet's clerk limit; a due
- *  of n/a, or no limit, is within it. */
+ *  at least the sheet's floor, with the late charge as of today frozen in. When a clerk (any user not made a steward)
+ *  settles a claim whose due (as shown: bound by a statement, else live, plus any late charge) is above the sheet's
+ *  clerk limit, it becomes PENDING instead (a due of n/a, or no limit, is within it). A steward other than the
+ *  user who opened it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
+ *  PENDING claim is not bound by a statement — frozen in) or rejects it (OPEN again, bound again by the statement
+ *  that bound it). */
 public class SaveClaimStatus {
     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
             SheetRepository sheets,
             Out<ClaimResponse> saved)
             throws ClaimStatusNotAllowedException {
-        if (!loaded.status().canBecome(input.to())) {
-            throw new ClaimStatusNotAllowedException(loaded.status(), input.to());
+        ClaimStatus to = input.to();
+        boolean review = input.action().equals("approve") || input.action().equals("reject");
+        if (review) {
+            if (loaded.status() != ClaimStatus.PENDING) {
+                throw new ClaimStatusNotAllowedException("Only a PENDING claim can be " + input.action()
+                        + "d; this one is " + loaded.status() + ".");
+            }
+            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
+                throw new ClaimStatusNotAllowedException("Only a steward can " + input.action() + " a PENDING claim.");
+            }
+            if (input.action().equals("approve") && input.user().equals(loaded.openedBy())) {
+                throw new ClaimStatusNotAllowedException("The user who opened a claim cannot approve it.");
+            }
+        } else if (!loaded.status().canBecome(to)) {
+            throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
-        if (input.to() == ClaimStatus.SETTLED && input.user().equals(loaded.openedBy())) {
+        if (input.action().equals("settle") && input.user().equals(loaded.openedBy())) {
             throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
         }
-        if (input.to() == ClaimStatus.SETTLED && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
+        if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
             BigDecimal limit = settings.clerkLimit(loaded.sheetId());
             BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
-                throw new ClaimStatusNotAllowedException("A clerk cannot settle a claim whose due (" + due.toPlainString()
-                        + ") is above the clerk limit (" + limit.toPlainString() + ").");
+                to = ClaimStatus.PENDING;
             }
         }
-        String openedBy = input.to() == ClaimStatus.OPEN ? input.user() : loaded.openedBy();
-        String number = switch (input.to()) {
-            case OPEN -> repository.nextNumber(loaded.sheetId(), loaded.date());
-            default -> loaded.number();
-        };
-        BigDecimal settledDue = input.to() == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
-        if (!repository.changeStatus(loaded, input.to(), number, settledDue, openedBy)) {
+        boolean opening = input.action().equals("open");
+        String openedBy = opening ? input.user() : loaded.openedBy();
+        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.date()) : loaded.number();
+        BigDecimal settledDue = to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
+        if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
             // the transaction rolls back, so a number taken above is not used up
-            throw new ClaimStatusNotAllowedException(loaded.status(), input.to());
+            throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
-                loaded.date(), loaded.note(), input.to(), number, settledDue, openedBy, loaded.stated(),
+                loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
                 loaded.statedDue(), loaded.corrects())));
     }
 

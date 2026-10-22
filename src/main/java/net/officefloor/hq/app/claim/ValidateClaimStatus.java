@@ -3,7 +3,8 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Bind the body and refuse it before anything is read: a signed-in user and a known action. */
+/** Bind the body and refuse it before anything is read: a signed-in user, a known action, and a reason for a
+ *  reject. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusInput> body)
             throws InvalidClaimException {
@@ -12,11 +13,18 @@ public class ValidateClaimStatus {
         }
         String action = request.action() == null ? "" : request.action().trim();
         ClaimStatus to = switch (action) {
-            case "open" -> ClaimStatus.OPEN;
-            case "settle" -> ClaimStatus.SETTLED;
+            case "open", "reject" -> ClaimStatus.OPEN;
+            case "settle", "approve" -> ClaimStatus.SETTLED;
             case "void" -> ClaimStatus.VOID;
             default -> throw new InvalidClaimException("Unknown claim action: " + action + ".");
         };
-        body.set(new ClaimStatusInput(request.user().trim(), to));
+        String reason = null;
+        if (action.equals("reject")) {
+            reason = request.reason() == null ? "" : request.reason().trim();
+            if (reason.isEmpty()) {
+                throw new InvalidClaimException("Give a reason to reject a claim.");
+            }
+        }
+        body.set(new ClaimStatusInput(request.user().trim(), action, to, reason));
     }
 }

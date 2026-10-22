@@ -6,7 +6,7 @@ import { peopleKey } from './people';
 import type { Person } from './people';
 
 /** Whether the person is on hold, and the button that puts them on hold or takes them off it. While held,
- *  their OPEN claims count in no live total; their SETTLED claims still count. */
+ *  their OPEN and PENDING claims count in no live total; their SETTLED claims still count. */
 function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
