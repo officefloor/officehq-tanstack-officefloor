@@ -5,6 +5,7 @@ import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { useSheetToday } from '../sheet/sheet';
+import { poolsKey } from '../pools/pools';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
 import type { Person } from './people';
@@ -25,6 +26,8 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
       putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/hold`, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      // a hold in force on the sheet's today moves pool cuts
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setFrom('');
       setTo('');
     },

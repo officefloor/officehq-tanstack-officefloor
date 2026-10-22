@@ -108,6 +108,12 @@ public class PeriodRepository {
         return true;
     }
 
+    /** Date the period's latest kept history (an auto close: the day its grace ran out, not the new today). */
+    public void dateLastKept(Period period, LocalDate madeOn) {
+        jdbc.update("UPDATE period_history SET made_on = ? WHERE id = (SELECT MAX(id) FROM period_history "
+                + "WHERE sheet_id = ? AND period_name = ?)", madeOn, period.sheetId(), period.name());
+    }
+
     /** Keep the period as it stands now (closed or soft-closed, and its fixed due-totals) in its history, with the
      *  sheet's today. */
     private void kept(Period period) {
