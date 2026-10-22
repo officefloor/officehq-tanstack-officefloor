@@ -1,0 +1,399 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 2db5d7a..3aba447 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -19,3 +19,11 @@ export function postJson<T>(path: string, body: unknown): Promise<T> {
+     body: JSON.stringify(body),
+   });
+ }
++
++export function putJson<T>(path: string, body: unknown): Promise<T> {
++  return send<T>(path, {
++    method: 'PUT',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(body),
++  });
++}
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 0000000..313d43e
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,54 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useUser } from './session';
++
++/** Sign in by typing a name. */
++export function SignIn() {
++  const [, setUser] = useUser();
++  const [name, setName] = useState('');
++  const [error, setError] = useState('');
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = name.trim();
++    if (trimmed === '') {
++      setError('Type a name to sign in.');
++      return;
++    }
++    setError('');
++    setUser(trimmed);
++  };
++
++  return (
++    <form data-testid="signin-form" onSubmit={submit}>
++      <label>
++        Name{' '}
++        <input
++          data-testid="signin-name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++      {error && <p data-testid="signin-error" role="alert">{error}</p>}
++    </form>
++  );
++}
++
++/** Who is signed in, and a way to sign out. */
++export function CurrentUser({ user }: { user: string }) {
++  const [, setUser] = useUser();
++  return (
++    <p>
++      Signed in as <strong data-testid="current-user">{user}</strong>{' '}
++      <button type="button" data-testid="signout" onClick={() => setUser(undefined)}>
++        Sign out
++      </button>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+new file mode 100644
+index 0000000..020c86e
+--- /dev/null
++++ b/src/main/frontend/features/session/session.ts
+@@ -0,0 +1,11 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The signed-in name (no password) — kept in the URL like any other state that outlives a click. */
++export function useUser() {
++  return useSearchParam('user', asString);
++}
++
++/** The active sheet id. */
++export function useSheetId() {
++  return useSearchParam('sheet', asString);
++}
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+new file mode 100644
+index 0000000..4cd2390
+--- /dev/null
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -0,0 +1,65 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSheetId } from '../session/session';
++
++type Sheet = { id: string };
++
++/** Choose a sheet by id. Loading an id never used before starts an empty sheet; loading an id
++ *  again re-reads everything under it from the store. */
++export function SheetPicker({ user }: { user: string }) {
++  const queryClient = useQueryClient();
++  const [sheetId, setSheetId] = useSheetId();
++  const [typed, setTyped] = useState('');
++
++  const load = useMutation({
++    mutationFn: (id: string) => putJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`, { user }),
++    onSuccess: async (sheet) => {
++      await queryClient.invalidateQueries({ queryKey: ['sheet', sheet.id] });
++      setSheetId(sheet.id);
++    },
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    load.reset();
++    const id = typed.trim();
++    if (id === '') {
++      setSheetId(undefined);
++      return;
++    }
++    load.mutate(id);
++  };
++
++  return (
++    <section>
++      <form data-testid="sheet-form" onSubmit={submit}>
++        <label>
++          Sheet id{' '}
++          <input
++            data-testid="sheet-id-input"
++            value={typed}
++            onChange={(e) => {
++              setTyped(e.target.value);
++              load.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="sheet-load" disabled={load.isPending}>
++          Load
++        </button>
++        {load.isError && (
++          <p data-testid="sheet-load-error" role="alert">
++            Could not load that sheet.
++          </p>
++        )}
++      </form>
++      {sheetId && (
++        <p>
++          Sheet <strong data-testid="sheet-current-id">{sheetId}</strong>
++        </p>
++      )}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb0312..19f1e6e 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,35 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { CurrentUser, SignIn } from '../features/session/SignIn';
++import { useSheetId, useUser } from '../features/session/session';
++import { SheetPicker } from '../features/sheet/SheetPicker';
++import { SheetBody } from '../slots/defs/sheet';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The one screen: sign in by name, choose a sheet by id, then everything kept per sheet.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  const [user] = useUser();
++  const [sheetId] = useSheetId();
++
++  if (!user) {
++    return (
++      <>
++        <SignIn />
++        <p data-testid="home-empty">Nothing here yet.</p>
++      </>
++    );
++  }
++  return (
++    <>
++      <CurrentUser user={user} />
++      <SheetPicker user={user} />
++      {sheetId ? (
++        <SheetBody.Slot key={sheetId} sheetId={sheetId} user={user} />
++      ) : (
++        <p data-testid="home-empty">Nothing here yet.</p>
++      )}
++    </>
++  );
+ }
+diff --git a/src/main/frontend/slots/defs/sheet.ts b/src/main/frontend/slots/defs/sheet.ts
+new file mode 100644
+index 0000000..31b07e3
+--- /dev/null
++++ b/src/main/frontend/slots/defs/sheet.ts
+@@ -0,0 +1,8 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The loaded sheet's body. Every feature kept per sheet contributes here; the home page renders it
++ * only once someone is signed in and a sheet is loaded. Server data under a sheet is keyed
++ * ['sheet', sheetId, ...] so a sheet load re-reads all of it.
++ */
++export const SheetBody = defineSlot<{ sheetId: string; user: string }>('sheet.body');
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidSheet.java b/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidSheet.java
+new file mode 100644
+index 0000000..ed2d9c2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidSheet.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidSheet {
++    public void handle(@Parameter InvalidSheetException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetException.java b/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetException.java
+new file mode 100644
+index 0000000..3d3ff78
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.sheet;
++
++/** A sheet load with a blank or over-long id, or no signed-in user. */
++public class InvalidSheetException extends Exception {
++    public InvalidSheetException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 0000000..014d57e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithSheet {
++    public void respond(@PathVariable("sheetId") String sheetId, ObjectResponse<SheetResponse> response) {
++        response.send(new SheetResponse(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheet.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheet.java
+new file mode 100644
+index 0000000..beb9b6b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheet.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.web.bind.annotation.PathVariable;
++import net.officefloor.plugin.variable.Val;
++
++public class SaveSheet {
++    public void save(@PathVariable("sheetId") String sheetId, @Val SheetRequest request,
++            SheetRepository repository) {
++        repository.ensure(sheetId.trim(), request.user().trim());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+new file mode 100644
+index 0000000..6d7751b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Sheets by id. A sheet is created the first time its id is loaded, and starts empty. */
++@Repository
++public class SheetRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SheetRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public boolean exists(String id) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, id);
++        return n != null && n > 0;
++    }
++
++    /** Create the sheet unless it already exists (concurrent first loads are harmless). */
++    public void ensure(String id, String user) {
++        jdbc.update("MERGE INTO sheet (id, created_by) KEY (id) VALUES (?, ?)", id, user);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRequest.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRequest.java
+new file mode 100644
+index 0000000..0c68873
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** Body of a sheet load: who is loading it. */
++public record SheetRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+new file mode 100644
+index 0000000..158c563
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.sheet;
++
++public record SheetResponse(String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetLoad.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetLoad.java
+new file mode 100644
+index 0000000..2047cc4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetLoad.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateSheetLoad {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SheetRequest request,
++            Out<SheetRequest> body) throws InvalidSheetException {
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (id.isEmpty() || id.length() > 100) {
++            throw new InvalidSheetException("A sheet id is required (at most 100 characters).");
++        }
++        if (request == null || request.user() == null || request.user().isBlank()) {
++            throw new InvalidSheetException("Sign in before loading a sheet.");
++        }
++        body.set(request);
++    }
++}
+diff --git a/src/main/resources/db/migration/V1__sheet.sql b/src/main/resources/db/migration/V1__sheet.sql
+new file mode 100644
+index 0000000..9cd100f
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__sheet.sql
+@@ -0,0 +1,6 @@
++-- A sheet: the unit everything else in the app is kept under. Created the first time its id is loaded.
++CREATE TABLE sheet (
++    id         VARCHAR(100) PRIMARY KEY,
++    created_by VARCHAR(100) NOT NULL,
++    created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidSheetException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidSheetException.yml
+new file mode 100644
+index 0000000..c45942e
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidSheetException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleInvalidSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
+new file mode 100644
+index 0000000..6381cd5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
+@@ -0,0 +1,10 @@
++# Load a sheet: creates it (empty) the first time its id is used, then returns it.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetLoad
++  next: save
++save:
++  class: net.officefloor.hq.app.sheet.SaveSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
