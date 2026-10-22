@@ -2,13 +2,15 @@ package net.officefloor.hq.app.person;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /** A person on a sheet: a name and a grade (A, B or C: the one in force on the sheet's today), the version of the stored person, how many statements
  *  have been taken of them, and the last one's due-total (null when n/a, or none taken) and date (the sheet's
  *  today then; null when none taken), the date they are retired from (null: not retired), and whether they are
  *  dated grades and their dated holds (their OPEN claims dated within one, not bound by a statement, count in no
- *  live total), their own terms in days (null: none), and their contact (trimmed, lower-cased; null: none). */
+ *  live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), and their
+ *  aliases, sorted as names are compared. */
 public record Person(long id, String sheetId, String name, String grade, long version, int statementCount,
         BigDecimal statedTotal, LocalDate statementDate, LocalDate retiredFrom, Grades grades,
-        Holds holds, Integer terms, String contact) {
+        Holds holds, Integer terms, String contact, List<String> aliases) {
 }

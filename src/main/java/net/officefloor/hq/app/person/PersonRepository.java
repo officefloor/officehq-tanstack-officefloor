@@ -19,7 +19,7 @@ public class PersonRepository {
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
             rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
-            rs.getString("contact"));
+            rs.getString("contact"), List.of());
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -32,6 +32,12 @@ public class PersonRepository {
 
     private static final RowMapper<HoldRow> HOLD_ROW = (rs, i) -> new HoldRow(rs.getLong("person_id"),
             new Holds.Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+
+    private record AliasRow(long personId, String alias) {
+    }
+
+    private static final RowMapper<AliasRow> ALIAS_ROW = (rs, i) -> new AliasRow(rs.getLong("person_id"),
+            rs.getString("alias"));
 
     private final JdbcTemplate jdbc;
 
@@ -49,13 +55,14 @@ public class PersonRepository {
                 .stream().findFirst().orElse(null);
     }
 
-    /** The person on this sheet with this name (compared as nameInUse compares), or null when absent. */
+    /** The person on this sheet with this name or alias (compared as nameInUse compares), or null when absent. */
     public Person findByName(String sheetId, String name) {
-        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW,
-                sheetId, name)).stream().findFirst().orElse(null);
+        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND (name_key = LOWER(TRIM(?)) "
+                + "OR id IN (SELECT person_id FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?))))",
+                ROW, sheetId, name, sheetId, name)).stream().findFirst().orElse(null);
     }
 
-    /** The people with their dated grades, the grade in force on the sheet's today, and their holds. */
+    /** The people with their dated grades, the grade in force on the sheet's today, their holds and their aliases. */
     private List<Person> graded(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return people;
@@ -70,21 +77,39 @@ public class PersonRepository {
                 "SELECT * FROM person_hold WHERE sheet_id = ? ORDER BY person_id, id", HOLD_ROW, sheetId).stream()
                 .collect(Collectors.groupingBy(HoldRow::personId,
                         Collectors.mapping(HoldRow::hold, Collectors.toList())));
+        Map<Long, List<String>> aliasesByPerson = aliases(sheetId, null);
         return people.stream().map(p -> {
             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
-                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact());
+                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
+                    aliasesByPerson.getOrDefault(p.id(), List.of()));
         }).toList();
     }
 
-    /** Whether another person on this sheet (other than exceptId, when given) has this name,
-     *  compared without regard to case and ignoring surrounding spaces. */
+    /** Whether another person on this sheet (other than exceptId, when given) has this name, or anyone on the sheet
+     *  has it as an alias, compared without regard to case and ignoring surrounding spaces. */
     public boolean nameInUse(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
-                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+                "SELECT (SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?) "
+                        + "+ (SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?)))",
+                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId, sheetId, name);
         return n != null && n > 0;
+    }
+
+    /** Give the person an alias (stored trimmed). Leaves the version alone: an alias is not an edit of the person. */
+    public void alias(Person person, String alias) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, made_on) VALUES (?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), alias.trim(), person.sheetId());
+    }
+
+    /** The aliases of the sheet's people by person, each sorted as names are compared; only those given while the
+     *  sheet's today was on or before `end`, when one is given. */
+    private Map<Long, List<String>> aliases(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR made_on IS NULL OR made_on <= ?) ORDER BY person_id, alias_key, id",
+                ALIAS_ROW, sheetId, end, end).stream().collect(Collectors.groupingBy(AliasRow::personId,
+                        Collectors.mapping(AliasRow::alias, Collectors.toList())));
     }
 
     /** Add a person with their first grade, which applies from the beginning of time, and no terms of their own. */
@@ -113,7 +138,7 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grade, from_date, made_on) VALUES (?, ?, ?, NULL, "
                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
-                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact);
+                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of());
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -206,11 +231,13 @@ public class PersonRepository {
     /** The sheet's people as they stood at the end of the day, in the order they were added: those added by then,
      *  each with their grades, holds, retirement and statements then, and the grade in force on that day. */
     public List<Person> listAsOf(String sheetId, LocalDate end) {
+        Map<Long, List<String>> aliasesByPerson = aliases(sheetId, end);
         return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id",
-                ROW, sheetId, end).stream().map(p -> asOf(p, end)).toList();
+                ROW, sheetId, end).stream().map(p -> asOf(p, end, aliasesByPerson.getOrDefault(p.id(), List.of())))
+                .toList();
     }
 
-    private Person asOf(Person p, LocalDate end) {
+    private Person asOf(Person p, LocalDate end, List<String> aliases) {
         Grades grades = gradesAsOf(p, end);
         int count = p.statementCount();
         int rows = 0;
@@ -241,7 +268,7 @@ public class PersonRepository {
             date = p.statementDate();
         }
         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
-                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact());
+                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases);
     }
 
     private static LocalDate toDate(Object value) {
