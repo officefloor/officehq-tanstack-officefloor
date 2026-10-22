@@ -161,6 +161,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [deferUntil, setDeferUntil] = useState('');
   const [redateTo, setRedateTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [inlineAmount, setInlineAmount] = useState('');
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -253,6 +254,21 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not split this ${claim.status} claim.`),
   });
 
+  // The row's own amount entry: the claim form's edit with only the amount changed (its date, note and the
+  // claim it corrects stay as they are), so the server refuses it by the same rules and audits CLAIM_EDITED.
+  const inline = useMutation({
+    mutationFn: (amount: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}`,
+        { user, amount, date: claim.date, note: claim.note, corrects: claim.corrects ?? '' }),
+    onSuccess: async () => {
+      setInlineAmount('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
+        ? e.body : `Could not change the amount of this ${claim.status} claim.`),
+  });
+
   return (
     <li data-testid={`claim-row-${claim.id}`}>
       <input
@@ -303,6 +319,40 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Edit
+      </button>{' '}
+      <input
+        data-testid="claim-inline-amount"
+        placeholder="Amount"
+        value={inlineAmount}
+        onChange={(e) => {
+          clearError();
+          setInlineAmount(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-inline-save"
+        disabled={inline.isPending}
+        onClick={() => {
+          clearError();
+          const amount = inlineAmount.trim();
+          if (!AMOUNT.test(amount)) {
+            setError('The amount must be a number with up to two decimals.');
+            return;
+          }
+          const negative = amount.startsWith('-') && Number(amount) < 0;
+          if (negative && !NUMBER.test((claim.corrects ?? '').trim())) {
+            setError('A negative amount is a correction: name the number of the SETTLED claim it corrects.');
+            return;
+          }
+          if (!negative && (claim.corrects ?? '').trim() !== '') {
+            setError('Only a correction (a negative amount) names a claim it corrects.');
+            return;
+          }
+          inline.mutate(amount);
+        }}
+      >
+        Save amount
       </button>{' '}
       {editingId === String(claim.id) && (
         <button
