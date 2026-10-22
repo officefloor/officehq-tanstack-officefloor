@@ -1,0 +1,72 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 898d2c8..e80eb64 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -199,7 +199,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
+ 
+ /** The late charge on a claim whose figure is `figure`: for each full 30 days the claim is overdue (past its due-by
+  *  plus its grace, on the sheet's today), the late percent in force on that boundary date (its due-by plus its grace
+- *  plus 30, 60, 90 ... days) of it,
++ *  plus 30, 60, 90 ... days) of it plus the charges of the boundaries before (compounding), each
+  *  rounded like the claim's due, the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when not
+  *  overdue, or a correction (a negative amount). */
+ export function lateCharge(claim: Claim, figure: string, late: Late): string {
+@@ -210,7 +210,7 @@ export function lateCharge(claim: Claim, figure: string, late: Late): string {
+   let total = 0n;
+   for (let n = 1; n <= Math.floor(days / 30); n++) {
+     const pct = late.pct(new Date(from + n * 30 * DAY_MS).toISOString().slice(0, 10));
+-    if (toCents(pct) !== 0n) total += toCents(dueOn(figure, pct, roundsUp(claim, late)));
++    if (toCents(pct) !== 0n) total += toCents(dueOn(fromCents(toCents(figure) + total), pct, roundsUp(claim, late)));
+   }
+   return fromCents(total);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+index 7d0c221..281d32e 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+@@ -8,15 +8,18 @@ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuse a new claim whose due-by (its date — a blank date being the sheet's entry date, else its today — plus the terms it
+- *  would get) falls inside a closed period. */
++/** Refuse a new claim dated inside a closed period, or whose due-by (its date — a blank date being the sheet's entry date,
++ *  else its today — plus the terms it would get) falls inside one. */
+ public class RefuseClosedNewClaim {
+     public void refuse(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
+             HolidayRepository holidays, PeriodRepository periods)
+             throws ClosedPeriodException {
+         periods.lockSheet(person.sheetId());
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+-        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
++        Period closed = periods.closedOn(person.sheetId(), date);
++        if (closed == null) {
++            closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
++        }
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/LateCharge.java b/src/main/java/net/officefloor/hq/app/statement/LateCharge.java
+index dbe3b07..3eb52dd 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/statement/LateCharge.java
+@@ -63,8 +63,8 @@ public record LateCharge(DatedAmount pct, LocalDate today, Rounding rounding, Gr
+     }
+ 
+     /** The charge on a claim whose figure is `figure`: for each full 30 days it is overdue, the late percent in force
+-     *  on that boundary date (its due-by plus its grace plus 30, 60, 90 ... days) of the figure, rounded to two decimals as the claim
+-     *  rounds (see Rounding), the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when it is not
++     *  on that boundary date (its due-by plus its grace plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries before it (compounding), each
++     *  rounded to two decimals as the claim rounds (see Rounding), the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when it is not
+      *  overdue, or it is a correction (a negative amount). */
+     public BigDecimal on(Claim claim, BigDecimal figure) {
+         BigDecimal total = new BigDecimal("0.00");
+@@ -76,7 +76,7 @@ public record LateCharge(DatedAmount pct, LocalDate today, Rounding rounding, Gr
+         for (long n = 1; n <= periods; n++) {
+             BigDecimal pct = this.pct.on(from.plusDays(30 * n));
+             if (pct.signum() != 0) {
+-                total = total.add(figure.multiply(pct).divide(BigDecimal.valueOf(100), 2, rounding.of(claim)));
++                total = total.add(figure.add(total).multiply(pct).divide(BigDecimal.valueOf(100), 2, rounding.of(claim)));
+             }
+         }
+         return total;
