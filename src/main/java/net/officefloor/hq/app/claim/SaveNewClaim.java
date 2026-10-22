@@ -11,11 +11,17 @@ import net.officefloor.plugin.variable.Val;
 public class SaveNewClaim {
     public void save(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
             ClaimRepository repository, ClaimLogRepository log, Out<Claim> claim) {
+        claim.set(insert(input, person, sheets, settings, repository, log));
+    }
+
+    /** Store one new claim as the claim form does (the paste box stores each of its lines this way). */
+    static Claim insert(ClaimInput input, Person person, SheetRepository sheets, SettingRepository settings,
+            ClaimRepository repository, ClaimLogRepository log) {
         var date = input.date() != null ? input.date() : sheets.today(person.sheetId());
         var dueBy = date.plusDays(settings.termsFor(person.sheetId(), person.grades().on(date), date));
         Claim added = repository.insert(new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy));
         log.record(added, input.user());
-        claim.set(added);
+        return added;
     }
 }

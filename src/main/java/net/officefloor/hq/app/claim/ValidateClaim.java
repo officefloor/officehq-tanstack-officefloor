@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  corrects, and only a correction names one; the date, when given, is a real yyyy-mm-dd date. */
 public class ValidateClaim {
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> body) throws InvalidClaimException {
+        body.set(check(request));
+    }
+
+    /** The claim form's rules, shared by every way a claim is added (the paste box checks each line by them). */
+    static ClaimInput check(ClaimRequest request) throws InvalidClaimException {
         if (request == null || request.user() == null || request.user().isBlank()) {
             throw new InvalidClaimException("Sign in before changing claims.");
         }
@@ -56,6 +61,6 @@ public class ValidateClaim {
         if (note.length() > 1000) {
             throw new InvalidClaimException("A note is at most 1000 characters.");
         }
-        body.set(new ClaimInput(request.user().trim(), value, date, note, corrects));
+        return new ClaimInput(request.user().trim(), value, date, note, corrects);
     }
 }
