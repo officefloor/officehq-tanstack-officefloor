@@ -1,0 +1,72 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 9843297..c9af6b6 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -47,6 +47,15 @@ export function live(claims: Claim[], people: Person[]): Claim[] {
+   return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date)));
+ }
+ 
++/** Whether a person is active on the sheet's today (yyyy-mm-dd; '' while loading: not active): they have an OPEN or
++ *  PENDING claim that counts in the live totals (see live) dated within the 30 days up to and including it. */
++export function active(person: Person, claims: Claim[], today: string): boolean {
++  if (today === '') return false;
++  const since = new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
++  return live(claims.filter((c) => c.personId === person.id), [person])
++    .some((c) => unsettled(c) && c.date >= since && c.date <= today);
++}
++
+ /** A claim's status at the end of the day given (yyyy-mm-dd), as its status log records it: the last status given on
+  *  or before that day (one given while the sheet had no today counts as given by then); null when every status was
+  *  given after it (it was added later). A claim with no log has its status now. */
+diff --git a/src/main/frontend/features/people/active.slot.tsx b/src/main/frontend/features/people/active.slot.tsx
+new file mode 100644
+index 0000000..c908700
+--- /dev/null
++++ b/src/main/frontend/features/people/active.slot.tsx
+@@ -0,0 +1,13 @@
++import { PersonRow } from '../../slots/defs/personRow';
++import { active, useClaims } from '../claims/claims';
++import { useSheetToday } from '../sheet/sheet';
++import type { Person } from './people';
++
++/** Whether the person is active on the sheet's today (see active): yes or no. */
++function PersonActive({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const claims = useClaims(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  return <td data-testid="person-active">{active(person, claims, today) ? 'yes' : 'no'}</td>;
++}
++
++export const contribution = PersonRow.fill({ order: 12, Component: PersonActive });
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 2af62ea..7883722 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,5 +1,5 @@
+ import { SheetBody } from '../../slots/defs/sheet';
+-import { STATUSES, useClaims } from '../claims/claims';
++import { STATUSES, active as isActive, useClaims } from '../claims/claims';
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+ import { periodDueTotal, usePeriods } from '../periods/periods';
+ import { personDueTotal, sumDue, useRates } from '../rates/rates';
+@@ -8,7 +8,7 @@ import { useSheetToday } from '../sheet/sheet';
+ 
+ /** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
+  *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
+- *  due-total, and per status how many of the sheet's claims have it. */
++ *  due-total, how many of them are active (see claims' active), and per status how many of the sheet's claims have it. */
+ function Summary({ sheetId }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -39,6 +39,12 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
+                     {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)))}
+                   </span>
+                 </td>
++                <td>
++                  Active{' '}
++                  <span data-testid={`summary-grade-${g}-active`}>
++                    {onGrade.filter((p) => isActive(p, claims, today)).length}
++                  </span>
++                </td>
+               </tr>
+             );
+           })}
