@@ -9,8 +9,8 @@ import { useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloor, useLate } from '../settings/settings';
-import { personDueTotal, rateOn, ratesKey, sheetDueTotal, useRates } from './rates';
+import { useCap, useFloor, useLate } from '../settings/settings';
+import { capped, excess, personDueSum, rateOn, ratesKey, sheetDueTotal, useRates } from './rates';
 import type { Rate } from './rates';
 
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
@@ -145,14 +145,31 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-/** A person's due-total: the figures of their claims that count added up (see personDueTotal). */
+/** A person's due-total: the figures of their claims that count added up, at most the sheet's cap (see
+ *  personDueTotal). */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  return <td data-testid="person-due-total">{personDueTotal(person, claims, rates, today, floor, late)}</td>;
+  const cap = useCap(sheetId);
+  return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late), cap)}</td>;
+}
+
+/** A person's excess: how far their figures added up are above the sheet's cap; 0.00 when not above it. */
+function PersonExcess({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const cap = useCap(sheetId);
+  return (
+    <td>
+      Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late), cap)}</span>
+    </td>
+  );
 }
 
 /** The sheet's due-total: every person's due-total added up, skipping n/a. */
@@ -163,9 +180,10 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
   return (
     <p>
-      Due total <strong data-testid="rollup-due-total">{sheetDueTotal(people, claims, rates, today, floor, late)}</strong>
+      Due total <strong data-testid="rollup-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, cap)}</strong>
     </p>
   );
 }
@@ -174,4 +192,5 @@ export const contributions = [
   SheetBody.fill({ order: 5, Component: Rates }),
   SheetBody.fill({ order: 21, Component: DueTotal }),
   PersonRow.fill({ order: 20, Component: PersonDueTotal }),
+  PersonRow.fill({ order: 21, Component: PersonExcess }),
 ];

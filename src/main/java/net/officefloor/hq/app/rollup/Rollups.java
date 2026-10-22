@@ -45,6 +45,7 @@ public class Rollups {
     public Rollup take(String sheetId) {
         var today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        BigDecimal cap = settings.cap(sheetId);
         LateCharge late = LateCharge.of(sheetId, settings, sheets, claims);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
@@ -54,7 +55,8 @@ public class Rollups {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.holds())).map(Claim::amount)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
-            BigDecimal due = Dues.total(sheetId, theirs, p.grades(), p.holds(), today, rates, floor, late);
+            BigDecimal due = Dues.capped(
+                    Dues.total(sheetId, theirs, p.grades(), p.holds(), today, rates, floor, late), cap);
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) {
                 dueTotal = dueTotal.add(due);

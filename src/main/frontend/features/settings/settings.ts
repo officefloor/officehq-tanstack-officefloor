@@ -10,9 +10,10 @@ import { useSheetToday } from '../sheet/sheet';
  *  the late percent with two decimals (an overdue claim gains it, of its figure, every full 30 days), and the
  *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
  *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
- *  grade has none: it uses the sheet's terms). A claim's due-by is fixed when it is created. */
+ *  grade has none: it uses the sheet's terms), and the cap with two decimals ('' when there is none: a person's
+ *  due-total is at most it). A claim's due-by is fixed when it is created. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
-  periodNumberingFrom: string; gradeTerms: Record<string, string> };
+  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string };
 
 /** The grades that may have terms of their own. */
 export const GRADES = ['A', 'B', 'C'] as const;
@@ -39,6 +40,11 @@ export function useSettings(sheetId: string) {
 /** The sheet's floor in force (the starting floor while the settings load). */
 export function useFloor(sheetId: string): string {
   return useSettings(sheetId).data?.floor ?? DEFAULT_FLOOR;
+}
+
+/** The sheet's cap in force ('' when there is none, or while the settings load). */
+export function useCap(sheetId: string): string {
+  return useSettings(sheetId).data?.cap ?? '';
 }
 
 /** The sheet's terms in force, in days (the starting terms while the settings load). */

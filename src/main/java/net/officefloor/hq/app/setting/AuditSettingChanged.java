@@ -33,5 +33,9 @@ public class AuditSettingChanged {
                     + " key=period-numbering-from value="
                     + (settings.periodNumberingFrom() != null ? settings.periodNumberingFrom() : ""));
         }
+        if (input.setsCap()) {
+            audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
+                    + " key=cap value=" + SettingsResponse.text(settings.cap()));
+        }
     }
 }

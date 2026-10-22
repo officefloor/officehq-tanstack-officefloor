@@ -29,7 +29,7 @@ public class SettingRepository {
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
         return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId),
-                policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms(sheetId));
+                policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms(sheetId), cap(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -40,6 +40,16 @@ public class SettingRepository {
 
     public void setClerkLimit(String sheetId, BigDecimal limit) {
         jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
+    }
+
+    /** The sheet's cap: two decimals, or null when there is none; a person's due-total is at most it. */
+    public BigDecimal cap(String sheetId) {
+        return jdbc.query("SELECT due_cap FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
+    }
+
+    public void setCap(String sheetId, BigDecimal cap) {
+        jdbc.update("UPDATE sheet SET due_cap = ? WHERE id = ?", cap, sheetId);
     }
 
     /** The sheet's floor: two decimals; a claim's live due is at least it. */

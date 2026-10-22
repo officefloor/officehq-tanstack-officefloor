@@ -3,7 +3,7 @@ import { STATUSES, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 
 /** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
@@ -17,6 +17,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
   const active = people.filter((p) => p.retiredFrom === null);
 
   return (
@@ -35,7 +36,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
                 <td>
                   Due total{' '}
                   <span data-testid={`summary-grade-${g}-due-total`}>
-                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late)))}
+                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)))}
                   </span>
                 </td>
               </tr>

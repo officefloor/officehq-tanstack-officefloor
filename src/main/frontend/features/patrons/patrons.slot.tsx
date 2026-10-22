@@ -4,10 +4,10 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { live, useClaims } from '../claims/claims';
-import { gradeOn, usePeople } from '../people/people';
+import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { personDue, rateOn, sumDue, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { personDueTotal, sumDue, useRates } from '../rates/rates';
+import { useCap, useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, usePatrons } from './patrons';
 import type { Patron } from './patrons';
@@ -22,22 +22,13 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
   const patrons = (usePatrons(sheetId).data ?? [])
     .filter((p) => p.personId === person.id)
     .map((p) => people.find((q) => q.id === p.patronId))
     .filter((p): p is Person => p !== undefined)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const backing = sumDue(
-    patrons.map((p) =>
-      personDue(
-        claims.filter((c) => c.personId === p.id),
-        (d) => rateOn(rates, gradeOn(p, d), d),
-        rateOn(rates, gradeOn(p, today), today),
-        floor,
-        late,
-      ),
-    ),
-  );
+  const backing = sumDue(patrons.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
   const [chosen, setChosen] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();

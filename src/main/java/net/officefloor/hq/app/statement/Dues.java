@@ -70,4 +70,9 @@ public final class Dues {
         }
         return figures.stream().reduce(new BigDecimal("0.00"), BigDecimal::add);
     }
+
+    /** A due-total at most the sheet's cap (null: none); n/a (null) is not capped. */
+    public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
+        return total != null && cap != null ? total.min(cap) : total;
+    }
 }

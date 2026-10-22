@@ -2,7 +2,7 @@ import { SheetBody } from '../../slots/defs/sheet';
 import { STATUSES, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { overdueDues, sheetDueTotal, sumDue, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 
 /** The sheet's header counters, shown above everything else: its people (retired ones included), its claims
@@ -14,6 +14,7 @@ function Header({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
 
   return (
     <header data-testid="header">
@@ -27,7 +28,7 @@ function Header({ sheetId }: { sheetId: string; user: string }) {
         </span>
       ))}{' '}
       <span>
-        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late)}</strong>
+        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, cap)}</strong>
       </span>{' '}
       <span>
         Overdue total <strong data-testid="header-overdue-total">{sumDue(overdueDues(claims, people, rates, late, floor))}</strong>

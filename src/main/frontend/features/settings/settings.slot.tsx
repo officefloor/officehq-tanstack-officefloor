@@ -13,7 +13,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
-  periodNumberingFrom?: string; gradeTerms?: Record<string, string> };
+  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -22,7 +22,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
  *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
- *  the terms of its person's grade on its date. */
+ *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none). */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
@@ -32,6 +32,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentLatePct = settings.data?.latePct ?? DEFAULT_LATE_PCT;
   const currentPolicyDate = settings.data?.policyDate ?? '';
   const currentNumberingFrom = settings.data?.periodNumberingFrom ?? '';
+  const currentCap = settings.data?.cap ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
@@ -39,6 +40,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedLatePct, setTypedLatePct] = useState<string | null>(null);
   const [typedPolicyDate, setTypedPolicyDate] = useState<string | null>(null);
   const [typedNumberingFrom, setTypedNumberingFrom] = useState<string | null>(null);
+  const [typedCap, setTypedCap] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -55,6 +57,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedLatePct(null);
       setTypedPolicyDate(null);
       setTypedNumberingFrom(null);
+      setTypedCap(null);
       setTypedGradeTerms({});
     },
     onError: (e) =>
@@ -116,6 +119,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.periodNumberingFrom = numberingFrom;
     }
+    if (typedCap !== null) {
+      const cap = typedCap.trim();
+      if (cap !== '' && !LIMIT.test(cap)) {
+        setError('The cap must be an amount, 0.00 or more, with up to two decimals, or blank for none.');
+        return;
+      }
+      changes.cap = cap;
+    }
     for (const grade of GRADES) {
       const typedTerms = typedGradeTerms[grade];
       if (typedTerms === undefined) continue;
@@ -151,7 +162,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         ))}
         Late <strong data-testid="setting-late-pct-current">{currentLatePct}</strong>%{' '}
         Policy date <strong data-testid="setting-policy-date-current">{currentPolicyDate}</strong>{' '}
-        Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>
+        Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>{' '}
+        Cap <strong data-testid="setting-cap-current">{currentCap}</strong>
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -230,6 +242,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedNumberingFrom)}
             onChange={typed(setTypedNumberingFrom)}
             onFocus={() => setTypedNumberingFrom((v) => v ?? currentNumberingFrom)}
+          />
+        </label>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="setting-cap"
+            placeholder="none"
+            value={typedCap ?? currentCap}
+            onInput={typed(setTypedCap)}
+            onChange={typed(setTypedCap)}
+            onFocus={() => setTypedCap((v) => v ?? currentCap)}
           />
         </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

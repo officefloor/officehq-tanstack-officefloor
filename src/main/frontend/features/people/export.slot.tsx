@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
 import { personDueTotal, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { gradeOn, usePeople } from './people';
 
@@ -21,6 +21,7 @@ function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
 
   const download = () => {
     const lines = [
@@ -29,7 +30,7 @@ function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
         p.name,
         gradeOn(p, today),
         p.retiredFrom ?? '',
-        personDueTotal(p, claims, rates, today, floor, late),
+        personDueTotal(p, claims, rates, today, floor, late, cap),
       ]),
     ];
     const csv = lines.map((values) => values.map(csvValue).join(',') + '\n').join('');

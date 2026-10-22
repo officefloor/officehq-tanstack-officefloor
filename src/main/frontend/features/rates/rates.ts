@@ -79,18 +79,35 @@ export function personDue(claims: Claim[], rateOnDate: (date: string) => string 
   return sumDue(dues);
 }
 
-/** A person's due-total as shown on their row: their live claims among these (see live) through personDue, at
+/** A person's figures added up, before the cap: their live claims among these (see live) through personDue, at
  *  the grade in force on each claim's date and on the sheet's today. */
-export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: string,
+export function personDueSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: string,
     late: Late): string {
   return personDue(live(claims.filter((c) => c.personId === person.id), [person]),
     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
+/** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
+ *  cap ('' when none). */
+export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: string,
+    late: Late, cap: string): string {
+  return capped(personDueSum(person, claims, rates, today, floor, late), cap);
+}
+
+/** A sum of figures at most the cap ('' when none); 'n/a' is not capped. */
+export function capped(sum: string, cap: string): string {
+  return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? sum : fromCents(toCents(cap));
+}
+
+/** How far a sum of figures is above the cap ('' when none); 0.00 when it is not above it, or n/a. */
+export function excess(sum: string, cap: string): string {
+  return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? '0.00' : fromCents(toCents(sum) - toCents(cap));
+}
+
 /** The sheet's due-total: every person's due-total added up, skipping n/a. */
 export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string,
-    late: Late): string {
-  return sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late)));
+    late: Late, cap: string): string {
+  return sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
 }
 
 /** The overdue claims that count among these, with the due of each (as shown on its row). */

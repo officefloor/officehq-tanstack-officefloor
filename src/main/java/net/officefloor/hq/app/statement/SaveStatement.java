@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Take the person's statement: record their due-total now (late charges included) and the sheet's today, bind
+/** Take the person's statement: record their due-total now (late charges included, at most the sheet's cap) and the sheet's today, bind
  *  each of their claims that counts to the figure under it now (never its late charge, which keeps following the
  *  sheet's today), and unbind the rest (their due is live again). A settled claim's
  *  fixed due is left as it is. */
@@ -26,8 +26,8 @@ public class SaveStatement {
         BigDecimal floor = settings.floor(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
         LateCharge late = LateCharge.of(person.sheetId(), settings, sheets, claims);
-        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grades(), person.holds(), today, rates, floor,
-                late);
+        BigDecimal total = Dues.capped(Dues.total(person.sheetId(), theirs, person.grades(), person.holds(), today,
+                rates, floor, late), settings.cap(person.sheetId()));
         int counted = 0;
         for (Claim c : theirs) {
             if (Dues.counts(c, person.holds())) {

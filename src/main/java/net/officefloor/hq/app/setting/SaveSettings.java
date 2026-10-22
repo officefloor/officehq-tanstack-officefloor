@@ -26,6 +26,9 @@ public class SaveSettings {
         if (input.setsPeriodNumberingFrom()) {
             repository.setPeriodNumberingFrom(sheetId.trim(), input.periodNumberingFrom());
         }
+        if (input.setsCap()) {
+            repository.setCap(sheetId.trim(), input.cap());
+        }
         settings.set(repository.of(sheetId.trim()));
     }
 }
