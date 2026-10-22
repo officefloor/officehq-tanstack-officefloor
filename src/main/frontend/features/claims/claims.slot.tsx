@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
 import { claimDue, rateOn, useRates } from '../rates/rates';
@@ -80,8 +80,8 @@ const ACTIONS = [
   { action: 'void', label: 'Void' },
 ] as const;
 
-/** One claim with its status and the buttons that change it. A change the status does not allow is
- *  refused by the server and shown as the claim's error. */
+/** One claim with its status, who opened it and the buttons that change it. A change the status does not
+ *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error. */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingClaim();
@@ -93,7 +93,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
-    onError: (_e, action) => setError(`Could not ${action} this ${claim.status} claim.`),
+    onError: (e, action) =>
+      setError(e instanceof HttpError && e.status === 409 && e.body ? e.body : `Could not ${action} this ${claim.status} claim.`),
   });
 
   return (
@@ -103,6 +104,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-note">{claim.note}</span>{' '}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
+      <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-due">{claimDue(claim, rate)}</span>{' '}
       <button
         type="button"

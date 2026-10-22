@@ -9,7 +9,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Move the loaded claim to its new status, refusing a change its status does not allow (or one
  *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
- *  clears it. Settling fixes its due at the person's grade rate now in force on the claim's date. */
+ *  clears it. Opening records who opened it, and that user may not settle it. Settling fixes its due
+ *  at the person's grade rate now in force on the claim's date. */
 public class SaveClaimStatus {
     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
             PersonRepository people, RateRepository rates, Out<ClaimResponse> saved)
@@ -17,18 +18,22 @@ public class SaveClaimStatus {
         if (!loaded.status().canBecome(input.to())) {
             throw new ClaimStatusNotAllowedException(loaded.status(), input.to());
         }
+        if (input.to() == ClaimStatus.SETTLED && input.user().equals(loaded.openedBy())) {
+            throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
+        }
+        String openedBy = input.to() == ClaimStatus.OPEN ? input.user() : loaded.openedBy();
         Integer number = switch (input.to()) {
             case OPEN -> repository.nextNumber(loaded.sheetId());
             case VOID -> null;
             default -> loaded.number();
         };
         BigDecimal settledDue = input.to() == ClaimStatus.SETTLED ? dueNow(loaded, people, rates) : null;
-        if (!repository.changeStatus(loaded, input.to(), number, settledDue)) {
+        if (!repository.changeStatus(loaded, input.to(), number, settledDue, openedBy)) {
             // the transaction rolls back, so a number taken above is not used up
             throw new ClaimStatusNotAllowedException(loaded.status(), input.to());
         }
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
-                loaded.date(), loaded.note(), input.to(), number, settledDue)));
+                loaded.date(), loaded.note(), input.to(), number, settledDue, openedBy)));
     }
 
     /** The claim's due now: amount times its person's grade rate in force on the claim's date, divided by
