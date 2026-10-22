@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -18,6 +19,10 @@ import net.officefloor.hq.app.statement.LateCharge;
 final class ClaimStatusChange {
     private ClaimStatusChange() {
     }
+
+    /** How many days after its settlement (by the sheet's today, as its status log records it) a steward may still
+     *  void a SETTLED claim. */
+    private static final int VOID_SETTLED_DAYS = 7;
 
     /** Move the claim to its new status as {@link SaveClaimStatus} describes, adding it to its status log: the claim
      *  as stored now; throws (having written nothing) when the change is not allowed. */
@@ -50,6 +55,16 @@ final class ClaimStatusChange {
             if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
                 throw new ClaimStatusNotAllowedException("Only a steward can re-settle a claim.");
             }
+        } else if (input.action().equals("void") && loaded.status() == ClaimStatus.SETTLED) {
+            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
+                throw new ClaimStatusNotAllowedException("Only a steward can void a SETTLED claim.");
+            }
+            LocalDate settledOn = log.lastOn(loaded.sheetId(), loaded.id(), ClaimStatus.SETTLED);
+            LocalDate today = sheets.today(loaded.sheetId());
+            if (settledOn == null || today == null || today.isAfter(settledOn.plusDays(VOID_SETTLED_DAYS))) {
+                throw new ClaimStatusNotAllowedException("A SETTLED claim can only be voided within "
+                        + VOID_SETTLED_DAYS + " days of its settlement.");
+            }
         } else if (!loaded.status().canBecome(to)) {
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
@@ -80,7 +95,8 @@ final class ClaimStatusChange {
         String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.date()) : loaded.number();
         BigDecimal settledDue = input.action().equals("resettle")
                 ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
-                : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
+                : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets)
+                : to == ClaimStatus.VOID && loaded.status() == ClaimStatus.SETTLED ? loaded.settledDue() : null;
         if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
             // the transaction rolls back, so a number taken above is not used up
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
@@ -105,6 +121,7 @@ final class ClaimStatusChange {
             default -> throw new IllegalStateException("Unknown claim action: " + input.action() + ".");
         };
         boolean resettled = input.action().equals("resettle");
+        boolean reversed = input.action().equals("void") && loaded.status() == ClaimStatus.SETTLED;
         boolean settled = "SETTLED".equals(saved.status()) && !resettled;
         String number = saved.number() != null ? saved.number() : loaded.number();
         audit.record(event + " sheet=" + loaded.sheetId() + " by=" + input.user()
@@ -113,7 +130,8 @@ final class ClaimStatusChange {
                 + (settled ? " due=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
                 + (input.reason() != null ? " reason=" + input.reason() : "")
                 + (resettled ? " old=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a")
-                        + " new=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : ""));
+                        + " new=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
+                + (reversed ? " reversed=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a") : ""));
         if (event.equals("CLAIM_SETTLED") || event.equals("CLAIM_APPROVED") || event.equals("CLAIM_RESETTLED")) {
             for (String watcher : watches.watchers(loaded.sheetId(), loaded.personId())) {
                 audit.record("NOTIFY sheet=" + loaded.sheetId() + " by=" + input.user() + " user=" + watcher

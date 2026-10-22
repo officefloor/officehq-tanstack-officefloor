@@ -5,7 +5,7 @@ import { heldOn } from '../people/people';
 import type { Person } from '../people/people';
 
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
- *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID. */
+ *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, and a steward may void a SETTLED one within 7 days of its settlement. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** Every claim status, in life order: the statuses claims are counted by, each shown even when no claim has it. */

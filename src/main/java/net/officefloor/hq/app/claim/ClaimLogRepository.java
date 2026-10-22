@@ -49,6 +49,13 @@ public class ClaimLogRepository {
                 sheetId, now.id(), now.status().name(), user, sheets.today(sheetId), due);
     }
 
+    /** The day (the sheet's today) the claim was last given the status, as its log records it; null when it never
+     *  was, or was given it while the sheet had no today. */
+    public LocalDate lastOn(String sheetId, long claimId, ClaimStatus status) {
+        return jdbc.query("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ? ORDER BY id DESC LIMIT 1",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId, claimId, status.name());
+    }
+
     /** The log lines of every claim on the sheet, by claim id, oldest first. */
     public Map<Long, List<String>> lines(String sheetId) {
         Map<Long, List<String>> lines = new HashMap<>();
