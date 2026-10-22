@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
  *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
  *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
  *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
- *  refused for a viewer or on an archived sheet, and so is a bulk reassign; so is a viewer's bulk grade, which changes nobody; so is a bulk settle on an archived sheet. Every change sent from a
+ *  refused for a viewer or on an archived sheet, and so is a bulk reassign; so is a viewer's bulk grade or bulk retire, which changes nobody; so is a bulk settle on an archived sheet. Every change sent from a
  *  screen showing the sheet as of a date (the X-As-Of header), a bulk one included, is answered 403 the same way. */
 @Component
 public class RefuseViewerChanges extends OncePerRequestFilter {
@@ -37,8 +37,8 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
      *  answers how many it opened and refused, writing nothing. */
     private static final Pattern BULK_OPEN = Pattern.compile("^/api/sheets/[^/]+/bulk-(open|reassign)$");
 
-    /** A bulk grade, left to the endpoint for a viewer: it grades nobody and answers that none was changed. */
-    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/bulk-grade$");
+    /** A bulk grade or retire, left to the endpoint for a viewer: it changes nobody and answers that none was changed. */
+    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/bulk-(grade|retire)$");
 
     /** A bulk settle, left to the endpoint on an archived sheet: it counts every selected claim refused. */
     private static final Pattern BULK_SETTLE = Pattern.compile("^/api/sheets/[^/]+/bulk-settle$");
