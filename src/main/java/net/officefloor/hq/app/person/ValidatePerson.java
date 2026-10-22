@@ -2,13 +2,15 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import java.util.Set;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: a name is required, the grade
  *  is one of A, B or C, the grade's from-date (optional) a real yyyy-mm-dd date, the terms (optional)
- *  blank or a whole number of days. Publishes the request with its name trimmed. */
+ *  blank or a whole number of days. Publishes the request with its name trimmed and its contact (optional)
+ *  trimmed and lower-cased. */
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
@@ -39,8 +41,12 @@ public class ValidatePerson {
         if (terms != null && !terms.isEmpty() && !terms.matches("\\d{1,4}")) {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank for none.");
         }
+        String contact = request.contact() == null ? null : request.contact().trim().toLowerCase(Locale.ROOT);
+        if (contact != null && contact.length() > 200) {
+            throw new InvalidPersonException("A contact is at most 200 characters.");
+        }
         body.set(new PersonRequest(request.user().trim(), name, grade, request.version(),
                 gradeFrom.isEmpty() ? null : gradeFrom,
-                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms))));
+                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact));
     }
 }

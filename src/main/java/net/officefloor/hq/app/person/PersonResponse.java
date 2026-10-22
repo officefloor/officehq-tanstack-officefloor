@@ -6,10 +6,10 @@ import java.util.List;
  *  the last statement's due-total (two decimals; null when n/a, or none taken) and date (yyyy-mm-dd; null when none
  *  taken), the date they are retired from (yyyy-mm-dd; null: not retired), whether they have any hold, their dated
  *  grades, earliest first (each from its from-date, yyyy-mm-dd; null: from the beginning of time), and their holds
- *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), and their own terms in days (null: none). */
+ *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), and their contact (null: none). */
 public record PersonResponse(long id, String name, String grade, long version, int statementCount,
         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeResponse> grades,
-        List<HoldResponse> holds, Integer terms) {
+        List<HoldResponse> holds, Integer terms, String contact) {
 
     /** A grade given from a from-date (yyyy-mm-dd; null: from the beginning of time). */
     public record GradeResponse(String grade, String from) {
@@ -27,6 +27,6 @@ public record PersonResponse(long id, String name, String grade, long version, i
                 p.grades().history().stream()
                         .map(g -> new GradeResponse(g.grade(), g.from() != null ? g.from().toString() : null)).toList(),
                 p.holds().history().stream().map(h -> new HoldResponse(h.from() != null ? h.from().toString() : null,
-                        h.to() != null ? h.to().toString() : null)).toList(), p.terms());
+                        h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact());
     }
 }

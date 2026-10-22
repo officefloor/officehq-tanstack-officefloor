@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { getJson } from '../../api/http';
 import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
@@ -6,10 +7,11 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
  *  statements have been taken of them, and the last one's due-total (null when n/a, or none taken) and date
  *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), whether
  *  they have any hold, their dated grades, earliest first, and their holds in the order they were put on (their OPEN
- *  claims dated within one, not bound by a statement, count in no live total), and their own terms in days (null: none). */
+ *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), and their contact (trimmed, lower-cased; null: none). */
 export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
   statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
-  grades: Grade[]; holds: Hold[]; terms: number | null };
+  grades: Grade[]; holds: Hold[]; terms: number | null;
+  contact: string | null };
 
 /** A hold on a person, from its from-date to its to-date, both included (yyyy-mm-dd, or null: unbounded on that side). */
 export type Hold = { from: string | null; to: string | null };
@@ -54,6 +56,22 @@ export function usePeople(sheetId: string) {
 /** The id of the person whose editor is open ('' when the form adds a new person). */
 export function useEditingPerson() {
   return useSearchParam('editPerson', asString);
+}
+
+/** Close the person's editor, when it is still theirs that is open (another may have been opened since). */
+export function useCloseEditor() {
+  const navigate = useNavigate();
+  return (personId: number) =>
+    void navigate({
+      to: '.',
+      search: (prev: Record<string, unknown>) => {
+        if (prev.editPerson !== String(personId)) return prev;
+        const next = { ...prev };
+        delete next.editPerson;
+        return next;
+      },
+      replace: true,
+    });
 }
 
 /** Whether retired people are listed: off when the screen is first opened, and left as it is by loading a sheet. */

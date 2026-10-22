@@ -8,6 +8,7 @@ public class SaveNewPerson {
     public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
             PersonRepository repository, Out<Person> person) {
         person.set(repository.insert(sheetId.trim(), request.name(), request.grade(),
-                request.terms() == null || request.terms().isEmpty() ? null : Integer.valueOf(request.terms())));
+                request.terms() == null || request.terms().isEmpty() ? null : Integer.valueOf(request.terms()),
+                request.contact() == null || request.contact().isEmpty() ? null : request.contact()));
     }
 }

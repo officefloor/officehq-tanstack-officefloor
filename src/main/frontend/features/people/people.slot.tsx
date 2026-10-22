@@ -5,7 +5,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired } from './people';
+import { GRADES, peopleKey, useCloseEditor, useEditingPerson, usePeople, useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
@@ -13,7 +13,9 @@ import { useSheetToday } from '../sheet/sheet';
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
  *  today unless changed), keeping the grades already recorded from other dates. The person's own terms (days; blank
- *  for none) are set by an add when given, and by every edit (blank clears them). The
+ *  for none) are set by an add when given, and by an edit whose terms field was entered (blank clears them); so is
+ *  their contact, stored trimmed and lower-cased. A contact another person on the sheet already has is refused at once, keeping the editor open (the
+ *  version it remembers brought up to date, so saving again is from the person as now stored). The
  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
  *  refused and the form is refilled with the person as now stored (so saving again is from that). Any other refused
  *  edit closes the editor, leaving the person as stored and the refusal showing on the form (now adding). */
@@ -24,6 +26,11 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
   const [terms, setTerms] = useState(editing?.terms != null ? String(editing.terms) : '');
+  const [contact, setContact] = useState(editing?.contact ?? '');
+  const [termsGiven, setTermsGiven] = useState(false);
+  const [contactGiven, setContactGiven] = useState(false);
+  const people = usePeople(sheetId);
+  const closeEditor = useCloseEditor();
   const [version, setVersion] = useState(editing?.version);
   const today = useSheetToday(sheetId);
   const [gradeFromEntered, setGradeFrom] = useState<string>();
@@ -36,7 +43,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
 
   const save = useMutation({
     mutationFn: (body: { user: string; name: string; grade: string; version?: number; gradeFrom?: string;
-      terms?: string }) =>
+      terms?: string; contact?: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body),
@@ -45,7 +52,9 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
       setName('');
       setGrade('A');
       setTerms('');
-      if (editing) setEditing(undefined);
+      setContact('');
+      // Only this person's editor: another may have been opened while the save was on its way.
+      if (editing) closeEditor(editing.id);
     },
     onError: async (e) => {
       if (editing && e instanceof HttpError && e.status === 412) {
@@ -56,6 +65,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
           setName(current.name);
           setGrade(current.grade);
           setTerms(current.terms != null ? String(current.terms) : '');
+          setContact(current.contact ?? '');
           setVersion(current.version);
         }
       }
@@ -90,11 +100,24 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
       refuse('The terms must be a whole number of days, 0 or more, or blank for none.');
       return;
     }
+    const key = contact.trim().toLowerCase();
+    if (key !== '' && (!editing || contactGiven) && (people.data ?? []).some((p) => p.id !== editing?.id && p.contact === key)) {
+      setError(`The contact ${key} is already in use on this sheet.`);
+      if (editing) {
+        void getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`).then((latest) => {
+          queryClient.setQueryData(peopleKey(sheetId), latest);
+          const current = latest.find((p) => p.id === editing.id);
+          if (current) setVersion(current.version);
+        });
+      }
+      return;
+    }
     if (!once.start()) return;
     save.mutate(
       editing
-        ? { user, name, grade, version, gradeFrom: gradeFrom.trim() === '' ? undefined : gradeFrom, terms: terms.trim() }
-        : { user, name, grade, terms: terms.trim() === '' ? undefined : terms.trim() },
+        ? { user, name, grade, version, gradeFrom: gradeFrom.trim() === '' ? undefined : gradeFrom, terms: termsGiven ? terms.trim() : undefined,
+            contact: contactGiven ? key : undefined }
+        : { user, name, grade, terms: terms.trim() === '' ? undefined : terms.trim(), contact: key === '' ? undefined : key },
     );
   };
 
@@ -133,8 +156,23 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
         <input
           data-testid="person-form-terms"
           value={terms}
+          onKeyDown={() => setTermsGiven(true)}
           onChange={(e) => {
             setTerms(e.target.value);
+            setTermsGiven(true);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <label>
+        Contact{' '}
+        <input
+          data-testid="person-form-contact"
+          value={contact}
+          onKeyDown={() => setContactGiven(true)}
+          onChange={(e) => {
+            setContact(e.target.value);
+            setContactGiven(true);
             setError('');
           }}
         />
@@ -286,6 +324,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
+              <td data-testid="person-contact">{p.contact ?? ''}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
                   Edit

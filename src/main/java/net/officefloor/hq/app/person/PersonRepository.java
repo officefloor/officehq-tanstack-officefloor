@@ -18,7 +18,8 @@ public class PersonRepository {
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
-            rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"));
+            rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
+            rs.getString("contact"));
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -73,7 +74,7 @@ public class PersonRepository {
             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
-                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms());
+                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact());
         }).toList();
     }
 
@@ -88,20 +89,22 @@ public class PersonRepository {
 
     /** Add a person with their first grade, which applies from the beginning of time, and no terms of their own. */
     public Person insert(String sheetId, String name, String grade) {
-        return insert(sheetId, name, grade, null);
+        return insert(sheetId, name, grade, null, null);
     }
 
-    /** Add a person with their first grade, which applies from the beginning of time, and their own terms (null: none). */
-    public Person insert(String sheetId, String name, String grade, Integer terms) {
+    /** Add a person with their first grade, which applies from the beginning of time, their own terms (null: none)
+     *  and their contact (null: none). */
+    public Person insert(String sheetId, String name, String grade, Integer terms, String contact) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms, added_on) VALUES (?, ?, ?, "
+            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms, contact, added_on) VALUES (?, ?, ?, ?, "
                     + "(SELECT today FROM sheet WHERE id = ?))",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
-            ps.setString(4, sheetId);
+            ps.setString(4, contact);
+            ps.setString(5, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -110,7 +113,7 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grade, from_date, made_on) VALUES (?, ?, ?, NULL, "
                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
-                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms);
+                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact);
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -163,6 +166,19 @@ public class PersonRepository {
     /** Set the person's own terms in days (null: none). */
     public void terms(Person person, Integer terms) {
         jdbc.update("UPDATE person SET terms = ? WHERE sheet_id = ? AND id = ?", terms, person.sheetId(), person.id());
+    }
+
+    /** Set the person's contact (null: none). */
+    public void contact(Person person, String contact) {
+        jdbc.update("UPDATE person SET contact = ? WHERE sheet_id = ? AND id = ?", contact, person.sheetId(), person.id());
+    }
+
+    /** Whether another person on this sheet (other than exceptId, when given) has this contact (stored trimmed and
+     *  lower-cased). */
+    public boolean contactInUse(String sheetId, String contact, Long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND id <> ?",
+                Integer.class, sheetId, contact, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
     }
 
     /** Store the person's name at its new version, only while the stored person is still at version
@@ -225,7 +241,7 @@ public class PersonRepository {
             date = p.statementDate();
         }
         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
-                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms());
+                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact());
     }
 
     private static LocalDate toDate(Object value) {
