@@ -213,6 +213,23 @@ public class PersonRepository {
         alias(into, from.name());
     }
 
+    /** Transfer the person (their claims, patrons, pools and watchers already dealt with) to another sheet: their
+     *  grades (with their log) and aliases go with them; their holds, statements, retirement and figures in closed
+     *  periods are dropped; they arrive with no statement taken, added on the other sheet's today. */
+    public void transfer(Person person, String toSheet) {
+        String sheetId = person.sheetId();
+        for (String table : List.of("person_hold", "person_statement", "person_retire_log", "period_person_total")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
+        }
+        for (String table : List.of("person_grade", "person_grade_log", "person_alias")) {
+            jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", toSheet, sheetId,
+                    person.id());
+        }
+        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
+                + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?) WHERE sheet_id = ? AND id = ?",
+                toSheet, toSheet, sheetId, person.id());
+    }
+
     /** Set the person's own terms in days (null: none). */
     public void terms(Person person, Integer terms) {
         jdbc.update("UPDATE person SET terms = ? WHERE sheet_id = ? AND id = ?", terms, person.sheetId(), person.id());

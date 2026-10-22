@@ -160,6 +160,30 @@ public class ClaimRepository {
         }
     }
 
+    /** Move every claim of the person to another sheet, keeping its place in their list, its status, dates, note,
+     *  settled due, tags, comments and log: each claim that had a number takes the next number of the other sheet,
+     *  in the order the claims were added; each is unbound from any statement, loses its reference, editor lock and
+     *  settle batch, and its history here is dropped (it is kept anew on the other sheet). */
+    public void transfer(String sheetId, long personId, String toSheet) {
+        List<Claim> theirs = listForPerson(sheetId, personId).stream()
+                .sorted(java.util.Comparator.comparingLong(Claim::id)).toList();
+        for (Claim c : theirs) {
+            String number = c.number() != null ? nextNumber(toSheet, c.dueBy()) : null;
+            jdbc.update("UPDATE claim SET sheet_id = ?, claim_number = ?, due_by = ?, stated = FALSE, stated_due = NULL, "
+                    + "ref = NULL, locked_by = NULL WHERE sheet_id = ? AND id = ?", toSheet, number, c.dueBy(), sheetId,
+                    c.id());
+            for (String table : List.of("claim_log", "claim_comment", "claim_void_reason")) {
+                jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", toSheet,
+                        sheetId, c.id());
+            }
+            for (String table : List.of("claim_batch", "claim_history")) {
+                jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND claim_id = ?", sheetId, c.id());
+            }
+            kept(toSheet, c.id());
+            used(toSheet, c.tags());
+        }
+    }
+
     /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing
      *  is written. */
     public boolean defer(Claim claim, LocalDate until) {

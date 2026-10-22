@@ -39,6 +39,12 @@ public class PatronRepository {
 
     /** On merging one person into another: the first's patrons are added to the other's (not the other themselves,
      *  no repeats), anyone naming the first as patron names the other instead (no repeats), and the first has none. */
+    /** Drop every patron link of the person: their patrons, and their being anyone's patron. */
+    public void drop(String sheetId, long personId) {
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId,
+                personId, personId);
+    }
+
     public void merge(String sheetId, long fromId, long intoId) {
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id "
                 + "FROM person_patron pp WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS "

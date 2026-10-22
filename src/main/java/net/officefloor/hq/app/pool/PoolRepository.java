@@ -74,6 +74,11 @@ public class PoolRepository {
 
     /** On merging one person into another: the first's pool memberships move to the other, their share added to the
      *  other's where the other is already a member. */
+    /** Drop the person from every pool they are a member of. */
+    public void drop(String sheetId, long personId) {
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
+    }
+
     public void merge(String sheetId, long fromId, long intoId) {
         jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f WHERE f.pool_id = m.pool_id "
                 + "AND f.person_id = ?) WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM pool_member f "
