@@ -141,12 +141,12 @@ public class ClaimRepository {
         kept(claim.sheetId(), claim.id());
     }
 
-    /** Move the claim to another person, the newest in their list, unbinding it from any statement: false when it no longer has the person
+    /** Move the claim to another person with its new number (null for a draft), the newest in their list, unbinding it from any statement: false when it no longer has the person
      *  and status it was loaded with (another user changed it first), and nothing is written. */
-    public boolean reassign(Claim claim, long personId) {
+    public boolean reassign(Claim claim, long personId, String number) {
         return kept(claim, jdbc.update(
-                "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
-                personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
+                "UPDATE claim SET person_id = ?, claim_number = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
+                personId, number, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
     }
 
     /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing

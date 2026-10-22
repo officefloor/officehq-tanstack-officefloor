@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 /** Move the loaded claim to another person on the sheet. Only a role the sheet's permission matrix lets reassign
  *  may (by default a steward), and only a DRAFT, OPEN or PENDING
  *  claim that is not a correction (a correction names a claim of its own person), to another person it may be
- *  dated for (not retired before its date). It keeps its number and date, and loses any figure a statement bound
+ *  dated for (not retired before its date). It keeps its date; a numbered claim takes the next number in the sequence it would be numbered in now (the sheet's, or its period's), its old one never used again, and a draft stays unnumbered. It loses any figure a statement bound
  *  it to: its due is live again until its new person's next statement. A move another user's change got to first
  *  is refused. */
 public class SaveReassign {

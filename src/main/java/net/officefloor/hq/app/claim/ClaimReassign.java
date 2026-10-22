@@ -13,7 +13,8 @@ final class ClaimReassign {
     private ClaimReassign() {
     }
 
-    /** Move the claim by the rules of {@link SaveReassign}, answering it as moved. A bulk move ({@code bulk}) also lets a claim
+    /** Move the claim by the rules of {@link SaveReassign}, answering it as moved. A numbered claim takes the next number in the
+     *  sequence it would be numbered in now (its old one is never used again); a draft stays unnumbered. A bulk move ({@code bulk}) also lets a claim
      *  "move" to the person it already belongs to: it is written (losing any statement figure) and audited as a
      *  move like any other. */
     public static ClaimResponse move(ReassignInput input, Claim loaded, ClaimRepository repository,
@@ -37,11 +38,12 @@ final class ClaimReassign {
             throw new ClaimStatusNotAllowedException("The claim is already " + to.name() + "'s.");
         }
         RetiredPersonException.refuse(to, loaded.date());
-        if (!repository.reassign(loaded, to.id())) {
+        String number = loaded.number() != null ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : null;
+        if (!repository.reassign(loaded, to.id(), number)) {
             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
         }
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), to.id(), loaded.amount(),
-                loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
+                loaded.date(), loaded.note(), loaded.status(), number, loaded.settledDue(),
                 loaded.openedBy(), false, null, loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
                 loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags()));
     }
