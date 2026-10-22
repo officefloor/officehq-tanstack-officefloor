@@ -44,27 +44,34 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       setTo('');
     },
     onError: () =>
-      setError('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
+      refuse('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
     onSettled: once.done,
   });
+
+  /** A refused rate shows why, and clears its from- and to-date so the next one starts from none. */
+  function refuse(message: string) {
+    setError(message);
+    setFrom('');
+    setTo('');
+  }
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
     if (!PCT.test(pct.trim())) {
-      setError('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
+      refuse('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
       return;
     }
     if (from.trim() !== '' && !DATE.test(from.trim())) {
-      setError('The from-date must be a date, yyyy-mm-dd, or left empty.');
+      refuse('The from-date must be a date, yyyy-mm-dd, or left empty.');
       return;
     }
     if (to.trim() !== '' && !DATE.test(to.trim())) {
-      setError('The to-date must be a date, yyyy-mm-dd, or left empty.');
+      refuse('The to-date must be a date, yyyy-mm-dd, or left empty.');
       return;
     }
     if (to.trim() !== '' && from.trim() !== '' && to.trim() < from.trim()) {
-      setError('The to-date must not be before the from-date.');
+      refuse('The to-date must not be before the from-date.');
       return;
     }
     if (!once.start()) return;

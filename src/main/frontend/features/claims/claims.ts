@@ -46,6 +46,31 @@ export function live(claims: Claim[], people: Person[]): Claim[] {
   return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date)));
 }
 
+/** A claim's status at the end of the day given (yyyy-mm-dd), as its status log records it: the last status given on
+ *  or before that day (one given while the sheet had no today counts as given by then); null when every status was
+ *  given after it (it was added later). A claim with no log has its status now. */
+export function statusAt(c: Claim, day: string): ClaimStatus | null {
+  if (c.log.length === 0) return c.status;
+  let status: ClaimStatus | null = null;
+  for (const line of c.log) {
+    const m = /^(\S+) by .* on (\S*) due=\S+$/.exec(line);
+    if (m && (m[2] === '' || m[2] <= day)) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/** The claims that count in a period's due-totals among these: those whose status at the end of the day given (see
+ *  statusAt) is OPEN, PENDING or SETTLED, left out as live leaves them out: deferred on the sheet's today, or an
+ *  OPEN claim dated within a hold of its person (among the people given) and not bound by a statement. */
+export function countedAt(claims: Claim[], people: Person[], day: string): Claim[] {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return claims.filter((c) => {
+    const at = statusAt(c, day);
+    return (at === 'OPEN' || at === 'PENDING' || at === 'SETTLED') && !c.deferred
+      && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date));
+  });
+}
+
 /** A claim's due-by (yyyy-mm-dd), as fixed when it was created. */
 export function dueBy(claim: Claim): string {
   return claim.dueBy;

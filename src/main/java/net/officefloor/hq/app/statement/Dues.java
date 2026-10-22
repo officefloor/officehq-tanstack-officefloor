@@ -59,6 +59,15 @@ public final class Dues {
                 && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()));
     }
 
+    /** Whether a claim counts toward a period's due-totals: its status at the end of the period's last day (see
+     *  ClaimLogRepository.statusesAt; null: it was added after) is OPEN, PENDING or SETTLED, and it is left out
+     *  as the live rules leave it out: deferred on the sheet's today, or an OPEN one dated within one of its
+     *  person's holds and not bound by a statement. */
+    public static boolean countsAtEnd(Claim claim, ClaimStatus atEnd, Holds holds, LocalDate today) {
+        return atEnd != null && atEnd.counts() && !claim.deferredOn(today)
+                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()));
+    }
+
     /** A person's due-total: the dues (as shown) of their claims that count added up, skipping n/a; null (n/a) when
      *  their grade today has no rate today, unless a claim that counts has a figure (settled, stated, or live at
      *  the grade in force on its date). */

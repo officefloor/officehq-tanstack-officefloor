@@ -6,7 +6,9 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Grades;
 import net.officefloor.hq.app.person.Holds;
 import net.officefloor.hq.app.person.Person;
@@ -20,11 +22,11 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Close the named period, fixing its due-total, and each person's on the sheet, as they are now: the figures (as shown on their rows) of the claims
- *  that count (an OPEN one dated within a hold of its person, not bound by a statement, does not) whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
+ *  that count by the status they had at the end of its last day (see Dues.countsAtEnd) whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
  *  closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
-            PeriodRepository periods, ClaimRepository claims, PersonRepository people, RateRepository rates,
+            PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets,
             Out<Period> closed) throws InvalidPeriodException {
         String id = sheetId.trim();
@@ -43,10 +45,13 @@ public class ClosePeriod {
         for (Long personId : byId.keySet()) {
             personTotals.put(personId, new BigDecimal("0.00"));
         }
+        Map<Long, ClaimStatus> atEnd = logs.statusesAt(id, period.to());
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());
-            if (!Dues.counts(c, person != null ? person.holds() : Holds.NONE, late.today()) || !period.contains(c.date())) {
+            ClaimStatus status = atEnd.containsKey(c.id()) ? atEnd.get(c.id()) : c.status();
+            if (!Dues.countsAtEnd(c, status, person != null ? person.holds() : Holds.NONE, late.today())
+                    || !period.contains(c.date())) {
                 continue;
             }
             BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);

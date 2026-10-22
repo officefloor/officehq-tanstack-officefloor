@@ -61,4 +61,21 @@ public class ClaimLogRepository {
         }, sheetId);
         return lines;
     }
+
+    /** Each logged claim's status at the end of the day given, by claim id, as its log records it: the last status
+     *  given on or before that day (one given while the sheet had no today counts as given by then); null when every
+     *  status it has was given after it (it was added later). A claim with no log is not in the map. */
+    public Map<Long, ClaimStatus> statusesAt(String sheetId, LocalDate end) {
+        Map<Long, ClaimStatus> statuses = new HashMap<>();
+        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+            LocalDate on = rs.getObject("on_date", LocalDate.class);
+            long claimId = rs.getLong("claim_id");
+            if (on == null || !on.isAfter(end)) {
+                statuses.put(claimId, ClaimStatus.valueOf(rs.getString("status")));
+            } else {
+                statuses.putIfAbsent(claimId, null);
+            }
+        }, sheetId);
+        return statuses;
+    }
 }

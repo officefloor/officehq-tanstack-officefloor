@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { live, type Claim } from '../claims/claims';
+import { countedAt, type Claim } from '../claims/claims';
 import { gradeOn, type Person } from '../people/people';
 import { claimDue, rateOn, sumDue, type Late, type Rate } from '../rates/rates';
 import type { DatedValue } from '../settings/settings';
@@ -26,14 +26,14 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-/** A person's due-total for a period: while it is open, the dues (as shown on their rows) of the person's claims
- *  that count (see live) whose date falls in it; once closed, the figure fixed for them then (0.00 for a person
+/** A person's due-total for a period: while it is open, the dues (as shown on their rows now) of the person's claims
+ *  that counted at the end of its last day (see countedAt) whose date falls in it; once closed, the figure fixed for them then (0.00 for a person
  *  added after). */
 export function personPeriodDueTotal(period: Period, person: Person, claims: Claim[], people: Person[], rates: Rate[],
     floor: DatedValue, late: Late): string {
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
   return sumDue(
-    live(claims.filter((c) => c.personId === person.id), people)
+    countedAt(claims.filter((c) => c.personId === person.id), people, period.to)
       .filter((c) => periodOf([period], c.date))
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)),
   );
