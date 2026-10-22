@@ -1,0 +1,64 @@
+{
+  "checkpoint": 126,
+  "stack": {
+    "repo": "/home/daniel/officehq-tanstack-officefloor",
+    "origin": "git@github.com:officefloor/officehq-tanstack-officefloor.git",
+    "name": "officehq-tanstack-officefloor",
+    "base_ref": "base-empty",
+    "base_commit": "d02df45a636396c0783d74216dda7ad927f0c28f"
+  },
+  "checkpoint_id": "cp126_clone-sheet",
+  "phase": "mid",
+  "type": "additive",
+  "mutates": [],
+  "replaced_tests": [],
+  "request": {
+    "spec": "A steward can clone the sheet to another id (an entry and a button; SHEET_CLONE_MADE to=<id> on\nthis sheet). The other sheet must be empty (never used); otherwise, or for anyone but a steward,\nthe clone is refused with an error on the sheet. The clone gets this sheet's today, settings, roles,\nrates, holidays, void reasons, templates, people (grades, terms, contacts, aliases, tags, holds,\nretirements, patrons), pools, periods (all open) and claims (status, frozen figures, dates, notes,\nlogs; numbers given afresh in the order the originals were opened, by the clone's own numbering);\nstatements are not copied. The clone's first audit line is SHEET_CLONED from=<this sheet's id>,\nfollowed by its rollup lines for every person and its totals.\n",
+    "prompt": "You are implementing ONE change to this application.\n\nFIRST read AGENTS.md \u2014 it states the working rules and how the app is tested, and sends you to\nDESIGN.md for the app's stack and conventions. Follow both.\n\nTHE CHANGE REQUEST:\nA steward can clone the sheet to another id (an entry and a button; SHEET_CLONE_MADE to=<id> on\nthis sheet). The other sheet must be empty (never used); otherwise, or for anyone but a steward,\nthe clone is refused with an error on the sheet. The clone gets this sheet's today, settings, roles,\nrates, holidays, void reasons, templates, people (grades, terms, contacts, aliases, tags, holds,\nretirements, patrons), pools, periods (all open) and claims (status, frozen figures, dates, notes,\nlogs; numbers given afresh in the order the originals were opened, by the clone's own numbering);\nstatements are not copied. The clone's first audit line is SHEET_CLONED from=<this sheet's id>,\nfollowed by its rollup lines for every person and its totals.\n\nYour work is verified by an automated Playwright UI test already installed under e2e/specs/.\nRead that spec: it declares the exact data-testid anchors, values, test data and any audit\nrecords it expects \u2014 match them. Run `bin/e2e` to build the app, start it, and run the test as\nyou work; iterate until it passes. Change whatever the request needs across the app \u2014 its stored\ndata, its server and its front end. Do NOT edit bin/build, bin/start, bin/stop, bin/e2e,\nAGENTS.md, CLAUDE.md, DESIGN.md, e2e/support/ or the test spec.\n"
+  },
+  "commit_sha": "dbea1e8d924c170484c0f410c4abbc80cc93fc4c",
+  "reset_sha": "",
+  "preagent_sha": "76963ebe160134de2ef91277d331eac8b2a3cb8f",
+  "prev_sha": "76963ebe160134de2ef91277d331eac8b2a3cb8f",
+  "base_sha": "d02df45a636396c0783d74216dda7ad927f0c28f",
+  "agent": {
+    "ok": true,
+    "cost_usd": 2.2094541999999997,
+    "input_tokens": 74,
+    "output_tokens": 27701,
+    "cache_read_tokens": 3208251,
+    "cache_creation_tokens": 126686,
+    "num_turns": 39,
+    "duration_ms": 400887,
+    "duration_api_ms": 268264,
+    "model": "claude-opus-5-5",
+    "session_id": "50b4aa6d-1d4b-48ab-af64-803d4eaa1832",
+    "stop_reason": "success",
+    "result_text": "Sheet cloning is implemented. Three of the four tests pass under `bin/e2e`. The fourth, \"clone sheet scenario 2\", fails because of a mistake in the spec itself, not the app.\n\n**Why scenario 2 fails:** lines 668 and 746 check that `sheet-parent` shows the literal text `\"__SHEET__-p\"`. That's a placeholder that was never filled in. The app correctly shows the real parent id (e.g. `smvk5j2lqnxrm-p`), and making it show `__SHEET__-p` would be wrong. I'm not allowed to edit the spec, so it will keep failing until someone changes those two lines to `` `${sheet}-p` ``. To check nothing else was wrong, I ran a temporary copy of the spec with that one substitution, and scenario 2 passed. I then deleted the copy.\n\n**Port note:** my first baseline run failed at the very first step of every test. Port 3000 was already used by another sandbox's app, so the tests hit that app instead. I ran everything with `PORT=3917 bin/e2e`.\n\n**What I built**\n- **Endpoint:** `POST /api/sheets/{sheetId}/clone` with `{user, toSheet}`. Only a steward can clone, and the target id must never have been used. Otherwise it's refused with an error and nothing is written or audited.\n- **Copy logic:** `sheet/SheetCloner.java` copies:\n  - today and settings (permissions, policy date, period numbering, grace days, entry date, pot, parent)\n  - roles, rates, holidays, void reasons, templates and tags\n  - people, in list order, with their grades, terms, contacts, aliases, holds, retirements and patrons\n  - pools and their members\n  - periods, all reopened\n  - claims, with status, settled dues, due-bys, dates, notes, logs, comments and history\n\n  Statements, watches, delegations, settle batches and editor locks are not copied. No claim on the clone is tied to a statement, so dues the original had fixed by a statement are worked out again. That's why Ada's claim shows 2.00 on the clone but 1.00 on the original.\n- **Audit:** the original sheet gets `SHEET_CLONE_MADE \u2026 to=<id>`. The clone gets `SHEET_CLONED \u2026 from=<id>`, then a `ROLLUP` line for every person and a `TOTALS` line.\n- **Front end:** in `features/sheet/today.slot.tsx` I added the `sheet-clone-to` entry, the `sheet-clone` button and `sheet-cloned-to`. Clone errors use the existing `sheet-error`.\n\n**Two choices you may want to revisit**\n- **Claim numbering order:** the request says claims are renumbered \"in the order the originals were opened\", but the test needs a different order. It expects person by person in list order, and each person's claims oldest first. Strict opening order would make Cam's claim number 1, which the test rejects. I followed the test. Corrections and splits are updated to point at the new numbers.\n- **What counts as \"never used\":** any sheet id already in the store is refused. Loading an id creates it in the store, so you can't load a sheet, see it's empty, and then clone into it.",
+    "error": "",
+    "attempts": [
+      {
+        "ok": true,
+        "limit_reached": false,
+        "retryable": false,
+        "timed_out": false,
+        "cost_usd": 2.2094541999999997,
+        "num_turns": 39,
+        "duration_ms": 400887,
+        "duration_api_ms": 268264,
+        "error": ""
+      }
+    ]
+  },
+  "agent_stream_file": "cp126.agent.jsonl",
+  "agent_diff_file": "cp126.agent.diff",
+  "build_log_file": null,
+  "tests": {
+    "gated": false,
+    "queued": true
+  },
+  "probe": null,
+  "pinned_touched": [],
+  "acceptance_touched": [],
+  "impact_gate": null
+}
