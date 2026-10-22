@@ -1,0 +1,92 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index a1e8777..96d4e7d 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -10,7 +10,8 @@ import { GRADES, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+-import { capped, excess, personDueSum, rateOn, ratesKey, sheetDueTotal, useRates } from './rates';
++import { capped, excess, OPEN_STATUSES, personDueSum, personStatusSum, rateOn, ratesKey, SETTLED_STATUSES, sheetDueTotal,
++  sheetStatusSum, useRates } from './rates';
+ import type { Rate } from './rates';
+ 
+ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
+@@ -195,9 +196,47 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
+   );
+ }
+ 
++/** A person's settled-total and open-total: the dues of their SETTLED, and of their OPEN and PENDING, claims that
++ *  count, added up (see personStatusSum). */
++function PersonStatusTotals({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  return (
++    <>
++      <td>
++        Settled <span data-testid="person-settled-total">{personStatusSum(person, claims, rates, today, floor, late, SETTLED_STATUSES)}</span>
++      </td>
++      <td>
++        Open <span data-testid="person-open-total">{personStatusSum(person, claims, rates, today, floor, late, OPEN_STATUSES)}</span>
++      </td>
++    </>
++  );
++}
++
++/** The sheet's settled-total and open-total: every person's added up, not trimmed (see sheetStatusSum). */
++function StatusTotals({ sheetId }: { sheetId: string; user: string }) {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  return (
++    <p>
++      Settled total <strong data-testid="rollup-settled-total">{sheetStatusSum(people, claims, rates, today, floor, late, SETTLED_STATUSES)}</strong>
++      {' '}Open total <strong data-testid="rollup-open-total">{sheetStatusSum(people, claims, rates, today, floor, late, OPEN_STATUSES)}</strong>
++    </p>
++  );
++}
++
+ export const contributions = [
+   SheetBody.fill({ order: 5, Component: Rates }),
+   SheetBody.fill({ order: 21, Component: DueTotal }),
+   PersonRow.fill({ order: 20, Component: PersonDueTotal }),
+   PersonRow.fill({ order: 21, Component: PersonExcess }),
++  PersonRow.fill({ order: 23, Component: PersonStatusTotals }),
++  SheetBody.fill({ order: 21.5, Component: StatusTotals }),
+ ];
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 71ccc51..eb0f1a9 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -88,6 +88,25 @@ export function personDueSum(person: Person, claims: Claim[], rates: Rate[], tod
+     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
+ }
+ 
++/** A person's dues of one kind: the due (as shown on its row; a SETTLED one's frozen) of each of their claims that
++ *  count in the live totals (see live) and whose status is one of `statuses`, added up, skipping n/a. Their
++ *  settled-total (SETTLED) and open-total (OPEN, PENDING) add up to their figures before the cap (see personDueSum). */
++export function personStatusSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
++    late: Late, statuses: Claim['status'][]): string {
++  return sumDue(live(claims.filter((c) => c.personId === person.id), [person], today)
++    .filter((c) => statuses.includes(c.status))
++    .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)));
++}
++
++export const SETTLED_STATUSES: Claim['status'][] = ['SETTLED'];
++export const OPEN_STATUSES: Claim['status'][] = ['OPEN', 'PENDING'];
++
++/** The sheet's dues of one kind: every person's (see personStatusSum) added up, not trimmed. */
++export function sheetStatusSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
++    late: Late, statuses: Claim['status'][]): string {
++  return sumDue(people.map((p) => personStatusSum(p, claims, rates, today, floor, late, statuses)));
++}
++
+ /** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
+  *  cap ('' when none). */
+ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
