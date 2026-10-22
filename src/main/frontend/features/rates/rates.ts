@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { counts, dueBy, live, overdue, type Claim } from '../claims/claims';
 import { gradeOn, type Person } from '../people/people';
+import type { DatedValue } from '../settings/settings';
 
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
  *  null: from the beginning of time) through its to-date (null: with no end). A grade may have several, one
@@ -72,7 +73,7 @@ export function sumDue(dues: string[]): string {
  *  'n/a' when their grade today has no rate today (rateToday undefined), unless a claim that counts has a
  *  figure (settled, stated, or live at the grade in force on its date), then the figures there are added up. */
 export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
-    rateToday: string | undefined, floor: string, late: Late): string {
+    rateToday: string | undefined, floor: DatedValue, late: Late): string {
   const counted = claims.filter(counts);
   const dues = counted.map((c) => claimDue(c, rateOnDate(c.date), floor, late));
   if (rateToday === undefined && dues.every((d) => d === 'n/a')) return 'n/a';
@@ -81,7 +82,7 @@ export function personDue(claims: Claim[], rateOnDate: (date: string) => string 
 
 /** A person's figures added up, before the cap: their live claims among these (see live) through personDue, at
  *  the grade in force on each claim's date and on the sheet's today. */
-export function personDueSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: string,
+export function personDueSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late): string {
   return personDue(live(claims.filter((c) => c.personId === person.id), [person]),
     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
@@ -89,7 +90,7 @@ export function personDueSum(person: Person, claims: Claim[], rates: Rate[], tod
 
 /** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
  *  cap ('' when none). */
-export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: string,
+export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, cap: string): string {
   return capped(personDueSum(person, claims, rates, today, floor, late), cap);
 }
@@ -105,23 +106,24 @@ export function excess(sum: string, cap: string): string {
 }
 
 /** The sheet's due-total: every person's due-total added up, skipping n/a. */
-export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string,
+export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, cap: string): string {
   return sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
 }
 
 /** The overdue claims that count among these, with the due of each (as shown on its row). */
-export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string): string[] {
+export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: DatedValue): string[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   return live(claims, people)
     .filter((c) => overdue(c, late.today))
     .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
 }
 
-/** What the late charge follows: the sheet's late percent (two decimals) and its today; and
+/** What the late charge follows: the sheet's late percent by date (two decimals; a claim gains the one in force
+ *  on its date) and its today; and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
-export type Late = { pct: string; today: string; policy: string; numbered: Map<string, string> };
+export type Late = { pct: DatedValue; today: string; policy: string; numbered: Map<string, string> };
 
 /** Whether a claim's live figures round half up: it (a correction: the claim it corrects) is dated before the
  *  policy date; else they round half to even. */
@@ -131,29 +133,29 @@ export function roundsUp(claim: Claim, late: Late): boolean {
 }
 
 /** A claim's due: the one fixed when it was settled (its late charge frozen in), else its figure — the one its
- *  person's last statement bound it to, n/a included (not while it is PENDING: then it is live), else live on its amount at the rate, raised to the sheet's floor when
- *  below it — with the late charge on that figure added on top. A correction (a negative amount) has no floor
+ *  person's last statement bound it to, n/a included (not while it is PENDING: then it is live), else live on its amount at the rate, raised to the sheet's floor in force
+ *  on its date when below it — with the late charge on that figure added on top. A correction (a negative amount) has no floor
  *  and no late charge. */
-export function claimDue(claim: Claim, rate: string | undefined, floor: string, late: Late): string {
+export function claimDue(claim: Claim, rate: string | undefined, floor: DatedValue, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
   const correction = toCents(claim.amount) < 0n;
   const live = dueOn(claim.amount, rate, roundsUp(claim, late));
   const bound = claim.status === 'PENDING' || !claim.stated ? null : claim.statedDue ?? 'n/a';
-  const figure = bound ?? (correction ? live : floored(live, floor));
+  const figure = bound ?? (correction ? live : floored(live, floor(claim.date)));
   if (correction) return figure;
   return figure === 'n/a' ? figure : fromCents(toCents(figure) + toCents(lateCharge(claim, figure, late)));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The late charge on a claim whose figure is `figure`: the late percent of it for every full 30 days the
+/** The late charge on a claim whose figure is `figure`: the late percent in force on the claim's date, of it, for every full 30 days the
  *  claim is overdue (past its due-by, on the sheet's today), rounded like the claim's due; 0.00 when not overdue, or a
  *  correction (a negative amount). */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
   if (!overdue(claim, late.today) || toCents(claim.amount) < 0n) return '0.00';
   const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim)}T00:00:00Z`)) / DAY_MS);
   const periods = BigInt(Math.floor(days / 30));
-  return dueOn(figure, fromCents(toCents(late.pct) * periods), roundsUp(claim, late));
+  return dueOn(figure, fromCents(toCents(late.pct(claim.date)) * periods), roundsUp(claim, late));
 }
 
 /** A live due raised to the floor when below it; 'n/a' stays 'n/a'. */

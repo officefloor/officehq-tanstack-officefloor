@@ -23,7 +23,7 @@ public class SaveStatement {
         people.lock(loaded);
         Person person = people.find(loaded.sheetId(), loaded.id());
         var today = sheets.today(person.sheetId());
-        BigDecimal floor = settings.floor(person.sheetId());
+        var floor = settings.floor(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
         LateCharge late = LateCharge.of(person.sheetId(), settings, sheets, claims);
         BigDecimal total = Dues.capped(Dues.total(person.sheetId(), theirs, person.grades(), person.holds(), today,

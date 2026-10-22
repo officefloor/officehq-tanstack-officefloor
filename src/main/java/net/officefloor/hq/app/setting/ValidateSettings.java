@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  amount 0.00 or more with up to two decimals, and terms (when given) that
  *  are a whole number of days, and a late percent (when given) that is a percent 0.00 or more with up to two decimals, and a policy date (when given) that is
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
- *  only for grades A, B or C, and a cap (when given) that is blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days. */
+ *  only for grades A, B or C, and a cap (when given) that is blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
+ *  today) or a date yyyy-mm-dd. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
     static final List<String> GRADES = List.of("A", "B", "C");
@@ -83,12 +84,29 @@ public class ValidateSettings {
                 gradeTerms.put(grade, days.isEmpty() ? null : Integer.valueOf(days));
             }
         }
+        Map<String, LocalDate> from = new LinkedHashMap<>();
+        if (request.from() != null) {
+            for (var e : request.from().entrySet()) {
+                if (!SettingHistory.KEYS.contains(e.getKey())) {
+                    throw new InvalidSettingException("Only a setting that carries a figure takes a from-date.");
+                }
+                String date = e.getValue() == null ? "" : e.getValue().trim();
+                if (date.isEmpty()) {
+                    continue;
+                }
+                try {
+                    from.put(e.getKey(), LocalDate.parse(date));
+                } catch (DateTimeParseException ex) {
+                    throw new InvalidSettingException("The from-date must be a date, yyyy-mm-dd, or blank for the sheet's today.");
+                }
+            }
+        }
         body.set(new SettingsInput(request.user().trim(), limit != null,
                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
                 floor == null ? null : new BigDecimal(floor).setScale(2),
                 terms == null ? null : Integer.valueOf(terms),
                 latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
-                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2)));
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from));
     }
 }

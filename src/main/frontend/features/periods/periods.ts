@@ -3,6 +3,7 @@ import { getJson } from '../../api/http';
 import { live, type Claim } from '../claims/claims';
 import { gradeOn, type Person } from '../people/people';
 import { claimDue, rateOn, sumDue, type Late, type Rate } from '../rates/rates';
+import type { DatedValue } from '../settings/settings';
 
 /** A period on the sheet: a name unique on the sheet and an inclusive from and to date (yyyy-mm-dd). No two
  *  periods overlap. A closed period keeps the due-total fixed when it was closed (null while open), and each
@@ -29,7 +30,7 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
  *  that count (see live) whose date falls in it; once closed, the figure fixed for them then (0.00 for a person
  *  added after). */
 export function personPeriodDueTotal(period: Period, person: Person, claims: Claim[], people: Person[], rates: Rate[],
-    floor: string, late: Late): string {
+    floor: DatedValue, late: Late): string {
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
   return sumDue(
     live(claims.filter((c) => c.personId === person.id), people)
@@ -39,7 +40,7 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
 }
 
 /** A period's due-total as shown on its row: the people's due-totals for it (see personPeriodDueTotal) added up. */
-export function periodDueTotal(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: string,
+export function periodDueTotal(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue,
     late: Late): string {
   return sumDue(people.map((p) => personPeriodDueTotal(period, p, claims, people, rates, floor, late)));
 }

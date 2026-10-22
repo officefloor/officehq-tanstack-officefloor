@@ -11,9 +11,27 @@ import { useSheetToday } from '../sheet/sheet';
  *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
  *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
  *  grade has none: it uses the sheet's terms), and the cap with two decimals ('' when there is none: a person's
- *  due-total is at most it). A claim's due-by is fixed when it is created. */
+ *  due-total is at most it). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
+ *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
+ *  terms-A/B/C, late-pct, cap), oldest from-date first. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
-  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string };
+  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; dated?: Record<string, Dated[]> };
+
+/** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
+export type Dated = { from: string; value: string };
+
+/** A dated figure as it applies to a date (yyyy-mm-dd): the value in force on it. */
+export type DatedValue = (date: string) => string;
+
+/** The value of a dated setting in force on a date: the one with the latest from-date on or before it, else the
+ *  sheet's starting value. */
+export function valueOn(values: Dated[] | undefined, start: string, date: string): string {
+  let found: Dated | undefined;
+  for (const v of values ?? []) {
+    if (v.from <= date && (!found || found.from < v.from)) found = v;
+  }
+  return found ? found.value : start;
+}
 
 /** The grades that may have terms of their own. */
 export const GRADES = ['A', 'B', 'C'] as const;
@@ -37,9 +55,11 @@ export function useSettings(sheetId: string) {
   });
 }
 
-/** The sheet's floor in force (the starting floor while the settings load). */
-export function useFloor(sheetId: string): string {
-  return useSettings(sheetId).data?.floor ?? DEFAULT_FLOOR;
+/** The sheet's floor by date: a claim's live due is at least the one in force on its date (the starting floor
+ *  while the settings load). */
+export function useFloor(sheetId: string): DatedValue {
+  const dated = useSettings(sheetId).data?.dated?.floor;
+  return useMemo(() => (date: string) => valueOn(dated, DEFAULT_FLOOR, date), [dated]);
 }
 
 /** The sheet's cap in force ('' when there is none, or while the settings load). */
@@ -52,7 +72,7 @@ export function useTerms(sheetId: string): number {
   return Number(useSettings(sheetId).data?.terms ?? DEFAULT_TERMS);
 }
 
-/** What the late charge follows now: the late percent and the sheet's today; and how claims round:
+/** What the late charge follows now: the late percent by date (a claim gains the one in force on its date) and the sheet's today; and how claims round:
  *  the policy date in force (blank: the sheet's today) and the dates of the sheet's numbered claims. */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId).data;
@@ -62,6 +82,8 @@ export function useLate(sheetId: string): Late {
     () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date])),
     [claims],
   );
-  return { pct: settings?.latePct ?? DEFAULT_LATE_PCT, today,
+  const dated = settings?.dated?.['late-pct'];
+  const pct = useMemo(() => (date: string) => valueOn(dated, DEFAULT_LATE_PCT, date), [dated]);
+  return { pct, today,
     policy: settings?.policyDate || today, numbered };
 }

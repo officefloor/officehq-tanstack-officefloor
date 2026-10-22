@@ -2,22 +2,26 @@ package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The sheet's settings, kept on the sheet's row. */
+/** The sheet's settings: the dated ones (see SettingHistory) one value per key and from-date, the policy date and
+ *  the period numbering from (not dated) on the sheet's row. */
 @Repository
 public class SettingRepository {
 
-    /** The floor of a sheet that has none stored yet. */
+    /** The floor of a sheet before any is in force. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
-    /** The terms of a sheet that has none stored yet. */
+    /** The terms of a sheet before any are in force. */
     public static final int DEFAULT_TERMS = 14;
 
-    /** The late percent of a sheet that has none stored yet. */
+    /** The late percent of a sheet before any is in force. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
     private final JdbcTemplate jdbc;
@@ -26,84 +30,66 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's settings as they are now. */
+    /** The sheet's settings in force on its today. */
     public Settings of(String sheetId) {
-        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId),
-                policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms(sheetId), cap(sheetId));
-    }
-
-    /** The sheet's clerk limit: two decimals, or null when there is none. */
-    public BigDecimal clerkLimit(String sheetId) {
-        return jdbc.query("SELECT clerk_limit FROM sheet WHERE id = ?",
-                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
-    }
-
-    public void setClerkLimit(String sheetId, BigDecimal limit) {
-        jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
-    }
-
-    /** The sheet's cap: two decimals, or null when there is none; a person's due-total is at most it. */
-    public BigDecimal cap(String sheetId) {
-        return jdbc.query("SELECT due_cap FROM sheet WHERE id = ?",
-                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
-    }
-
-    public void setCap(String sheetId, BigDecimal cap) {
-        jdbc.update("UPDATE sheet SET due_cap = ? WHERE id = ?", cap, sheetId);
-    }
-
-    /** The sheet's floor: two decimals; a claim's live due is at least it. */
-    public BigDecimal floor(String sheetId) {
-        BigDecimal floor = jdbc.query("SELECT due_floor FROM sheet WHERE id = ?",
-                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
-        return floor != null ? floor.setScale(2) : DEFAULT_FLOOR;
-    }
-
-    /** The sheet's terms in days: a claim's due-by is its date plus them. */
-    public int terms(String sheetId) {
-        Integer terms = jdbc.query("SELECT terms_days FROM sheet WHERE id = ?",
-                rs -> rs.next() ? rs.getInt(1) : null, sheetId);
-        return terms != null ? terms : DEFAULT_TERMS;
-    }
-
-    public void setTerms(String sheetId, int terms) {
-        jdbc.update("UPDATE sheet SET terms_days = ? WHERE id = ?", terms, sheetId);
-    }
-
-    /** The grades' own terms in days, by grade (A, B, C order); a grade without its own uses the sheet's terms. */
-    public Map<String, Integer> gradeTerms(String sheetId) {
-        Map<String, Integer> terms = new LinkedHashMap<>();
-        jdbc.query("SELECT grade, terms_days FROM grade_terms WHERE sheet_id = ? ORDER BY grade",
-                rs -> {
-                    terms.put(rs.getString(1), rs.getInt(2));
-                }, sheetId);
-        return terms;
-    }
-
-    /** The terms in days a claim of the grade gets: the grade's own, else the sheet's. */
-    public int termsFor(String sheetId, String grade) {
-        Integer terms = jdbc.query("SELECT terms_days FROM grade_terms WHERE sheet_id = ? AND grade = ?",
-                rs -> rs.next() ? rs.getInt(1) : null, sheetId, grade);
-        return terms != null ? terms : terms(sheetId);
-    }
-
-    /** Give the grade terms of its own (null: none, it uses the sheet's terms). */
-    public void setGradeTerms(String sheetId, String grade, Integer terms) {
-        jdbc.update("DELETE FROM grade_terms WHERE sheet_id = ? AND grade = ?", sheetId, grade);
-        if (terms != null) {
-            jdbc.update("INSERT INTO grade_terms (sheet_id, grade, terms_days) VALUES (?, ?, ?)", sheetId, grade, terms);
+        SettingHistory history = history(sheetId);
+        LocalDate today = today(sheetId);
+        Map<String, Integer> gradeTerms = new LinkedHashMap<>();
+        for (String grade : ValidateSettings.GRADES) {
+            Integer days = history.gradeTermsOn(grade, today);
+            if (days != null) {
+                gradeTerms.put(grade, days);
+            }
         }
+        return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
+                history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
+                history.capOn(today), history);
     }
 
-    /** The sheet's late percent: two decimals; an overdue claim gains it, of its figure, every full 30 days. */
-    public BigDecimal latePct(String sheetId) {
-        BigDecimal pct = jdbc.query("SELECT late_pct FROM sheet WHERE id = ?",
-                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
-        return pct != null ? pct.setScale(2) : DEFAULT_LATE_PCT;
+    /** Every value of the sheet's dated settings, by key and from-date. */
+    public SettingHistory history(String sheetId) {
+        Map<String, NavigableMap<LocalDate, String>> values = new HashMap<>();
+        jdbc.query("SELECT setting_key, from_date, val FROM setting_value WHERE sheet_id = ?", rs -> {
+            values.computeIfAbsent(rs.getString(1), k -> new TreeMap<>())
+                    .put(rs.getObject(2, LocalDate.class), rs.getString(3));
+        }, sheetId);
+        return new SettingHistory(values);
     }
 
-    public void setLatePct(String sheetId, BigDecimal pct) {
-        jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
+    /** Record the dated setting's value (null: blank) from the from-date, replacing any it had from that date. */
+    public void setDated(String sheetId, String key, String value, LocalDate from) {
+        jdbc.update("DELETE FROM setting_value WHERE sheet_id = ? AND setting_key = ? AND from_date = ?",
+                sheetId, key, from);
+        jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, val) VALUES (?, ?, ?, ?)",
+                sheetId, key, from, value);
+    }
+
+    /** The sheet's clerk limit in force on its today: two decimals, or null when there is none. */
+    public BigDecimal clerkLimit(String sheetId) {
+        return history(sheetId).clerkLimitOn(today(sheetId));
+    }
+
+    /** The sheet's cap in force on its today: two decimals, or null when there is none; a person's due-total is at
+     *  most it. */
+    public BigDecimal cap(String sheetId) {
+        return history(sheetId).capOn(today(sheetId));
+    }
+
+    /** The sheet's floor by date: a claim's live due is at least the floor in force on its date. */
+    public DatedAmount floor(String sheetId) {
+        return history(sheetId)::floorOn;
+    }
+
+    /** The sheet's late percent by date: an overdue claim gains the one in force on its date, of its figure, every
+     *  full 30 days. */
+    public DatedAmount latePct(String sheetId) {
+        return history(sheetId)::latePctOn;
+    }
+
+    /** The terms in days a claim of the grade dated on the date gets: the grade's own in force then, else the
+     *  sheet's in force then. */
+    public int termsFor(String sheetId, String grade, LocalDate date) {
+        return history(sheetId).termsFor(grade, date);
     }
 
     /** The sheet's policy date: null when blank (the sheet's today is the policy date then). */
@@ -126,7 +112,9 @@ public class SettingRepository {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", date, sheetId);
     }
 
-    public void setFloor(String sheetId, BigDecimal floor) {
-        jdbc.update("UPDATE sheet SET due_floor = ? WHERE id = ?", floor, sheetId);
+    /** The sheet's today: dated settings are shown, and saved by default, as of it. */
+    public LocalDate today(String sheetId) {
+        return jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
     }
 }

@@ -5,12 +5,13 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.setting.DatedAmount;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
-/** The sheet's late charge as it is today: its late percent (a claim is overdue past its own due-by, fixed when
+/** The sheet's late charge as it is today: its late percent by date (a claim gains the one in force on its date; a claim is overdue past its own due-by, fixed when
  *  it was created) and its today (null: none, so nothing is overdue). */
-public record LateCharge(BigDecimal pct, LocalDate today, Rounding rounding) {
+public record LateCharge(DatedAmount pct, LocalDate today, Rounding rounding) {
 
     /** The sheet's late charge as it is now. */
     public static LateCharge of(String sheetId, SettingRepository settings, SheetRepository sheets,
@@ -21,7 +22,7 @@ public record LateCharge(BigDecimal pct, LocalDate today, Rounding rounding) {
 
     /** No late charge at all. */
     public static LateCharge none() {
-        return new LateCharge(BigDecimal.ZERO, null, Rounding.none());
+        return new LateCharge(DatedAmount.always(BigDecimal.ZERO), null, Rounding.none());
     }
 
     /** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before today. */
@@ -30,9 +31,10 @@ public record LateCharge(BigDecimal pct, LocalDate today, Rounding rounding) {
                 && claim.dueBy().isBefore(today);
     }
 
-    /** The charge on a claim whose figure is `figure`: the late percent of the figure for every full 30 days it
+    /** The charge on a claim whose figure is `figure`: the late percent in force on its date, of the figure, for every full 30 days it
      *  is overdue, rounded to two decimals as the claim rounds (see Rounding); 0.00 when it is not overdue, or it is a correction (a negative amount). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
+        BigDecimal pct = this.pct.on(claim.date());
         if (!overdue(claim) || pct.signum() == 0 || claim.amount().signum() < 0) {
             return new BigDecimal("0.00");
         }

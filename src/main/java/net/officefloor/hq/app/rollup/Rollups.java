@@ -44,7 +44,7 @@ public class Rollups {
     /** The sheet's figures as they are now. */
     public Rollup take(String sheetId) {
         var today = sheets.today(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
+        var floor = settings.floor(sheetId);
         BigDecimal cap = settings.cap(sheetId);
         LateCharge late = LateCharge.of(sheetId, settings, sheets, claims);
         List<Claim> all = claims.list(sheetId);

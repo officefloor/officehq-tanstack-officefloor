@@ -37,7 +37,7 @@ public class ClosePeriod {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
-        BigDecimal floor = settings.floor(id);
+        var floor = settings.floor(id);
         LateCharge late = LateCharge.of(id, settings, sheets, claims);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
         for (Long personId : byId.keySet()) {

@@ -11,9 +11,12 @@ const DAYS = /^\d{1,4}$/;
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The settings that carry a figure, and so are saved from a from-date. */
+const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap'];
+
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
-  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string };
+  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; from?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -22,7 +25,10 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
  *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
- *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none). */
+ *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none).
+ *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
+ *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
+ *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
@@ -43,6 +49,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedCap, setTypedCap] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
+  // From-dates typed in since the last save, by dated setting key.
+  const [typedFrom, setTypedFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
@@ -59,6 +67,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedNumberingFrom(null);
       setTypedCap(null);
       setTypedGradeTerms({});
+      setTypedFrom({});
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body
@@ -137,6 +146,29 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.gradeTerms = { ...changes.gradeTerms, [grade]: terms };
     }
+    // A dated setting with a from-date typed: saved from it, with the value typed, else the value in force.
+    const shownValue: Record<string, () => void> = {
+      'clerk-limit': () => { changes.clerkLimit ??= currentLimit; },
+      floor: () => { changes.floor ??= currentFloor; },
+      terms: () => { changes.terms ??= currentTerms; },
+      'late-pct': () => { changes.latePct ??= currentLatePct; },
+      cap: () => { changes.cap ??= currentCap; },
+      ...Object.fromEntries(GRADES.map((grade) => [`terms-${grade}`, () => {
+        if (changes.gradeTerms?.[grade] === undefined) {
+          changes.gradeTerms = { ...changes.gradeTerms, [grade]: currentGradeTerms(grade) };
+        }
+      }])),
+    };
+    for (const key of DATED) {
+      const from = (typedFrom[key] ?? '').trim();
+      if (from === '') continue;
+      if (!DATE.test(from)) {
+        setError("A from-date must be a date, yyyy-mm-dd, or blank for the sheet's today.");
+        return;
+      }
+      shownValue[key]();
+      changes.from = { ...changes.from, [key]: from };
+    }
     if (!once.start()) return;
     save.mutate(changes);
   };
@@ -147,6 +179,20 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
     set(e.currentTarget.value);
     setError('');
   };
+
+  const fromInput = (key: string) => (
+    <label>
+      {' '}from{' '}
+      <input
+        data-testid={`setting-${key}-from`}
+        placeholder="today"
+        size={10}
+        value={typedFrom[key] ?? ''}
+        onInput={typed((v) => setTypedFrom((t) => ({ ...t, [key]: v })))}
+        onChange={typed((v) => setTypedFrom((t) => ({ ...t, [key]: v })))}
+      />
+    </label>
+  );
 
   return (
     <section data-testid="settings">
@@ -176,7 +222,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={typed(setTypedLimit)}
             onFocus={() => setTypedLimit((v) => v ?? currentLimit)}
           />
-        </label>{' '}
+        </label>
+        {fromInput('clerk-limit')}{' '}
         <label>
           Floor{' '}
           <input
@@ -186,7 +233,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={typed(setTypedFloor)}
             onFocus={() => setTypedFloor((v) => v ?? currentFloor)}
           />
-        </label>{' '}
+        </label>
+        {fromInput('floor')}{' '}
         <label>
           Terms (days){' '}
           <input
@@ -196,7 +244,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={typed(setTypedTerms)}
             onFocus={() => setTypedTerms((v) => v ?? currentTerms)}
           />
-        </label>{' '}
+        </label>
+        {fromInput('terms')}{' '}
         {GRADES.map((grade) => (
           <span key={grade}>
             <label>
@@ -209,7 +258,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
                 onChange={typed((v) => setTypedGradeTerms((t) => ({ ...t, [grade]: v })))}
                 onFocus={() => setTypedGradeTerms((t) => (grade in t ? t : { ...t, [grade]: currentGradeTerms(grade) }))}
               />
-            </label>{' '}
+            </label>
+            {fromInput(`terms-${grade}`)}{' '}
           </span>
         ))}
         <label>
@@ -221,7 +271,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={typed(setTypedLatePct)}
             onFocus={() => setTypedLatePct((v) => v ?? currentLatePct)}
           />
-        </label>{' '}
+        </label>
+        {fromInput('late-pct')}{' '}
         <label>
           Policy date{' '}
           <input
@@ -254,7 +305,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={typed(setTypedCap)}
             onFocus={() => setTypedCap((v) => v ?? currentCap)}
           />
-        </label>{' '}
+        </label>
+        {fromInput('cap')}{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
