@@ -19,7 +19,8 @@ const NUMBER = /^(\d+|.+-\d+)$/;
 
 /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
  *  date means the sheet's today. A negative amount is a correction, which names the number of the SETTLED claim
- *  of the same person it corrects (the server checks that claim). */
+ *  of the same person it corrects (the server checks that claim). A new claim the server refuses clears the form,
+ *  as one it adds does, leaving its error showing. */
 function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
 }) {
@@ -43,10 +44,18 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       if (editing) setEditing(undefined);
       else onAdded();
     },
-    onError: (e) =>
+    onError: (e) => {
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400) && e.body
         ? e.body
-        : 'Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.'),
+        : 'Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.');
+      // a refused new claim is consumed as an added one is: the next starts from a blank form (date = today)
+      if (!editing) {
+        setAmount('');
+        setDate('');
+        setNote('');
+        setCorrects('');
+      }
+    },
     onSettled: once.done,
   });
 
