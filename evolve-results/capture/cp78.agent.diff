@@ -1,0 +1,71 @@
+diff --git a/src/main/frontend/features/claims/aged.slot.tsx b/src/main/frontend/features/claims/aged.slot.tsx
+new file mode 100644
+index 0000000..5dfbdd2
+--- /dev/null
++++ b/src/main/frontend/features/claims/aged.slot.tsx
+@@ -0,0 +1,42 @@
++import { PersonRow } from '../../slots/defs/personRow';
++import type { Person } from '../people/people';
++import { gradeOn } from '../people/people';
++import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++import { live, unsettled, useClaims } from './claims';
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++/** A claim's age on the sheet's today: the days from its date (negative when dated after today). */
++function ageOf(date: string, today: string): number {
++  return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / DAY_MS);
++}
++
++/** A person's aged dues: the due (as shown on its row) of their OPEN and PENDING claims that count in the live
++ *  totals, added up by the claim's age on the sheet's today — 0 to 30 days (a claim dated after today included),
++ *  31 to 60, and 61 or more — skipping n/a. */
++function PersonAged({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const buckets: [string[], string[], string[]] = [[], [], []];
++  if (today !== '') {
++    for (const c of live(claims, [person], today).filter(unsettled)) {
++      const age = ageOf(c.date, today);
++      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late);
++      buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(due);
++    }
++  }
++  return (
++    <>
++      <td data-testid="person-aged-0-30">{sumDue(buckets[0])}</td>
++      <td data-testid="person-aged-31-60">{sumDue(buckets[1])}</td>
++      <td data-testid="person-aged-61">{sumDue(buckets[2])}</td>
++    </>
++  );
++}
++
++export const contribution = PersonRow.fill({ order: 26, Component: PersonAged });
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+index 68e15ed..ed7dccb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.util.Objects;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Record the stored edit in the audit file. */
++/** Record the stored edit in the audit file; the person's own terms only when the edit changes them. */
+ public class AuditPersonEdited {
+     public void audit(@Val PersonRequest request, @Val Person loaded, @Val PersonResponse saved, Audit audit) {
+         audit.record("PERSON_EDITED sheet=" + loaded.sheetId() + " by=" + request.user()
+                 + " name=" + saved.name() + " grade=" + saved.grade()
+-                + (request.terms() != null && !request.terms().isEmpty() ? " terms=" + request.terms() : ""));
++                + (request.terms() != null && !request.terms().isEmpty()
++                        && !Objects.equals(Integer.valueOf(request.terms()), loaded.terms())
++                        ? " terms=" + request.terms() : ""));
+     }
+ }
