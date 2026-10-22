@@ -19,7 +19,7 @@ public class PersonRepository {
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
             rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
-            rs.getString("contact"), List.of(), rs.getString("origin"));
+            rs.getString("contact"), List.of(), rs.getString("origin"), List.of());
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -32,6 +32,12 @@ public class PersonRepository {
 
     private static final RowMapper<HoldRow> HOLD_ROW = (rs, i) -> new HoldRow(rs.getLong("person_id"),
             new Holds.Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+
+    private record RetirementRow(long personId, Person.Retirement retirement) {
+    }
+
+    private static final RowMapper<RetirementRow> RETIREMENT_ROW = (rs, i) -> new RetirementRow(rs.getLong("person_id"),
+            new Person.Retirement(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
 
     private record AliasRow(long personId, String alias) {
     }
@@ -81,12 +87,14 @@ public class PersonRepository {
                 .collect(Collectors.groupingBy(HoldRow::personId,
                         Collectors.mapping(HoldRow::hold, Collectors.toList())));
         Map<Long, List<String>> aliasesByPerson = aliases(sheetId, null);
+        Map<Long, List<Person.Retirement>> retirementsByPerson = retirements(sheetId, null);
         return people.stream().map(p -> {
             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
                     new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
-                    aliasesByPerson.getOrDefault(p.id(), List.of()), p.origin());
+                    aliasesByPerson.getOrDefault(p.id(), List.of()), p.origin(),
+                    retirementsByPerson.getOrDefault(p.id(), List.of()));
         }).toList();
     }
 
@@ -157,6 +165,15 @@ public class PersonRepository {
                         Collectors.mapping(AliasRow::alias, Collectors.toList())));
     }
 
+    /** The past retirements of the sheet's people by person, in the order they ended; only those ended while the
+     *  sheet's today was on or before `end`, when one is given. */
+    private Map<Long, List<Person.Retirement>> retirements(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR made_on IS NULL OR made_on <= ?) ORDER BY person_id, id",
+                RETIREMENT_ROW, sheetId, end, end).stream().collect(Collectors.groupingBy(RetirementRow::personId,
+                        Collectors.mapping(RetirementRow::retirement, Collectors.toList())));
+    }
+
     /** Add a person with their first grade, which applies from the beginning of time, and no terms of their own. */
     public Person insert(String sheetId, String name, String grade) {
         return insert(sheetId, name, grade, null, null);
@@ -184,7 +201,8 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grade, from_date, made_on) VALUES (?, ?, ?, NULL, "
                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
-                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of(), null);
+                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of(), null,
+                List.of());
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -227,6 +245,17 @@ public class PersonRepository {
                 + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), from, person.sheetId());
     }
 
+    /** Unretire the person on the day: they are no longer retired, and the retirement is kept as a past one, from the
+     *  date they were retired from to the day. Leaves the version alone: unretiring is not an edit of the person. */
+    public void unretire(Person person, LocalDate on) {
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE sheet_id = ? AND id = ?", person.sheetId(), person.id());
+        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), person.retiredFrom(), on,
+                person.sheetId());
+        jdbc.update("INSERT INTO person_retire_log (sheet_id, person_id, from_date, made_on) VALUES (?, ?, NULL, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), person.sheetId());
+    }
+
     /** Add a hold to the person from the from-date to the to-date (null: open-ended), keeping the holds they have.
      *  Leaves the version alone: holding is not an edit of the person. */
     public void hold(Person person, LocalDate from, LocalDate to) {
@@ -252,7 +281,7 @@ public class PersonRepository {
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
                 sheetId, from.id());
         for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement",
-                "person_retire_log")) {
+                "person_retire_log", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.id());
         }
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.id());
@@ -264,7 +293,8 @@ public class PersonRepository {
      *  periods are dropped; they arrive with no statement taken, added on the other sheet's today. */
     public void transfer(Person person, String toSheet) {
         String sheetId = person.sheetId();
-        for (String table : List.of("person_hold", "person_statement", "person_retire_log", "period_person_total")) {
+        for (String table : List.of("person_hold", "person_statement", "person_retire_log", "person_retirement",
+                "period_person_total")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
         for (String table : List.of("person_grade", "person_grade_log", "person_alias")) {
@@ -339,12 +369,14 @@ public class PersonRepository {
      *  each with their grades, holds, retirement and statements then, and the grade in force on that day. */
     public List<Person> listAsOf(String sheetId, LocalDate end) {
         Map<Long, List<String>> aliasesByPerson = aliases(sheetId, end);
+        Map<Long, List<Person.Retirement>> retirementsByPerson = retirements(sheetId, end);
         return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY list_position, id",
-                ROW, sheetId, end).stream().map(p -> asOf(p, end, aliasesByPerson.getOrDefault(p.id(), List.of())))
+                ROW, sheetId, end).stream().map(p -> asOf(p, end, aliasesByPerson.getOrDefault(p.id(), List.of()),
+                        retirementsByPerson.getOrDefault(p.id(), List.of())))
                 .toList();
     }
 
-    private Person asOf(Person p, LocalDate end, List<String> aliases) {
+    private Person asOf(Person p, LocalDate end, List<String> aliases, List<Person.Retirement> retirements) {
         Grades grades = gradesAsOf(p, end);
         int count = p.statementCount();
         int rows = 0;
@@ -375,7 +407,8 @@ public class PersonRepository {
             date = p.statementDate();
         }
         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
-                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases, p.origin());
+                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases, p.origin(),
+                retirements);
     }
 
     private static LocalDate toDate(Object value) {

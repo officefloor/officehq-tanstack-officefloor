@@ -33,7 +33,8 @@ public class BulkGradePeople {
             Rollup before = rollups.take(sheet);
             Person person = new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
                     loaded.version() + 1, loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(),
-                    loaded.retiredFrom(), loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin());
+                    loaded.retiredFrom(), loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
+                loaded.retirements());
             if (!people.update(person, loaded.version())) {
                 continue;
             }

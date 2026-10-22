@@ -9,8 +9,9 @@ import { peopleKey } from './people';
 import { usePersonError } from './rowError';
 import type { Person } from './people';
 
-/** Whether the person is retired and from when, and the form that retires them from a date (blank: the
- *  sheet's today). A claim dated after it is then refused; their claims keep counting in every total. */
+/** Whether the person is retired and from when, their past retirements, the form that retires them from a date
+ *  (blank: the sheet's today) and the button that unretires them on the sheet's today. A claim dated after the
+ *  retirement date, or after the from and before the to of a past retirement, is refused. */
 function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
@@ -27,6 +28,14 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body ? e.body : `Could not retire ${person.name}: the date must be yyyy-mm-dd.`),
+    onSettled: once.done,
+  });
+
+  const unretire = useMutation({
+    mutationFn: (body: { user: string }) =>
+      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/unretire`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : `Could not unretire ${person.name}.`),
     onSettled: once.done,
   });
 
@@ -54,7 +63,26 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
         <button type="submit" data-testid="person-retire" disabled={retire.isPending}>
           Retire
         </button>
-      </form>
+      </form>{' '}
+      <button
+        type="button"
+        data-testid="person-unretire"
+        disabled={unretire.isPending}
+        onClick={() => {
+          begin();
+          if (!once.start()) return;
+          unretire.mutate({ user });
+        }}
+      >
+        Unretire
+      </button>
+      <ul>
+        {person.retirements.map((r, i) => (
+          <li key={i} data-testid="person-retirement-line">
+            {r.from} to {r.to}
+          </li>
+        ))}
+      </ul>
       {error && (
         <p data-testid="person-error" role="alert">
           {error}
