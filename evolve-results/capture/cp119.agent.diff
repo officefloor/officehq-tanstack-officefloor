@@ -1,0 +1,68 @@
+diff --git a/src/main/frontend/features/pools/cuts.slot.tsx b/src/main/frontend/features/pools/cuts.slot.tsx
+new file mode 100644
+index 0000000..b40fb69
+--- /dev/null
++++ b/src/main/frontend/features/pools/cuts.slot.tsx
+@@ -0,0 +1,27 @@
++import { PersonRow } from '../../slots/defs/personRow';
++import { SheetBody } from '../../slots/defs/sheet';
++import { usePeople } from '../people/people';
++import type { Person } from '../people/people';
++import { personCutTotal, sheetCutTotal, usePools } from './pools';
++
++/** The person's cut total: their cuts across every pool they are a member of, added up. */
++function PersonCutTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const pools = usePools(sheetId).data ?? [];
++  return <td data-testid="person-cut-total">{personCutTotal(pools, person.id)}</td>;
++}
++
++/** The sheet's cut total: everyone's cut total added up. */
++function CutTotal({ sheetId }: { sheetId: string; user: string }) {
++  const pools = usePools(sheetId).data ?? [];
++  const people = usePeople(sheetId).data ?? [];
++  return (
++    <p>
++      Cut total <strong data-testid="rollup-cut-total">{sheetCutTotal(pools, people.map((p) => p.id))}</strong>
++    </p>
++  );
++}
++
++export const contributions = [
++  SheetBody.fill({ order: 21.8, Component: CutTotal }),
++  PersonRow.fill({ order: 27, Component: PersonCutTotal }),
++];
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 047aaf9..8e648a0 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -27,3 +27,30 @@ export function usePools(sheetId: string) {
+     queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
+   });
+ }
++
++function cents(amount: string): number {
++  return Math.round(Number(amount) * 100);
++}
++
++function formatCents(total: number): string {
++  const abs = Math.abs(total);
++  return `${total < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
++}
++
++/** A person's cuts, in cents, across every pool they are a member of (a pool showing no cut adds nothing). */
++function personCutCents(pools: Pool[], personId: number): number {
++  return pools
++    .flatMap((p) => p.members)
++    .filter((m) => m.poolId === null && m.personId === personId && m.cut !== '')
++    .reduce((total, m) => total + cents(m.cut), 0);
++}
++
++/** A person's cut total: their cuts across every pool they are a member of, added up. */
++export function personCutTotal(pools: Pool[], personId: number): string {
++  return formatCents(personCutCents(pools, personId));
++}
++
++/** The sheet's cut total: every listed person's cut total added up. */
++export function sheetCutTotal(pools: Pool[], personIds: number[]): string {
++  return formatCents(personIds.reduce((total, id) => total + personCutCents(pools, id), 0));
++}
