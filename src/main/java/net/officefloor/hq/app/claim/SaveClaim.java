@@ -12,7 +12,7 @@ public class SaveClaim {
         Claim claim = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), input.amount(), date, input.note(),
                 loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(),
                 loaded.stated(), loaded.statedDue(), input.corrects(), loaded.dueBy(), loaded.deferredUntil(),
-                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry());
+                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded());
         repository.update(claim);
         saved.set(ClaimResponse.from(claim));
     }

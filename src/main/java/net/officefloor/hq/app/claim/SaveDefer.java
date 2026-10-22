@@ -24,6 +24,6 @@ public class SaveDefer {
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
                 loaded.openedBy(), loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(),
-                input.until(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry()), List.of(), today));
+                input.until(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded()), List.of(), today));
     }
 }

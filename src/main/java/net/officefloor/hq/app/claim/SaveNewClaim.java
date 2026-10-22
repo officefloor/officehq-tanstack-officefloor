@@ -22,7 +22,7 @@ public class SaveNewClaim {
         var dueBy = DueBy.of(person, date, settings);
         Claim added = repository.insert(new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0, null,
-                periods.softClosedOn(person.sheetId(), dueBy) != null));
+                periods.softClosedOn(person.sheetId(), dueBy) != null, null));
         log.record(added, input.user());
         return added;
     }

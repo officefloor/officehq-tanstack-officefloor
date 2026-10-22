@@ -19,7 +19,7 @@ public class ClaimRepository {
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
             rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
-            rs.getBoolean("late_entry"));
+            rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -57,7 +57,7 @@ public class ClaimRepository {
         kept(claim.sheetId(), keys.getKey().longValue());
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry());
+                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null);
     }
 
     /** The person's claims, newest first. */
@@ -92,6 +92,14 @@ public class ClaimRepository {
     public boolean defer(Claim claim, LocalDate until) {
         return kept(claim, jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 until, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1);
+    }
+
+    /** Mark the claim reminded on the day: false when it is no longer OPEN or PENDING, or was already reminded that
+     *  day (another user got there first), and nothing is written. */
+    public boolean remind(Claim claim, LocalDate on) {
+        return kept(claim, jdbc.update(
+                "UPDATE claim SET reminded_on = ? WHERE sheet_id = ? AND id = ? AND status IN (?, ?) AND (reminded_on IS NULL OR reminded_on <> ?)",
+                on, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), on) == 1);
     }
 
     /** Leave the OPEN claim with the rest of its amount after a split, unbinding it from any statement: false when
@@ -198,9 +206,9 @@ public class ClaimRepository {
     private void kept(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                 + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, "
-                + "split_from, late_entry, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
+                + "split_from, late_entry, reminded_on, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
                 + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_by, "
-                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, s.today FROM claim c JOIN sheet s ON s.id = "
+                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, s.today FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 

@@ -208,6 +208,17 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not defer this ${claim.status} claim.`),
   });
 
+  const remind = useMutation({
+    mutationFn: () =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/remind`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not remind this ${claim.status} claim.`),
+  });
+
   const redate = useMutation({
     mutationFn: (date: string) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/redate`, { user, date }),
@@ -267,6 +278,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       until <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
       Proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
+      Reminded <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
           <li key={i} data-testid="claim-log-line">{line}</li>
@@ -392,6 +404,17 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Defer
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-remind"
+        disabled={remind.isPending}
+        onClick={() => {
+          clearError();
+          remind.mutate();
+        }}
+      >
+        Remind
       </button>{' '}
       <input
         data-testid="claim-date-new"
