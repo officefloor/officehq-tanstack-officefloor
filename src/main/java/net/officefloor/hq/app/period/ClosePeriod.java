@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -18,7 +19,7 @@ import net.officefloor.hq.app.statement.LateCharge;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Close the named period, fixing its due-total as it is now: the figures (as shown on their rows) of the claims
+/** Close the named period, fixing its due-total, and each person's on the sheet, as they are now: the figures (as shown on their rows) of the claims
  *  that count (an OPEN one dated within a hold of its person, not bound by a statement, does not) whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
  *  closed. */
 public class ClosePeriod {
@@ -38,6 +39,10 @@ public class ClosePeriod {
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         BigDecimal floor = settings.floor(id);
         LateCharge late = LateCharge.of(id, settings, sheets, claims);
+        Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+        for (Long personId : byId.keySet()) {
+            personTotals.put(personId, new BigDecimal("0.00"));
+        }
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());
@@ -47,9 +52,12 @@ public class ClosePeriod {
             BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);
             if (figure != null) {
                 total = total.add(figure);
+                if (person != null) {
+                    personTotals.merge(person.id(), figure, BigDecimal::add);
+                }
             }
         }
-        if (!periods.close(period, total)) {
+        if (!periods.close(period, total, personTotals)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
         closed.set(new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total));

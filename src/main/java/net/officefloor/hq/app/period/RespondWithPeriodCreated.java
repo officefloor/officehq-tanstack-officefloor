@@ -7,6 +7,6 @@ import org.springframework.http.ResponseEntity;
 
 public class RespondWithPeriodCreated {
     public void respond(@Val Period period, ObjectResponse<ResponseEntity<PeriodResponse>> response) {
-        response.send(new ResponseEntity<>(PeriodResponse.from(period), HttpStatus.CREATED));
+        response.send(new ResponseEntity<>(PeriodResponse.from(period, null), HttpStatus.CREATED));
     }
 }

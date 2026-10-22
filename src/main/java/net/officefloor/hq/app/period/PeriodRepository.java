@@ -3,7 +3,9 @@ package net.officefloor.hq.app.period;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -48,15 +50,36 @@ public class PeriodRepository {
         return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
     }
 
-    /** Close the period, fixing its due-total: false when it was already closed, and nothing is written. */
-    public boolean close(Period period, BigDecimal total) {
-        return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
-                total, period.sheetId(), period.name()) == 1;
+    /** Close the period, fixing its due-total and each person's (by person id): false when it was already closed,
+     *  and nothing is written. */
+    public boolean close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals) {
+        if (jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
+                total, period.sheetId(), period.name()) != 1) {
+            return false;
+        }
+        personTotals.forEach((personId, personTotal) -> jdbc.update(
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
+                period.sheetId(), period.name(), personId, personTotal));
+        return true;
     }
 
-    /** Reopen the period, dropping its fixed due-total: false when it was not closed, and nothing is written. */
+    /** The people's due-totals fixed in the sheet's closed periods: by period name, then by person id. */
+    public Map<String, Map<Long, BigDecimal>> personTotals(String sheetId) {
+        Map<String, Map<Long, BigDecimal>> totals = new HashMap<>();
+        jdbc.query("SELECT period_name, person_id, total FROM period_person_total WHERE sheet_id = ?", rs -> {
+            totals.computeIfAbsent(rs.getString("period_name"), k -> new HashMap<>())
+                    .put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+        }, sheetId);
+        return totals;
+    }
+
+    /** Reopen the period, dropping its fixed due-totals: false when it was not closed, and nothing is written. */
     public boolean reopen(Period period) {
-        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
-                period.sheetId(), period.name()) == 1;
+        if (jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+                period.sheetId(), period.name()) != 1) {
+            return false;
+        }
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
+        return true;
     }
 }

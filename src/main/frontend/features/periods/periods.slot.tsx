@@ -3,12 +3,14 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
+import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
+import type { Person } from '../people/people';
 import { useFloor, useLate } from '../settings/settings';
 import { useRates } from '../rates/rates';
-import { periodDueTotal, periodsKey, usePeriods } from './periods';
+import { periodDueTotal, periodsKey, personPeriodDueTotal, usePeriods } from './periods';
 import type { Period } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -167,4 +169,28 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-export const contribution = SheetBody.fill({ order: 6, Component: Periods });
+/** A person's due-total for each period on the sheet (see personPeriodDueTotal). */
+function PersonPeriodDueTotals({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+  const periods = usePeriods(sheetId).data ?? [];
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  return (
+    <>
+      {periods.map((p) => (
+        <td key={p.name}>
+          {p.name} <span data-testid={`person-period-${p.name}-due-total`}>
+            {personPeriodDueTotal(p, person, claims, people, rates, floor, late)}
+          </span>
+        </td>
+      ))}
+    </>
+  );
+}
+
+export const contributions = [
+  SheetBody.fill({ order: 6, Component: Periods }),
+  PersonRow.fill({ order: 22, Component: PersonPeriodDueTotals }),
+];
