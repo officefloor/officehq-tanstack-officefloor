@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import net.officefloor.hq.app.delegation.DelegationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,12 +24,18 @@ public class Audit {
 
     private final Path file;
 
-    public Audit(@Value("${app.audit.file:.run/audit.log}") String path) {
+    private final DelegationRepository delegations;
+
+    public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationRepository delegations) {
         this.file = Path.of(path);
+        this.delegations = delegations;
     }
 
-    /** Append one audit record. Tests assert the exact line(s) in the file. */
+    /** Append one audit record. Tests assert the exact line(s) in the file. A change made by a user acting as a
+     *  steward by delegation (in force by the sheet's today) ends with for=<the steward who delegated>; the ROLLUP
+     *  and TOTALS lines do not. */
     public synchronized void record(String entry) {
+        entry = entry + delegatedFor(entry);
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {
@@ -39,6 +46,28 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** " for=<steward>" when the record's user (by=) acts by a delegation in force on its sheet (sheet=), else "". */
+    private String delegatedFor(String entry) {
+        String[] fields = entry.split(" ");
+        if (fields[0].equals("ROLLUP") || fields[0].equals("TOTALS")) {
+            return "";
+        }
+        String sheet = null;
+        String by = null;
+        for (String field : fields) {
+            if (sheet == null && field.startsWith("sheet=")) {
+                sheet = field.substring("sheet=".length());
+            } else if (by == null && field.startsWith("by=")) {
+                by = field.substring("by=".length());
+            }
+        }
+        if (sheet == null || by == null) {
+            return "";
+        }
+        String steward = delegations.delegator(sheet, by);
+        return steward == null ? "" : " for=" + steward;
     }
 
     /** Remove the audit file. */
