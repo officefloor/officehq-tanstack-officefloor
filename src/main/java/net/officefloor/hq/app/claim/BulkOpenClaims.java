@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Open each selected claim that can be opened, in list order (people in the order they were added, newest
  *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
- *  with its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
+ *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
  *  opened (not on the sheet, not a DRAFT, or dated in a closed period) is left as it is and counted as refused. */
 public class BulkOpenClaims {
-    public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims,
+    public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims, ClaimLogRepository log,
             PersonRepository people, PeriodRepository periods, Rollups rollups, Audit audit,
             Out<BulkOpenResponse> result) {
         String sheet = sheetId.trim();
@@ -30,6 +30,7 @@ public class BulkOpenClaims {
                     Rollup before = rollups.take(sheet);
                     String number = claims.nextNumber(sheet, claim.date());
                     claims.changeStatus(claim, ClaimStatus.OPEN, number, claim.settledDue(), input.user());
+                    log.record(claim, input.user());
                     audit.record("CLAIM_OPENED sheet=" + sheet + " by=" + input.user() + " person=" + person.name()
                             + " amount=" + claim.amount().toPlainString() + " date=" + claim.date() + " number=" + number);
                     rollups.record(sheet, input.user(), before);

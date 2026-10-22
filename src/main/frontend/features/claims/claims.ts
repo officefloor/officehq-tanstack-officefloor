@@ -13,10 +13,11 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
  *  it to (null when not bound, or n/a then: its due stays live), and for a correction (a negative amount) the
  *  number of the SETTLED claim of the same person it corrects (null otherwise), and its due-by (yyyy-mm-dd), fixed
- *  when it was created from the terms of its person's grade in force on its date (else the sheet's terms). */
+ *  when it was created from the terms of its person's grade in force on its date (else the sheet's terms), and its
+ *  status log: one line per status it has had, oldest first, as <STATUS> by <user> on <date> due=<due>. */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
-  statedDue: string | null; corrects: string | null; dueBy: string };
+  statedDue: string | null; corrects: string | null; dueBy: string; log: string[] };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do. */
 export function counts(c: Claim): boolean {

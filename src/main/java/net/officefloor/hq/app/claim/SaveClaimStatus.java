@@ -21,11 +21,11 @@ import net.officefloor.plugin.variable.Val;
  *  clerk limit, it becomes PENDING instead (a due of n/a, or no limit, is within it). A steward other than the
  *  user who opened it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
  *  PENDING claim is not bound by a statement — frozen in) or rejects it (OPEN again, bound again by the statement
- *  that bound it). */
+ *  that bound it). The new status is added to the claim's status log. */
 public class SaveClaimStatus {
     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
-            SheetRepository sheets,
+            SheetRepository sheets, ClaimLogRepository log,
             Out<ClaimResponse> saved)
             throws ClaimStatusNotAllowedException {
         ClaimStatus to = input.to();
@@ -62,6 +62,7 @@ public class SaveClaimStatus {
             // the transaction rolls back, so a number taken above is not used up
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
+        log.record(loaded, input.user());
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
                 loaded.statedDue(), loaded.corrects(), loaded.dueBy())));

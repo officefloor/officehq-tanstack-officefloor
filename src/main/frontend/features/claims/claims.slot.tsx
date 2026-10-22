@@ -167,6 +167,11 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
+      <ol data-testid="claim-log">
+        {claim.log.map((line, i) => (
+          <li key={i} data-testid="claim-log-line">{line}</li>
+        ))}
+      </ol>{' '}
       <button
         type="button"
         data-testid="claim-edit"
