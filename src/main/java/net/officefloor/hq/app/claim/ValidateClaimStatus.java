@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read: a signed-in user, a known action, and a reason for a
- *  reject (a resettle freezes a SETTLED claim again). A void's reason, chosen from the sheet's list, is kept
+ *  reject (a resettle freezes a SETTLED claim again; a delete makes a DRAFT DELETED, a restore a DELETED one a DRAFT again). A void's reason, chosen from the sheet's list, is kept
  *  (blank: none) and checked once the claim is loaded. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusInput> body)
@@ -17,6 +17,8 @@ public class ValidateClaimStatus {
             case "open", "reject" -> ClaimStatus.OPEN;
             case "settle", "approve", "resettle" -> ClaimStatus.SETTLED;
             case "void" -> ClaimStatus.VOID;
+            case "delete" -> ClaimStatus.DELETED;
+            case "restore" -> ClaimStatus.DRAFT;
             default -> throw new InvalidClaimException("Unknown claim action: " + action + ".");
         };
         String reason = null;

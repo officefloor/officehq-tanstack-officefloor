@@ -92,6 +92,16 @@ final class ClaimStatusChange {
                 throw new ClaimStatusNotAllowedException("A SETTLED claim can only be voided within "
                         + VOID_SETTLED_DAYS + " days of its settlement.");
             }
+        } else if (input.action().equals("restore")) {
+            if (loaded.status() != ClaimStatus.DELETED) {
+                throw new ClaimStatusNotAllowedException("Only a DELETED claim can be restored; this one is "
+                        + loaded.status() + ".");
+            }
+            LocalDate deletedOn = log.lastOn(loaded.sheetId(), loaded.id(), ClaimStatus.DELETED);
+            LocalDate today = sheets.today(loaded.sheetId());
+            if (deletedOn == null || !deletedOn.equals(today)) {
+                throw new ClaimStatusNotAllowedException("A DELETED claim can only be restored on the day it was deleted.");
+            }
         } else if (!loaded.status().canBecome(to)) {
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
@@ -142,6 +152,8 @@ final class ClaimStatusChange {
             case "reject" -> "CLAIM_REJECTED";
             case "resettle" -> "CLAIM_RESETTLED";
             case "void" -> "CLAIM_VOIDED";
+            case "delete" -> "CLAIM_DELETED";
+            case "restore" -> "CLAIM_RESTORED";
             default -> throw new IllegalStateException("Unknown claim action: " + input.action() + ".");
         };
         boolean resettled = input.action().equals("resettle");
