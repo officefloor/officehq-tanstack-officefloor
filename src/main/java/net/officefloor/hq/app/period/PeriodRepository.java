@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.period;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -12,7 +13,8 @@ import org.springframework.stereotype.Repository;
 public class PeriodRepository {
 
     private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getString("sheet_id"),
-            rs.getString("name"), rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class));
+            rs.getString("name"), rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class),
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"));
 
     private final JdbcTemplate jdbc;
 
@@ -32,6 +34,23 @@ public class PeriodRepository {
     public Period insert(String sheetId, String name, LocalDate from, LocalDate to) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
                 sheetId, name, Date.valueOf(from), Date.valueOf(to));
-        return new Period(sheetId, name, from, to);
+        return new Period(sheetId, name, from, to, false, null);
+    }
+
+    /** The period on the sheet with this name (without regard to case or surrounding spaces), or null. */
+    public Period find(String sheetId, String name) {
+        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW, sheetId, name)
+                .stream().findFirst().orElse(null);
+    }
+
+    /** The closed period on the sheet whose dates contain the date, or null when none does. */
+    public Period closedOn(String sheetId, LocalDate date) {
+        return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
+    }
+
+    /** Close the period, fixing its due-total: false when it was already closed, and nothing is written. */
+    public boolean close(Period period, BigDecimal total) {
+        return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
+                total, period.sheetId(), period.name()) == 1;
     }
 }

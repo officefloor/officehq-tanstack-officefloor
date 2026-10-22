@@ -37,7 +37,10 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       if (editing) setEditing(undefined);
       else onAdded();
     },
-    onError: () => setError('Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.'),
+    onError: (e) =>
+      setError(e instanceof HttpError && e.status === 409 && e.body
+        ? e.body
+        : 'Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.'),
     onSettled: once.done,
   });
 
