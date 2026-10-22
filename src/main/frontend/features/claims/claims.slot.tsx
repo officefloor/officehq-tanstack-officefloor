@@ -113,10 +113,11 @@ const ACTIONS = [
   { action: 'approve', label: 'Approve' },
   { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
+  { action: 'resettle', label: 'Re-settle' },
 ] as const;
 
 /** One claim with its status, its due-by and whether it is overdue, who opened it and the buttons that change it
- *  (a steward approves or rejects, with a reason, a PENDING claim). A change the status does not
+ *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure). A change the status does not
  *  allow, a settle (or approve) by the user who opened it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
  *  so is editing a claim that is no longer a DRAFT, or one dated in a closed period (the server refuses those
  *  edits too). */

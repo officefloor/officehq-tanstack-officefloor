@@ -17,7 +17,8 @@ import net.officefloor.plugin.variable.Val;
  *  clerk limit, it becomes PENDING instead (a due of n/a, or no limit, is within it). A steward other than the
  *  user who opened it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
  *  PENDING claim is not bound by a statement — frozen in) or rejects it (OPEN again, bound again by the statement
- *  that bound it). The new status is added to the claim's status log. The rules are in {@link ClaimStatusChange}. */
+ *  that bound it). A steward re-settles a SETTLED claim: it is frozen again at the figure it would have today as an
+ *  OPEN claim bound by no statement (today's rates, grades, floor and late charge). The new status is added to the claim's status log. The rules are in {@link ClaimStatusChange}. */
 public class SaveClaimStatus {
     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,

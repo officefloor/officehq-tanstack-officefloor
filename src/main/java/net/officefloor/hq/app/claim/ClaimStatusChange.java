@@ -36,6 +36,14 @@ final class ClaimStatusChange {
             if (input.action().equals("approve") && input.user().equals(loaded.openedBy())) {
                 throw new ClaimStatusNotAllowedException("The user who opened a claim cannot approve it.");
             }
+        } else if (input.action().equals("resettle")) {
+            if (loaded.status() != ClaimStatus.SETTLED) {
+                throw new ClaimStatusNotAllowedException("Only a SETTLED claim can be re-settled; this one is "
+                        + loaded.status() + ".");
+            }
+            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
+                throw new ClaimStatusNotAllowedException("Only a steward can re-settle a claim.");
+            }
         } else if (!loaded.status().canBecome(to)) {
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
@@ -52,7 +60,9 @@ final class ClaimStatusChange {
         boolean opening = input.action().equals("open");
         String openedBy = opening ? input.user() : loaded.openedBy();
         String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.date()) : loaded.number();
-        BigDecimal settledDue = to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
+        BigDecimal settledDue = input.action().equals("resettle")
+                ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
+                : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
         if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
             // the transaction rolls back, so a number taken above is not used up
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
@@ -71,16 +81,27 @@ final class ClaimStatusChange {
             case "settle" -> "PENDING".equals(saved.status()) ? "CLAIM_PENDING" : "CLAIM_SETTLED";
             case "approve" -> "CLAIM_APPROVED";
             case "reject" -> "CLAIM_REJECTED";
+            case "resettle" -> "CLAIM_RESETTLED";
             case "void" -> "CLAIM_VOIDED";
             default -> throw new IllegalStateException("Unknown claim action: " + input.action() + ".");
         };
-        boolean settled = "SETTLED".equals(saved.status());
+        boolean resettled = input.action().equals("resettle");
+        boolean settled = "SETTLED".equals(saved.status()) && !resettled;
         String number = saved.number() != null ? saved.number() : loaded.number();
         audit.record(event + " sheet=" + loaded.sheetId() + " by=" + input.user()
                 + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
                 + (number != null ? " number=" + number : "")
                 + (settled ? " due=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
-                + (input.reason() != null ? " reason=" + input.reason() : ""));
+                + (input.reason() != null ? " reason=" + input.reason() : "")
+                + (resettled ? " old=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a")
+                        + " new=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : ""));
+    }
+
+    /** The claim as an OPEN claim bound by no statement and not yet settled, for re-settling it at today's
+     *  figure. */
+    private static Claim asOpenUnstated(Claim c) {
+        return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), ClaimStatus.OPEN,
+                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy());
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its
