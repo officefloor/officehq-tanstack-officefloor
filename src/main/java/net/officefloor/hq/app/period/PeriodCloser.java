@@ -25,11 +25,19 @@ public final class PeriodCloser {
     private PeriodCloser() {
     }
 
-    /** Close the open period, fixing its due-total and each person's as they are now (as a close by hand does):
-     *  the period as closed. Refused when it is already closed. */
+    /** Close the open or soft-closed period, fixing its due-total and each person's afresh as they are now (as a close
+     *  by hand does): the period as closed. Refused when it is already closed. */
     public static Period fix(String id, Period period, PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs,
             PersonRepository people, RateRepository rates, SettingRepository settings, SheetRepository sheets)
             throws InvalidPeriodException {
+        return fix(id, period, false, periods, claims, logs, people, rates, settings, sheets);
+    }
+
+    /** Close (or, soft, soft-close) the period, fixing its due-total and each person's as they are now: the period
+     *  as closed or soft-closed. Refused when it is already closed (or, soft, already closed or soft-closed). */
+    public static Period fix(String id, Period period, boolean soft, PeriodRepository periods, ClaimRepository claims,
+            ClaimLogRepository logs, PersonRepository people, RateRepository rates, SettingRepository settings,
+            SheetRepository sheets) throws InvalidPeriodException {
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         var floor = settings.floor(id);
         LateCharge late = LateCharge.of(id, settings, sheets, claims);
@@ -54,9 +62,9 @@ public final class PeriodCloser {
                 }
             }
         }
-        if (!periods.close(period, total, personTotals)) {
+        if (soft ? !periods.softClose(period, total, personTotals) : !periods.close(period, total, personTotals)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), true, total);
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft, total, soft);
     }
 }

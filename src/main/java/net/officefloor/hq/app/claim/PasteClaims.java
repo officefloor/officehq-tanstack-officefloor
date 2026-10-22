@@ -51,7 +51,7 @@ public class PasteClaims {
             ClaimInput claim = input.lines().get(i).claim();
             Person person = owners.get(i);
             Rollup before = rollups.take(sheet);
-            Claim added = SaveNewClaim.insert(claim, person, sheets, settings, claims, log);
+            Claim added = SaveNewClaim.insert(claim, person, sheets, settings, periods, claims, log);
             AuditClaimAdded.record(claim, person, added, audit);
             rollups.record(sheet, input.user(), before);
         }

@@ -16,7 +16,7 @@ public class PeriodRepository {
 
     private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"));
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), rs.getBoolean("soft"));
 
     private final JdbcTemplate jdbc;
 
@@ -36,7 +36,7 @@ public class PeriodRepository {
     public Period insert(String sheetId, String name, LocalDate from, LocalDate to) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
                 sheetId, name, Date.valueOf(from), Date.valueOf(to));
-        return new Period(sheetId, name, from, to, false, null);
+        return new Period(sheetId, name, from, to, false, null, false);
     }
 
     /** The period on the sheet with this name (without regard to case or surrounding spaces), or null. */
@@ -50,17 +50,38 @@ public class PeriodRepository {
         return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
     }
 
-    /** Close the period, fixing its due-total and each person's (by person id): false when it was already closed,
-     *  and nothing is written. */
+    /** The soft-closed period on the sheet whose dates contain the date, or null when none does. */
+    public Period softClosedOn(String sheetId, LocalDate date) {
+        return list(sheetId).stream().filter(p -> p.soft() && p.contains(date)).findFirst().orElse(null);
+    }
+
+    /** Close the period (open or soft-closed), fixing its due-total and each person's (by person id) afresh: false
+     *  when it was already closed, and nothing is written. */
     public boolean close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals) {
-        if (jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
+        if (jdbc.update("UPDATE period SET closed = TRUE, soft = FALSE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
                 total, period.sheetId(), period.name()) != 1) {
             return false;
         }
+        fixPersonTotals(period, personTotals);
+        return true;
+    }
+
+    /** Soft-close the open period, fixing its due-total and each person's (by person id): false when it was already
+     *  closed or soft-closed, and nothing is written. */
+    public boolean softClose(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals) {
+        if (jdbc.update("UPDATE period SET soft = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed AND NOT soft",
+                total, period.sheetId(), period.name()) != 1) {
+            return false;
+        }
+        fixPersonTotals(period, personTotals);
+        return true;
+    }
+
+    private void fixPersonTotals(Period period, Map<Long, BigDecimal> personTotals) {
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
         personTotals.forEach((personId, personTotal) -> jdbc.update(
                 "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
                 period.sheetId(), period.name(), personId, personTotal));
-        return true;
     }
 
     /** The people's due-totals fixed in the sheet's closed periods: by period name, then by person id. */
@@ -73,9 +94,10 @@ public class PeriodRepository {
         return totals;
     }
 
-    /** Reopen the period, dropping its fixed due-totals: false when it was not closed, and nothing is written. */
+    /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
+     *  is written. */
     public boolean reopen(Period period) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
                 period.sheetId(), period.name()) != 1) {
             return false;
         }

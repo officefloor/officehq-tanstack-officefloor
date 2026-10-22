@@ -27,7 +27,8 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
-  deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null };
+  deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
+  lateEntry: boolean };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */

@@ -15,8 +15,8 @@ import type { Period } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** One period with its due-total (see periodDueTotal), whether it is closed, and the buttons that close it and
- *  (a steward only) reopen it. */
+/** One period with its due-total (see periodDueTotal), whether it is closed (yes, soft or no), and the buttons that
+ *  close it, soft-close it and (a steward only) reopen it. */
 function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
@@ -28,6 +28,15 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not close this period.'),
+  });
+
+  const softClose = useMutation({
+    mutationFn: () =>
+      putJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/soft-close`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not soft-close this period.'),
   });
 
   const reopen = useMutation({
@@ -48,7 +57,7 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
         Due total <span data-testid="period-due-total">{dueTotal}</span>
       </td>
       <td>
-        Closed <span data-testid="period-closed">{period.closed ? 'yes' : 'no'}</span>
+        Closed <span data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</span>
       </td>
       <td>
         <button
@@ -61,6 +70,17 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
           }}
         >
           Close
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-soft-close"
+          disabled={softClose.isPending}
+          onClick={() => {
+            setError('');
+            softClose.mutate();
+          }}
+        >
+          Soft close
         </button>{' '}
         <button
           type="button"

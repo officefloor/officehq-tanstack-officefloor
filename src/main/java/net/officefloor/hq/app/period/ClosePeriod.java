@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Close the named period, fixing its due-total, and each person's on the sheet, as they are now: the figures (as shown on their rows) of the claims
+/** Close the named open or soft-closed period, fixing (afresh, for a soft-closed one) its due-total, and each person's on the sheet, as they are now: the figures (as shown on their rows) of the claims
  *  that count by the status they had at the end of its last day (see Dues.countsAtEnd) whose date falls in it, skipping n/a. Refused when the user's role may not close (the sheet's permission matrix), there is no such period, or it is already
  *  closed. */
 public class ClosePeriod {

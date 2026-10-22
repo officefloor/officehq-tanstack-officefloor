@@ -42,7 +42,7 @@ public class SaveRedate {
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 input.date(), loaded.note(), loaded.status(), number, loaded.settledDue(), loaded.openedBy(),
                 loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
-                loaded.proofs(), loaded.splitFrom())));
+                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry())));
     }
 
     /** The name of the period the date falls in (the earliest that holds it, as numbering takes it), else null. */

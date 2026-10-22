@@ -39,13 +39,13 @@ public class SaveSplit {
                 : settings.termsFor(loaded.sheetId(), person.grades().on(loaded.date()), loaded.date()));
         Claim inserted = repository.insert(new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
-                loaded.number()));
+                loaded.number(), false));
         String number = repository.nextNumber(loaded.sheetId(), loaded.date());
         repository.changeStatus(inserted, ClaimStatus.OPEN, number, null, input.user());
         log.record(inserted, input.user());
         Claim original = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), rest, loaded.date(),
                 loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(), false, null,
-                loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom());
+                loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry());
         Claim added = repository.find(loaded.sheetId(), inserted.id());
         split.set(new Split(original, added));
         saved.set(ClaimResponse.from(added, List.of(), today));
