@@ -9,7 +9,8 @@ public class SaveClaim {
     public void save(@Val ClaimInput input, @Val Claim loaded, SheetRepository sheets, ClaimRepository repository,
             Out<ClaimResponse> saved) {
         var date = input.date() != null ? input.date() : sheets.today(loaded.sheetId());
-        Claim claim = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), input.amount(), date, input.note());
+        Claim claim = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), input.amount(), date, input.note(),
+                loaded.status());
         repository.update(claim);
         saved.set(ClaimResponse.from(claim));
     }

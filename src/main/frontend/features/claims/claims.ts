@@ -2,8 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
-/** A person's claim: the amount with two decimals, the date (yyyy-mm-dd) and a note (may be empty). */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+/** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+
+/** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty) and its status. */
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
+export function counts(c: Claim): boolean {
+  return c.status === 'OPEN' || c.status === 'SETTLED';
+}
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -20,8 +28,9 @@ export function useEditingClaim() {
   return useSearchParam('editClaim', asString);
 }
 
-/** Amounts added up exactly (in cents) and shown with two decimals. */
+/** The amounts of the claims that count (OPEN and SETTLED) added up exactly (in cents) and shown
+ *  with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter(counts).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }

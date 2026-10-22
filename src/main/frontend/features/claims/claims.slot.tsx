@@ -74,10 +74,72 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   );
 }
 
+const ACTIONS = [
+  { action: 'open', label: 'Open' },
+  { action: 'settle', label: 'Settle' },
+  { action: 'void', label: 'Void' },
+] as const;
+
+/** One claim with its status and the buttons that change it. A change the status does not allow is
+ *  refused by the server and shown as the claim's error. */
+function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
+  const queryClient = useQueryClient();
+  const [, setEditing] = useEditingClaim();
+  const [error, setError] = useState('');
+
+  const change = useMutation({
+    mutationFn: (action: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, { user, action }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, action) => setError(`Could not ${action} this ${claim.status} claim.`),
+  });
+
+  return (
+    <li data-testid={`claim-row-${claim.id}`}>
+      <span data-testid="claim-amount">{claim.amount}</span>{' '}
+      <span data-testid="claim-date">{claim.date}</span>{' '}
+      <span data-testid="claim-note">{claim.note}</span>{' '}
+      <span data-testid="claim-status">{claim.status}</span>{' '}
+      <span data-testid="claim-due">{dueOn(claim.amount, rate)}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-edit"
+        onClick={() => {
+          setError('');
+          setEditing(String(claim.id));
+        }}
+      >
+        Edit
+      </button>
+      {ACTIONS.map(({ action, label }) => (
+        <button
+          key={action}
+          type="button"
+          data-testid={`claim-${action}`}
+          disabled={change.isPending}
+          onClick={() => {
+            setError('');
+            change.mutate(action);
+          }}
+        >
+          {label}
+        </button>
+      ))}
+      {error && (
+        <p data-testid="claim-error" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
 /** A person's claimed total and their claims, newest first, with the form that adds or edits them. */
 function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
-  const [editingId, setEditing] = useEditingClaim();
+  const [editingId] = useEditingClaim();
   const editing = claims.find((c) => String(c.id) === editingId);
   const [added, setAdded] = useState(0);
   const rate = useRateFor(sheetId, person.grade);
@@ -97,15 +159,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
         />
         <ul>
           {claims.map((c) => (
-            <li key={c.id} data-testid={`claim-row-${c.id}`}>
-              <span data-testid="claim-amount">{c.amount}</span>{' '}
-              <span data-testid="claim-date">{c.date}</span>{' '}
-              <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{dueOn(c.amount, rate)}</span>{' '}
-              <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
-                Edit
-              </button>
-            </li>
+            <ClaimRow key={c.id} sheetId={sheetId} user={user} claim={c} rate={rate} />
           ))}
         </ul>
       </td>

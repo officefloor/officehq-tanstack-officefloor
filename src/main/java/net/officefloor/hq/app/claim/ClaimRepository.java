@@ -13,7 +13,7 @@ public class ClaimRepository {
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
 
     private final JdbcTemplate jdbc;
 
@@ -45,11 +45,18 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
-                claim.date(), claim.note());
+                claim.date(), claim.note(), ClaimStatus.DRAFT);
     }
 
     public void update(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ?",
                 claim.amount(), claim.date(), claim.note(), claim.sheetId(), claim.id());
+    }
+
+    /** Move the claim from one status to another: false when it no longer has the status it was
+     *  loaded with (another user changed it first), and nothing is written. */
+    public boolean changeStatus(Claim claim, ClaimStatus to) {
+        return jdbc.update("UPDATE claim SET status = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                to.name(), claim.sheetId(), claim.id(), claim.status().name()) == 1;
     }
 }
