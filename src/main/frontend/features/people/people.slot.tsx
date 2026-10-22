@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
+import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person } from './people';
@@ -112,6 +113,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Edit
                 </button>
               </td>
+              <PersonRow.Slot sheetId={sheetId} user={user} person={p} />
             </tr>
           ))}
         </tbody>
