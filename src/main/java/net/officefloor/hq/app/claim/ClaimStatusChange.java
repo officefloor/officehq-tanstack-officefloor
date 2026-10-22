@@ -130,9 +130,9 @@ final class ClaimStatusChange {
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its
-     *  person's grade rate in force on the claim's date, divided by 100, rounded to two decimals as the claim rounds, at
-     *  least the sheet's floor), with the late charge on it as of the sheet's today added on top; null when it has
-     *  no figure. */
+     *  person's grade rate in force on the claim's date, divided by 100, rounded to two decimals as the claim rounds), with
+     *  the late charge on it as of the sheet's today added, at least the sheet's floor in force on its date; null
+     *  when it has no figure. */
     private static BigDecimal dueNow(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets) {
         var person = people.find(claim.sheetId(), claim.personId());

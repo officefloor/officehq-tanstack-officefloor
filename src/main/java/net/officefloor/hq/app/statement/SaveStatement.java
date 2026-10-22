@@ -14,8 +14,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Take the person's statement: record their due-total now (late charges included, at most the sheet's cap) and the sheet's today, bind
- *  each of their claims that counts to the figure under it now (never its late charge, which keeps following the
- *  sheet's today), and unbind the rest (their due is live again; a claim deferred on today is left unbound). A settled claim's
+ *  each of their claims that counts to its rate figure now (never the floor or its late charge, which keep following
+ *  the sheet's floor and today), and unbind the rest (their due is live again; a claim deferred on today is left unbound). A settled claim's
  *  fixed due is left as it is. */
 public class SaveStatement {
     public void save(@Val Person loaded, PersonRepository people, ClaimRepository claims, RateRepository rates,
@@ -32,7 +32,7 @@ public class SaveStatement {
         for (Claim c : theirs) {
             if (Dues.counts(c, person.holds(), today)) {
                 counted++;
-                claims.state(c, true, Dues.figure(c, person.grades(), rates, floor, late.rounding()));
+                claims.state(c, true, Dues.figure(c, person.grades(), rates, late.rounding()));
             } else if (c.stated()) {
                 claims.state(c, false, null);
             }
