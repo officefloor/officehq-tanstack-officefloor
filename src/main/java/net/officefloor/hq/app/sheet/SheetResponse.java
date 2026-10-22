@@ -1,4 +1,5 @@
 package net.officefloor.hq.app.sheet;
 
-public record SheetResponse(String id) {
+/** A sheet: its id and its today (ISO yyyy-MM-dd). */
+public record SheetResponse(String id, String today) {
 }

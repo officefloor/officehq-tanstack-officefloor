@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSheetId } from '../session/session';
 
-type Sheet = { id: string };
+import type { Sheet } from './sheet';
 
 /** Choose a sheet by id. Loading an id never used before starts an empty sheet; loading an id
  *  again re-reads everything under it from the store. */
