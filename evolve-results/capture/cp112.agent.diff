@@ -1,0 +1,279 @@
+diff --git a/src/main/frontend/features/people/clashing.slot.tsx b/src/main/frontend/features/people/clashing.slot.tsx
+new file mode 100644
+index 0000000..bba5814
+--- /dev/null
++++ b/src/main/frontend/features/people/clashing.slot.tsx
+@@ -0,0 +1,11 @@
++import { PersonRow } from '../../slots/defs/personRow';
++import type { Person } from './people';
++
++/** Whether the person's name or one of their aliases is also used, as a name or alias, on another sheet of this
++ *  sheet's tree (its ancestors and its descendants): yes or no. Such a person can be edited only by renaming them
++ *  to a name that does not clash. */
++function PersonClashing({ person }: { sheetId: string; user: string; person: Person }) {
++  return <td data-testid="person-clashing">{person.clashing ? 'yes' : 'no'}</td>;
++}
++
++export const contribution = PersonRow.fill({ order: 6, Component: PersonClashing });
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 198ecb8..d1a5570 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -7,11 +7,12 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
+  *  statements have been taken of them, and the last one's due-total (null when n/a, or none taken) and date
+  *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), whether
+  *  they have any hold, their dated grades, earliest first, and their holds in the order they were put on (their OPEN
+- *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), and their aliases, sorted as names are compared. */
++ *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), their aliases, sorted as names are compared, and whether their name or an alias is also used on another
++ *  sheet of the sheet's tree (its ancestors and descendants). */
+ export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
+   statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
+   grades: Grade[]; holds: Hold[]; terms: number | null;
+-  contact: string | null; aliases: string[] };
++  contact: string | null; aliases: string[]; clashing: boolean };
+ 
+ /** A hold on a person, from its from-date to its to-date, both included (yyyy-mm-dd, or null: unbounded on that side). */
+ export type Hold = { from: string | null; to: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java b/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java
+index 5ae08d4..4ab74e2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java
++++ b/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java
+@@ -1,8 +1,22 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** A person add or edit to a name another person on the sheet already has. */
++/** A person add or edit to a name another person on the sheet, or on another sheet of its tree, already has. */
+ public class DuplicatePersonNameException extends Exception {
+     public DuplicatePersonNameException(String name) {
+         super("The name " + name + " is already in use on this sheet.");
+     }
++
++    /** The name is already a name or alias on another sheet of this sheet's tree. */
++    public DuplicatePersonNameException(String name, String sheetId) {
++        super("The name " + name + " is already in use on sheet " + sheetId + ", in this sheet's tree.");
++    }
++
++    /** Refuse the name when another sheet of the sheet's tree already has it as a name or an alias. */
++    public static void refuseInTree(String sheetId, String name, PersonRepository repository)
++            throws DuplicatePersonNameException {
++        String other = repository.sheetInTreeUsing(sheetId, name);
++        if (other != null) {
++            throw new DuplicatePersonNameException(name, other);
++        }
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 1575239..2a991be 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -97,6 +97,48 @@ public class PersonRepository {
+         return n != null && n > 0;
+     }
+ 
++    /** The other sheets of the sheet's tree, among those that exist: its ancestors (its parent, its parent's parent,
++     *  and so on) and its descendants (the sheets naming it as their parent, their children, and so on). */
++    public List<String> tree(String sheetId) {
++        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
++        seen.add(sheetId);
++        for (String at = parentOf(sheetId); at != null && seen.add(at); at = parentOf(at)) {
++        }
++        java.util.Deque<String> next = new java.util.ArrayDeque<>(List.of(sheetId));
++        while (!next.isEmpty()) {
++            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent = ? ORDER BY id", String.class,
++                    next.removeFirst())) {
++                if (seen.add(child)) {
++                    next.addLast(child);
++                }
++            }
++        }
++        seen.remove(sheetId);
++        return seen.stream().filter(id -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?",
++                Integer.class, id) > 0).toList();
++    }
++
++    private String parentOf(String sheetId) {
++        return jdbc.query("SELECT parent FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
++    }
++
++    /** The first of the sheets that has this as a name or an alias (compared as nameInUse compares), or null. */
++    public String sheetUsing(List<String> sheetIds, String name) {
++        return sheetIds.stream().filter(other -> nameInUse(other, name, null)).findFirst().orElse(null);
++    }
++
++    /** The other sheet of the sheet's tree (see tree) that has this as a name or an alias, or null when none has. */
++    public String sheetInTreeUsing(String sheetId, String name) {
++        return sheetUsing(tree(sheetId), name);
++    }
++
++    /** Whether the person's name, or one of their aliases, is a name or alias on one of the sheets (their sheet's
++     *  tree, see tree). */
++    public boolean clashing(Person person, List<String> tree) {
++        return !tree.isEmpty() && (sheetUsing(tree, person.name()) != null
++                || person.aliases().stream().anyMatch(a -> sheetUsing(tree, a) != null));
++    }
++
+     /** Give the person an alias (stored trimmed). Leaves the version alone: an alias is not an edit of the person. */
+     public void alias(Person person, String alias) {
+         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, made_on) VALUES (?, ?, ?, "
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 85a579e..9336136 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -6,11 +6,12 @@ import java.util.List;
+  *  the last statement's due-total (two decimals; null when n/a, or none taken) and date (yyyy-mm-dd; null when none
+  *  taken), the date they are retired from (yyyy-mm-dd; null: not retired), whether they have any hold, their dated
+  *  grades, earliest first (each from its from-date, yyyy-mm-dd; null: from the beginning of time), and their holds
+- *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), their contact (null: none), and their aliases, sorted as
+- *  names are compared. */
++ *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), their contact (null: none), their aliases, sorted as
++ *  names are compared, and whether their name or an alias is also used on another sheet of their sheet's tree. */
+ public record PersonResponse(long id, String name, String grade, long version, int statementCount,
+         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeResponse> grades,
+-        List<HoldResponse> holds, Integer terms, String contact, List<String> aliases) {
++        List<HoldResponse> holds, Integer terms, String contact, List<String> aliases,
++        boolean clashing) {
+ 
+     /** A grade given from a from-date (yyyy-mm-dd; null: from the beginning of time). */
+     public record GradeResponse(String grade, String from) {
+@@ -21,6 +22,10 @@ public record PersonResponse(long id, String name, String grade, long version, i
+     }
+ 
+     public static PersonResponse from(Person p) {
++        return from(p, false);
++    }
++
++    public static PersonResponse from(Person p, boolean clashing) {
+         return new PersonResponse(p.id(), p.name(), p.grade(), p.version(), p.statementCount(),
+                 p.statedTotal() != null ? p.statedTotal().toPlainString() : null,
+                 p.statementDate() != null ? p.statementDate().toString() : null,
+@@ -28,6 +33,7 @@ public record PersonResponse(long id, String name, String grade, long version, i
+                 p.grades().history().stream()
+                         .map(g -> new GradeResponse(g.grade(), g.from() != null ? g.from().toString() : null)).toList(),
+                 p.holds().history().stream().map(h -> new HoldResponse(h.from() != null ? h.from().toString() : null,
+-                        h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact(), p.aliases());
++                        h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact(), p.aliases(),
++                clashing);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 0f3ea83..fe69734 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -15,6 +15,7 @@ public class RespondWithPeople {
+         String id = sheetId.trim();
+         LocalDate end = AsOf.parse(asOf);
+         List<Person> people = end != null ? repository.listAsOf(id, end) : repository.list(id);
+-        response.send(people.stream().map(PersonResponse::from).toList());
++        List<String> tree = repository.tree(id);
++        response.send(people.stream().map(p -> PersonResponse.from(p, repository.clashing(p, tree))).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SaveAlias.java b/src/main/java/net/officefloor/hq/app/person/SaveAlias.java
+index 004ad23..19b9ba6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SaveAlias.java
++++ b/src/main/java/net/officefloor/hq/app/person/SaveAlias.java
+@@ -3,7 +3,8 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Give the loaded person the alias, refused when it equals, as names are compared, any name or alias on the sheet.
++/** Give the loaded person the alias, refused when it equals, as names are compared, any name or alias on the sheet
++ *  or on another sheet of its tree.
+  *  Leaves the version alone: an alias is not an edit of the person. */
+ public class SaveAlias {
+     public void save(@Val AliasInput input, @Val Person loaded, PersonRepository repository, Out<PersonResponse> saved)
+@@ -11,6 +12,7 @@ public class SaveAlias {
+         if (repository.nameInUse(loaded.sheetId(), input.alias(), null)) {
+             throw new DuplicatePersonNameException(input.alias());
+         }
++        DuplicatePersonNameException.refuseInTree(loaded.sheetId(), input.alias(), repository);
+         repository.alias(loaded, input.alias());
+         saved.set(PersonResponse.from(repository.find(loaded.sheetId(), loaded.id())));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateNewPersonName.java b/src/main/java/net/officefloor/hq/app/person/ValidateNewPersonName.java
+index b6f9904..4dfe4eb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateNewPersonName.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateNewPersonName.java
+@@ -3,13 +3,15 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Refuse adding a person whose name, or contact, another person on the sheet already has. */
++/** Refuse adding a person whose name, or contact, another person on the sheet already has, or whose name is a name
++ *  or alias on another sheet of the sheet's tree. */
+ public class ValidateNewPersonName {
+     public void validate(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
+             PersonRepository repository) throws DuplicatePersonNameException, DuplicatePersonContactException {
+         if (repository.nameInUse(sheetId.trim(), request.name(), null)) {
+             throw new DuplicatePersonNameException(request.name());
+         }
++        DuplicatePersonNameException.refuseInTree(sheetId.trim(), request.name(), repository);
+         if (request.contact() != null && !request.contact().isEmpty()
+                 && repository.contactInUse(sheetId.trim(), request.contact(), null)) {
+             throw new DuplicatePersonContactException(request.contact());
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePersonName.java b/src/main/java/net/officefloor/hq/app/person/ValidatePersonName.java
+index 357ffeb..5980366 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePersonName.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePersonName.java
+@@ -2,13 +2,19 @@ package net.officefloor.hq.app.person;
+ 
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuse renaming a person to a name, or giving them a contact, another person on the sheet already has. */
++/** Refuse renaming a person to a name, or giving them a contact, another person on the sheet already has; and refuse
++ *  any edit leaving their name, or one of their aliases, a name or alias on another sheet of the sheet's tree. */
+ public class ValidatePersonName {
+     public void validate(@Val PersonRequest request, @Val Person loaded, PersonRepository repository)
+             throws DuplicatePersonNameException, DuplicatePersonContactException {
+         if (repository.nameInUse(loaded.sheetId(), request.name(), loaded.id())) {
+             throw new DuplicatePersonNameException(request.name());
+         }
++        // A person who already clashes may be edited only by a rename to a name, and with aliases, that do not.
++        DuplicatePersonNameException.refuseInTree(loaded.sheetId(), request.name(), repository);
++        for (String alias : loaded.aliases()) {
++            DuplicatePersonNameException.refuseInTree(loaded.sheetId(), alias, repository);
++        }
+         if (request.contact() != null && !request.contact().isEmpty()
+                 && repository.contactInUse(loaded.sheetId(), request.contact(), loaded.id())) {
+             throw new DuplicatePersonContactException(request.contact());
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java
+index b70bdd8..c028b3e 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.quickadd;
+ 
+ import net.officefloor.hq.app.person.AuditPersonAdded;
++import net.officefloor.hq.app.person.DuplicatePersonNameException;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.PersonRequest;
+@@ -11,13 +12,14 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** The person on the sheet with the name (compared as the person form compares names); when there is none,
+- *  add them with grade A, recording the add and how the figures moved just as the person form does. */
++ *  add them with grade A (refused when another sheet of the sheet's tree has the name as a name or alias), recording the add and how the figures moved just as the person form does. */
+ public class FindOrAddQuickAddPerson {
+     public void find(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, PersonRepository repository,
+-            Rollups rollups, Audit audit, Out<Person> person) {
++            Rollups rollups, Audit audit, Out<Person> person) throws DuplicatePersonNameException {
+         String id = sheetId.trim();
+         Person found = repository.findByName(id, request.name());
+         if (found == null) {
++            DuplicatePersonNameException.refuseInTree(id, request.name(), repository);
+             var before = rollups.take(id);
+             found = repository.insert(id, request.name(), request.grade());
+             new AuditPersonAdded().audit(request, found, audit);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index b619b40..9438f6c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -1,6 +1,6 @@
+ # Quick-add a DRAFT claim for the named person, dated the sheet's entry date (else its today) with an empty note; a name new to the
+ # sheet adds the person first with grade A. One change: a refused quick-add (no name, bad amount, unknown sheet,
+-# that date in a closed period, or after the person's retirement date) adds no person and writes nothing, not even an audit line.
++# that date in a closed period, or after the person's retirement date, or a new name another sheet of the tree has) adds no person and writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
+   next: load
