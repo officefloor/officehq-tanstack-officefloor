@@ -7,7 +7,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: a name is required, the grade
- *  is one of A, B or C, the grade's from-date (optional) a real yyyy-mm-dd date. Publishes the request with its name trimmed. */
+ *  is one of A, B or C, the grade's from-date (optional) a real yyyy-mm-dd date, the terms (optional)
+ *  blank or a whole number of days. Publishes the request with its name trimmed. */
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
@@ -34,7 +35,12 @@ public class ValidatePerson {
                 throw new InvalidPersonException("The grade's from-date must be a date, yyyy-mm-dd.");
             }
         }
+        String terms = request.terms() == null ? null : request.terms().trim();
+        if (terms != null && !terms.isEmpty() && !terms.matches("\\d{1,4}")) {
+            throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank for none.");
+        }
         body.set(new PersonRequest(request.user().trim(), name, grade, request.version(),
-                gradeFrom.isEmpty() ? null : gradeFrom));
+                gradeFrom.isEmpty() ? null : gradeFrom,
+                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms))));
     }
 }

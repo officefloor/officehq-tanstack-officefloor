@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
@@ -12,23 +12,31 @@ import { useSheetToday } from '../sheet/sheet';
 
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
- *  today unless changed), keeping the grades already recorded from other dates. The
+ *  today unless changed), keeping the grades already recorded from other dates. The person's own terms (days; blank
+ *  for none) are set by an add when given, and by every edit (blank clears them). The
  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
- *  refused and the form is refilled with the person as now stored (so saving again is from that). */
-function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string; editing?: Person }) {
+ *  refused and the form is refilled with the person as now stored (so saving again is from that). Any other refused
+ *  edit closes the editor, leaving the person as stored and the refusal showing on the form (now adding). */
+function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: string; user: string; editing?: Person;
+  carried: string; onRefused: (error: string) => void }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  const [terms, setTerms] = useState(editing?.terms != null ? String(editing.terms) : '');
   const [version, setVersion] = useState(editing?.version);
   const today = useSheetToday(sheetId);
   const [gradeFromEntered, setGradeFrom] = useState<string>();
   const gradeFrom = gradeFromEntered ?? today;
-  const [error, setError] = useState('');
+  const [error, setError] = useState(editing ? '' : carried);
+  useEffect(() => {
+    if (carried) onRefused('');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { user: string; name: string; grade: string; version?: number; gradeFrom?: string }) =>
+    mutationFn: (body: { user: string; name: string; grade: string; version?: number; gradeFrom?: string;
+      terms?: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body),
@@ -36,6 +44,7 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       setName('');
       setGrade('A');
+      setTerms('');
       if (editing) setEditing(undefined);
     },
     onError: async (e) => {
@@ -46,30 +55,46 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
         if (current) {
           setName(current.name);
           setGrade(current.grade);
+          setTerms(current.terms != null ? String(current.terms) : '');
           setVersion(current.version);
         }
       }
-      setError(
+      refuse(
         e instanceof HttpError && (e.status === 409 || e.status === 412) && e.body
           ? e.body
-          : 'Could not save this person: a name is required, the grade must be A, B or C and the from-date a date.',
+          : 'Could not save this person: a name is required, the grade must be A, B or C, the from-date a date and the terms blank or a whole number of days.',
+        e instanceof HttpError && e.status === 412,
       );
     },
     onSettled: once.done,
   });
 
+  /** Show the refusal; a refused edit (other than a stale one, refilled to save again) closes the editor. */
+  const refuse = (message: string, stale = false) => {
+    if (editing && !stale) {
+      onRefused(message);
+      setEditing(undefined);
+    } else {
+      setError(message);
+    }
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
     if (name.trim() === '') {
-      setError('A name is required.');
+      refuse('A name is required.');
+      return;
+    }
+    if (!/^\d{0,4}$/.test(terms.trim())) {
+      refuse('The terms must be a whole number of days, 0 or more, or blank for none.');
       return;
     }
     if (!once.start()) return;
     save.mutate(
       editing
-        ? { user, name, grade, version, gradeFrom: gradeFrom.trim() === '' ? undefined : gradeFrom }
-        : { user, name, grade },
+        ? { user, name, grade, version, gradeFrom: gradeFrom.trim() === '' ? undefined : gradeFrom, terms: terms.trim() }
+        : { user, name, grade, terms: terms.trim() === '' ? undefined : terms.trim() },
     );
   };
 
@@ -102,6 +127,17 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
             </option>
           ))}
         </select>
+      </label>{' '}
+      <label>
+        Terms (days){' '}
+        <input
+          data-testid="person-form-terms"
+          value={terms}
+          onChange={(e) => {
+            setTerms(e.target.value);
+            setError('');
+          }}
+        />
       </label>{' '}
       {editing && (
         <>
@@ -224,13 +260,15 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
   const [showRetired, setShowRetired] = useShowRetired();
+  const [carried, setCarried] = useState('');
   const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
 
   return (
     <section data-testid="people">
       <h2>People</h2>
       {/* Keyed by who is being edited, so opening an editor fills the form with their values. */}
-      <PersonForm key={editing ? editing.id : 'new'} sheetId={sheetId} user={user} editing={editing} />
+      <PersonForm key={editing ? editing.id : 'new'} sheetId={sheetId} user={user} editing={editing}
+        carried={carried} onRefused={setCarried} />
       <QuickAddBar sheetId={sheetId} user={user} />
       <label>
         <input
@@ -247,6 +285,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
                   Edit

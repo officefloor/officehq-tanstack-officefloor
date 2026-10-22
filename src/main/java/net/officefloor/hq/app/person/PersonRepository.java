@@ -18,7 +18,7 @@ public class PersonRepository {
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
-            rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE);
+            rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"));
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -73,7 +73,7 @@ public class PersonRepository {
             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
-                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())));
+                    new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms());
         }).toList();
     }
 
@@ -86,20 +86,27 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
-    /** Add a person with their first grade, which applies from the beginning of time. */
+    /** Add a person with their first grade, which applies from the beginning of time, and no terms of their own. */
     public Person insert(String sheetId, String name, String grade) {
+        return insert(sheetId, name, grade, null);
+    }
+
+    /** Add a person with their first grade, which applies from the beginning of time, and their own terms (null: none). */
+    public Person insert(String sheetId, String name, String grade, Integer terms) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name) VALUES (?, ?)", new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms) VALUES (?, ?, ?)",
+                    new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
+            ps.setObject(3, terms, java.sql.Types.INTEGER);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, NULL)",
                 sheetId, id, grade);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
-                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE);
+                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms);
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -124,6 +131,11 @@ public class PersonRepository {
     public void hold(Person person, LocalDate from, LocalDate to) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
                 person.sheetId(), person.id(), from, to);
+    }
+
+    /** Set the person's own terms in days (null: none). */
+    public void terms(Person person, Integer terms) {
+        jdbc.update("UPDATE person SET terms = ? WHERE sheet_id = ? AND id = ?", terms, person.sheetId(), person.id());
     }
 
     /** Store the person's name at its new version, only while the stored person is still at version

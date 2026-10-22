@@ -35,8 +35,8 @@ public class SaveSplit {
             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
         }
         var person = people.find(loaded.sheetId(), loaded.personId());
-        var dueBy = loaded.date().plusDays(
-                settings.termsFor(loaded.sheetId(), person.grades().on(loaded.date()), loaded.date()));
+        var dueBy = loaded.date().plusDays(person.terms() != null ? person.terms()
+                : settings.termsFor(loaded.sheetId(), person.grades().on(loaded.date()), loaded.date()));
         Claim inserted = repository.insert(new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
                 loaded.number()));

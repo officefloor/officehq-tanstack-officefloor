@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SaveNewPerson {
     public void save(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
             PersonRepository repository, Out<Person> person) {
-        person.set(repository.insert(sheetId.trim(), request.name(), request.grade()));
+        person.set(repository.insert(sheetId.trim(), request.name(), request.grade(),
+                request.terms() == null || request.terms().isEmpty() ? null : Integer.valueOf(request.terms())));
     }
 }
