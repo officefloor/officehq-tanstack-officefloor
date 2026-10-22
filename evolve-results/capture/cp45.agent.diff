@@ -1,0 +1,479 @@
+diff --git a/src/main/frontend/features/claims/bulksettle.slot.tsx b/src/main/frontend/features/claims/bulksettle.slot.tsx
+new file mode 100644
+index 0000000..01ed63e
+--- /dev/null
++++ b/src/main/frontend/features/claims/bulksettle.slot.tsx
+@@ -0,0 +1,69 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, postJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { SheetBody } from '../../slots/defs/sheet';
++import { claimsKey, useClaims } from './claims';
++import { clearSelected, useSelectedClaims } from './selection';
++
++type BulkSettleResult = { settled: number; refused: number };
++
++/** The button that settles every selected claim together, by the signed-in user. The server settles each that can
++ *  be settled, in list order and by the rules of settling one (a clerk's settle that leaves it PENDING counts as
++ *  settled), and leaves the rest as they are; the bar then shows how many were settled and how many refused. */
++function BulkSettle({ sheetId, user }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++  const claims = useClaims(sheetId).data ?? [];
++  const chosen = useSelectedClaims(sheetId);
++  const ids = claims.filter((c) => chosen.has(c.id)).map((c) => c.id);
++  const [result, setResult] = useState<BulkSettleResult | null>(null);
++  const [error, setError] = useState('');
++  const once = useSubmitOnce();
++
++  const settle = useMutation({
++    mutationFn: (claimIds: number[]) =>
++      postJson<BulkSettleResult>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-settle`, { user, claimIds }),
++    onSuccess: async (r) => {
++      clearSelected(sheetId);
++      setResult(r);
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not settle the selected claims.'),
++    onSettled: once.done,
++  });
++
++  return (
++    <p>
++      <button
++        type="button"
++        data-testid="bulk-settle"
++        disabled={settle.isPending}
++        onClick={() => {
++          setError('');
++          setResult(null);
++          if (ids.length === 0) {
++            setError('Select the claims to settle.');
++            return;
++          }
++          if (!once.start()) return;
++          settle.mutate(ids);
++        }}
++      >
++        Settle selected
++      </button>
++      {result && (
++        <>
++          {' '}Settled <span data-testid="bulk-settled">{result.settled}</span>, refused{' '}
++          <span data-testid="bulk-settle-refused">{result.refused}</span>
++        </>
++      )}
++      {error && (
++        <span data-testid="bulk-settle-error" role="alert">
++          {' '}{error}
++        </span>
++      )}
++    </p>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 13, Component: BulkSettle });
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 94efc66..342fc08 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -19,7 +19,8 @@ const NUMBER = /^(\d+|.+-\d+)$/;
+ 
+ /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
+  *  date means the sheet's today. A negative amount is a correction, which names the number of the SETTLED claim
+- *  of the same person it corrects (the server checks that claim). */
++ *  of the same person it corrects (the server checks that claim). A new claim the server refuses clears the form,
++ *  as one it adds does, leaving its error showing. */
+ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
+   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
+ }) {
+@@ -43,10 +44,18 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
+       if (editing) setEditing(undefined);
+       else onAdded();
+     },
+-    onError: (e) =>
++    onError: (e) => {
+       setError(e instanceof HttpError && (e.status === 409 || e.status === 400) && e.body
+         ? e.body
+-        : 'Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.'),
++        : 'Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.');
++      // a refused new claim is consumed as an added one is: the next starts from a blank form (date = today)
++      if (!editing) {
++        setAmount('');
++        setDate('');
++        setNote('');
++        setCorrects('');
++      }
++    },
+     onSettled: once.done,
+   });
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index f536f9c..73fe41b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -10,21 +10,6 @@ import net.officefloor.plugin.variable.Val;
+ public class AuditClaimStatus {
+     public void audit(@Val ClaimStatusInput input, @Val Claim loaded, @Val ClaimResponse saved,
+             PersonRepository people, Audit audit) {
+-        var person = people.find(loaded.sheetId(), loaded.personId());
+-        String event = switch (input.action()) {
+-            case "open" -> "CLAIM_OPENED";
+-            case "settle" -> "PENDING".equals(saved.status()) ? "CLAIM_PENDING" : "CLAIM_SETTLED";
+-            case "approve" -> "CLAIM_APPROVED";
+-            case "reject" -> "CLAIM_REJECTED";
+-            case "void" -> "CLAIM_VOIDED";
+-            default -> throw new IllegalStateException("Unknown claim action: " + input.action() + ".");
+-        };
+-        boolean settled = "SETTLED".equals(saved.status());
+-        String number = saved.number() != null ? saved.number() : loaded.number();
+-        audit.record(event + " sheet=" + loaded.sheetId() + " by=" + input.user()
+-                + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
+-                + (number != null ? " number=" + number : "")
+-                + (settled ? " due=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
+-                + (input.reason() != null ? " reason=" + input.reason() : ""));
++        ClaimStatusChange.audit(input, loaded, saved, people, audit);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+new file mode 100644
+index 0000000..961cddd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -0,0 +1,54 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Rollups;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Settle each selected claim by the signed-in user, in list order (people in the order they were added, newest
++ *  claim first within a person), by exactly the rules of settling one claim: each that goes through (SETTLED, or
++ *  PENDING for a clerk's settle above the clerk limit) gets its status log line, its CLAIM_SETTLED or CLAIM_PENDING
++ *  line and then how the sheet's figures moved over it. A selected claim that cannot be settled (not on the sheet,
++ *  not allowed from its status or by this user, or dated in a closed period) is left as it is and counted as
++ *  refused. */
++public class BulkSettleClaims {
++    public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimRepository claims,
++            ClaimLogRepository log, PersonRepository people, PeriodRepository periods, RateRepository rates,
++            RoleRepository roles, SettingRepository settings, SheetRepository sheets, Rollups rollups, Audit audit,
++            Out<BulkSettleResponse> result) {
++        String sheet = sheetId.trim();
++        periods.lockSheet(sheet);
++        ClaimStatusInput settle = new ClaimStatusInput(input.user(), "settle", ClaimStatus.SETTLED, null);
++        int settled = 0;
++        for (Person person : people.list(sheet)) {
++            List<Claim> theirs = claims.listForPerson(sheet, person.id()).stream()
++                    .filter(c -> input.claimIds().contains(c.id())).toList();
++            for (Claim claim : theirs) {
++                if (periods.closedOn(sheet, claim.date()) != null) {
++                    continue;
++                }
++                Rollup before = rollups.take(sheet);
++                ClaimResponse saved;
++                try {
++                    saved = ClaimStatusChange.save(settle, claim, claims, people, rates, roles, settings, sheets, log);
++                } catch (ClaimStatusNotAllowedException refused) {
++                    continue;
++                }
++                ClaimStatusChange.audit(settle, claim, saved, people, audit);
++                rollups.record(sheet, input.user(), before);
++                settled++;
++            }
++        }
++        result.set(new BulkSettleResponse(settled, input.claimIds().size() - settled));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleInput.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleInput.java
+new file mode 100644
+index 0000000..1de5804
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.Set;
++
++/** A validated bulk settle: who is settling and the selected claim ids. */
++public record BulkSettleInput(String user, Set<Long> claimIds) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleRequest.java
+new file mode 100644
+index 0000000..5d6623f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of a bulk settle: who is settling and the ids of the selected claims. */
++public record BulkSettleRequest(String user, List<Long> claimIds) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleResponse.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleResponse.java
+new file mode 100644
+index 0000000..a8bbd3c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleResponse.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.claim;
++
++/** How many of the selected claims were settled (a clerk's settle that left one PENDING counts) and how many
++ *  were refused. */
++public record BulkSettleResponse(int settled, int refused) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+new file mode 100644
+index 0000000..e395aeb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -0,0 +1,96 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.statement.Dues;
++import net.officefloor.hq.app.statement.LateCharge;
++
++/** The rules of a claim's status change and its audit line, shared by a single change ({@link SaveClaimStatus},
++ *  {@link AuditClaimStatus}) and a bulk settle ({@link BulkSettleClaims}). */
++final class ClaimStatusChange {
++    private ClaimStatusChange() {
++    }
++
++    /** Move the claim to its new status as {@link SaveClaimStatus} describes, adding it to its status log: the claim
++     *  as stored now; throws (having written nothing) when the change is not allowed. */
++    static ClaimResponse save(ClaimStatusInput input, Claim loaded, ClaimRepository repository,
++            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
++            SheetRepository sheets, ClaimLogRepository log)
++            throws ClaimStatusNotAllowedException {
++        ClaimStatus to = input.to();
++        boolean review = input.action().equals("approve") || input.action().equals("reject");
++        if (review) {
++            if (loaded.status() != ClaimStatus.PENDING) {
++                throw new ClaimStatusNotAllowedException("Only a PENDING claim can be " + input.action()
++                        + "d; this one is " + loaded.status() + ".");
++            }
++            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
++                throw new ClaimStatusNotAllowedException("Only a steward can " + input.action() + " a PENDING claim.");
++            }
++            if (input.action().equals("approve") && input.user().equals(loaded.openedBy())) {
++                throw new ClaimStatusNotAllowedException("The user who opened a claim cannot approve it.");
++            }
++        } else if (!loaded.status().canBecome(to)) {
++            throw new ClaimStatusNotAllowedException(loaded.status(), to);
++        }
++        if (input.action().equals("settle") && input.user().equals(loaded.openedBy())) {
++            throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
++        }
++        if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
++            BigDecimal limit = settings.clerkLimit(loaded.sheetId());
++            BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
++            if (limit != null && due != null && due.compareTo(limit) > 0) {
++                to = ClaimStatus.PENDING;
++            }
++        }
++        boolean opening = input.action().equals("open");
++        String openedBy = opening ? input.user() : loaded.openedBy();
++        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.date()) : loaded.number();
++        BigDecimal settledDue = to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
++        if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
++            // the transaction rolls back, so a number taken above is not used up
++            throw new ClaimStatusNotAllowedException(loaded.status(), to);
++        }
++        log.record(loaded, input.user());
++        return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
++                loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
++                loaded.statedDue(), loaded.corrects(), loaded.dueBy()));
++    }
++
++    /** Record the stored status change in the audit file as {@link AuditClaimStatus} describes. */
++    static void audit(ClaimStatusInput input, Claim loaded, ClaimResponse saved, PersonRepository people, Audit audit) {
++        var person = people.find(loaded.sheetId(), loaded.personId());
++        String event = switch (input.action()) {
++            case "open" -> "CLAIM_OPENED";
++            case "settle" -> "PENDING".equals(saved.status()) ? "CLAIM_PENDING" : "CLAIM_SETTLED";
++            case "approve" -> "CLAIM_APPROVED";
++            case "reject" -> "CLAIM_REJECTED";
++            case "void" -> "CLAIM_VOIDED";
++            default -> throw new IllegalStateException("Unknown claim action: " + input.action() + ".");
++        };
++        boolean settled = "SETTLED".equals(saved.status());
++        String number = saved.number() != null ? saved.number() : loaded.number();
++        audit.record(event + " sheet=" + loaded.sheetId() + " by=" + input.user()
++                + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
++                + (number != null ? " number=" + number : "")
++                + (settled ? " due=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
++                + (input.reason() != null ? " reason=" + input.reason() : ""));
++    }
++
++    /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its
++     *  person's grade rate in force on the claim's date, divided by 100, rounded to two decimals as the claim rounds, at
++     *  least the sheet's floor), with the late charge on it as of the sheet's today added on top; null when it has
++     *  no figure. */
++    private static BigDecimal dueNow(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
++            SettingRepository settings, SheetRepository sheets) {
++        var person = people.find(claim.sheetId(), claim.personId());
++        return Dues.shown(claim, person.grades(), rates, settings.floor(claim.sheetId()),
++                LateCharge.of(claim.sheetId(), settings, sheets, claims));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkSettle.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkSettle.java
+new file mode 100644
+index 0000000..3c158f9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkSettle.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkSettle {
++    public void respond(@Val BulkSettleResponse result, ObjectResponse<BulkSettleResponse> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+index f03c23b..ece50aa 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+@@ -1,14 +1,10 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import java.math.BigDecimal;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+-import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+-import net.officefloor.hq.app.statement.Dues;
+-import net.officefloor.hq.app.statement.LateCharge;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+@@ -21,61 +17,13 @@ import net.officefloor.plugin.variable.Val;
+  *  clerk limit, it becomes PENDING instead (a due of n/a, or no limit, is within it). A steward other than the
+  *  user who opened it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
+  *  PENDING claim is not bound by a statement — frozen in) or rejects it (OPEN again, bound again by the statement
+- *  that bound it). The new status is added to the claim's status log. */
++ *  that bound it). The new status is added to the claim's status log. The rules are in {@link ClaimStatusChange}. */
+ public class SaveClaimStatus {
+     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
+             SheetRepository sheets, ClaimLogRepository log,
+             Out<ClaimResponse> saved)
+             throws ClaimStatusNotAllowedException {
+-        ClaimStatus to = input.to();
+-        boolean review = input.action().equals("approve") || input.action().equals("reject");
+-        if (review) {
+-            if (loaded.status() != ClaimStatus.PENDING) {
+-                throw new ClaimStatusNotAllowedException("Only a PENDING claim can be " + input.action()
+-                        + "d; this one is " + loaded.status() + ".");
+-            }
+-            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
+-                throw new ClaimStatusNotAllowedException("Only a steward can " + input.action() + " a PENDING claim.");
+-            }
+-            if (input.action().equals("approve") && input.user().equals(loaded.openedBy())) {
+-                throw new ClaimStatusNotAllowedException("The user who opened a claim cannot approve it.");
+-            }
+-        } else if (!loaded.status().canBecome(to)) {
+-            throw new ClaimStatusNotAllowedException(loaded.status(), to);
+-        }
+-        if (input.action().equals("settle") && input.user().equals(loaded.openedBy())) {
+-            throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
+-        }
+-        if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
+-            BigDecimal limit = settings.clerkLimit(loaded.sheetId());
+-            BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
+-            if (limit != null && due != null && due.compareTo(limit) > 0) {
+-                to = ClaimStatus.PENDING;
+-            }
+-        }
+-        boolean opening = input.action().equals("open");
+-        String openedBy = opening ? input.user() : loaded.openedBy();
+-        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.date()) : loaded.number();
+-        BigDecimal settledDue = to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets) : null;
+-        if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
+-            // the transaction rolls back, so a number taken above is not used up
+-            throw new ClaimStatusNotAllowedException(loaded.status(), to);
+-        }
+-        log.record(loaded, input.user());
+-        saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
+-                loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
+-                loaded.statedDue(), loaded.corrects(), loaded.dueBy())));
+-    }
+-
+-    /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its
+-     *  person's grade rate in force on the claim's date, divided by 100, rounded to two decimals as the claim rounds, at
+-     *  least the sheet's floor), with the late charge on it as of the sheet's today added on top; null when it has
+-     *  no figure. */
+-    private static BigDecimal dueNow(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
+-            SettingRepository settings, SheetRepository sheets) {
+-        var person = people.find(claim.sheetId(), claim.personId());
+-        return Dues.shown(claim, person.grades(), rates, settings.floor(claim.sheetId()),
+-                LateCharge.of(claim.sheetId(), settings, sheets, claims));
++        saved.set(ClaimStatusChange.save(input, loaded, repository, people, rates, roles, settings, sheets, log));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateBulkSettle.java b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkSettle.java
+new file mode 100644
+index 0000000..e78a23b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkSettle.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.LinkedHashSet;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the body and refuse it before anything is read: a signed-in user and at least one selected claim. */
++public class ValidateBulkSettle {
++    public void validate(@RequestBody BulkSettleRequest request, Out<BulkSettleInput> body) throws InvalidClaimException {
++        if (request == null || request.user() == null || request.user().isBlank()) {
++            throw new InvalidClaimException("Sign in before settling claims.");
++        }
++        if (request.claimIds() == null || request.claimIds().isEmpty()) {
++            throw new InvalidClaimException("Select the claims to settle.");
++        }
++        body.set(new BulkSettleInput(request.user().trim(), new LinkedHashSet<>(request.claimIds())));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+new file mode 100644
+index 0000000..40f7e35
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+@@ -0,0 +1,13 @@
++# Settle the selected claims together, in list order, by the signed-in user. Each that can be settled is settled
++# (or left PENDING, audited and rolled up) as a single settle is; each that cannot is left as it is. Responds with
++# how many of each.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateBulkSettle
++  next: settle
++settle:
++  class: net.officefloor.hq.app.claim.BulkSettleClaims
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithBulkSettle
++  govern: [ transaction ]
