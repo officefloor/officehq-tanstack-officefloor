@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheet';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person } from './people';
@@ -25,7 +25,12 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
       setGrade('A');
       if (editing) setEditing(undefined);
     },
-    onError: () => setError('Could not save this person: a name is required and the grade must be A, B or C.'),
+    onError: (e) =>
+      setError(
+        e instanceof HttpError && e.status === 409 && e.body
+          ? e.body
+          : 'Could not save this person: a name is required and the grade must be A, B or C.',
+      ),
   });
 
   const submit = (e: FormEvent) => {

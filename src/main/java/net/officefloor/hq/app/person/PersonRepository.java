@@ -29,6 +29,15 @@ public class PersonRepository {
                 .stream().findFirst().orElse(null);
     }
 
+    /** Whether another person on this sheet (other than exceptId, when given) has this name,
+     *  compared without regard to case and ignoring surrounding spaces. */
+    public boolean nameInUse(String sheetId, String name, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
+                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
+    }
+
     public Person insert(String sheetId, String name, String grade) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
