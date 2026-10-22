@@ -149,6 +149,17 @@ public class ClaimRepository {
                 personId, number, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
     }
 
+    /** Move every claim of one person to another in the order they came to the first, each the newest in the other's
+     *  list, keeping its number and date and unbinding it from any statement. */
+    public void moveAll(String sheetId, long fromId, long toId) {
+        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed",
+                Long.class, sheetId, fromId)) {
+            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+                    + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ?", toId, sheetId, id);
+            kept(sheetId, id);
+        }
+    }
+
     /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing
      *  is written. */
     public boolean defer(Claim claim, LocalDate until) {

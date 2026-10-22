@@ -71,4 +71,15 @@ public class PoolRepository {
                 : jdbc.query("SELECT * FROM pool_member WHERE pool_id = ? AND (added_on IS NULL OR added_on <= ?) "
                         + "ORDER BY id", row, pool.id(), end);
     }
+
+    /** On merging one person into another: the first's pool memberships move to the other, their share added to the
+     *  other's where the other is already a member. */
+    public void merge(String sheetId, long fromId, long intoId) {
+        jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f WHERE f.pool_id = m.pool_id "
+                + "AND f.person_id = ?) WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM pool_member f "
+                + "WHERE f.pool_id = m.pool_id AND f.person_id = ?)", fromId, sheetId, intoId, fromId);
+        jdbc.update("DELETE FROM pool_member m WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM pool_member i "
+                + "WHERE i.pool_id = m.pool_id AND i.person_id = ?)", sheetId, fromId, intoId);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+    }
 }

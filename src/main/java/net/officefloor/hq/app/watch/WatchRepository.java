@@ -41,4 +41,9 @@ public class WatchRepository {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ? AND user_name = ?", sheetId, personId,
                 user);
     }
+
+    /** Drop everyone's watch of the person. */
+    public void drop(String sheetId, long personId) {
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
+    }
 }

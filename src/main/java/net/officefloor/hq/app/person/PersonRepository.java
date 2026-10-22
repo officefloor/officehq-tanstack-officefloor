@@ -188,6 +188,31 @@ public class PersonRepository {
                 + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), from, to, person.sheetId());
     }
 
+    /** Merge the person (their claims, patrons, pools and watchers already dealt with) into another: their aliases
+     *  and then their name become the other's aliases, their figures in closed periods are added to the other's, and
+     *  they leave the sheet with their grades, holds, statements, retirement and contact. */
+    public void merge(Person from, Person into) {
+        String sheetId = from.sheetId();
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(), sheetId,
+                from.id());
+        jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
+                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?) "
+                + "WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM period_person_total f "
+                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?)",
+                from.id(), sheetId, into.id(), from.id());
+        jdbc.update("DELETE FROM period_person_total f WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 "
+                + "FROM period_person_total t WHERE t.sheet_id = f.sheet_id AND t.period_name = f.period_name "
+                + "AND t.person_id = ?)", sheetId, from.id(), into.id());
+        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
+                sheetId, from.id());
+        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement",
+                "person_retire_log")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.id());
+        }
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, from.id());
+        alias(into, from.name());
+    }
+
     /** Set the person's own terms in days (null: none). */
     public void terms(Person person, Integer terms) {
         jdbc.update("UPDATE person SET terms = ? WHERE sheet_id = ? AND id = ?", terms, person.sheetId(), person.id());

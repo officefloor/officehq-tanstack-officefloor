@@ -36,4 +36,18 @@ public class PatronRepository {
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
                 patron.sheetId(), patron.personId(), patron.patronId());
     }
+
+    /** On merging one person into another: the first's patrons are added to the other's (not the other themselves,
+     *  no repeats), anyone naming the first as patron names the other instead (no repeats), and the first has none. */
+    public void merge(String sheetId, long fromId, long intoId) {
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id "
+                + "FROM person_patron pp WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS "
+                + "(SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = pp.patron_id)",
+                intoId, sheetId, fromId, intoId, intoId);
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("UPDATE person_patron pp SET patron_id = ? WHERE sheet_id = ? AND patron_id = ? AND person_id <> ? "
+                + "AND NOT EXISTS (SELECT 1 FROM person_patron q WHERE q.person_id = pp.person_id AND q.patron_id = ?)",
+                intoId, sheetId, fromId, intoId, intoId);
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND patron_id = ?", sheetId, fromId);
+    }
 }
