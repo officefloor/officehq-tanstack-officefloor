@@ -9,7 +9,7 @@ import net.officefloor.hq.app.setting.DatedAmount;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
-/** The sheet's late charge as it is today: its late percent by date (a claim gains the one in force on its date; a claim is overdue past its own due-by, fixed when
+/** The sheet's late charge as it is today: its late percent by date (a claim gains the one in force on each 30-day boundary past its due-by; a claim is overdue past its own due-by, fixed when
  *  it was created) and its today (null: none, so nothing is overdue). */
 public record LateCharge(DatedAmount pct, LocalDate today, Rounding rounding) {
 
@@ -31,15 +31,22 @@ public record LateCharge(DatedAmount pct, LocalDate today, Rounding rounding) {
                 && claim.dueBy().isBefore(today);
     }
 
-    /** The charge on a claim whose figure is `figure`: the late percent in force on its date, of the figure, for every full 30 days it
-     *  is overdue, rounded to two decimals as the claim rounds (see Rounding); 0.00 when it is not overdue, or it is a correction (a negative amount). */
+    /** The charge on a claim whose figure is `figure`: for each full 30 days it is overdue, the late percent in force
+     *  on that boundary date (its due-by plus 30, 60, 90 ... days) of the figure, rounded to two decimals as the claim
+     *  rounds (see Rounding), the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when it is not
+     *  overdue, or it is a correction (a negative amount). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
-        BigDecimal pct = this.pct.on(claim.date());
-        if (!overdue(claim) || pct.signum() == 0 || claim.amount().signum() < 0) {
-            return new BigDecimal("0.00");
+        BigDecimal total = new BigDecimal("0.00");
+        if (!overdue(claim) || claim.amount().signum() < 0) {
+            return total;
         }
         long periods = ChronoUnit.DAYS.between(claim.dueBy(), today) / 30;
-        return figure.multiply(pct).multiply(BigDecimal.valueOf(periods))
-                .divide(BigDecimal.valueOf(100), 2, rounding.of(claim));
+        for (long n = 1; n <= periods; n++) {
+            BigDecimal pct = this.pct.on(claim.dueBy().plusDays(30 * n));
+            if (pct.signum() != 0) {
+                total = total.add(figure.multiply(pct).divide(BigDecimal.valueOf(100), 2, rounding.of(claim)));
+            }
+        }
+        return total;
     }
 }

@@ -86,8 +86,8 @@ public class SettingRepository {
         return history(sheetId)::floorOn;
     }
 
-    /** The sheet's late percent by date: an overdue claim gains the one in force on its date, of its figure, every
-     *  full 30 days. */
+    /** The sheet's late percent by date: an overdue claim gains, for each full 30 days, the one in force on that
+     *  boundary date, of its figure. */
     public DatedAmount latePct(String sheetId) {
         return history(sheetId)::latePctOn;
     }

@@ -7,7 +7,7 @@ import { useSheetToday } from '../sheet/sheet';
 
 /** The sheet's settings: the clerk limit with two decimals ('' when there is none) and the floor with two
  *  decimals (a claim's live due is at least it), and the terms in days (a claim's due-by is its date plus them), and
- *  the late percent with two decimals (an overdue claim gains it, of its figure, every full 30 days), and the
+ *  the late percent with two decimals (an overdue claim gains, of its figure, the one in force on each full 30-day boundary past its due-by), and the
  *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
  *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
  *  grade has none: it uses the sheet's terms), and the cap with two decimals ('' when there is none: a person's

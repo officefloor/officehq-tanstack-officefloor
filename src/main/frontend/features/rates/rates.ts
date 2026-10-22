@@ -120,7 +120,7 @@ export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], la
 }
 
 /** What the late charge follows: the sheet's late percent by date (two decimals; a claim gains the one in force
- *  on its date) and its today; and
+ *  on each 30-day boundary past its due-by) and its today; and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
 export type Late = { pct: DatedValue; today: string; policy: string; numbered: Map<string, string> };
@@ -148,14 +148,20 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: DatedVal
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The late charge on a claim whose figure is `figure`: the late percent in force on the claim's date, of it, for every full 30 days the
- *  claim is overdue (past its due-by, on the sheet's today), rounded like the claim's due; 0.00 when not overdue, or a
- *  correction (a negative amount). */
+/** The late charge on a claim whose figure is `figure`: for each full 30 days the claim is overdue (past its due-by, on
+ *  the sheet's today), the late percent in force on that boundary date (its due-by plus 30, 60, 90 ... days) of it,
+ *  rounded like the claim's due, the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when not
+ *  overdue, or a correction (a negative amount). */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
   if (!overdue(claim, late.today) || toCents(claim.amount) < 0n) return '0.00';
-  const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim)}T00:00:00Z`)) / DAY_MS);
-  const periods = BigInt(Math.floor(days / 30));
-  return dueOn(figure, fromCents(toCents(late.pct(claim.date)) * periods), roundsUp(claim, late));
+  const from = Date.parse(`${dueBy(claim)}T00:00:00Z`);
+  const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - from) / DAY_MS);
+  let total = 0n;
+  for (let n = 1; n <= Math.floor(days / 30); n++) {
+    const pct = late.pct(new Date(from + n * 30 * DAY_MS).toISOString().slice(0, 10));
+    if (toCents(pct) !== 0n) total += toCents(dueOn(figure, pct, roundsUp(claim, late)));
+  }
+  return fromCents(total);
 }
 
 /** A live due raised to the floor when below it; 'n/a' stays 'n/a'. */

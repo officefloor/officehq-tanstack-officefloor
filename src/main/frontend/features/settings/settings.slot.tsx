@@ -22,8 +22,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
- *  A claim's live due is at least the floor; its due-by is its date plus the terms; once overdue it gains the late
- *  percent of its figure for every full 30 days. A claim dated before the policy date (blank: the sheet's today)
+ *  A claim's live due is at least the floor; its due-by is its date plus the terms; once overdue it gains, for every full 30
+ *  days, the late percent in force on that boundary date of its figure. A claim dated before the policy date (blank: the sheet's today)
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
  *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
