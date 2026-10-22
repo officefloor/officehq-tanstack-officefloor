@@ -53,6 +53,9 @@ public class AuditSettingChanged {
         if (input.setsPot()) {
             audit.record(head + "pot value=" + SettingsResponse.text(input.pot()));
         }
+        if (input.setsParent()) {
+            audit.record(head + "parent value=" + (input.parent() != null ? input.parent() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

@@ -4,14 +4,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
+import { useParent } from '../settings/settings';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
 /** The sheet's today: shown, and changeable. Changing it re-reads everything under the sheet. Also whether the
- *  sheet is archived, and the button a steward archives it with; both share the sheet's one error. */
+ *  sheet is archived, and its parent sheet (nothing when none), and the button a steward archives it with; both share the sheet's one error. */
 function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const sheet = useSheet(sheetId);
+  const parent = useParent(sheetId);
   const [typed, setTyped] = useState('');
   const once = useSubmitOnce();
 
@@ -66,6 +68,7 @@ function SheetToday({ sheetId, user }: { sheetId: string; user: string }) {
         </button>
       </form>
       <p>
+        Parent <strong data-testid="sheet-parent">{parent}</strong>{' '}
         Archived <strong data-testid="sheet-archived">{sheet.data ? (sheet.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
         <button
           type="button"

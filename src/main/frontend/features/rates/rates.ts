@@ -6,12 +6,18 @@ import type { DatedValue } from '../settings/settings';
 
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
  *  null: from the beginning of time) through its to-date (null: with no end). A grade may have several, one
- *  per from-date; none when it has no rate. */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null };
+ *  per from-date; none when it has no rate. `level` is where it comes from: 0 the sheet's own, 1 its parent
+ *  sheet's, 2 the parent's parent's, 3 the one above that. */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number };
+
+/** Of the rates, the sheet's own (not its parents'). */
+export function ownRates(rates: Rate[]): Rate[] {
+  return rates.filter((r) => (r.level ?? 0) === 0);
+}
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
-/** The sheet's rates, every grade's every from-date. */
+/** The sheet's rates, every grade's every from-date, then its parents' (up to three levels up). */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -21,8 +27,18 @@ export function useRates(sheetId: string) {
 
 /** A grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or before
  *  it, a rate with no from-date applying from the beginning of time; undefined when none applies, or that
- *  one's to-date is before the date. */
+ *  one's to-date is before the date. When the sheet's own has none, the nearest parent's that has one. */
 export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
+  const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
+  for (const level of levels) {
+    const rate = levelRateOn(rates.filter((r) => (r.level ?? 0) === level), grade, date);
+    if (rate !== undefined) return rate;
+  }
+  return undefined;
+}
+
+/** Of one sheet's rates, the grade's in force on the date (see rateOn). */
+function levelRateOn(rates: Rate[], grade: string, date: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;

@@ -10,7 +10,7 @@ import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { capped, excess, OPEN_STATUSES, personDueSum, personStatusSum, rateOn, ratePreview, ratesKey, SETTLED_STATUSES,
+import { capped, excess, OPEN_STATUSES, ownRates, personDueSum, personStatusSum, rateOn, ratePreview, ratesKey, SETTLED_STATUSES,
   sheetDueTotal, sheetStatusSum, useRates } from './rates';
 import type { Rate } from './rates';
 
@@ -123,8 +123,8 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       <table>
         <tbody>
           {GRADES.map((g) => {
-            const undated = rates.find((r) => r.grade === g && r.from === null);
-            const dated = rates.filter((r) => r.grade === g && r.from !== null);
+            const undated = ownRates(rates).find((r) => r.grade === g && r.from === null);
+            const dated = ownRates(rates).filter((r) => r.grade === g && r.from !== null);
             return (
               <Fragment key={g}>
                 <tr>

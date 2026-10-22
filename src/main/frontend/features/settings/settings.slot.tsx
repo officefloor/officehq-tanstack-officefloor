@@ -5,6 +5,7 @@ import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { poolsKey } from '../pools/pools';
+import { ratesKey } from '../rates/rates';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, GRADES, PERM_ACTIONS, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
@@ -22,7 +23,7 @@ const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -45,6 +46,9 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  The entry date (blank: off; not dated): while it is set, a new claim given no date (the claim form, the quick-add
  *  bar, a pasted line, a correction) is dated it instead of the sheet's today.
  *  The pot (blank: none; not dated): each member of a balanced pool is shown their cut of it.
+ *  The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on this sheet takes
+ *  the parent's, then its parent's, up to three levels up. The server refuses the sheet itself, a sheet never
+ *  loaded, or one that has this sheet as an ancestor.
  *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
  *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
  *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
@@ -63,6 +67,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentGraceDays = settings.data?.graceDays ?? '';
   const currentEntryDate = settings.data?.entryDate ?? '';
   const currentPot = settings.data?.pot ?? '';
+  const currentParent = settings.data?.parent ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
@@ -76,6 +81,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedGraceDays, setTypedGraceDays] = useState<string | null>(null);
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const [typedPot, setTypedPot] = useState<string | null>(null);
+  const [typedParent, setTypedParent] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const currentGradeGrace = (grade: string) => settings.data?.gradeGrace?.[grade] ?? '';
@@ -95,6 +101,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
     onSuccess: (saved) => {
       queryClient.setQueryData(settingsKey(sheetId), saved);
       void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
       setTypedLimit(null);
       setTypedFloor(null);
       setTypedTerms(null);
@@ -107,6 +114,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedGraceDays(null);
       setTypedEntryDate(null);
       setTypedPot(null);
+      setTypedParent(null);
       setTypedGradeTerms({});
       setTypedGradeGrace({});
       setTypedGradeProofThreshold({});
@@ -219,6 +227,9 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.pot = pot;
+    }
+    if (typedParent !== null) {
+      changes.parent = typedParent.trim();
     }
     for (const grade of GRADES) {
       const typedTerms = typedGradeTerms[grade];
@@ -350,7 +361,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Note threshold <strong data-testid="setting-note-threshold-current">{currentNoteThreshold}</strong>{' '}
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
-        Pot <strong data-testid="setting-pot-current">{currentPot}</strong>
+        Pot <strong data-testid="setting-pot-current">{currentPot}</strong>{' '}
+        Parent <strong data-testid="setting-parent-current">{currentParent}</strong>
       </p>
       <p>
         {PERM_ACTIONS.map((action) => (
@@ -542,6 +554,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedPot)}
             onChange={typed(setTypedPot)}
             onFocus={() => setTypedPot((v) => v ?? currentPot)}
+          />
+        </label>{' '}
+        <label>
+          Parent sheet{' '}
+          <input
+            data-testid="setting-parent"
+            placeholder="none"
+            value={typedParent ?? currentParent}
+            onInput={typed(setTypedParent)}
+            onChange={typed(setTypedParent)}
+            onFocus={() => setTypedParent((v) => v ?? currentParent)}
           />
         </label>{' '}
         {PERM_ACTIONS.map((action) => (

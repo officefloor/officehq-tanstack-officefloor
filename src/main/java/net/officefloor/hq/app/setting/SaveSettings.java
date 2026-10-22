@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Save the settings the input sets: each dated one recorded from its from-date (not given: the sheet's today),
  *  keeping the values already recorded (one from that same date is replaced); the policy date and the period
- *  numbering from and the grace days and the pot and the permission matrix as
+ *  numbering from and the grace days and the pot and the parent sheet and the permission matrix as
  *  they are. */
 public class SaveSettings {
     public void save(@PathVariable("sheetId") String sheetId, @Val SettingsInput input, SettingRepository repository,
@@ -56,6 +56,9 @@ public class SaveSettings {
         }
         if (input.setsPot()) {
             repository.setPot(id, input.pot());
+        }
+        if (input.setsParent()) {
+            repository.setParent(id, input.parent());
         }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));

@@ -18,7 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals. */
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals. The parent sheet (when given) is
+ *  checked against the store by ValidateParent. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
     static final List<String> GRADES = List.of("A", "B", "C");
@@ -93,6 +94,7 @@ public class ValidateSettings {
         if (pot != null && !pot.isEmpty() && !pot.matches(AMOUNT)) {
             throw new InvalidSettingException("The pot must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
         }
+        String parent = request.parent() == null ? null : request.parent().trim();
         Map<String, Integer> gradeTerms = new LinkedHashMap<>();
         if (request.gradeTerms() != null) {
             for (String grade : request.gradeTerms().keySet()) {
@@ -208,6 +210,7 @@ public class ValidateSettings {
                 noteThreshold != null,
                 noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
                 entered != null, entryDate, gradeGrace, gradeProofThreshold,
-                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2)));
+                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
+                parent != null, parent == null || parent.isEmpty() ? null : parent));
     }
 }

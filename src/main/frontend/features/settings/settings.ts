@@ -23,11 +23,13 @@ import { useSheetToday } from '../sheet/sheet';
  *  has none), dated (keys grace-A/B/C): a claim whose person's grade in force on its date has a grace in force on that
  *  date is overdue, and counts its late charge, from its due-by plus it. `gradeProofThreshold` is each grade's own proof
  *  threshold with two decimals ('' when the grade has none: the sheet's applies), dated (keys proof-threshold-A/B/C). `pot` is the pot
- *  with two decimals (not dated; '' when there is none): each member of a balanced pool is shown their cut of it. */
+ *  with two decimals (not dated; '' when there is none): each member of a balanced pool is shown their cut of it. `parent` is
+ *  the parent sheet's id (not dated; '' when there is none): a grade with no rate in force on a date on this sheet takes
+ *  the parent's rate for it on that date, then the parent's parent's, up to three levels up. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -68,6 +70,11 @@ export function useSettings(sheetId: string) {
     queryKey: settingsKey(sheetId),
     queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
   });
+}
+
+/** The sheet's parent sheet id ('' when there is none, or while the settings load). */
+export function useParent(sheetId: string): string {
+  return useSettings(sheetId).data?.parent ?? '';
 }
 
 /** The sheet's floor by date: a claim's live due is at least the one in force on its date (the starting floor
