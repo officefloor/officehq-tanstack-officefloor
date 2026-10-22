@@ -89,7 +89,8 @@ const ACTIONS = [
 ] as const;
 
 /** One claim with its status, who opened it and the buttons that change it. A change the status does not
- *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error. */
+ *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error;
+ *  so is editing a claim that is no longer a DRAFT (the server refuses that edit too). */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingClaim();
@@ -121,6 +122,10 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         type="button"
         data-testid="claim-edit"
         onClick={() => {
+          if (claim.status !== 'DRAFT') {
+            setError(`A ${claim.status} claim cannot be edited; only a DRAFT can. Void it and add a new one.`);
+            return;
+          }
           setError('');
           setEditing(String(claim.id));
         }}

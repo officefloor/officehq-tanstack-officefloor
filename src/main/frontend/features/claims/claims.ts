@@ -6,7 +6,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
- *  its number on the sheet (null while a draft, or once voided) and, the due fixed when it was settled
+ *  its number on the sheet (null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled
  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
  *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
  *  it to (null when not bound, or n/a then: its due stays live). */
