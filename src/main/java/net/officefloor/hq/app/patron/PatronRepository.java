@@ -18,10 +18,10 @@ public class PatronRepository {
         this.jdbc = jdbc;
     }
 
-    /** Every person's patrons on the sheet. */
+    /** Every person's patrons on the sheet, each person's in the order they were named. */
     public List<Patron> list(String sheetId) {
         return jdbc.query("SELECT pp.sheet_id, pp.person_id, pp.patron_id, p.name FROM person_patron pp "
-                + "JOIN person p ON p.id = pp.patron_id WHERE pp.sheet_id = ? ORDER BY pp.person_id, p.name", ROW, sheetId);
+                + "JOIN person p ON p.id = pp.patron_id WHERE pp.sheet_id = ? ORDER BY pp.person_id, pp.named", ROW, sheetId);
     }
 
     /** Whether the person already has this patron. */

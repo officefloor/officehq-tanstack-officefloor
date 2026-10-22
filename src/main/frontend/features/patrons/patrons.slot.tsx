@@ -6,15 +6,16 @@ import { PersonRow } from '../../slots/defs/personRow';
 import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { recentSettledSum, useRates } from '../rates/rates';
+import { patronShares, recentSettledSum, sharedSum, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, usePatrons } from './patrons';
 import type { Patron } from './patrons';
 
-/** A person's patrons (their names, sorted), their backing — the patrons' settled figures over their SETTLED claims
- *  dated within the 90 days up to and including the sheet's today (see recentSettledSum); 0.00 with none — and the
- *  picker that names one more. */
+/** A person's patrons, each as <name> <share> sorted by name — 100.00 split equally in the order they were named, the
+ *  first-named taking the remainder (see patronShares) — their backing — each patron's settled figures over their
+ *  SETTLED claims dated within the 90 days up to and including the sheet's today (see recentSettledSum) times their
+ *  share / 100, added up and rounded half to even (see sharedSum); 0.00 with none — and the picker that names one more. */
 function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const people = usePeople(sheetId).data ?? [];
@@ -23,12 +24,19 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
   const rates = useRates(sheetId).data ?? [];
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const patrons = (usePatrons(sheetId).data ?? [])
+  // the server lists each person's patrons in the order they were named
+  const named = (usePatrons(sheetId).data ?? [])
     .filter((p) => p.personId === person.id)
     .map((p) => people.find((q) => q.id === p.patronId))
-    .filter((p): p is Person => p !== undefined)
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const backing = recentSettledSum(patrons, claims, rates, today, floor, late);
+    .filter((p): p is Person => p !== undefined);
+  const shares = patronShares(named.length);
+  const patrons = named
+    .map((p, i) => ({ person: p, share: shares[i] }))
+    .sort((a, b) => (a.person.name < b.person.name ? -1 : a.person.name > b.person.name ? 1 : 0));
+  const backing = sharedSum(patrons.map((p) => ({
+    figure: recentSettledSum([p.person], claims, rates, today, floor, late),
+    share: p.share,
+  })));
   const [chosen, setChosen] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
@@ -47,7 +55,7 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
 
   return (
     <td>
-      Patrons <span data-testid="person-patrons">{patrons.map((p) => p.name).join(', ')}</span>{' '}
+      Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
       Backing <span data-testid="person-backing">{backing}</span>{' '}
       <select
         data-testid="person-patron-select"

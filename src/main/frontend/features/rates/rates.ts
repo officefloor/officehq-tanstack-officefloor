@@ -143,6 +143,30 @@ export function recentSettledSum(people: Person[], claims: Claim[], rates: Rate[
     .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late)));
 }
 
+/** 100.00 split equally among n patrons in the order named: each share 100.00 / n rounded to two decimals half to
+ *  even, the first-named taking the remainder (100.00 minus the shares added up). */
+export function patronShares(n: number): string[] {
+  if (n <= 0) return [];
+  const count = BigInt(n);
+  let share = 10000n / count;
+  const rest = 10000n % count;
+  if (rest * 2n > count || (rest * 2n === count && share % 2n === 1n)) share += 1n;
+  return Array.from({ length: n }, (_, i) => fromCents(i === 0 ? 10000n - share * (count - 1n) : share));
+}
+
+/** Figures each weighted by a share: the sum of figure times share divided by 100, rounded half to even (exact, in
+ *  integers); n/a figures are skipped. */
+export function sharedSum(parts: { figure: string; share: string }[]): string {
+  const scaled = parts.filter((p) => p.figure !== 'n/a')
+    .reduce((total, p) => total + toCents(p.figure) * toCents(p.share), 0n); // in 1/10000 of a cent
+  const sign = scaled < 0n ? -1n : 1n;
+  const abs = scaled * sign;
+  let cents = abs / 10000n;
+  const rest = abs % 10000n;
+  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  return fromCents(cents * sign);
+}
+
 /** A sum of figures at most the cap ('' when none); 'n/a' is not capped. */
 export function capped(sum: string, cap: string): string {
   return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? sum : fromCents(toCents(cap));

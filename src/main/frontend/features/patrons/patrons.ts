@@ -6,7 +6,7 @@ export type Patron = { personId: number; patronId: number };
 
 export const patronsKey = (sheetId: string) => ['sheet', sheetId, 'patrons'] as const;
 
-/** Every person's patrons on the sheet. */
+/** Every person's patrons on the sheet, each person's in the order they were named. */
 export function usePatrons(sheetId: string) {
   return useQuery({
     queryKey: patronsKey(sheetId),
