@@ -25,7 +25,8 @@ import tools.jackson.databind.json.JsonMapper;
  *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
  *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
  *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
- *  refused for a viewer or on an archived sheet; so is a bulk settle on an archived sheet. */
+ *  refused for a viewer or on an archived sheet; so is a bulk settle on an archived sheet. Every change sent from a
+ *  screen showing the sheet as of a date (the X-As-Of header), a bulk one included, is answered 403 the same way. */
 @Component
 public class RefuseViewerChanges extends OncePerRequestFilter {
 
@@ -38,6 +39,9 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
 
     /** A bulk settle, left to the endpoint on an archived sheet: it counts every selected claim refused. */
     private static final Pattern BULK_SETTLE = Pattern.compile("^/api/sheets/[^/]+/bulk-settle$");
+
+    /** The header a screen showing the sheet as of a date sends every change with: the change is refused. */
+    public static final String AS_OF = "X-As-Of";
 
     private final RoleRepository roles;
     private final SheetRepository sheets;
@@ -54,8 +58,18 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
         String method = request.getMethod();
         String path = request.getRequestURI().substring(request.getContextPath().length());
         Matcher change = CHANGE.matcher(path);
-        if (method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS") || !change.matches()
-                || BULK_OPEN.matcher(path).matches()) {
+        if (method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS") || !change.matches()) {
+            chain.doFilter(request, response);
+            return;
+        }
+        String asOf = request.getHeader(AS_OF);
+        if (asOf != null && !asOf.isBlank()) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("text/plain;charset=UTF-8");
+            response.getWriter().write("The sheet is shown as of " + asOf.trim() + ": clear the as-of date to change it.");
+            return;
+        }
+        if (BULK_OPEN.matcher(path).matches()) {
             chain.doFilter(request, response);
             return;
         }

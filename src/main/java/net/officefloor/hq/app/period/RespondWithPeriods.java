@@ -1,14 +1,24 @@
 package net.officefloor.hq.app.period;
 
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.sheet.AsOf;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 
-/** The sheet's periods, earliest first. */
+/** The sheet's periods, earliest first (as they stood at the end of the as-of date, when one is given). */
 public class RespondWithPeriods {
-    public void respond(@PathVariable("sheetId") String sheetId, PeriodRepository repository,
+    public void respond(@PathVariable("sheetId") String sheetId,
+            @RequestParam(name = "asOf", required = false) String asOf, PeriodRepository repository,
             ObjectResponse<List<PeriodResponse>> response) {
         String id = sheetId.trim();
+        LocalDate end = AsOf.parse(asOf);
+        if (end != null) {
+            response.send(repository.listAsOf(id, end).stream()
+                    .map(p -> PeriodResponse.from(p.period(), p.personTotals())).toList());
+            return;
+        }
         var totals = repository.personTotals(id);
         response.send(repository.list(id).stream().map(p -> PeriodResponse.from(p, totals.get(p.name()))).toList());
     }

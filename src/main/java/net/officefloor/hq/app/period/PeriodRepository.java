@@ -34,8 +34,8 @@ public class PeriodRepository {
     }
 
     public Period insert(String sheetId, String name, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
-                sheetId, name, Date.valueOf(from), Date.valueOf(to));
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, name, Date.valueOf(from), Date.valueOf(to), sheetId);
         return new Period(sheetId, name, from, to, false, null, false);
     }
 
@@ -63,6 +63,7 @@ public class PeriodRepository {
             return false;
         }
         fixPersonTotals(period, personTotals);
+        kept(period);
         return true;
     }
 
@@ -74,6 +75,7 @@ public class PeriodRepository {
             return false;
         }
         fixPersonTotals(period, personTotals);
+        kept(period);
         return true;
     }
 
@@ -102,6 +104,50 @@ public class PeriodRepository {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
+        kept(period);
         return true;
+    }
+
+    /** Keep the period as it stands now (closed or soft-closed, and its fixed due-totals) in its history, with the
+     *  sheet's today. */
+    private void kept(Period period) {
+        var keys = new org.springframework.jdbc.support.GeneratedKeyHolder();
+        jdbc.update(con -> {
+            var ps = con.prepareStatement("INSERT INTO period_history (sheet_id, period_name, closed, soft, closed_total, "
+                    + "made_on) SELECT p.sheet_id, p.name, p.closed, p.soft, p.closed_total, s.today FROM period p "
+                    + "JOIN sheet s ON s.id = p.sheet_id WHERE p.sheet_id = ? AND p.name = ?", new String[] { "id" });
+            ps.setString(1, period.sheetId());
+            ps.setString(2, period.name());
+            return ps;
+        }, keys);
+        jdbc.update("INSERT INTO period_history_total (history_id, person_id, total) SELECT ?, person_id, total "
+                + "FROM period_person_total WHERE sheet_id = ? AND period_name = ?", keys.getKey().longValue(),
+                period.sheetId(), period.name());
+    }
+
+    /** A period as it stood at the end of a day, with the people's due-totals fixed in it then, by person id. */
+    public record PeriodThen(Period period, Map<Long, BigDecimal> personTotals) {
+    }
+
+    /** The sheet's periods as they stood at the end of the day, earliest first: those added while the sheet's today
+     *  was on or before it (or before history was kept), each closed or soft-closed as its last close, soft-close or
+     *  reopen made by then left it (open when none was). */
+    public List<PeriodThen> listAsOf(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) "
+                + "ORDER BY from_date", ROW, sheetId, end).stream().map(p -> {
+                    var last = jdbc.queryForList("SELECT id, closed, soft, closed_total FROM period_history "
+                            + "WHERE sheet_id = ? AND period_name = ? AND (made_on IS NULL OR made_on <= ?) "
+                            + "ORDER BY id DESC LIMIT 1", sheetId, p.name(), end);
+                    if (last.isEmpty()) {
+                        return new PeriodThen(new Period(sheetId, p.name(), p.from(), p.to(), false, null, false), Map.of());
+                    }
+                    var row = last.get(0);
+                    Map<Long, BigDecimal> totals = new HashMap<>();
+                    jdbc.query("SELECT person_id, total FROM period_history_total WHERE history_id = ?", rs -> {
+                        totals.put(rs.getLong(1), rs.getBigDecimal(2));
+                    }, row.get("id"));
+                    return new PeriodThen(new Period(sheetId, p.name(), p.from(), p.to(), Boolean.TRUE.equals(row.get("closed")),
+                            (BigDecimal) row.get("closed_total"), Boolean.TRUE.equals(row.get("soft"))), totals);
+                }).toList();
     }
 }

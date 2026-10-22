@@ -58,9 +58,18 @@ public class ClaimLogRepository {
 
     /** The log lines of every claim on the sheet, by claim id, oldest first. */
     public Map<Long, List<String>> lines(String sheetId) {
+        return lines(sheetId, null);
+    }
+
+    /** The log lines of every claim on the sheet as they stood at the end of the day (null: now), by claim id,
+     *  oldest first: those given while the sheet's today was on or before it (or while it had none). */
+    public Map<Long, List<String>> lines(String sheetId, LocalDate end) {
         Map<Long, List<String>> lines = new HashMap<>();
         jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
             LocalDate on = rs.getObject("on_date", LocalDate.class);
+            if (end != null && on != null && on.isAfter(end)) {
+                return;
+            }
             BigDecimal due = rs.getBigDecimal("due");
             lines.computeIfAbsent(rs.getLong("claim_id"), k -> new ArrayList<>())
                     .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "

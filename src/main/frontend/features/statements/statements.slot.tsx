@@ -20,8 +20,8 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
     mutationFn: (date: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements`,
         date ? { user, asOf: date } : { user }),
+    onSettled: () => setAsOf(''), // the as-of entry is for one statement: taken or refused, it is cleared
     onSuccess: async () => {
-      setAsOf('');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),

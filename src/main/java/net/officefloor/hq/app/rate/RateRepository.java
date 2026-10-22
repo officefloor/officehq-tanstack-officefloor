@@ -40,14 +40,21 @@ public class RateRepository implements Rates {
     /** The sheet's rates as they stood at the end of the day: each set from a from-date replaces the one set before
      *  it for the grade from that same date. */
     public Rates asOf(String sheetId, LocalDate end) {
+        List<Rate> rates = listAsOf(sheetId, end);
+        return (sheet, grade, date) -> Rates.on(rates, grade, date);
+    }
+
+    /** The sheet's rates as they stood at the end of the day, by grade, each grade's earliest first (see asOf). */
+    public List<Rate> listAsOf(String sheetId, LocalDate end) {
         Map<String, Rate> byGradeFrom = new LinkedHashMap<>();
         jdbc.query("SELECT * FROM rate_log WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?) ORDER BY id",
                 rs -> {
                     Rate r = ROW.mapRow(rs, 0);
                     byGradeFrom.put(r.grade() + "|" + r.from(), r);
                 }, sheetId, end);
-        List<Rate> rates = List.copyOf(byGradeFrom.values());
-        return (sheet, grade, date) -> Rates.on(rates, grade, date);
+        return byGradeFrom.values().stream().sorted(java.util.Comparator.comparing(Rate::grade)
+                .thenComparing(Rate::from, java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .toList();
     }
 
     /** Set the grade's rate from the from-date (null: from the beginning of time) through the to-date (null:

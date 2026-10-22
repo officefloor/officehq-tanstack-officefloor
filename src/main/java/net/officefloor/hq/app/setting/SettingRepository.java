@@ -32,8 +32,16 @@ public class SettingRepository {
 
     /** The sheet's settings in force on its today. */
     public Settings of(String sheetId) {
-        SettingHistory history = history(sheetId);
-        LocalDate today = today(sheetId);
+        return of(sheetId, history(sheetId), today(sheetId));
+    }
+
+    /** The sheet's settings as they stood at the end of the day, in force on it: its dated settings then (see
+     *  historyAsOf); the ones that are not dated as they are now. */
+    public Settings asOf(String sheetId, LocalDate end) {
+        return of(sheetId, historyAsOf(sheetId, end), end);
+    }
+
+    private Settings of(String sheetId, SettingHistory history, LocalDate today) {
         Map<String, Integer> gradeTerms = new LinkedHashMap<>();
         for (String grade : ValidateSettings.GRADES) {
             Integer days = history.gradeTermsOn(grade, today);

@@ -123,17 +123,19 @@ public class PersonRepository {
     public void stated(Person person, BigDecimal total, LocalDate date) {
         jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ? "
                 + "WHERE sheet_id = ? AND id = ?", total, date, person.sheetId(), person.id());
-        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, due_total, statement_date) VALUES (?, ?, ?, ?)",
-                person.sheetId(), person.id(), total, date);
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, due_total, statement_date, made_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), total, date, person.sheetId());
     }
 
     /** Cancel the last statement taken of the person: one fewer taken, and their row shows the one before it (its
-     *  due-total and date; none when there is no earlier one kept). Leaves the version alone. */
+     *  due-total and date; none when there is no earlier one kept). The cancelled one is kept, marked cancelled with
+     *  the sheet's today. Leaves the version alone. */
     public void unstated(Person person) {
         List<Long> kept = jdbc.queryForList("SELECT id FROM person_statement WHERE sheet_id = ? AND person_id = ? "
-                + "ORDER BY id DESC", Long.class, person.sheetId(), person.id());
+                + "AND NOT cancelled ORDER BY id DESC", Long.class, person.sheetId(), person.id());
         if (!kept.isEmpty()) {
-            jdbc.update("DELETE FROM person_statement WHERE id = ?", kept.get(0));
+            jdbc.update("UPDATE person_statement SET cancelled = TRUE, cancelled_on = (SELECT today FROM sheet WHERE id = ?) "
+                    + "WHERE id = ?", person.sheetId(), kept.get(0));
         }
         jdbc.update("UPDATE person SET statement_count = statement_count - 1, stated_total = NULL, statement_date = NULL "
                 + "WHERE sheet_id = ? AND id = ? AND statement_count > 0", person.sheetId(), person.id());
@@ -184,6 +186,54 @@ public class PersonRepository {
     }
 
     // ---- as of a date: the changes made while the sheet's today was on or before it -------------------------
+
+    /** The sheet's people as they stood at the end of the day, in the order they were added: those added by then,
+     *  each with their grades, holds, retirement and statements then, and the grade in force on that day. */
+    public List<Person> listAsOf(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id",
+                ROW, sheetId, end).stream().map(p -> asOf(p, end)).toList();
+    }
+
+    private Person asOf(Person p, LocalDate end) {
+        Grades grades = gradesAsOf(p, end);
+        int count = p.statementCount();
+        int rows = 0;
+        Long last = null;
+        BigDecimal total = null;
+        LocalDate date = null;
+        for (var row : jdbc.queryForList("SELECT id, due_total, statement_date, made_on, cancelled, cancelled_on "
+                + "FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY id", p.sheetId(), p.id())) {
+            rows++;
+            LocalDate made = toDate(row.get("made_on"));
+            LocalDate cancelledOn = toDate(row.get("cancelled_on"));
+            boolean cancelled = Boolean.TRUE.equals(row.get("cancelled"));
+            boolean madeBy = made == null || !made.isAfter(end);
+            boolean cancelledBy = cancelled && (cancelledOn == null || !cancelledOn.isAfter(end));
+            if (!cancelled && !madeBy) {
+                count--;
+            } else if (cancelled && madeBy && !cancelledBy) {
+                count++;
+            }
+            if (madeBy && !cancelledBy) {
+                last = ((Number) row.get("id")).longValue();
+                total = (BigDecimal) row.get("due_total");
+                date = toDate(row.get("statement_date"));
+            }
+        }
+        if (rows == 0) { // none kept: the person's last statement, if any, was taken before history was kept
+            total = p.statedTotal();
+            date = p.statementDate();
+        }
+        return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
+                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms());
+    }
+
+    private static LocalDate toDate(Object value) {
+        if (value instanceof java.sql.Date d) {
+            return d.toLocalDate();
+        }
+        return value instanceof LocalDate d ? d : null;
+    }
 
     /** Whether the person was on the sheet at the end of the day: added while the sheet's today was on or before it
      *  (or before history was kept). */

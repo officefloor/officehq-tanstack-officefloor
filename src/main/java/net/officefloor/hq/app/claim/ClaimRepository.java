@@ -212,6 +212,15 @@ public class ClaimRepository {
         return changed;
     }
 
+    /** The sheet's claims as they stood at the end of the day: each claim's last kept state made while the sheet's
+     *  today was on or before it (one kept before history was, at any day), newest first; a claim added after then is
+     *  not among them. */
+    public List<Claim> listAsOf(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT h.claim_id AS id, h.* FROM claim_history h WHERE h.sheet_id = ? AND h.id = ("
+                + "SELECT MAX(l.id) FROM claim_history l WHERE l.sheet_id = h.sheet_id AND l.claim_id = h.claim_id "
+                + "AND (l.made_on IS NULL OR l.made_on <= ?)) ORDER BY h.claim_id DESC", ROW, sheetId, end);
+    }
+
     /** The person's claims as they stood at the end of the day: each claim's last kept state made while the sheet's
      *  today was on or before it (one kept before history was, at any day), newest first; a claim added after then,
      *  or that was another person's then, is not among them. */
