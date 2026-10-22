@@ -35,7 +35,7 @@ public class CancelStatement {
             }
         }
         people.unstated(person);
-        statement.set(new Statement(person.sheetId(), person.name(), person.statedTotal(), bound));
+        statement.set(new Statement(person.sheetId(), person.name(), person.statedTotal(), bound, null));
         saved.set(PersonResponse.from(people.find(person.sheetId(), person.id())));
     }
 }

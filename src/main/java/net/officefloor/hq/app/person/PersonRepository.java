@@ -95,16 +95,20 @@ public class PersonRepository {
     public Person insert(String sheetId, String name, String grade, Integer terms) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms) VALUES (?, ?, ?)",
+            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms, added_on) VALUES (?, ?, ?, "
+                    + "(SELECT today FROM sheet WHERE id = ?))",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
+            ps.setString(4, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, NULL)",
                 sheetId, id, grade);
+        jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grade, from_date, made_on) VALUES (?, ?, ?, NULL, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
                 new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms);
     }
@@ -143,13 +147,15 @@ public class PersonRepository {
     /** Retire the person from the date. Leaves the version alone: retiring is not an edit of the person. */
     public void retire(Person person, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", from, person.sheetId(), person.id());
+        jdbc.update("INSERT INTO person_retire_log (sheet_id, person_id, from_date, made_on) VALUES (?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), from, person.sheetId());
     }
 
     /** Add a hold to the person from the from-date to the to-date (null: open-ended), keeping the holds they have.
      *  Leaves the version alone: holding is not an edit of the person. */
     public void hold(Person person, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
-                person.sheetId(), person.id(), from, to);
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), from, to, person.sheetId());
     }
 
     /** Set the person's own terms in days (null: none). */
@@ -172,5 +178,45 @@ public class PersonRepository {
                 person.sheetId(), person.id(), fromDate);
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)",
                 person.sheetId(), person.id(), grade, fromDate);
+        jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grade, from_date, made_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", person.sheetId(), person.id(), grade, fromDate,
+                person.sheetId());
+    }
+
+    // ---- as of a date: the changes made while the sheet's today was on or before it -------------------------
+
+    /** Whether the person was on the sheet at the end of the day: added while the sheet's today was on or before it
+     *  (or before history was kept). */
+    public boolean addedBy(Person person, LocalDate end) {
+        LocalDate added = jdbc.query("SELECT added_on FROM person WHERE sheet_id = ? AND id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, person.sheetId(), person.id());
+        return added == null || !added.isAfter(end);
+    }
+
+    /** The person's grades as they stood at the end of the day: each one given from a from-date replaces the one
+     *  given before it from that same date. */
+    public Grades gradesAsOf(Person person, LocalDate end) {
+        Map<LocalDate, String> byFrom = new java.util.LinkedHashMap<>();
+        jdbc.query("SELECT grade, from_date FROM person_grade_log WHERE sheet_id = ? AND person_id = ? "
+                + "AND (made_on IS NULL OR made_on <= ?) ORDER BY id", rs -> {
+                    byFrom.put(rs.getObject(2, LocalDate.class), rs.getString(1));
+                }, person.sheetId(), person.id(), end);
+        return new Grades(byFrom.entrySet().stream()
+                .map(e -> new Grades.Grade(e.getValue(), e.getKey())).toList());
+    }
+
+    /** The person's holds as they stood at the end of the day: those put on while the sheet's today was on or before
+     *  it. */
+    public Holds holdsAsOf(Person person, LocalDate end) {
+        return new Holds(jdbc.query("SELECT * FROM person_hold WHERE sheet_id = ? AND person_id = ? "
+                + "AND (made_on IS NULL OR made_on <= ?) ORDER BY id", HOLD_ROW, person.sheetId(), person.id(), end)
+                .stream().map(HoldRow::hold).toList());
+    }
+
+    /** The date the person was retired from at the end of the day (null: not retired then). */
+    public LocalDate retiredFromAsOf(Person person, LocalDate end) {
+        return jdbc.query("SELECT from_date FROM person_retire_log WHERE sheet_id = ? AND person_id = ? "
+                + "AND (made_on IS NULL OR made_on <= ?) ORDER BY id DESC LIMIT 1",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, person.sheetId(), person.id(), end);
     }
 }

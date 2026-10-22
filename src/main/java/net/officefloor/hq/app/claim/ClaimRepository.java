@@ -54,6 +54,7 @@ public class ClaimRepository {
             ps.setBoolean(9, claim.lateEntry());
             return ps;
         }, keys);
+        kept(claim.sheetId(), keys.getKey().longValue());
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
                 claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry());
@@ -75,60 +76,62 @@ public class ClaimRepository {
     public void state(Claim claim, boolean stated, BigDecimal statedDue) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
                 stated, statedDue, claim.sheetId(), claim.id());
+        kept(claim.sheetId(), claim.id());
     }
 
     /** Move the claim to another person, unbinding it from any statement: false when it no longer has the person
      *  and status it was loaded with (another user changed it first), and nothing is written. */
     public boolean reassign(Claim claim, long personId) {
-        return jdbc.update(
+        return kept(claim, jdbc.update(
                 "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
-                personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1;
+                personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
     }
 
     /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing
      *  is written. */
     public boolean defer(Claim claim, LocalDate until) {
-        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                until, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1;
+        return kept(claim, jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                until, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1);
     }
 
     /** Leave the OPEN claim with the rest of its amount after a split, unbinding it from any statement: false when
      *  it is no longer OPEN with the amount it was loaded with (another user changed it first), and nothing is
      *  written. */
     public boolean splitRest(Claim claim, BigDecimal rest) {
-        return jdbc.update(
+        return kept(claim, jdbc.update(
                 "UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND status = ? AND amount = ?",
-                rest, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), claim.amount()) == 1;
+                rest, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), claim.amount()) == 1);
     }
 
     /** Raise the claim's proofs count by one: false when it no longer has the status it was loaded with (another user
      *  changed it first), and nothing is written. */
     public boolean addProof(Claim claim) {
-        return jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.sheetId(), claim.id(), claim.status().name()) == 1;
+        return kept(claim, jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.sheetId(), claim.id(), claim.status().name()) == 1);
     }
 
     /** Store an edit of the claim, releasing its editor lock. */
     public void update(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet_id = ? AND id = ?",
                 claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.sheetId(), claim.id());
+        kept(claim.sheetId(), claim.id());
     }
 
     /** Move the claim from one status to another, with its settled due and who opened it: false when it no longer has
      *  the status it was loaded with (another user changed it first), and nothing is written. */
     public boolean changeStatus(Claim claim, ClaimStatus to, String number, BigDecimal settledDue,
             String openedBy) {
-        return jdbc.update(
+        return kept(claim, jdbc.update(
                 "UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                to.name(), number, settledDue, openedBy, claim.sheetId(), claim.id(), claim.status().name()) == 1;
+                to.name(), number, settledDue, openedBy, claim.sheetId(), claim.id(), claim.status().name()) == 1);
     }
 
     /** Re-date the claim with its number (a new one when its period changed): false when it no longer has the
      *  date and status it was loaded with (another user changed it first), and nothing is written. */
     public boolean redate(Claim claim, LocalDate date, String number) {
-        return jdbc.update(
+        return kept(claim, jdbc.update(
                 "UPDATE claim SET claim_date = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND claim_date = ? AND status = ?",
-                date, number, claim.sheetId(), claim.id(), claim.date(), claim.status().name()) == 1;
+                date, number, claim.sheetId(), claim.id(), claim.date(), claim.status().name()) == 1);
     }
 
     /** Whether the sheet numbers claims within their period now: its period numbering from is a date and its today
@@ -189,5 +192,33 @@ public class ClaimRepository {
     /** Release every editor lock on the sheet's claims. */
     public void unlockAll(String sheetId) {
         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+    }
+
+    /** Keep the claim as it stands now in its history, with the sheet's today. */
+    private void kept(String sheetId, long id) {
+        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
+                + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, "
+                + "split_from, late_entry, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
+                + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_by, "
+                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, s.today FROM claim c JOIN sheet s ON s.id = "
+                + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
+    }
+
+    /** Keep the claim in its history when the change went through; whether it did. */
+    private boolean kept(Claim claim, boolean changed) {
+        if (changed) {
+            kept(claim.sheetId(), claim.id());
+        }
+        return changed;
+    }
+
+    /** The person's claims as they stood at the end of the day: each claim's last kept state made while the sheet's
+     *  today was on or before it (one kept before history was, at any day), newest first; a claim added after then,
+     *  or that was another person's then, is not among them. */
+    public List<Claim> listForPersonAsOf(String sheetId, long personId, LocalDate end) {
+        return jdbc.query("SELECT h.claim_id AS id, h.* FROM claim_history h WHERE h.sheet_id = ? AND h.id = ("
+                + "SELECT MAX(l.id) FROM claim_history l WHERE l.sheet_id = h.sheet_id AND l.claim_id = h.claim_id "
+                + "AND (l.made_on IS NULL OR l.made_on <= ?)) AND h.person_id = ? ORDER BY h.claim_id DESC",
+                ROW, sheetId, end, personId);
     }
 }

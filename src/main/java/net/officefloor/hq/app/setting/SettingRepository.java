@@ -62,6 +62,20 @@ public class SettingRepository {
                 sheetId, key, from);
         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, val) VALUES (?, ?, ?, ?)",
                 sheetId, key, from, value);
+        jdbc.update("INSERT INTO setting_log (sheet_id, setting_key, from_date, val, made_on) VALUES (?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, key, from, value, sheetId);
+    }
+
+    /** The sheet's dated settings as they stood at the end of the day: each value recorded from a from-date replaces
+     *  the one recorded before it for the key from that same date. */
+    public SettingHistory historyAsOf(String sheetId, LocalDate end) {
+        Map<String, NavigableMap<LocalDate, String>> values = new HashMap<>();
+        jdbc.query("SELECT setting_key, from_date, val FROM setting_log WHERE sheet_id = ? "
+                + "AND (made_on IS NULL OR made_on <= ?) ORDER BY id", rs -> {
+                    values.computeIfAbsent(rs.getString(1), k -> new TreeMap<>())
+                            .put(rs.getObject(2, LocalDate.class), rs.getString(3));
+                }, sheetId, end);
+        return new SettingHistory(values);
     }
 
     /** The sheet's clerk limit in force on its today: two decimals, or null when there is none. */

@@ -7,7 +7,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Grades;
 import net.officefloor.hq.app.person.Holds;
-import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.DatedAmount;
 
 /** Claim figures and due-totals, as the screen shows them. */
@@ -19,7 +19,7 @@ public final class Dues {
      *  included (not while it is PENDING: then it is live), else live: its amount times its person's rate in force on
      *  its date for their grade then, divided by 100, rounded to two decimals as the claim rounds (see Rounding); null
      *  (n/a) when no rate applies. The floor is not in it: it is applied last (see shown). */
-    public static BigDecimal figure(Claim claim, Grades grades, RateRepository rates, Rounding rounding) {
+    public static BigDecimal figure(Claim claim, Grades grades, Rates rates, Rounding rounding) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
@@ -32,7 +32,7 @@ public final class Dues {
     /** A claim's due as its row shows it: the due fixed when it was settled, else the greater of the floor in force
      *  on its date and its figure (bound or live) with the late charge on it added (a correction, a negative amount,
      *  has no floor and no charge); null (n/a) when it has no figure. */
-    public static BigDecimal shown(Claim claim, Grades grades, RateRepository rates, DatedAmount floor,
+    public static BigDecimal shown(Claim claim, Grades grades, Rates rates, DatedAmount floor,
             LateCharge late) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
@@ -46,7 +46,7 @@ public final class Dues {
 
     /** A claim's live figure: its amount times its person's rate in force on its date for their grade then, divided
      *  by 100, rounded to two decimals as the claim rounds (see Rounding); null (n/a) when no rate applies. */
-    public static BigDecimal live(Claim claim, Grades grades, RateRepository rates, Rounding rounding) {
+    public static BigDecimal live(Claim claim, Grades grades, Rates rates, Rounding rounding) {
         return rates.on(claim.sheetId(), grades.on(claim.date()), claim.date())
                 .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, rounding.of(claim)))
                 .orElse(null);
@@ -84,7 +84,7 @@ public final class Dues {
      *  their grade today has no rate today, unless a claim that counts has a figure (settled, stated, or live at
      *  the grade in force on its date). */
     public static BigDecimal total(String sheetId, List<Claim> claims, Grades grades, Holds holds,
-            LocalDate retiredFrom, LocalDate today, RateRepository rates, DatedAmount floor, LateCharge late) {
+            LocalDate retiredFrom, LocalDate today, Rates rates, DatedAmount floor, LateCharge late) {
         List<Claim> counted = claims.stream().filter(c -> counts(c, holds, retiredFrom, today)).toList();
         List<BigDecimal> figures = counted.stream().map(c -> shown(c, grades, rates, floor, late))
                 .filter(f -> f != null).toList();
