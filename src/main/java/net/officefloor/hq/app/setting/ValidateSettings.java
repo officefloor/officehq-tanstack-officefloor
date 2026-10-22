@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd. */
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
     static final List<String> GRADES = List.of("A", "B", "C");
@@ -108,6 +108,25 @@ public class ValidateSettings {
                 gradeTerms.put(grade, days.isEmpty() ? null : Integer.valueOf(days));
             }
         }
+        Map<String, Integer> gradeGrace = new LinkedHashMap<>();
+        if (request.gradeGrace() != null) {
+            for (String grade : request.gradeGrace().keySet()) {
+                if (!GRADES.contains(grade)) {
+                    throw new InvalidSettingException("Grace may be set only for grade A, B or C.");
+                }
+            }
+            for (String grade : GRADES) {
+                if (!request.gradeGrace().containsKey(grade)) {
+                    continue;
+                }
+                String days = request.gradeGrace().get(grade) == null ? "" : request.gradeGrace().get(grade).trim();
+                if (!days.isEmpty() && !days.matches("\\d{1,4}")) {
+                    throw new InvalidSettingException("The grace of grade " + grade
+                            + " must be a whole number of days, 0 or more, or blank for none.");
+                }
+                gradeGrace.put(grade, days.isEmpty() ? null : Integer.valueOf(days));
+            }
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request.perms() != null) {
             for (String action : request.perms().keySet()) {
@@ -164,6 +183,6 @@ public class ValidateSettings {
                 perms, grace != null, grace == null || grace.isEmpty() ? null : Integer.valueOf(grace),
                 noteThreshold != null,
                 noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
-                entered != null, entryDate));
+                entered != null, entryDate, gradeGrace));
     }
 }

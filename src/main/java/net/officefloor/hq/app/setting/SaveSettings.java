@@ -26,6 +26,8 @@ public class SaveSettings {
         }
         input.gradeTerms().forEach((grade, days) -> repository.setDated(id, "terms-" + grade,
                 days != null ? String.valueOf(days) : null, from(input, "terms-" + grade, today)));
+        input.gradeGrace().forEach((grade, days) -> repository.setDated(id, "grace-" + grade,
+                days != null ? String.valueOf(days) : null, from(input, "grace-" + grade, today)));
         if (input.latePct() != null) {
             repository.setDated(id, "late-pct", text(input.latePct()), from(input, "late-pct", today));
         }

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { useClaims } from '../claims/claims';
+import { useClaims, type Claim } from '../claims/claims';
+import { gradeOn, usePeople } from '../people/people';
 import type { Late } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 
@@ -18,10 +19,12 @@ import { useSheetToday } from '../sheet/sheet';
  *  terms-A/B/C, late-pct, cap, proof-threshold, note-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
  *  each action the roles that may take it, comma separated ('' when blank: the standing rule). `graceDays` is the grace days (not dated; '' when off): when the sheet's
  *  today is changed, each open period whose to-date plus them is before the new today is closed. `entryDate` is the entry date (not dated; '' when off): while it is set, a new claim
- *  given no date is dated it instead of the sheet's today. */
+ *  given no date is dated it instead of the sheet's today. `gradeGrace` is each grade's grace in days ('' when the grade
+ *  has none), dated (keys grace-A/B/C): a claim whose person's grade in force on its date has a grace in force on that
+ *  date is overdue, and counts its late charge, from its due-by plus it. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
-  perms?: Record<string, string>; graceDays?: string; entryDate?: string };
+  perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string> };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -81,7 +84,8 @@ export function useTerms(sheetId: string): number {
   return Number(useSettings(sheetId).data?.terms ?? DEFAULT_TERMS);
 }
 
-/** What the late charge follows now: the late percent by date (a claim gains the one in force on its date) and the sheet's today; and how claims round:
+/** What the late charge follows now: the late percent by date (a claim gains the one in force on its date) and the sheet's today, and each
+ *  claim's grace (of its person's grade on its date, in force on that date; 0 while loading); and how claims round:
  *  the policy date in force (blank: the sheet's today) and the dates of the sheet's numbered claims. */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId).data;
@@ -93,6 +97,17 @@ export function useLate(sheetId: string): Late {
   );
   const dated = settings?.dated?.['late-pct'];
   const pct = useMemo(() => (date: string) => valueOn(dated, DEFAULT_LATE_PCT, date), [dated]);
-  return { pct, today,
+  const people = usePeople(sheetId).data;
+  const history = settings?.dated;
+  const grace = useMemo(() => {
+    const byId = new Map((people ?? []).map((p) => [p.id, p]));
+    return (claim: Claim) => {
+      const grade = gradeOn(byId.get(claim.personId), claim.date);
+      if (grade === '') return 0;
+      const days = valueOn(history?.[`grace-${grade}`], '', claim.date);
+      return days === '' ? 0 : Number(days);
+    };
+  }, [people, history]);
+  return { pct, today, grace,
     policy: settings?.policyDate || today, numbered };
 }

@@ -13,12 +13,13 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 /** The settings that carry a figure, and so are saved from a from-date. */
-const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap', 'proof-threshold', 'note-threshold'];
+const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`),
+  ...GRADES.map((grade) => `grace-${grade}`), 'late-pct', 'cap', 'proof-threshold', 'note-threshold'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
-  perms?: Record<string, string>; graceDays?: string; entryDate?: string };
+  perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -27,7 +28,9 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
  *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's terms are fixed when it is created, from
- *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none).
+ *  the terms of its person's grade on its date. A grade may have grace days (blank: none); a claim whose person's grade
+ *  on its date has a grace in force on that date is overdue only past its due-by plus them, and its late charge's
+ *  30-day boundaries count from there; its due-by is unchanged. A person's due-total is at most the cap (blank: none).
  *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
  *  while it has no proofs; the server enforces it. A claim whose due is above the note threshold (blank: none) in
  *  force on its date cannot be opened while its note is empty; the server enforces it.
@@ -68,6 +71,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
+  const currentGradeGrace = (grade: string) => settings.data?.gradeGrace?.[grade] ?? '';
+  const [typedGradeGrace, setTypedGradeGrace] = useState<Record<string, string>>({});
   const currentPerm = (action: string) => settings.data?.perms?.[action] ?? '';
   const [typedPerms, setTypedPerms] = useState<Record<string, string>>({});
   // From-dates typed in since the last save, by dated setting key.
@@ -92,6 +97,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedGraceDays(null);
       setTypedEntryDate(null);
       setTypedGradeTerms({});
+      setTypedGradeGrace({});
       setTypedPerms({});
       setTypedFrom({});
     },
@@ -204,6 +210,16 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.gradeTerms = { ...changes.gradeTerms, [grade]: terms };
     }
+    for (const grade of GRADES) {
+      const typedGrace = typedGradeGrace[grade];
+      if (typedGrace === undefined) continue;
+      const grace = typedGrace.trim();
+      if (grace !== '' && !DAYS.test(grace)) {
+        setError(`The grace of grade ${grade} must be a whole number of days, 0 or more, or blank for none.`);
+        return;
+      }
+      changes.gradeGrace = { ...changes.gradeGrace, [grade]: grace };
+    }
     for (const action of PERM_ACTIONS) {
       const typedRoles = typedPerms[action];
       if (typedRoles === undefined) continue;
@@ -226,6 +242,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       ...Object.fromEntries(GRADES.map((grade) => [`terms-${grade}`, () => {
         if (changes.gradeTerms?.[grade] === undefined) {
           changes.gradeTerms = { ...changes.gradeTerms, [grade]: currentGradeTerms(grade) };
+        }
+      }])),
+      ...Object.fromEntries(GRADES.map((grade) => [`grace-${grade}`, () => {
+        if (changes.gradeGrace?.[grade] === undefined) {
+          changes.gradeGrace = { ...changes.gradeGrace, [grade]: currentGradeGrace(grade) };
         }
       }])),
     };
@@ -274,6 +295,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         {GRADES.map((grade) => (
           <span key={grade}>
             Grade {grade} terms <strong data-testid={`setting-terms-${grade}-current`}>{currentGradeTerms(grade)}</strong>{' '}
+          </span>
+        ))}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            Grade {grade} grace <strong data-testid={`setting-grace-${grade}-current`}>{currentGradeGrace(grade)}</strong>{' '}
           </span>
         ))}
         Late <strong data-testid="setting-late-pct-current">{currentLatePct}</strong>%{' '}
@@ -341,6 +367,22 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
               />
             </label>
             {fromInput(`terms-${grade}`)}{' '}
+          </span>
+        ))}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Grade {grade} grace days{' '}
+              <input
+                data-testid={`setting-grace-${grade}`}
+                placeholder="none"
+                value={typedGradeGrace[grade] ?? currentGradeGrace(grade)}
+                onInput={typed((v) => setTypedGradeGrace((t) => ({ ...t, [grade]: v })))}
+                onChange={typed((v) => setTypedGradeGrace((t) => ({ ...t, [grade]: v })))}
+                onFocus={() => setTypedGradeGrace((t) => (grade in t ? t : { ...t, [grade]: currentGradeGrace(grade) }))}
+              />
+            </label>
+            {fromInput(`grace-${grade}`)}{' '}
           </span>
         ))}
         <label>

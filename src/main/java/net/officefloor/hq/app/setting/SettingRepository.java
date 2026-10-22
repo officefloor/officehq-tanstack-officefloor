@@ -49,10 +49,17 @@ public class SettingRepository {
                 gradeTerms.put(grade, days);
             }
         }
+        Map<String, Integer> gradeGrace = new LinkedHashMap<>();
+        for (String grade : ValidateSettings.GRADES) {
+            Integer days = history.graceOn(grade, today);
+            if (days != null) {
+                gradeGrace.put(grade, days);
+            }
+        }
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
-                entryDate(sheetId));
+                entryDate(sheetId), gradeGrace);
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */

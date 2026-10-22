@@ -65,7 +65,7 @@ public class SaveStatement {
             retiredFrom = person.retiredFrom();
             ratesThen = rates;
             floor = settings.floor(sheetId);
-            late = LateCharge.of(sheetId, settings, sheets, claims);
+            late = LateCharge.of(sheetId, settings, sheets, claims, people);
             cap = settings.cap(sheetId);
         } else {
             then = claims.listForPersonAsOf(sheetId, person.id(), asOf);
@@ -77,7 +77,7 @@ public class SaveStatement {
             floor = history::floorOn;
             LocalDate policy = settings.policyDate(sheetId);
             late = new LateCharge(history::latePctOn, asOf, new Rounding(policy != null ? policy : asOf,
-                    now.numbered()));
+                    now.numbered()), LateCharge.Grace.of(history, Map.of(person.id(), grades)));
             cap = history.capOn(asOf);
         }
 

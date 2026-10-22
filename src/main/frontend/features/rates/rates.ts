@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts, dueBy, live, overdue, type Claim } from '../claims/claims';
+import { counts, lateFrom, live, overdue, type Claim } from '../claims/claims';
 import { gradeOn, type Person } from '../people/people';
 import type { DatedValue } from '../settings/settings';
 
@@ -162,15 +162,17 @@ export function sheetOverdueTotal(people: Person[], claims: Claim[], rates: Rate
 export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: DatedValue): string[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   return live(claims, people, late.today)
-    .filter((c) => overdue(c, late.today))
+    .filter((c) => overdue(c, late.today, late.grace(c)))
     .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
 }
 
 /** What the late charge follows: the sheet's late percent by date (two decimals; a claim gains the one in force
- *  on each 30-day boundary past its due-by) and its today; and
+ *  on each 30-day boundary past its due-by plus its grace) and its today; and each claim's grace in days (the grace in
+ *  force on its date of its person's grade in force on that date; 0 when none: it is overdue past its due-by plus it); and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
-export type Late = { pct: DatedValue; today: string; policy: string; numbered: Map<string, string> };
+export type Late = { pct: DatedValue; today: string; policy: string; numbered: Map<string, string>;
+  grace: (claim: Claim) => number };
 
 /** Whether a claim's live figures round half up: it (a correction: the claim it corrects) is dated before the
  *  policy date; else they round half to even. */
@@ -195,13 +197,15 @@ export function claimDue(claim: Claim, rate: string | undefined, floor: DatedVal
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The late charge on a claim whose figure is `figure`: for each full 30 days the claim is overdue (past its due-by, on
- *  the sheet's today), the late percent in force on that boundary date (its due-by plus 30, 60, 90 ... days) of it,
+/** The late charge on a claim whose figure is `figure`: for each full 30 days the claim is overdue (past its due-by
+ *  plus its grace, on the sheet's today), the late percent in force on that boundary date (its due-by plus its grace
+ *  plus 30, 60, 90 ... days) of it,
  *  rounded like the claim's due, the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when not
  *  overdue, or a correction (a negative amount). */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
-  if (!overdue(claim, late.today) || toCents(claim.amount) < 0n) return '0.00';
-  const from = Date.parse(`${dueBy(claim)}T00:00:00Z`);
+  const grace = late.grace(claim);
+  if (!overdue(claim, late.today, grace) || toCents(claim.amount) < 0n) return '0.00';
+  const from = Date.parse(`${lateFrom(claim, grace)}T00:00:00Z`);
   const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - from) / DAY_MS);
   let total = 0n;
   for (let n = 1; n <= Math.floor(days / 30); n++) {

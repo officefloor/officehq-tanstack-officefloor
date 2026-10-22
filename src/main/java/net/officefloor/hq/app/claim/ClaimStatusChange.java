@@ -180,6 +180,6 @@ final class ClaimStatusChange {
             SettingRepository settings, SheetRepository sheets) {
         var person = people.find(claim.sheetId(), claim.personId());
         return Dues.shown(claim, person.grades(), rates, settings.floor(claim.sheetId()),
-                LateCharge.of(claim.sheetId(), settings, sheets, claims));
+                LateCharge.of(claim.sheetId(), settings, sheets, claims, people));
     }
 }

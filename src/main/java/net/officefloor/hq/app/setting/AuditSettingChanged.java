@@ -46,6 +46,8 @@ public class AuditSettingChanged {
         if (input.setsEntryDate()) {
             audit.record(head + "entry-date value=" + (input.entryDate() != null ? input.entryDate() : ""));
         }
+        input.gradeGrace().forEach((grade, days) -> audit.record(head + "grace-" + grade + " value="
+                + (days != null ? days : "") + from(input, "grace-" + grade)));
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

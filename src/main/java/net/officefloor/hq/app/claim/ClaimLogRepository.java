@@ -44,7 +44,7 @@ public class ClaimLogRepository {
         Claim now = claims.find(sheetId, claim.id());
         var person = people.find(sheetId, now.personId());
         BigDecimal due = Dues.shown(now, person.grades(), rates, settings.floor(sheetId),
-                LateCharge.of(sheetId, settings, sheets, claims));
+                LateCharge.of(sheetId, settings, sheets, claims, people));
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due) VALUES (?, ?, ?, ?, ?, ?)",
                 sheetId, now.id(), now.status().name(), user, sheets.today(sheetId), due);
     }

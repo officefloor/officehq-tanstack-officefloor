@@ -40,7 +40,7 @@ public final class PeriodCloser {
             SheetRepository sheets) throws InvalidPeriodException {
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         var floor = settings.floor(id);
-        LateCharge late = LateCharge.of(id, settings, sheets, claims);
+        LateCharge late = LateCharge.of(id, settings, sheets, claims, people);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
         for (Long personId : byId.keySet()) {
             personTotals.put(personId, new BigDecimal("0.00"));

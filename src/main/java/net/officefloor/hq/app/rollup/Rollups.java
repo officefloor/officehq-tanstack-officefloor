@@ -48,7 +48,7 @@ public class Rollups {
         var today = sheets.today(sheetId);
         var floor = settings.floor(sheetId);
         BigDecimal cap = settings.cap(sheetId);
-        LateCharge late = LateCharge.of(sheetId, settings, sheets, claims);
+        LateCharge late = LateCharge.of(sheetId, settings, sheets, claims, people);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = new BigDecimal("0.00");

@@ -98,9 +98,16 @@ export function dueBy(claim: Claim): string {
   return claim.dueBy;
 }
 
-/** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by is before the sheet's today. */
-export function overdue(claim: Claim, today: string): boolean {
-  return unsettled(claim) && !claim.deferred && today !== '' && dueBy(claim) < today;
+/** The day (yyyy-mm-dd) a claim's late charge counts from: its due-by plus its grace (days; see Late). */
+export function lateFrom(claim: Claim, grace = 0): string {
+  if (grace === 0) return dueBy(claim);
+  return new Date(Date.parse(`${dueBy(claim)}T00:00:00Z`) + grace * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by plus its grace (days) is before
+ *  the sheet's today. */
+export function overdue(claim: Claim, today: string, grace = 0): boolean {
+  return unsettled(claim) && !claim.deferred && today !== '' && lateFrom(claim, grace) < today;
 }
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;

@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-/** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap,
+/** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, grace-A/B/C, clerk-limit, cap,
  *  proof-threshold, note-threshold), each value recorded
  *  by its from-date (null: blank). The value in force on a date is the one with the latest from-date on or before
  *  it; before every from-date the sheet's starting value applies. */
@@ -15,7 +15,8 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
 
     /** The keys of the settings that are dated. */
     public static final List<String> KEYS = List.of("clerk-limit", "floor", "terms", "terms-A",
-            "terms-B", "terms-C", "late-pct", "cap", "proof-threshold", "note-threshold");
+            "terms-B", "terms-C", "grace-A", "grace-B", "grace-C", "late-pct", "cap", "proof-threshold",
+            "note-threshold");
 
     /** The key's values, oldest from-date first (empty when it has none). */
     public NavigableMap<LocalDate, String> of(String key) {
@@ -56,6 +57,18 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     public int termsFor(String grade, LocalDate date) {
         Integer own = grade != null ? gradeTermsOn(grade, date) : null;
         return own != null ? own : termsOn(date);
+    }
+
+    /** The grade's grace in force on the date, in days; null when it has none then. */
+    public Integer graceOn(String grade, LocalDate date) {
+        var e = entryOn("grace-" + grade, date);
+        return e != null && e.getValue() != null ? Integer.valueOf(e.getValue()) : null;
+    }
+
+    /** The grace a claim of the grade dated on the date gets, in days: the grade's in force then, else none (0). */
+    public int graceFor(String grade, LocalDate date) {
+        Integer own = grade != null && !grade.isEmpty() ? graceOn(grade, date) : null;
+        return own != null ? own : 0;
     }
 
     /** The clerk limit in force on the date: two decimals, or null when there is none. */

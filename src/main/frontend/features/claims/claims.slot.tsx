@@ -270,7 +270,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-due">{claimDue(claim, rate, floor, late)}</span>{' '}
       Due by <span data-testid="claim-due-by">{dueBy(claim)}</span>{' '}
-      Overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
+      Overdue <span data-testid="claim-overdue">{overdue(claim, today, late.grace(claim)) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Late entry <span data-testid="claim-late-entry">{claim.lateEntry ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}

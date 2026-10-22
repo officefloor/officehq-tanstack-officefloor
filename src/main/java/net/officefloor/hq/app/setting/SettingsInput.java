@@ -9,7 +9,7 @@ import java.util.Map;
  *  (A, B, C order) and to what (days; null: none, the sheet's terms), and whether it sets the cap and to what (two
  *  decimals; null: none), and the from-dates given for the dated ones it sets, by key (one not given: from the sheet's
  *  today), and whether it sets the proof threshold and to what (two decimals; null: none), and the permission entries it sets
- *  (in action order) and to what (roles comma separated; '': the standing rule), and whether it sets the grace days and to what (days; null: off), and whether it sets the note threshold and to what (two decimals; null: none), and whether it sets the entry date and to what (null: blank, off). */
+ *  (in action order) and to what (roles comma separated; '': the standing rule), and whether it sets the grace days and to what (days; null: off), and whether it sets the note threshold and to what (two decimals; null: none), and whether it sets the entry date and to what (null: blank, off), and the grades whose grace it sets (A, B, C order) and to what (days; null: none). */
 public record SettingsInput(String user, boolean setsClerkLimit, BigDecimal clerkLimit, BigDecimal floor,
         Integer terms, BigDecimal latePct, boolean setsPolicyDate, LocalDate policyDate,
         boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
@@ -17,5 +17,5 @@ public record SettingsInput(String user, boolean setsClerkLimit, BigDecimal cler
         Map<String, LocalDate> from, boolean setsProofThreshold, BigDecimal proofThreshold,
         Map<String, String> perms, boolean setsGraceDays, Integer graceDays,
         boolean setsNoteThreshold, BigDecimal noteThreshold,
-        boolean setsEntryDate, LocalDate entryDate) {
+        boolean setsEntryDate, LocalDate entryDate, Map<String, Integer> gradeGrace) {
 }
