@@ -1,0 +1,231 @@
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 5e13082..b05e7b5 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -7,7 +7,8 @@ import { usePersonError } from '../people/rowError';
+ import type { Person } from '../people/people';
+ 
+ /** A person's statements: how many have been taken, the last one's due-total and date, and the button that
+- *  takes one (recording their due-total now and binding their claims that count to the figures they show). */
++ *  takes one (recording their due-total now and binding their claims that count to the figures they show), and the
++ *  button that cancels the last one (a steward only: its claims are live again; the row shows the one before it). */
+ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const { error, setError, begin } = usePersonError(sheetId, person.id);
+@@ -25,6 +26,19 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
+       setError(e instanceof HttpError && e.body ? e.body : `Could not take a statement of ${person.name}.`),
+   });
+ 
++  const cancel = useMutation({
++    mutationFn: () =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements/cancel`, { user }),
++    onSuccess: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      ]);
++    },
++    onError: (e) =>
++      setError(e instanceof HttpError && e.body ? e.body : `Could not cancel the statement of ${person.name}.`),
++  });
++
+   const taken = person.statementCount > 0;
+   return (
+     <td>
+@@ -34,13 +48,24 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
+       <button
+         type="button"
+         data-testid="person-statement"
+-        disabled={take.isPending}
++        disabled={take.isPending || cancel.isPending}
+         onClick={() => {
+           begin();
+           take.mutate();
+         }}
+       >
+         Statement
++      </button>{' '}
++      <button
++        type="button"
++        data-testid="person-unstate"
++        disabled={cancel.isPending}
++        onClick={() => {
++          begin();
++          cancel.mutate();
++        }}
++      >
++        Cancel statement
+       </button>
+       {error && (
+         <p data-testid="person-error" role="alert">
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index 19ecd4a..4e73c84 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.TodayRequest;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Once the sheet's new today is set: while it has grace days, close each open period whose to-date plus them is
++/** Once the sheet's new today is set: while it has grace days, close each open period (not a soft-closed one) whose to-date plus them is
+  *  before the new today, in order of their to-dates, exactly as a close by hand would, each recorded as
+  *  PERIOD_CLOSED with auto=yes at its end. */
+ public class AutoClosePeriods {
+@@ -28,7 +28,7 @@ public class AutoClosePeriods {
+         }
+         periods.lockSheet(id);
+         var due = periods.list(id).stream()
+-                .filter(p -> !p.closed() && p.to().plusDays(grace).isBefore(today))
++                .filter(p -> !p.closed() && !p.soft() && p.to().plusDays(grace).isBefore(today))
+                 .sorted(Comparator.comparing(Period::to))
+                 .toList();
+         for (Period period : due) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 5517611..aafa43c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -119,6 +119,25 @@ public class PersonRepository {
+     public void stated(Person person, BigDecimal total, LocalDate date) {
+         jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ? "
+                 + "WHERE sheet_id = ? AND id = ?", total, date, person.sheetId(), person.id());
++        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, due_total, statement_date) VALUES (?, ?, ?, ?)",
++                person.sheetId(), person.id(), total, date);
++    }
++
++    /** Cancel the last statement taken of the person: one fewer taken, and their row shows the one before it (its
++     *  due-total and date; none when there is no earlier one kept). Leaves the version alone. */
++    public void unstated(Person person) {
++        List<Long> kept = jdbc.queryForList("SELECT id FROM person_statement WHERE sheet_id = ? AND person_id = ? "
++                + "ORDER BY id DESC", Long.class, person.sheetId(), person.id());
++        if (!kept.isEmpty()) {
++            jdbc.update("DELETE FROM person_statement WHERE id = ?", kept.get(0));
++        }
++        jdbc.update("UPDATE person SET statement_count = statement_count - 1, stated_total = NULL, statement_date = NULL "
++                + "WHERE sheet_id = ? AND id = ? AND statement_count > 0", person.sheetId(), person.id());
++        if (kept.size() > 1) {
++            jdbc.update("UPDATE person SET stated_total = (SELECT due_total FROM person_statement WHERE id = ?), "
++                    + "statement_date = (SELECT statement_date FROM person_statement WHERE id = ?) "
++                    + "WHERE sheet_id = ? AND id = ?", kept.get(1), kept.get(1), person.sheetId(), person.id());
++        }
+     }
+ 
+     /** Retire the person from the date. Leaves the version alone: retiring is not an edit of the person. */
+diff --git a/src/main/java/net/officefloor/hq/app/statement/AuditStatementCancelled.java b/src/main/java/net/officefloor/hq/app/statement/AuditStatementCancelled.java
+new file mode 100644
+index 0000000..3db678c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/AuditStatementCancelled.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.statement;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Record the statement cancelled in the audit file, with its due-total as the screen showed it (n/a when none). */
++public class AuditStatementCancelled {
++    public void audit(@Val StatementRequest request, @Val Statement statement, Audit audit) {
++        audit.record("STATEMENT_CANCELLED sheet=" + statement.sheetId() + " by=" + request.user()
++                + " name=" + statement.name()
++                + " due-total=" + (statement.dueTotal() != null ? statement.dueTotal().toPlainString() : "n/a"));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java b/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
+new file mode 100644
+index 0000000..ea05492
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app.statement;
++
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonResponse;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Cancel the person's last statement: only a steward may, and only of a person with a statement. The claims it
++ *  bound become live again (a figure an earlier statement bound them to is not restored), there is one statement
++ *  fewer, and the row shows the one before it (or none). Publishes the cancelled statement (its due-total; the
++ *  claims it bound). */
++public class CancelStatement {
++    public void cancel(@Val StatementRequest request, @Val Person loaded, PersonRepository people,
++            ClaimRepository claims, RoleRepository roles, Out<Statement> statement, Out<PersonResponse> saved)
++            throws InvalidPersonException {
++        if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), request.user()))) {
++            throw new InvalidPersonException("Only a steward may cancel a statement.");
++        }
++        people.lock(loaded);
++        Person person = people.find(loaded.sheetId(), loaded.id());
++        if (person.statementCount() == 0) {
++            throw new InvalidPersonException(person.name() + " has no statement to cancel.");
++        }
++        int bound = 0;
++        for (Claim c : claims.listForPerson(person.sheetId(), person.id())) {
++            if (c.stated()) {
++                bound++;
++                claims.state(c, false, null);
++            }
++        }
++        people.unstated(person);
++        statement.set(new Statement(person.sheetId(), person.name(), person.statedTotal(), bound));
++        saved.set(PersonResponse.from(people.find(person.sheetId(), person.id())));
++    }
++}
+diff --git a/src/main/resources/db/migration/V46__person_statement.sql b/src/main/resources/db/migration/V46__person_statement.sql
+new file mode 100644
+index 0000000..5c29401
+--- /dev/null
++++ b/src/main/resources/db/migration/V46__person_statement.sql
+@@ -0,0 +1,13 @@
++-- Each statement taken of a person, in the order taken: its due-total (NULL when it was n/a) and date. The person
++-- keeps the last one's on their row; cancelling the last one removes it, and the row shows the one before it. A
++-- person stated before keeps their last statement here (the earlier ones were not kept).
++CREATE TABLE person_statement (
++    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id       VARCHAR(100) NOT NULL REFERENCES sheet(id),
++    person_id      BIGINT       NOT NULL REFERENCES person(id),
++    due_total      DECIMAL(14, 2),
++    statement_date DATE
++);
++CREATE INDEX person_statement_sheet ON person_statement(sheet_id, person_id);
++INSERT INTO person_statement (sheet_id, person_id, due_total, statement_date)
++    SELECT sheet_id, id, stated_total, statement_date FROM person WHERE statement_count > 0;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements/cancel.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements/cancel.POST.yml
+new file mode 100644
+index 0000000..c8b7451
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements/cancel.POST.yml
+@@ -0,0 +1,28 @@
++# Cancel a person's last statement: the claims it bound become live again, and the row shows the statement before it.
++# A refused cancel (no signed-in user, not a steward, unknown person, no statement) writes nothing, not even an audit line.
++validate:
++  class: net.officefloor.hq.app.statement.ValidateStatement
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: cancel
++cancel:
++  class: net.officefloor.hq.app.statement.CancelStatement
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.statement.AuditStatementCancelled
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditStatementRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
