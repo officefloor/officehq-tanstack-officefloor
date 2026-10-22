@@ -1,0 +1,327 @@
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index 9ee12a2..bf79ea5 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -5,6 +5,7 @@ import { HttpError, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { useSheetToday } from '../sheet/sheet';
++import { poolsKey } from '../pools/pools';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+ import type { Person } from './people';
+@@ -25,6 +26,8 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string;
+       putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/hold`, body),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      // a hold in force on the sheet's today moves pool cuts
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+       setFrom('');
+       setTo('');
+     },
+diff --git a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+index 3faa028..7e312f7 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
++++ b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.patron;
+ 
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -20,8 +21,16 @@ public class PatronRepository {
+ 
+     /** Every person's patrons on the sheet, each person's in the order they were named. */
+     public List<Patron> list(String sheetId) {
++        return list(sheetId, null);
++    }
++
++    /** Every person's patrons on the sheet, each person's in the order they were named; only those named while the
++     *  sheet's today was on or before `end`, when one is given. */
++    public List<Patron> list(String sheetId, LocalDate end) {
+         return jdbc.query("SELECT pp.sheet_id, pp.person_id, pp.patron_id, p.name FROM person_patron pp "
+-                + "JOIN person p ON p.id = pp.patron_id WHERE pp.sheet_id = ? ORDER BY pp.person_id, pp.named", ROW, sheetId);
++                + "JOIN person p ON p.id = pp.patron_id WHERE pp.sheet_id = ? "
++                + "AND (CAST(? AS DATE) IS NULL OR pp.made_on IS NULL OR pp.made_on <= ?) "
++                + "ORDER BY pp.person_id, pp.named", ROW, sheetId, end, end);
+     }
+ 
+     /** Whether the person already has this patron. */
+@@ -33,8 +42,9 @@ public class PatronRepository {
+     }
+ 
+     public void insert(Patron patron) {
+-        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
+-                patron.sheetId(), patron.personId(), patron.patronId());
++        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, made_on) VALUES (?, ?, ?, "
++                + "(SELECT today FROM sheet WHERE id = ?))", patron.sheetId(), patron.personId(), patron.patronId(),
++                patron.sheetId());
+     }
+ 
+     /** On merging one person into another: the first's patrons are added to the other's (not the other themselves,
+@@ -46,7 +56,7 @@ public class PatronRepository {
+     }
+ 
+     public void merge(String sheetId, long fromId, long intoId) {
+-        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id "
++        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, made_on) SELECT sheet_id, ?, patron_id, made_on "
+                 + "FROM person_patron pp WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS "
+                 + "(SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = pp.patron_id)",
+                 intoId, sheetId, fromId, intoId, intoId);
+diff --git a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
+index 235fd35..c5d07d8 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
++++ b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.patron;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Every person's patrons on the sheet. */
++/** Every person's patrons on the sheet; only those named by the as-of date, when one is given. */
+ public class RespondWithPatrons {
+-    public void respond(@PathVariable("sheetId") String sheetId, PatronRepository repository,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, PatronRepository repository,
+             ObjectResponse<List<PatronResponse>> response) {
+-        response.send(repository.list(sheetId.trim()).stream().map(PatronResponse::from).toList());
++        response.send(repository.list(sheetId.trim(), AsOf.parse(asOf)).stream().map(PatronResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index 4e73c84..ffeee18 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Once the sheet's new today is set: while it has grace days, close each open period (not a soft-closed one) whose to-date plus them is
+  *  before the new today, in order of their to-dates, exactly as a close by hand would, each recorded as
+- *  PERIOD_CLOSED with auto=yes at its end. */
++ *  PERIOD_CLOSED with auto=yes at its end, and closed (to a sheet read as of a date) from the day after its to-date
++ *  plus the grace days. */
+ public class AutoClosePeriods {
+     public void close(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val LocalDate today,
+             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people,
+@@ -33,6 +34,8 @@ public class AutoClosePeriods {
+                 .toList();
+         for (Period period : due) {
+             Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets);
++            // it stands closed from the day after its to-date plus the grace days, as a sheet read as of a date sees
++            periods.dateLastKept(period, period.to().plusDays(grace + 1L));
+             audit.record("PERIOD_CLOSED sheet=" + closed.sheetId() + " by=" + request.user()
+                     + " period=" + closed.name() + " total=" + closed.closedTotal().toPlainString() + " auto=yes");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 9fdc297..d6f29bc 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -108,6 +108,12 @@ public class PeriodRepository {
+         return true;
+     }
+ 
++    /** Date the period's latest kept history (an auto close: the day its grace ran out, not the new today). */
++    public void dateLastKept(Period period, LocalDate madeOn) {
++        jdbc.update("UPDATE period_history SET made_on = ? WHERE id = (SELECT MAX(id) FROM period_history "
++                + "WHERE sheet_id = ? AND period_name = ?)", madeOn, period.sheetId(), period.name());
++    }
++
+     /** Keep the period as it stands now (closed or soft-closed, and its fixed due-totals) in its history, with the
+      *  sheet's today. */
+     private void kept(Period period) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedClaimMove.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedClaimMove.java
+new file mode 100644
+index 0000000..ffc3a63
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedClaimMove.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuse moving a claim dated inside a closed period, or whose due-by falls inside one. */
++public class RefuseClosedClaimMove {
++    public void refuse(@Val Claim loaded, PeriodRepository periods) throws ClosedPeriodException {
++        periods.lockSheet(loaded.sheetId());
++        Period closed = periods.closedOn(loaded.sheetId(), loaded.date());
++        if (closed == null) {
++            closed = periods.closedOn(loaded.sheetId(), loaded.dueBy());
++        }
++        if (closed != null) {
++            throw new ClosedPeriodException(closed);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index bb89692..678a46a 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -6,6 +6,7 @@ import java.util.ArrayList;
+ import java.time.LocalDate;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Set;
+ 
+ /** A pool as the screen shows it: its members in the order they were added, the total of their shares (a member
+  *  retired by the date counts 0.00) and whether it is balanced (the total is exactly 100.00). */
+@@ -25,13 +26,15 @@ public record PoolResponse(long id, String name, List<Member> members, String to
+ 
+     private static final BigDecimal FULL = new BigDecimal("100.00");
+ 
+-    /** The pool with its members; retiredFrom gives each person's retirement date (absent: not retired) and on is
+-     *  the date it is judged by (null: none retired). When the pool is balanced and there is a pot (null: none),
+-     *  each member's cut is the pot (the sheet's, or for a member pool its cut in the pool above) times their share divided by 100, rounded half to even to two decimals (a
+-     *  retired member cuts 0.00), and the pot less the cuts goes to the member with the largest share (the earliest
+-     *  added on a tie), so the cuts total exactly the pot. */
++    /** The pool with its members; retiredFrom gives each person's retirement date (absent: not retired), held the
++     *  people with a hold in force on the date, and on is the date it is judged by (null: none retired). When the
++     *  pool is balanced and there is a pot (null: none), a retired or held member cuts 0.00 and each other member's
++     *  cut is the pot (the sheet's, or for a member pool its cut in the pool above) times their share divided by the
++     *  shares of the members with a cut, added up, rounded half to even to two decimals, and the pot less the cuts
++     *  goes to the member with a cut with the largest share (the earliest added on a tie), so the cuts total exactly
++     *  the pot. A hold leaves the total share and balance alone. */
+     public static PoolResponse from(Pool pool, List<PoolMember> members, Map<Long, LocalDate> retiredFrom,
+-            LocalDate on, BigDecimal pot) {
++            Set<Long> held, LocalDate on, BigDecimal pot) {
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean[] retired = new boolean[members.size()];
+         for (int i = 0; i < members.size(); i++) {
+@@ -43,7 +46,12 @@ public record PoolResponse(long id, String name, List<Member> members, String to
+             }
+         }
+         boolean balanced = total.compareTo(FULL) == 0;
+-        BigDecimal[] cuts = balanced && pot != null ? cuts(members, retired, pot) : null;
++        boolean[] noCut = new boolean[members.size()];
++        for (int i = 0; i < members.size(); i++) {
++            PoolMember m = members.get(i);
++            noCut[i] = retired[i] || (!m.isPool() && held.contains(m.personId()));
++        }
++        BigDecimal[] cuts = balanced && pot != null ? cuts(members, noCut, pot) : null;
+         List<Member> shown = new ArrayList<>();
+         for (int i = 0; i < members.size(); i++) {
+             PoolMember m = members.get(i);
+@@ -54,19 +62,25 @@ public record PoolResponse(long id, String name, List<Member> members, String to
+     }
+ 
+     public static PoolResponse from(Pool pool, List<PoolMember> members, LocalDate on) {
+-        return from(pool, members, Map.of(), on, null);
++        return from(pool, members, Map.of(), Set.of(), on, null);
+     }
+ 
+-    private static BigDecimal[] cuts(List<PoolMember> members, boolean[] retired, BigDecimal pot) {
++    private static BigDecimal[] cuts(List<PoolMember> members, boolean[] noCut, BigDecimal pot) {
+         BigDecimal[] cuts = new BigDecimal[members.size()];
++        BigDecimal shares = BigDecimal.ZERO;
++        for (int i = 0; i < members.size(); i++) {
++            if (!noCut[i]) {
++                shares = shares.add(members.get(i).share());
++            }
++        }
+         BigDecimal sum = BigDecimal.ZERO.setScale(2);
+         int largest = -1;
+         for (int i = 0; i < members.size(); i++) {
+             BigDecimal share = members.get(i).share();
+-            cuts[i] = retired[i] ? BigDecimal.ZERO.setScale(2)
+-                    : pot.multiply(share).divide(FULL, 2, RoundingMode.HALF_EVEN);
++            cuts[i] = noCut[i] ? BigDecimal.ZERO.setScale(2)
++                    : pot.multiply(share).divide(shares, 2, RoundingMode.HALF_EVEN);
+             sum = sum.add(cuts[i]);
+-            if (!retired[i] && (largest < 0 || share.compareTo(members.get(largest).share()) > 0)) {
++            if (!noCut[i] && (largest < 0 || share.compareTo(members.get(largest).share()) > 0)) {
+                 largest = i;
+             }
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index c0b4ec5..0a773df 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -3,8 +3,10 @@ package net.officefloor.hq.app.pool;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.HashMap;
++import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Set;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.AsOf;
+@@ -17,7 +19,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** The sheet's pools in the order they were added, with their members, total share and whether balanced; a member
+  *  retired by the sheet's today (or the as-of date, when one is given) counts 0.00 toward the total; each member of a balanced pool
+  *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot; a pool
+- *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). */
++ *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
++ *  hold in force on that date cuts 0.00, their share spread over the members with a cut. */
+ public class RespondWithPools {
+     public void respond(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "asOf", required = false) String asOf, PoolRepository repository,
+@@ -29,12 +32,16 @@ public class RespondWithPools {
+         List<Person> persons = end != null ? people.listAsOf(id, end) : people.list(id);
+         Map<Long, LocalDate> retiredFrom = new HashMap<>();
+         Map<Long, String> names = new HashMap<>();
++        Set<Long> held = new HashSet<>();
+         BigDecimal pot = settings.pot(id);
+         for (Person p : persons) {
+             names.put(p.id(), p.name());
+             if (p.retiredFrom() != null) {
+                 retiredFrom.put(p.id(), p.retiredFrom());
+             }
++            if (on != null && p.holds().covers(on)) {
++                held.add(p.id());
++            }
+         }
+         List<Pool> pools = repository.list(id, end);
+         Map<Long, String> poolNames = new HashMap<>();
+@@ -54,20 +61,20 @@ public class RespondWithPools {
+         }
+         Map<Long, PoolResponse> shown = new HashMap<>();
+         response.send(pools.stream()
+-                .map(pool -> shown(pool, members, parents, retiredFrom, on, pot, shown)).toList());
++                .map(pool -> shown(pool, members, parents, retiredFrom, held, on, pot, shown)).toList());
+     }
+ 
+     /** The pool as shown, its pot the sheet's or its cut in the pool above (worked out first). */
+     private static PoolResponse shown(Pool pool, Map<Long, List<PoolMember>> members, Map<Long, Pool> parents,
+-            Map<Long, LocalDate> retiredFrom, LocalDate on, BigDecimal sheetPot, Map<Long, PoolResponse> shown) {
++            Map<Long, LocalDate> retiredFrom, Set<Long> held, LocalDate on, BigDecimal sheetPot, Map<Long, PoolResponse> shown) {
+         PoolResponse done = shown.get(pool.id());
+         if (done != null) {
+             return done;
+         }
+         Pool above = parents.get(pool.id());
+         BigDecimal pot = above == null ? sheetPot
+-                : shown(above, members, parents, retiredFrom, on, sheetPot, shown).cutOf(pool.id());
+-        PoolResponse r = PoolResponse.from(pool, members.get(pool.id()), retiredFrom, on, pot);
++                : shown(above, members, parents, retiredFrom, held, on, sheetPot, shown).cutOf(pool.id());
++        PoolResponse r = PoolResponse.from(pool, members.get(pool.id()), retiredFrom, held, on, pot);
+         shown.put(pool.id(), r);
+         return r;
+     }
+diff --git a/src/main/resources/db/migration/V71__person_patron_made_on.sql b/src/main/resources/db/migration/V71__person_patron_made_on.sql
+new file mode 100644
+index 0000000..939b42c
+--- /dev/null
++++ b/src/main/resources/db/migration/V71__person_patron_made_on.sql
+@@ -0,0 +1,3 @@
++-- The sheet's today when a patron was named, so a sheet read as of a date shows only the patrons named by then
++-- (null: named before this was kept, counted always).
++ALTER TABLE person_patron ADD COLUMN made_on DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml
+index f13cc09..79a9462 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml
+@@ -7,7 +7,7 @@ load:
+   govern: [ transaction ]
+   next: closed
+ closed:
+-  class: net.officefloor.hq.app.period.RefuseClosedClaim
++  class: net.officefloor.hq.app.period.RefuseClosedClaimMove
+   govern: [ transaction ]
+   next: before
+ before:
