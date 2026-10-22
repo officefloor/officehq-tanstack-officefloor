@@ -3,6 +3,9 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -10,8 +13,12 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  that is blank (no limit) or an amount 0.00 or more with up to two decimals, and a floor (when given) that is an
  *  amount 0.00 or more with up to two decimals, and terms (when given) that
  *  are a whole number of days, and a late percent (when given) that is a percent 0.00 or more with up to two decimals, and a policy date (when given) that is
- *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd. */
+ *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
+ *  only for grades A, B or C, each blank (none: the sheet's terms) or a whole number of days. */
 public class ValidateSettings {
+    /** The grades that may have terms of their own. */
+    static final List<String> GRADES = List.of("A", "B", "C");
+
     private static final String PERCENT = "\\d{1,3}(\\.\\d{1,2})?";
     private static final String AMOUNT = "\\d{1,12}(\\.\\d{1,2})?";
 
@@ -53,11 +60,30 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The period numbering from must be a date, yyyy-mm-dd, or blank for off.");
             }
         }
+        Map<String, Integer> gradeTerms = new LinkedHashMap<>();
+        if (request.gradeTerms() != null) {
+            for (String grade : request.gradeTerms().keySet()) {
+                if (!GRADES.contains(grade)) {
+                    throw new InvalidSettingException("Terms may be set only for grade A, B or C.");
+                }
+            }
+            for (String grade : GRADES) {
+                if (!request.gradeTerms().containsKey(grade)) {
+                    continue;
+                }
+                String days = request.gradeTerms().get(grade) == null ? "" : request.gradeTerms().get(grade).trim();
+                if (!days.isEmpty() && !days.matches("\\d{1,4}")) {
+                    throw new InvalidSettingException("The terms of grade " + grade
+                            + " must be a whole number of days, 0 or more, or blank for the sheet's terms.");
+                }
+                gradeTerms.put(grade, days.isEmpty() ? null : Integer.valueOf(days));
+            }
+        }
         body.set(new SettingsInput(request.user().trim(), limit != null,
                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
                 floor == null ? null : new BigDecimal(floor).setScale(2),
                 terms == null ? null : Integer.valueOf(terms),
                 latePct == null ? null : new BigDecimal(latePct).setScale(2),
-                policy != null, policyDate, numbering != null, numberingFrom));
+                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms));
     }
 }

@@ -8,8 +8,10 @@ import java.time.LocalDate;
  *  at settling (null before then, or when the person's grade had no rate then: its due stays live), and
  *  who opened it (null while a draft), whether its person's last statement bound it (it counted then) and the
  *  figure it bound it to (null when not bound, or its figure was n/a then: its due stays live), and for a correction
- *  (a negative amount) the number of the SETTLED claim of the same person it corrects (null otherwise). */
+ *  (a negative amount) the number of the SETTLED claim of the same person it corrects (null otherwise), and its
+ *  due-by, fixed when it was created: its date plus the terms of its person's grade in force on its date (else the
+ *  sheet's terms); it does not change when the terms or its date change later. */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
-        BigDecimal statedDue, String corrects) {
+        BigDecimal statedDue, String corrects, LocalDate dueBy) {
 }

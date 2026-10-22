@@ -16,6 +16,7 @@ public class SaveSettings {
         if (input.terms() != null) {
             repository.setTerms(sheetId.trim(), input.terms());
         }
+        input.gradeTerms().forEach((grade, days) -> repository.setGradeTerms(sheetId.trim(), grade, days));
         if (input.latePct() != null) {
             repository.setLatePct(sheetId.trim(), input.latePct());
         }

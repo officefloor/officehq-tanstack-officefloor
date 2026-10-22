@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, settingsKey, useSettings, type Settings } from './settings';
+import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, GRADES, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
@@ -13,14 +13,16 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
-  periodNumberingFrom?: string };
+  periodNumberingFrom?: string; gradeTerms?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
  *  A claim's live due is at least the floor; its due-by is its date plus the terms; once overdue it gains the late
  *  percent of its figure for every full 30 days. A claim dated before the policy date (blank: the sheet's today)
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
- *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none). */
+ *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
+ *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
+ *  the terms of its person's grade on its date. */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
@@ -37,6 +39,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedLatePct, setTypedLatePct] = useState<string | null>(null);
   const [typedPolicyDate, setTypedPolicyDate] = useState<string | null>(null);
   const [typedNumberingFrom, setTypedNumberingFrom] = useState<string | null>(null);
+  const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
+  const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
@@ -51,6 +55,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedLatePct(null);
       setTypedPolicyDate(null);
       setTypedNumberingFrom(null);
+      setTypedGradeTerms({});
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body
@@ -111,6 +116,16 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.periodNumberingFrom = numberingFrom;
     }
+    for (const grade of GRADES) {
+      const typedTerms = typedGradeTerms[grade];
+      if (typedTerms === undefined) continue;
+      const terms = typedTerms.trim();
+      if (terms !== '' && !DAYS.test(terms)) {
+        setError(`The terms of grade ${grade} must be a whole number of days, 0 or more, or blank for the sheet's terms.`);
+        return;
+      }
+      changes.gradeTerms = { ...changes.gradeTerms, [grade]: terms };
+    }
     if (!once.start()) return;
     save.mutate(changes);
   };
@@ -129,6 +144,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Clerk limit <strong data-testid="setting-clerk-limit-current">{currentLimit}</strong>{' '}
         Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>{' '}
         Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> days{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            Grade {grade} terms <strong data-testid={`setting-terms-${grade}-current`}>{currentGradeTerms(grade)}</strong>{' '}
+          </span>
+        ))}
         Late <strong data-testid="setting-late-pct-current">{currentLatePct}</strong>%{' '}
         Policy date <strong data-testid="setting-policy-date-current">{currentPolicyDate}</strong>{' '}
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>
@@ -165,6 +185,21 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onFocus={() => setTypedTerms((v) => v ?? currentTerms)}
           />
         </label>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Grade {grade} terms{' '}
+              <input
+                data-testid={`setting-terms-${grade}`}
+                placeholder="sheet's terms"
+                value={typedGradeTerms[grade] ?? currentGradeTerms(grade)}
+                onInput={typed((v) => setTypedGradeTerms((t) => ({ ...t, [grade]: v })))}
+                onChange={typed((v) => setTypedGradeTerms((t) => ({ ...t, [grade]: v })))}
+                onFocus={() => setTypedGradeTerms((t) => (grade in t ? t : { ...t, [grade]: currentGradeTerms(grade) }))}
+              />
+            </label>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input

@@ -2,6 +2,8 @@ package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -27,7 +29,7 @@ public class SettingRepository {
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
         return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId),
-                policyDate(sheetId), periodNumberingFrom(sheetId));
+                policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -56,6 +58,31 @@ public class SettingRepository {
 
     public void setTerms(String sheetId, int terms) {
         jdbc.update("UPDATE sheet SET terms_days = ? WHERE id = ?", terms, sheetId);
+    }
+
+    /** The grades' own terms in days, by grade (A, B, C order); a grade without its own uses the sheet's terms. */
+    public Map<String, Integer> gradeTerms(String sheetId) {
+        Map<String, Integer> terms = new LinkedHashMap<>();
+        jdbc.query("SELECT grade, terms_days FROM grade_terms WHERE sheet_id = ? ORDER BY grade",
+                rs -> {
+                    terms.put(rs.getString(1), rs.getInt(2));
+                }, sheetId);
+        return terms;
+    }
+
+    /** The terms in days a claim of the grade gets: the grade's own, else the sheet's. */
+    public int termsFor(String sheetId, String grade) {
+        Integer terms = jdbc.query("SELECT terms_days FROM grade_terms WHERE sheet_id = ? AND grade = ?",
+                rs -> rs.next() ? rs.getInt(1) : null, sheetId, grade);
+        return terms != null ? terms : terms(sheetId);
+    }
+
+    /** Give the grade terms of its own (null: none, it uses the sheet's terms). */
+    public void setGradeTerms(String sheetId, String grade, Integer terms) {
+        jdbc.update("DELETE FROM grade_terms WHERE sheet_id = ? AND grade = ?", sheetId, grade);
+        if (terms != null) {
+            jdbc.update("INSERT INTO grade_terms (sheet_id, grade, terms_days) VALUES (?, ?, ?)", sheetId, grade, terms);
+        }
     }
 
     /** The sheet's late percent: two decimals; an overdue claim gains it, of its figure, every full 30 days. */

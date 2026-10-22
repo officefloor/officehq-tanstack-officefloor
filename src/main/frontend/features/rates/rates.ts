@@ -84,10 +84,10 @@ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], t
     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
-/** What the late charge follows: the sheet's terms in days, its late percent (two decimals) and its today; and
+/** What the late charge follows: the sheet's late percent (two decimals) and its today; and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
-export type Late = { terms: number; pct: string; today: string; policy: string; numbered: Map<string, string> };
+export type Late = { pct: string; today: string; policy: string; numbered: Map<string, string> };
 
 /** Whether a claim's live figures round half up: it (a correction: the claim it corrects) is dated before the
  *  policy date; else they round half to even. */
@@ -116,8 +116,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *  claim is overdue (past its due-by, on the sheet's today), rounded like the claim's due; 0.00 when not overdue, or a
  *  correction (a negative amount). */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
-  if (!overdue(claim, late.terms, late.today) || toCents(claim.amount) < 0n) return '0.00';
-  const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim, late.terms)}T00:00:00Z`)) / DAY_MS);
+  if (!overdue(claim, late.today) || toCents(claim.amount) < 0n) return '0.00';
+  const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim)}T00:00:00Z`)) / DAY_MS);
   const periods = BigInt(Math.floor(days / 30));
   return dueOn(figure, fromCents(toCents(late.pct) * periods), roundsUp(claim, late));
 }

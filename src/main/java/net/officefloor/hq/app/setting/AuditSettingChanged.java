@@ -18,6 +18,8 @@ public class AuditSettingChanged {
             audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
                     + " key=terms value=" + settings.terms());
         }
+        input.gradeTerms().forEach((grade, days) -> audit.record("SETTING_CHANGED sheet=" + settings.sheetId()
+                + " by=" + input.user() + " key=terms-" + grade + " value=" + (days != null ? days : "")));
         if (input.latePct() != null) {
             audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
                     + " key=late-pct value=" + SettingsResponse.text(settings.latePct()));

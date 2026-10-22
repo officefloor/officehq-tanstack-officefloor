@@ -12,10 +12,11 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
  *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
  *  it to (null when not bound, or n/a then: its due stays live), and for a correction (a negative amount) the
- *  number of the SETTLED claim of the same person it corrects (null otherwise). */
+ *  number of the SETTLED claim of the same person it corrects (null otherwise), and its due-by (yyyy-mm-dd), fixed
+ *  when it was created from the terms of its person's grade in force on its date (else the sheet's terms). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
-  statedDue: string | null; corrects: string | null };
+  statedDue: string | null; corrects: string | null; dueBy: string };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do. */
 export function counts(c: Claim): boolean {
@@ -34,16 +35,14 @@ export function live(claims: Claim[], people: Person[]): Claim[] {
   return claims.filter((c) => counts(c) && !(unsettled(c) && held.has(c.personId)));
 }
 
-/** A claim's due-by (yyyy-mm-dd): its date plus the terms in days. */
-export function dueBy(claim: Claim, terms: number): string {
-  const d = new Date(`${claim.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
+/** A claim's due-by (yyyy-mm-dd), as fixed when it was created. */
+export function dueBy(claim: Claim): string {
+  return claim.dueBy;
 }
 
 /** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before the sheet's today. */
-export function overdue(claim: Claim, terms: number, today: string): boolean {
-  return unsettled(claim) && today !== '' && dueBy(claim, terms) < today;
+export function overdue(claim: Claim, today: string): boolean {
+  return unsettled(claim) && today !== '' && dueBy(claim) < today;
 }
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;

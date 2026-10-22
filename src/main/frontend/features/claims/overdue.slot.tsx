@@ -12,7 +12,7 @@ import type { Claim } from './claims';
 function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string) {
   const byId = new Map(people.map((p) => [p.id, p]));
   return live(claims, people)
-    .filter((c) => overdue(c, late.terms, late.today))
+    .filter((c) => overdue(c, late.today))
     .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
 }
 

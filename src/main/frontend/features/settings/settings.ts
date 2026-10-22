@@ -9,9 +9,13 @@ import { useSheetToday } from '../sheet/sheet';
  *  decimals (a claim's live due is at least it), and the terms in days (a claim's due-by is its date plus them), and
  *  the late percent with two decimals (an overdue claim gains it, of its figure, every full 30 days), and the
  *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
- *  the sheet's today, a claim opened is numbered within its period). */
+ *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
+ *  grade has none: it uses the sheet's terms). A claim's due-by is fixed when it is created. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
-  periodNumberingFrom: string };
+  periodNumberingFrom: string; gradeTerms: Record<string, string> };
+
+/** The grades that may have terms of their own. */
+export const GRADES = ['A', 'B', 'C'] as const;
 
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
 
@@ -42,7 +46,7 @@ export function useTerms(sheetId: string): number {
   return Number(useSettings(sheetId).data?.terms ?? DEFAULT_TERMS);
 }
 
-/** What the late charge follows now: the terms, the late percent and the sheet's today; and how claims round:
+/** What the late charge follows now: the late percent and the sheet's today; and how claims round:
  *  the policy date in force (blank: the sheet's today) and the dates of the sheet's numbered claims. */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId).data;
@@ -52,6 +56,6 @@ export function useLate(sheetId: string): Late {
     () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date])),
     [claims],
   );
-  return { terms: useTerms(sheetId), pct: settings?.latePct ?? DEFAULT_LATE_PCT, today,
+  return { pct: settings?.latePct ?? DEFAULT_LATE_PCT, today,
     policy: settings?.policyDate || today, numbered };
 }
