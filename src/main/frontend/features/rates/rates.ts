@@ -199,7 +199,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The late charge on a claim whose figure is `figure`: for each full 30 days the claim is overdue (past its due-by
  *  plus its grace, on the sheet's today), the late percent in force on that boundary date (its due-by plus its grace
- *  plus 30, 60, 90 ... days) of it,
+ *  plus 30, 60, 90 ... days) of it plus the charges of the boundaries before (compounding), each
  *  rounded like the claim's due, the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when not
  *  overdue, or a correction (a negative amount). */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
@@ -210,7 +210,7 @@ export function lateCharge(claim: Claim, figure: string, late: Late): string {
   let total = 0n;
   for (let n = 1; n <= Math.floor(days / 30); n++) {
     const pct = late.pct(new Date(from + n * 30 * DAY_MS).toISOString().slice(0, 10));
-    if (toCents(pct) !== 0n) total += toCents(dueOn(figure, pct, roundsUp(claim, late)));
+    if (toCents(pct) !== 0n) total += toCents(dueOn(fromCents(toCents(figure) + total), pct, roundsUp(claim, late)));
   }
   return fromCents(total);
 }
