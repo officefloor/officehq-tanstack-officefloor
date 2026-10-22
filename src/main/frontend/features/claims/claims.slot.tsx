@@ -14,6 +14,7 @@ import { claimsKey, dueBy, live, overdue, sumAmounts, useClaims, useEditingClaim
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
+import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
@@ -159,6 +160,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     setLockRefused(claim.id, '');
   };
   const [reason, setReason] = useState('');
+  const voidReasons = useVoidReasons(sheetId).data ?? [];
+  const [voidReason, setVoidReason] = useState('');
   const period = periodOf(usePeriods(sheetId).data ?? [], dueBy(claim));
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId);
@@ -173,9 +176,14 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
 
   const change = useMutation({
     mutationFn: (action: string) =>
-      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, action === 'reject' ? { user, action, reason } : { user, action }),
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, action === 'reject' ? { user, action, reason }
+        : action === 'void' && voidReason !== '' ? { user, action, reason: voidReason } : { user, action }),
     onSuccess: async (_, action) => {
       if (action === 'reject') setReason('');
+      if (action === 'void') {
+        setVoidReason('');
+        await queryClient.invalidateQueries({ queryKey: voidReasonsKey(sheetId) });
+      }
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
     onError: (e, action) =>
@@ -386,6 +394,23 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
           setReason(e.target.value);
         }}
       />{' '}
+      {voidReasons.length > 0 && (
+        <select
+          data-testid="claim-void-reason"
+          value={voidReason}
+          onChange={(e) => {
+            clearError();
+            setVoidReason(e.target.value);
+          }}
+        >
+          <option value="">Void reason…</option>
+          {voidReasons.map((r) => (
+            <option key={r.id} value={r.reason}>
+              {r.reason}
+            </option>
+          ))}
+        </select>
+      )}{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
           key={action}

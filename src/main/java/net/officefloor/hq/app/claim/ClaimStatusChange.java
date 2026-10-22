@@ -134,10 +134,11 @@ final class ClaimStatusChange {
                 + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
                 + (number != null ? " number=" + number : "")
                 + (settled ? " due=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
-                + (input.reason() != null ? " reason=" + input.reason() : "")
+                + (input.reason() != null && !input.action().equals("void") ? " reason=" + input.reason() : "")
                 + (resettled ? " old=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a")
                         + " new=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
-                + (reversed ? " reversed=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a") : ""));
+                + (reversed ? " reversed=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a") : "")
+                + (input.reason() != null && input.action().equals("void") ? " reason=" + input.reason() : ""));
         if (event.equals("CLAIM_SETTLED") || event.equals("CLAIM_APPROVED") || event.equals("CLAIM_RESETTLED")) {
             for (String watcher : watches.watchers(loaded.sheetId(), loaded.personId())) {
                 audit.record("NOTIFY sheet=" + loaded.sheetId() + " by=" + input.user() + " user=" + watcher
