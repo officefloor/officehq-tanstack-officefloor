@@ -1,0 +1,161 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+new file mode 100644
+index 0000000..ec5b01d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++/** Record the stored add in the audit file, with the amount and date as the screen shows them. */
++public class AuditClaimAdded {
++    public void audit(@Val ClaimInput input, @Val Person person, @Val Claim claim, Audit audit) {
++        ClaimResponse shown = ClaimResponse.from(claim);
++        audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + input.user()
++                + " person=" + person.name() + " amount=" + shown.amount() + " date=" + shown.date());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+new file mode 100644
+index 0000000..c16c89a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Record the stored edit in the audit file, with the amount and date as the screen shows them. */
++public class AuditClaimEdited {
++    public void audit(@Val ClaimInput input, @Val Claim loaded, @Val ClaimResponse saved, PersonRepository people,
++            Audit audit) {
++        var person = people.find(loaded.sheetId(), loaded.personId());
++        audit.record("CLAIM_EDITED sheet=" + loaded.sheetId() + " by=" + input.user()
++                + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+new file mode 100644
+index 0000000..7d9e58b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Record the stored add in the audit file. */
++public class AuditPersonAdded {
++    public void audit(@Val PersonRequest request, @Val Person person, Audit audit) {
++        audit.record("PERSON_ADDED sheet=" + person.sheetId() + " by=" + request.user()
++                + " name=" + person.name() + " grade=" + person.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+new file mode 100644
+index 0000000..ab93475
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Record the stored edit in the audit file. */
++public class AuditPersonEdited {
++    public void audit(@Val PersonRequest request, @Val Person loaded, @Val PersonResponse saved, Audit audit) {
++        audit.record("PERSON_EDITED sheet=" + loaded.sheetId() + " by=" + request.user()
++                + " name=" + saved.name() + " grade=" + saved.grade());
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 3b8d01d..bf476d6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,4 @@
+-# Edit a claim's amount, date and note. A refused edit (bad amount or date, unknown claim) writes nothing.
++# Edit a claim's amount, date and note. A refused edit (bad amount or date, unknown claim) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+@@ -9,6 +9,10 @@ load:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 57a8e7b..887b0e8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,4 @@
+-# Add a person to the sheet. A refused add (no name, bad grade, unknown sheet, a name already in use) writes nothing.
++# Add a person to the sheet. A refused add (no name, bad grade, unknown sheet, a name already in use) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: load
+@@ -13,6 +13,10 @@ unique:
+ save:
+   class: net.officefloor.hq.app.person.SaveNewPerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPersonCreated
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index d7b16c0..9b585d8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,4 +1,4 @@
+-# Edit a person's name and grade. A refused edit (no name, bad grade, unknown person, a name already in use) writes nothing.
++# Edit a person's name and grade. A refused edit (no name, bad grade, unknown person, a name already in use) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: load
+@@ -13,6 +13,10 @@ unique:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 58d5e2e..152a15f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,4 +1,4 @@
+-# Add a claim to a person. A refused add (bad amount or date, unknown person) writes nothing.
++# Add a claim to a person. A refused add (bad amount or date, unknown person) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+@@ -9,6 +9,10 @@ load:
+ save:
+   class: net.officefloor.hq.app.claim.SaveNewClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaimCreated
