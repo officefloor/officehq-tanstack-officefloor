@@ -16,14 +16,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Refuse every change a viewer asks for on a sheet, before any endpoint reads or writes anything: each POST or
- *  PUT under a sheet (all but loading the sheet itself) whose signed-in user (the body's {@code user}) is a viewer
- *  on that sheet is answered 403 with the reason, and nothing is written or audited. A bulk open is left to its
- *  endpoint, which counts every selected claim refused for a viewer. */
+/** Refuse every change a viewer asks for on a sheet, and every change to an archived sheet, before any endpoint
+ *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
+ *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
+ *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
+ *  refused for a viewer or on an archived sheet; so is a bulk settle on an archived sheet. */
 @Component
 public class RefuseViewerChanges extends OncePerRequestFilter {
 
@@ -34,11 +36,16 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
      *  answers how many it opened and refused, writing nothing. */
     private static final Pattern BULK_OPEN = Pattern.compile("^/api/sheets/[^/]+/bulk-open$");
 
+    /** A bulk settle, left to the endpoint on an archived sheet: it counts every selected claim refused. */
+    private static final Pattern BULK_SETTLE = Pattern.compile("^/api/sheets/[^/]+/bulk-settle$");
+
     private final RoleRepository roles;
+    private final SheetRepository sheets;
     private final JsonMapper json = JsonMapper.builder().build();
 
-    public RefuseViewerChanges(RoleRepository roles) {
+    public RefuseViewerChanges(RoleRepository roles, SheetRepository sheets) {
         this.roles = roles;
+        this.sheets = sheets;
     }
 
     @Override
@@ -59,6 +66,12 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("text/plain;charset=UTF-8");
             response.getWriter().write("A viewer can change nothing on this sheet.");
+            return;
+        }
+        if (!BULK_SETTLE.matcher(path).matches() && sheets.archived(sheetId)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("text/plain;charset=UTF-8");
+            response.getWriter().write("This sheet is archived: nothing on it can be changed.");
             return;
         }
         chain.doFilter(new Rereadable(request, body), response);

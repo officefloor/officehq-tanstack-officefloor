@@ -9,6 +9,7 @@ import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Rollups;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,14 +17,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Open each selected claim that can be opened, in list order (people in the order they were added, newest
  *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
  *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
- *  opened (the user's role may not open, not on the sheet, not a DRAFT, or dated in a closed period) is left as it is and counted as refused. */
+ *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, or dated in a closed period) is left as it is and counted as refused. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims, ClaimLogRepository log,
-            PersonRepository people, PeriodRepository periods, RoleRepository roles, SettingRepository settings,
+            PersonRepository people, PeriodRepository periods, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             Rollups rollups, Audit audit, Out<BulkOpenResponse> result) {
         String sheet = sheetId.trim();
         periods.lockSheet(sheet);
         int opened = 0;
+        if (sheets.archived(sheet)) {
+            result.set(new BulkOpenResponse(0, input.claimIds().size()));
+            return;
+        }
         if (!settings.permissions(sheet).allows("open", roles.of(sheet, input.user()))) {
             result.set(new BulkOpenResponse(0, input.claimIds().size()));
             return;

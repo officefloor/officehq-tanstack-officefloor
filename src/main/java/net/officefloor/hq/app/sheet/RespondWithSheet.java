@@ -11,6 +11,6 @@ public class RespondWithSheet {
         if (today == null) {
             throw new SheetNotFoundException(id);
         }
-        response.send(new SheetResponse(id, today.toString()));
+        response.send(new SheetResponse(id, today.toString(), repository.archived(id)));
     }
 }

@@ -39,4 +39,16 @@ public class SheetRepository {
     public void setToday(String id, LocalDate today) {
         jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", today, id);
     }
+
+    /** Whether the sheet is archived: every change to it is refused. */
+    public boolean archived(String id) {
+        Boolean archived = jdbc.query("SELECT archived FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBoolean(1) : null, id);
+        return Boolean.TRUE.equals(archived);
+    }
+
+    /** Archive the sheet: true when it was not archived before. */
+    public boolean archive(String id) {
+        return jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ? AND archived = FALSE", id) > 0;
+    }
 }
