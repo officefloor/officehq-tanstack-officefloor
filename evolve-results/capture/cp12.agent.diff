@@ -1,0 +1,115 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 9210ae9..1441979 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -4,11 +4,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheet';
+-import { sumAmounts, useClaims } from '../claims/claims';
++import { useClaims } from '../claims/claims';
+ import { GRADES, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+-import { dueOn, rateOn, ratesKey, sumDue, useRateFor, useRates } from './rates';
++import { personDue, rateOn, ratesKey, sumDue, useRates } from './rates';
+ import type { Rate } from './rates';
+ 
+ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
+@@ -123,12 +123,13 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
+   );
+ }
+ 
+-/** A person's due-total: their claimed times their grade's rate in force on the sheet's today, divided by
+- *  100, rounded half up. */
++/** A person's due-total: the figures of their claims that count added up (see personDue). */
+ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+-  const rate = useRateFor(sheetId, person.grade, useSheetToday(sheetId));
+-  return <td data-testid="person-due-total">{dueOn(sumAmounts(claims), rate)}</td>;
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const due = personDue(claims, (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today));
++  return <td data-testid="person-due-total">{due}</td>;
+ }
+ 
+ /** The sheet's due-total: every person's due-total added up, skipping n/a. */
+@@ -138,8 +139,9 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
+   const rates = useRates(sheetId).data ?? [];
+   const today = useSheetToday(sheetId);
+   const dues = people.map((p) =>
+-    dueOn(
+-      sumAmounts(claims.filter((c) => c.personId === p.id)),
++    personDue(
++      claims.filter((c) => c.personId === p.id),
++      (d) => rateOn(rates, p.grade, d),
+       rateOn(rates, p.grade, today),
+     ),
+   );
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 6a7fee2..8e4bb7c 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import type { Claim } from '../claims/claims';
++import { counts, type Claim } from '../claims/claims';
+ 
+ /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
+  *  null: from the beginning of time). A grade may have several, one per from-date; none when it has no rate. */
+@@ -42,12 +42,17 @@ function fromCents(cents: bigint): string {
+   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+ }
+ 
+-/** Due on an amount: amount times rate, divided by 100, rounded half up to two decimals (exact,
++/** Due on an amount: amount times rate, divided by 100, rounded half to even to two decimals (exact,
+  *  in integers); 'n/a' when there is no rate. */
+ export function dueOn(amount: string, rate: string | undefined): string {
+   if (rate === undefined) return 'n/a';
+   const scaled = toCents(amount) * toCents(rate); // in 1/10000 of a cent
+-  return fromCents((scaled + 5000n) / 10000n);
++  const sign = scaled < 0n ? -1n : 1n;
++  const abs = scaled * sign;
++  let cents = abs / 10000n;
++  const rest = abs % 10000n;
++  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
++  return fromCents(cents * sign);
+ }
+ 
+ /** Two-decimal amounts added up exactly, skipping 'n/a'. */
+@@ -55,6 +60,16 @@ export function sumDue(dues: string[]): string {
+   return fromCents(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + toCents(d), 0n));
+ }
+ 
++/** A person's due-total: the figures of their claims that count (each as shown on its row) added up;
++ *  'n/a' when their grade has no rate today (rateToday undefined), unless a settled claim keeps a figure,
++ *  then the figures there are added up. */
++export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
++    rateToday: string | undefined): string {
++  const counted = claims.filter(counts);
++  if (rateToday === undefined && !counted.some((c) => c.status === 'SETTLED' && c.settledDue !== null)) return 'n/a';
++  return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date))));
++}
++
+ /** A claim's due: the one fixed when it was settled, else live on its amount at the rate. */
+ export function claimDue(claim: Claim, rate: string | undefined): string {
+   return claim.settledDue ?? dueOn(claim.amount, rate);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+index 9b67b41..bde7e69 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+@@ -32,11 +32,11 @@ public class SaveClaimStatus {
+     }
+ 
+     /** The claim's due now: amount times its person's grade rate in force on the claim's date, divided by
+-     *  100, rounded half up to two decimals; null when no rate of the grade applies on that date. */
++     *  100, rounded half to even to two decimals; null when no rate of the grade applies on that date. */
+     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
+         var person = people.find(claim.sheetId(), claim.personId());
+         return rates.on(claim.sheetId(), person.grade(), claim.date())
+-                .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
++                .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                 .orElse(null);
+     }
+ }
