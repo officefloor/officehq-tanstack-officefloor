@@ -5,8 +5,10 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty) and its status. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+/** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status
+ *  and its number on the sheet (null while a draft, or once voided). */
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+  number: number | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
 export function counts(c: Claim): boolean {

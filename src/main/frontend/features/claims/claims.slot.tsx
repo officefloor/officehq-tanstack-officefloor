@@ -101,6 +101,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
+      <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-due">{dueOn(claim.amount, rate)}</span>{' '}
       <button
