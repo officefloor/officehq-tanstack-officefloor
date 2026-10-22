@@ -17,7 +17,8 @@ public class ClaimRepository {
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
+            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
+            rs.getObject("deferred_until", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -52,7 +53,7 @@ public class ClaimRepository {
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy());
+                claim.dueBy(), null);
     }
 
     /** The person's claims, newest first. */
@@ -79,6 +80,13 @@ public class ClaimRepository {
         return jdbc.update(
                 "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
                 personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1;
+    }
+
+    /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing
+     *  is written. */
+    public boolean defer(Claim claim, LocalDate until) {
+        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                until, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1;
     }
 
     public void update(Claim claim) {

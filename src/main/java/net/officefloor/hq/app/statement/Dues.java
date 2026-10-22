@@ -52,9 +52,10 @@ public final class Dues {
     }
 
     /** Whether a claim counts toward its person's figures and every live total: an OPEN, PENDING or SETTLED one,
-     *  except an OPEN one dated within one of its person's holds and not bound by a statement. */
-    public static boolean counts(Claim claim, Holds holds) {
-        return claim.status().counts()
+     *  except an OPEN one dated within one of its person's holds and not bound by a statement, and one deferred on the
+     *  sheet's today (see Claim.deferredOn). */
+    public static boolean counts(Claim claim, Holds holds, LocalDate today) {
+        return claim.status().counts() && !claim.deferredOn(today)
                 && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()));
     }
 
@@ -63,7 +64,7 @@ public final class Dues {
      *  the grade in force on its date). */
     public static BigDecimal total(String sheetId, List<Claim> claims, Grades grades, Holds holds, LocalDate today,
             RateRepository rates, DatedAmount floor, LateCharge late) {
-        List<Claim> counted = claims.stream().filter(c -> counts(c, holds)).toList();
+        List<Claim> counted = claims.stream().filter(c -> counts(c, holds, today)).toList();
         List<BigDecimal> figures = counted.stream().map(c -> shown(c, grades, rates, floor, late))
                 .filter(f -> f != null).toList();
         if (figures.isEmpty() && rates.on(sheetId, grades.on(today), today).isEmpty()) {

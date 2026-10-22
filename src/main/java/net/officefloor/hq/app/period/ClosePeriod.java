@@ -46,7 +46,7 @@ public class ClosePeriod {
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());
-            if (!Dues.counts(c, person != null ? person.holds() : Holds.NONE) || !period.contains(c.date())) {
+            if (!Dues.counts(c, person != null ? person.holds() : Holds.NONE, late.today()) || !period.contains(c.date())) {
                 continue;
             }
             BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);

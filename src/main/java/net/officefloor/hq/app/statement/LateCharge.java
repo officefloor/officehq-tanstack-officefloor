@@ -25,9 +25,9 @@ public record LateCharge(DatedAmount pct, LocalDate today, Rounding rounding) {
         return new LateCharge(DatedAmount.always(BigDecimal.ZERO), null, Rounding.none());
     }
 
-    /** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before today. */
+    /** Whether a claim is overdue: it is OPEN or PENDING, not deferred on today, and its due-by is before today. */
     public boolean overdue(Claim claim) {
-        return claim.status().unsettled() && today != null
+        return claim.status().unsettled() && today != null && !claim.deferredOn(today)
                 && claim.dueBy().isBefore(today);
     }
 

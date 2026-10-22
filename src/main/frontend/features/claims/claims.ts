@@ -18,14 +18,18 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  it to (null when not bound, or n/a then: its due stays live), and for a correction (a negative amount) the
  *  number of the SETTLED claim of the same person it corrects (null otherwise), and its due-by (yyyy-mm-dd), fixed
  *  when it was created from the terms of its person's grade in force on its date (else the sheet's terms), and its
- *  status log: one line per status it has had, oldest first, as <STATUS> by <user> on <date> due=<due>. */
+ *  status log: one line per status it has had, oldest first, as <STATUS> by <user> on <date> due=<due>, and the date
+ *  it is deferred until (yyyy-mm-dd; null when never deferred) and whether it is deferred on the sheet's today (an
+ *  OPEN claim deferred until after it: it counts in no total, is not overdue and cannot be settled). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
-  statedDue: string | null; corrects: string | null; dueBy: string; log: string[] };
+  statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
+  deferredUntil: string | null; deferred: boolean };
 
-/** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do. */
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
+ *  one deferred on the sheet's today. */
 export function counts(c: Claim): boolean {
-  return c.status === 'OPEN' || c.status === 'PENDING' || c.status === 'SETTLED';
+  return (c.status === 'OPEN' || c.status === 'PENDING' || c.status === 'SETTLED') && !c.deferred;
 }
 
 /** Whether a claim is still to be settled: OPEN or PENDING (it goes overdue). */
@@ -45,9 +49,9 @@ export function dueBy(claim: Claim): string {
   return claim.dueBy;
 }
 
-/** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by is before the sheet's today. */
 export function overdue(claim: Claim, today: string): boolean {
-  return unsettled(claim) && today !== '' && dueBy(claim) < today;
+  return unsettled(claim) && !claim.deferred && today !== '' && dueBy(claim) < today;
 }
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;

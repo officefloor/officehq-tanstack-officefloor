@@ -133,6 +133,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const selected = useSelectedClaims(sheetId).has(claim.id);
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
   const [moveTo, setMoveTo] = useState('');
+  const [deferUntil, setDeferUntil] = useState('');
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -157,6 +158,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not move this ${claim.status} claim.`),
   });
 
+  const defer = useMutation({
+    mutationFn: (until: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/defer`, { user, until }),
+    onSuccess: async () => {
+      setDeferUntil('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not defer this ${claim.status} claim.`),
+  });
+
   return (
     <li data-testid={`claim-row-${claim.id}`}>
       <input
@@ -177,6 +190,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Overdue <span data-testid="claim-overdue">{overdue(claim, today) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
+      Deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
+      until <span data-testid="claim-deferred-until">{claim.deferred ? claim.deferredUntil ?? '' : ''}</span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
           <li key={i} data-testid="claim-log-line">{line}</li>
@@ -252,6 +267,30 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Move
+      </button>{' '}
+      <input
+        data-testid="claim-defer-date"
+        placeholder="Defer until yyyy-mm-dd"
+        value={deferUntil}
+        onChange={(e) => {
+          setError('');
+          setDeferUntil(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-defer"
+        disabled={defer.isPending}
+        onClick={() => {
+          setError('');
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(deferUntil.trim())) {
+            setError('Give the date to defer this claim until as yyyy-mm-dd.');
+            return;
+          }
+          defer.mutate(deferUntil.trim());
+        }}
+      >
+        Defer
       </button>
       {error && (
         <p data-testid="claim-error" role="alert">

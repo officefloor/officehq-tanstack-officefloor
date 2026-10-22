@@ -47,6 +47,10 @@ final class ClaimStatusChange {
         } else if (!loaded.status().canBecome(to)) {
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
         }
+        if (input.action().equals("settle") && loaded.deferredOn(sheets.today(loaded.sheetId()))) {
+            throw new ClaimStatusNotAllowedException("This claim is deferred until " + loaded.deferredUntil()
+                    + "; it cannot be settled before then.");
+        }
         if (input.action().equals("settle") && input.user().equals(loaded.openedBy())) {
             throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
         }
@@ -70,7 +74,7 @@ final class ClaimStatusChange {
         log.record(loaded, input.user());
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue(), loaded.corrects(), loaded.dueBy()));
+                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil()));
     }
 
     /** Record the stored status change in the audit file as {@link AuditClaimStatus} describes. */
@@ -101,7 +105,7 @@ final class ClaimStatusChange {
      *  figure. */
     private static Claim asOpenUnstated(Claim c) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), ClaimStatus.OPEN,
-                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy());
+                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null);
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its

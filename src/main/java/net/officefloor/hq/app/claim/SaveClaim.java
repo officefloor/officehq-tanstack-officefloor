@@ -11,7 +11,7 @@ public class SaveClaim {
         var date = input.date() != null ? input.date() : sheets.today(loaded.sheetId());
         Claim claim = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), input.amount(), date, input.note(),
                 loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(),
-                loaded.stated(), loaded.statedDue(), input.corrects(), loaded.dueBy());
+                loaded.stated(), loaded.statedDue(), input.corrects(), loaded.dueBy(), loaded.deferredUntil());
         repository.update(claim);
         saved.set(ClaimResponse.from(claim));
     }
