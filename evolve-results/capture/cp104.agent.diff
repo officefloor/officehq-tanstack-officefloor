@@ -1,0 +1,73 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java b/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java
+index fb018bd..b576ef8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java
+@@ -13,7 +13,8 @@ final class ClaimReassign {
+     private ClaimReassign() {
+     }
+ 
+-    /** Move the claim by the rules of {@link SaveReassign}, answering it as moved. A bulk move ({@code bulk}) also lets a claim
++    /** Move the claim by the rules of {@link SaveReassign}, answering it as moved. A numbered claim takes the next number in the
++     *  sequence it would be numbered in now (its old one is never used again); a draft stays unnumbered. A bulk move ({@code bulk}) also lets a claim
+      *  "move" to the person it already belongs to: it is written (losing any statement figure) and audited as a
+      *  move like any other. */
+     public static ClaimResponse move(ReassignInput input, Claim loaded, ClaimRepository repository,
+@@ -37,11 +38,12 @@ final class ClaimReassign {
+             throw new ClaimStatusNotAllowedException("The claim is already " + to.name() + "'s.");
+         }
+         RetiredPersonException.refuse(to, loaded.date());
+-        if (!repository.reassign(loaded, to.id())) {
++        String number = loaded.number() != null ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : null;
++        if (!repository.reassign(loaded, to.id(), number)) {
+             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
+         }
+         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), to.id(), loaded.amount(),
+-                loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
++                loaded.date(), loaded.note(), loaded.status(), number, loaded.settledDue(),
+                 loaded.openedBy(), false, null, loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
+                 loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index e826d07..1e494d8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -141,12 +141,12 @@ public class ClaimRepository {
+         kept(claim.sheetId(), claim.id());
+     }
+ 
+-    /** Move the claim to another person, the newest in their list, unbinding it from any statement: false when it no longer has the person
++    /** Move the claim to another person with its new number (null for a draft), the newest in their list, unbinding it from any statement: false when it no longer has the person
+      *  and status it was loaded with (another user changed it first), and nothing is written. */
+-    public boolean reassign(Claim claim, long personId) {
++    public boolean reassign(Claim claim, long personId, String number) {
+         return kept(claim, jdbc.update(
+-                "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
+-                personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
++                "UPDATE claim SET person_id = ?, claim_number = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
++                personId, number, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
+     }
+ 
+     /** Defer the claim until the date: false when it is no longer OPEN (another user changed it first), and nothing
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java b/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java
+index 6886b2b..f4d35eb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveReassign.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Move the loaded claim to another person on the sheet. Only a role the sheet's permission matrix lets reassign
+  *  may (by default a steward), and only a DRAFT, OPEN or PENDING
+  *  claim that is not a correction (a correction names a claim of its own person), to another person it may be
+- *  dated for (not retired before its date). It keeps its number and date, and loses any figure a statement bound
++ *  dated for (not retired before its date). It keeps its date; a numbered claim takes the next number in the sequence it would be numbered in now (the sheet's, or its period's), its old one never used again, and a draft stays unnumbered. It loses any figure a statement bound
+  *  it to: its due is live again until its new person's next statement. A move another user's change got to first
+  *  is refused. */
+ public class SaveReassign {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml
+index 82c627a..f13cc09 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.PUT.yml
+@@ -1,4 +1,4 @@
+-# Move a DRAFT, OPEN or PENDING claim to another person on the sheet (by default a steward only; the sheet's permission matrix decides). It keeps its number and date and loses any figure a statement bound it to. A refused move (a role the permission matrix does not allow, a SETTLED or VOID claim, a correction, an unknown or retired person, a claim dated in a closed period) writes nothing, not even an audit line.
++# Move a DRAFT, OPEN or PENDING claim to another person on the sheet (by default a steward only; the sheet's permission matrix decides). It keeps its date, takes the next number in its sequence when it has one (a draft stays unnumbered), and loses any figure a statement bound it to. A refused move (a role the permission matrix does not allow, a SETTLED or VOID claim, a correction, an unknown or retired person, a claim dated in a closed period) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateReassign
+   next: load
