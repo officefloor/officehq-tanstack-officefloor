@@ -2,7 +2,7 @@ import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { overdueDues, sumDue, useRates } from '../rates/rates';
+import { overdueDues, sheetOverdueTotal, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { useClaims } from './claims';
 import type { Claim } from './claims';
@@ -28,11 +28,15 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; user: string; per
   );
 }
 
-/** The sheet's overdue count and overdue-total: every person's added up. */
+/** The sheet's overdue count (every person's added up) and overdue-total (trimmed, see sheetOverdueTotal). */
 function OverdueTotal({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
-  const { count, total } = useOverdue(sheetId, people, claims);
+  const rates = useRates(sheetId).data ?? [];
+  const late = useLate(sheetId);
+  const floor = useFloor(sheetId);
+  const { count } = useOverdue(sheetId, people, claims);
+  const total = sheetOverdueTotal(people, claims, rates, late, floor);
   return (
     <p>
       Overdue <strong data-testid="rollup-overdue-count">{count}</strong> totalling{' '}

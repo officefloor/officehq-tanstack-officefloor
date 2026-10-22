@@ -179,7 +179,7 @@ function PersonExcess({ sheetId, person }: { sheetId: string; user: string; pers
   );
 }
 
-/** The sheet's due-total: every person's due-total added up, skipping n/a. */
+/** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed (see trimmedSum). */
 function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];

@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,8 @@ import org.springframework.stereotype.Service;
 
 /** Takes the sheet's figures, and records in the audit file how they moved over a change: a ROLLUP line per
  *  person whose figures (claimed, due-total, overdue-total) changed (a person new to the sheet counting as changed), in the order they were added,
- *  then a TOTALS line when the sheet's totals changed. A change that moves no figure records nothing. */
+ *  then a TOTALS line when the sheet's totals changed (its due-total and overdue-total leave out the single highest and
+ *  single lowest person's figure when three or more people have one; n/a is no figure). A change that moves no figure records nothing. */
 @Service
 public class Rollups {
 
@@ -50,8 +52,8 @@ public class Rollups {
         List<Claim> all = claims.list(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = new BigDecimal("0.00");
-        BigDecimal dueTotal = new BigDecimal("0.00");
-        BigDecimal overdueTotal = new BigDecimal("0.00");
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person p : people.list(sheetId)) {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.holds(), today)).map(Claim::amount)
@@ -63,14 +65,14 @@ public class Rollups {
                     .map(c -> Dues.shown(c, p.grades(), rates, floor, late)).filter(Objects::nonNull)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
             claimedTotal = claimedTotal.add(claimed);
-            overdueTotal = overdueTotal.add(overdue);
+            overdues.add(overdue);
             if (due != null) {
-                dueTotal = dueTotal.add(due);
+                dues.add(due);
             }
             figures.put(p.id(), new Rollup.Figures(p.name(), shown(claimed), due != null ? shown(due) : "n/a",
                     shown(overdue)));
         }
-        return new Rollup(figures, shown(claimedTotal), shown(dueTotal), shown(overdueTotal));
+        return new Rollup(figures, shown(claimedTotal), shown(trimmed(dues)), shown(trimmed(overdues)));
     }
 
     /** Record how the sheet's figures moved since `before`, as a change made by `user`. */
@@ -91,6 +93,15 @@ public class Rollups {
             audit.record("TOTALS sheet=" + sheetId + " by=" + user + " claimed-total=" + after.claimedTotal()
                     + " due-total=" + after.dueTotal() + " overdue-total=" + after.overdueTotal());
         }
+    }
+
+    /** Per-person figures added up, leaving out the single highest and the single lowest when there are three or more. */
+    private static BigDecimal trimmed(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = figures.stream().sorted().toList();
+        if (sorted.size() >= 3) {
+            sorted = sorted.subList(1, sorted.size() - 1);
+        }
+        return sorted.stream().reduce(new BigDecimal("0.00"), BigDecimal::add);
     }
 
     private static String shown(BigDecimal value) {

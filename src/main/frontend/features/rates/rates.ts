@@ -105,10 +105,25 @@ export function excess(sum: string, cap: string): string {
   return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? '0.00' : fromCents(toCents(sum) - toCents(cap));
 }
 
-/** The sheet's due-total: every person's due-total added up, skipping n/a. */
+/** Per-person figures added up, skipping n/a, leaving out the single highest and the single lowest figure when
+ *  there are three or more. */
+export function trimmedSum(figures: string[]): string {
+  const sorted = figures.filter((f) => f !== 'n/a').map(toCents).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = sorted.length >= 3 ? sorted.slice(1, -1) : sorted;
+  return fromCents(kept.reduce((total, c) => total + c, 0n));
+}
+
+/** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed (see trimmedSum). */
 export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, cap: string): string {
-  return sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
+  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
+}
+
+/** The sheet's overdue-total: every person's overdue-total (see overdueDues) added up, trimmed (see trimmedSum). */
+export function sheetOverdueTotal(people: Person[], claims: Claim[], rates: Rate[], late: Late,
+    floor: DatedValue): string {
+  return trimmedSum(people.map((p) => sumDue(overdueDues(claims.filter((c) => c.personId === p.id), [p], rates,
+      late, floor))));
 }
 
 /** The overdue claims that count among these, with the due of each (as shown on its row). */
