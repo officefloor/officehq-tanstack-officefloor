@@ -27,3 +27,30 @@ export function usePools(sheetId: string) {
     queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
   });
 }
+
+function cents(amount: string): number {
+  return Math.round(Number(amount) * 100);
+}
+
+function formatCents(total: number): string {
+  const abs = Math.abs(total);
+  return `${total < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+}
+
+/** A person's cuts, in cents, across every pool they are a member of (a pool showing no cut adds nothing). */
+function personCutCents(pools: Pool[], personId: number): number {
+  return pools
+    .flatMap((p) => p.members)
+    .filter((m) => m.poolId === null && m.personId === personId && m.cut !== '')
+    .reduce((total, m) => total + cents(m.cut), 0);
+}
+
+/** A person's cut total: their cuts across every pool they are a member of, added up. */
+export function personCutTotal(pools: Pool[], personId: number): string {
+  return formatCents(personCutCents(pools, personId));
+}
+
+/** The sheet's cut total: every listed person's cut total added up. */
+export function sheetCutTotal(pools: Pool[], personIds: number[]): string {
+  return formatCents(personIds.reduce((total, id) => total + personCutCents(pools, id), 0));
+}
