@@ -158,6 +158,17 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not move this ${claim.status} claim.`),
   });
 
+  const proof = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not add a proof to this ${claim.status} claim.`),
+  });
+
   const defer = useMutation({
     mutationFn: (until: string) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/defer`, { user, until }),
@@ -191,7 +202,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       Deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
-      until <span data-testid="claim-deferred-until">{claim.deferred ? claim.deferredUntil ?? '' : ''}</span>{' '}
+      until <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
+      Proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
           <li key={i} data-testid="claim-log-line">{line}</li>
@@ -267,6 +279,17 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Move
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-proof"
+        disabled={proof.isPending}
+        onClick={() => {
+          setError('');
+          proof.mutate();
+        }}
+      >
+        Add proof
       </button>{' '}
       <input
         data-testid="claim-defer-date"

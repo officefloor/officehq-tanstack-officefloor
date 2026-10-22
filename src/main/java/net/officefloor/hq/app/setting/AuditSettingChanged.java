@@ -32,6 +32,10 @@ public class AuditSettingChanged {
         if (input.setsCap()) {
             audit.record(head + "cap value=" + SettingsResponse.text(input.cap()) + from(input, "cap"));
         }
+        if (input.setsProofThreshold()) {
+            audit.record(head + "proof-threshold value=" + SettingsResponse.text(input.proofThreshold())
+                    + from(input, "proof-threshold"));
+        }
     }
 
     private static String from(SettingsInput input, String key) {

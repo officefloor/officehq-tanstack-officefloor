@@ -43,7 +43,7 @@ public class SettingRepository {
         }
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
-                history.capOn(today), history);
+                history.capOn(today), history.proofThresholdOn(today), history);
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -73,6 +73,12 @@ public class SettingRepository {
      *  most it. */
     public BigDecimal cap(String sheetId) {
         return history(sheetId).capOn(today(sheetId));
+    }
+
+    /** The sheet's proof threshold by date (null on a date when there is none then): a claim whose due is above the one
+     *  in force on its date cannot be settled or approved while it has no proofs. */
+    public DatedAmount proofThreshold(String sheetId) {
+        return history(sheetId)::proofThresholdOn;
     }
 
     /** The sheet's floor by date: a claim's live due is at least the floor in force on its date. */

@@ -54,6 +54,14 @@ final class ClaimStatusChange {
         if (input.action().equals("settle") && input.user().equals(loaded.openedBy())) {
             throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
         }
+        if ((input.action().equals("settle") || input.action().equals("approve")) && loaded.proofs() == 0) {
+            BigDecimal threshold = settings.proofThreshold(loaded.sheetId()).on(loaded.date());
+            BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
+            if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                throw new ClaimStatusNotAllowedException("This claim's due " + due + " is above the proof threshold "
+                        + threshold + "; add a proof before it is " + input.action() + "d.");
+            }
+        }
         if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
             BigDecimal limit = settings.clerkLimit(loaded.sheetId());
             BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
@@ -74,7 +82,7 @@ final class ClaimStatusChange {
         log.record(loaded, input.user());
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil()));
+                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs()));
     }
 
     /** Record the stored status change in the audit file as {@link AuditClaimStatus} describes. */
@@ -105,7 +113,7 @@ final class ClaimStatusChange {
      *  figure. */
     private static Claim asOpenUnstated(Claim c) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), ClaimStatus.OPEN,
-                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null);
+                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs());
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its

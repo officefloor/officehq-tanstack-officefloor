@@ -11,11 +11,12 @@ import { useSheetToday } from '../sheet/sheet';
  *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
  *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
  *  grade has none: it uses the sheet's terms), and the cap with two decimals ('' when there is none: a person's
- *  due-total is at most it). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
+ *  due-total is at most it), and the proof threshold with two decimals ('' when there is none: a claim whose due is
+ *  above the one in force on its date cannot be settled or approved without a proof). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
  *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
- *  terms-A/B/C, late-pct, cap), oldest from-date first. */
+ *  terms-A/B/C, late-pct, cap, proof-threshold), oldest from-date first. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
-  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; dated?: Record<string, Dated[]> };
+  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; dated?: Record<string, Dated[]> };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };

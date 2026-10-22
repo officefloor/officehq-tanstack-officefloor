@@ -12,11 +12,11 @@ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The settings that carry a figure, and so are saved from a from-date. */
-const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap'];
+const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap', 'proof-threshold'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
-  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; from?: Record<string, string> };
+  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; from?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -26,6 +26,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
  *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none).
+ *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
+ *  while it has no proofs; the server enforces it.
  *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
  *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
  *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
@@ -39,6 +41,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentPolicyDate = settings.data?.policyDate ?? '';
   const currentNumberingFrom = settings.data?.periodNumberingFrom ?? '';
   const currentCap = settings.data?.cap ?? '';
+  const currentProofThreshold = settings.data?.proofThreshold ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
@@ -47,6 +50,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedPolicyDate, setTypedPolicyDate] = useState<string | null>(null);
   const [typedNumberingFrom, setTypedNumberingFrom] = useState<string | null>(null);
   const [typedCap, setTypedCap] = useState<string | null>(null);
+  const [typedProofThreshold, setTypedProofThreshold] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   // From-dates typed in since the last save, by dated setting key.
@@ -66,6 +70,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedPolicyDate(null);
       setTypedNumberingFrom(null);
       setTypedCap(null);
+      setTypedProofThreshold(null);
       setTypedGradeTerms({});
       setTypedFrom({});
     },
@@ -136,6 +141,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.cap = cap;
     }
+    if (typedProofThreshold !== null) {
+      const threshold = typedProofThreshold.trim();
+      if (threshold !== '' && !LIMIT.test(threshold)) {
+        setError('The proof threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.');
+        return;
+      }
+      changes.proofThreshold = threshold;
+    }
     for (const grade of GRADES) {
       const typedTerms = typedGradeTerms[grade];
       if (typedTerms === undefined) continue;
@@ -153,6 +166,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       terms: () => { changes.terms ??= currentTerms; },
       'late-pct': () => { changes.latePct ??= currentLatePct; },
       cap: () => { changes.cap ??= currentCap; },
+      'proof-threshold': () => { changes.proofThreshold ??= currentProofThreshold; },
       ...Object.fromEntries(GRADES.map((grade) => [`terms-${grade}`, () => {
         if (changes.gradeTerms?.[grade] === undefined) {
           changes.gradeTerms = { ...changes.gradeTerms, [grade]: currentGradeTerms(grade) };
@@ -209,7 +223,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Late <strong data-testid="setting-late-pct-current">{currentLatePct}</strong>%{' '}
         Policy date <strong data-testid="setting-policy-date-current">{currentPolicyDate}</strong>{' '}
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>{' '}
-        Cap <strong data-testid="setting-cap-current">{currentCap}</strong>
+        Cap <strong data-testid="setting-cap-current">{currentCap}</strong>{' '}
+        Proof threshold <strong data-testid="setting-proof-threshold-current">{currentProofThreshold}</strong>
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -307,6 +322,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           />
         </label>
         {fromInput('cap')}{' '}
+        <label>
+          Proof threshold{' '}
+          <input
+            data-testid="setting-proof-threshold"
+            placeholder="none"
+            value={typedProofThreshold ?? currentProofThreshold}
+            onInput={typed(setTypedProofThreshold)}
+            onChange={typed(setTypedProofThreshold)}
+            onFocus={() => setTypedProofThreshold((v) => v ?? currentProofThreshold)}
+          />
+        </label>
+        {fromInput('proof-threshold')}{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

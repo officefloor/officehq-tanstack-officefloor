@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  amount 0.00 or more with up to two decimals, and terms (when given) that
  *  are a whole number of days, and a late percent (when given) that is a percent 0.00 or more with up to two decimals, and a policy date (when given) that is
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
- *  only for grades A, B or C, and a cap (when given) that is blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
+ *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
@@ -65,6 +65,10 @@ public class ValidateSettings {
         if (cap != null && !cap.isEmpty() && !cap.matches(AMOUNT)) {
             throw new InvalidSettingException("The cap must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
         }
+        String threshold = request.proofThreshold() == null ? null : request.proofThreshold().trim();
+        if (threshold != null && !threshold.isEmpty() && !threshold.matches(AMOUNT)) {
+            throw new InvalidSettingException("The proof threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
+        }
         Map<String, Integer> gradeTerms = new LinkedHashMap<>();
         if (request.gradeTerms() != null) {
             for (String grade : request.gradeTerms().keySet()) {
@@ -107,6 +111,7 @@ public class ValidateSettings {
                 terms == null ? null : Integer.valueOf(terms),
                 latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
-                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from));
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
+                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2)));
     }
 }

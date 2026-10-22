@@ -18,7 +18,7 @@ public class ClaimRepository {
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-            rs.getObject("deferred_until", LocalDate.class));
+            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"));
 
     private final JdbcTemplate jdbc;
 
@@ -53,7 +53,7 @@ public class ClaimRepository {
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy(), null);
+                claim.dueBy(), null, 0);
     }
 
     /** The person's claims, newest first. */
@@ -87,6 +87,13 @@ public class ClaimRepository {
     public boolean defer(Claim claim, LocalDate until) {
         return jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 until, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name()) == 1;
+    }
+
+    /** Raise the claim's proofs count by one: false when it no longer has the status it was loaded with (another user
+     *  changed it first), and nothing is written. */
+    public boolean addProof(Claim claim) {
+        return jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.sheetId(), claim.id(), claim.status().name()) == 1;
     }
 
     public void update(Claim claim) {

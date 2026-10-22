@@ -11,10 +11,11 @@ import java.time.LocalDate;
  *  (a negative amount) the number of the SETTLED claim of the same person it corrects (null otherwise), and its
  *  due-by, fixed when it was created: its date plus the terms of its person's grade in force on its date (else the
  *  sheet's terms); it does not change when the terms or its date change later; and the date it is deferred until (null: never
- *  deferred): an OPEN claim deferred past the sheet's today is deferred (see deferredOn). */
+ *  deferred): an OPEN claim deferred past the sheet's today is deferred (see deferredOn); and its proofs count (0 or more,
+ *  raised one at a time). */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
-        BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil) {
+        BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs) {
 
     /** Whether the claim is deferred on the sheet's today: it is OPEN and deferred until a date after today (null:
      *  no today, nothing is deferred). Deferred, it counts in no total, is not overdue, cannot be settled and is

@@ -7,14 +7,15 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-/** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), each value recorded
+/** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap,
+ *  proof-threshold), each value recorded
  *  by its from-date (null: blank). The value in force on a date is the one with the latest from-date on or before
  *  it; before every from-date the sheet's starting value applies. */
 public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values) {
 
     /** The keys of the settings that are dated. */
     public static final List<String> KEYS = List.of("clerk-limit", "floor", "terms", "terms-A",
-            "terms-B", "terms-C", "late-pct", "cap");
+            "terms-B", "terms-C", "late-pct", "cap", "proof-threshold");
 
     /** The key's values, oldest from-date first (empty when it has none). */
     public NavigableMap<LocalDate, String> of(String key) {
@@ -65,6 +66,11 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     /** The cap in force on the date: two decimals, or null when there is none. */
     public BigDecimal capOn(LocalDate date) {
         return amountOn("cap", date);
+    }
+
+    /** The proof threshold in force on the date: two decimals, or null when there is none. */
+    public BigDecimal proofThresholdOn(LocalDate date) {
+        return amountOn("proof-threshold", date);
     }
 
     private BigDecimal amountOn(String key, LocalDate date) {

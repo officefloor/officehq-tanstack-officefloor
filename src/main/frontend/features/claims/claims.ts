@@ -20,11 +20,13 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  when it was created from the terms of its person's grade in force on its date (else the sheet's terms), and its
  *  status log: one line per status it has had, oldest first, as <STATUS> by <user> on <date> due=<due>, and the date
  *  it is deferred until (yyyy-mm-dd; null when never deferred) and whether it is deferred on the sheet's today (an
- *  OPEN claim deferred until after it: it counts in no total, is not overdue and cannot be settled). */
+ *  OPEN claim deferred until after it: it counts in no total, is not overdue and cannot be settled), and its proofs
+ *  count (raised one at a time, not on a SETTLED or VOID claim; one whose due is above the proof threshold in force
+ *  on its date cannot be settled or approved while it is 0 — the server refuses it). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
-  deferredUntil: string | null; deferred: boolean };
+  deferredUntil: string | null; deferred: boolean; proofs: number };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */

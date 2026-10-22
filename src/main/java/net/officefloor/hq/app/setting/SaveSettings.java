@@ -37,6 +37,9 @@ public class SaveSettings {
         if (input.setsCap()) {
             repository.setDated(id, "cap", text(input.cap()), from(input, "cap", today));
         }
+        if (input.setsProofThreshold()) {
+            repository.setDated(id, "proof-threshold", text(input.proofThreshold()), from(input, "proof-threshold", today));
+        }
         settings.set(repository.of(id));
     }
 
