@@ -1,0 +1,93 @@
+{
+  "checkpoint": 40,
+  "stack": {
+    "repo": "/home/daniel/officehq-tanstack-officefloor",
+    "origin": "git@github.com:officefloor/officehq-tanstack-officefloor.git",
+    "name": "officehq-tanstack-officefloor",
+    "base_ref": "base-empty",
+    "base_commit": "d02df45a636396c0783d74216dda7ad927f0c28f"
+  },
+  "checkpoint_id": "cp40_hold-interval",
+  "phase": "early",
+  "type": "mutative",
+  "mutates": [
+    22,
+    26,
+    27,
+    29,
+    30,
+    31,
+    33,
+    35,
+    36,
+    37,
+    39
+  ],
+  "replaced_tests": [
+    "cp22_hold.spec.ts::hold",
+    "cp22_hold.spec.ts::hold scenario 3",
+    "cp26_late-charge.spec.ts::late charge scenario 1",
+    "cp26_late-charge.spec.ts::late charge scenario 3",
+    "cp27_patrons-and-backing.spec.ts::patrons and backing",
+    "cp27_patrons-and-backing.spec.ts::patrons and backing scenario 1",
+    "cp27_patrons-and-backing.spec.ts::patrons and backing scenario 2",
+    "cp29_reopen-period.spec.ts::reopen period scenario 1",
+    "cp30_corrections.spec.ts::corrections scenario 1",
+    "cp31_summary.spec.ts::summary scenario 2",
+    "cp33_export-people.spec.ts::export people scenario 1",
+    "cp35_numbering-per-period.spec.ts::numbering per period scenario 1",
+    "cp35_numbering-per-period.spec.ts::numbering per period scenario 3",
+    "cp36_approvals.spec.ts::approvals scenario 1",
+    "cp37_reassign-claim.spec.ts::reassign claim scenario 3",
+    "cp39_claim-log.spec.ts::claim log scenario 3"
+  ],
+  "request": {
+    "spec": "A hold now has a from-date (default the sheet's today) and an optional to-date, and a person may\nhave several holds over time. Only a person's OPEN claims dated within a hold are left out of the\nlive totals; their other open claims count, and a claim bound by a statement stays in the totals\nwhatever its date. Show hold yes/no as whether the person has any hold. Holding writes\nPERSON_HELD name=<name> from=<date>; releasing is no longer a separate action (a hold ends on\nits to-date).\n",
+    "prompt": "You are implementing ONE change to this application.\n\nFIRST read AGENTS.md \u2014 it states the working rules and how the app is tested, and sends you to\nDESIGN.md for the app's stack and conventions. Follow both.\n\nTHE CHANGE REQUEST:\nA hold now has a from-date (default the sheet's today) and an optional to-date, and a person may\nhave several holds over time. Only a person's OPEN claims dated within a hold are left out of the\nlive totals; their other open claims count, and a claim bound by a statement stays in the totals\nwhatever its date. Show hold yes/no as whether the person has any hold. Holding writes\nPERSON_HELD name=<name> from=<date>; releasing is no longer a separate action (a hold ends on\nits to-date).\n\nYour work is verified by an automated Playwright UI test already installed under e2e/specs/.\nRead that spec: it declares the exact data-testid anchors, values, test data and any audit\nrecords it expects \u2014 match them. Run `bin/e2e` to build the app, start it, and run the test as\nyou work; iterate until it passes. Change whatever the request needs across the app \u2014 its stored\ndata, its server and its front end. Do NOT edit bin/build, bin/start, bin/stop, bin/e2e,\nAGENTS.md, CLAUDE.md, DESIGN.md, e2e/support/ or the test spec.\n"
+  },
+  "commit_sha": "db5c822743259f3f5702994157e28884a5d8d12a",
+  "reset_sha": "",
+  "preagent_sha": "62ddc664d76848ce4cf976c046b5472c92c65055",
+  "prev_sha": "62ddc664d76848ce4cf976c046b5472c92c65055",
+  "base_sha": "d02df45a636396c0783d74216dda7ad927f0c28f",
+  "agent": {
+    "ok": true,
+    "cost_usd": 1.1578264000000003,
+    "input_tokens": 46,
+    "output_tokens": 15244,
+    "cache_read_tokens": 1247932,
+    "cache_creation_tokens": 75397,
+    "num_turns": 26,
+    "duration_ms": 220224,
+    "duration_api_ms": 134861,
+    "model": "claude-opus-5-5",
+    "session_id": "23f48b40-9737-45bd-92d9-5385993e593d",
+    "stop_reason": "success",
+    "result_text": "Holds now have a from-date and an optional to-date, and a person can have several. `bin/e2e` passes all 4 acceptance tests.\n\n**Stored data**\n- New migration `V29__person_hold.sql` adds a `person_hold` table with a from-date and a to-date (empty to-date means the hold has no end).\n- It drops the old `person.held` flag. Anyone held before the change is moved over as a hold with no start or end, so their totals don't shift.\n\n**Server**\n- `Holds.java` holds a person's hold intervals and answers whether a given date falls inside one.\n- `Dues.counts` now leaves a claim out of the live totals only if all three are true:\n  - it is OPEN;\n  - a statement hasn't bound it;\n  - its date falls within one of the person's holds.\n- The same rule applies to the person rollups, sheet totals, statements and closing a period.\n- The hold endpoint now adds a hold instead of toggling one on and off. The from-date defaults to the sheet's today. Bad dates, or a to-date before the from-date, are refused with nothing written.\n- It writes `PERSON_HELD sheet=\u2026 by=\u2026 name=\u2026 from=<date>`. `PERSON_RELEASED` is gone.\n- The person data the server returns still has `held` (true if they have any hold) and now also lists their `holds`.\n\n**Front end**\n- The hold cell shows yes/no for whether the person has any hold, then one `person-hold-line` per hold.\n- It has inputs for the from-date (`person-hold-from`) and to-date (`person-hold-to`), and the `person-hold-toggle` button now adds a hold.\n- `live()` in `claims.ts` uses the same rule as the server, so the totals on screen match.\n\n**Two choices to check:**\n- **PENDING claims now always count, even during a hold.** Before, a hold also took PENDING claims out of the totals. The request says only OPEN claims are left out, so I followed it. The tests don't cover PENDING claims under a hold.\n- **Taking a new statement keeps a claim bound if it already was, even if a hold now covers it.** That follows \"a claim bound by a statement stays in the totals whatever its date\". If a new statement should look at the hold again and drop such claims, that's a one-line change in `SaveStatement`.",
+    "error": "",
+    "attempts": [
+      {
+        "ok": true,
+        "limit_reached": false,
+        "retryable": false,
+        "timed_out": false,
+        "cost_usd": 1.1578264000000003,
+        "num_turns": 26,
+        "duration_ms": 220224,
+        "duration_api_ms": 134861,
+        "error": ""
+      }
+    ]
+  },
+  "agent_stream_file": "cp40.agent.jsonl",
+  "agent_diff_file": "cp40.agent.diff",
+  "build_log_file": null,
+  "tests": {
+    "gated": false,
+    "queued": true
+  },
+  "probe": null,
+  "pinned_touched": [],
+  "acceptance_touched": [],
+  "impact_gate": null
+}
