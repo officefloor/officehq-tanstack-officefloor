@@ -42,7 +42,7 @@ public class ValidatePaste {
             }
             try {
                 ClaimInput claim = ValidateClaim.check(new ClaimRequest(user, fields.length > 1 ? fields[1] : "",
-                        fields.length > 2 ? fields[2] : "", note, "", ref));
+                        fields.length > 2 ? fields[2] : "", note, "", ref, null));
                 if (claim.ref() != null && !refs.add(claim.ref().toLowerCase(Locale.ROOT))) {
                     throw new InvalidClaimException(RefuseUsedNewRef.message(claim.ref()));
                 }

@@ -19,6 +19,6 @@ public class SaveProof {
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
                 loaded.openedBy(), loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(),
-                loaded.deferredUntil(), loaded.proofs() + 1, loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref()), List.of(), sheets.today(loaded.sheetId())));
+                loaded.deferredUntil(), loaded.proofs() + 1, loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags()), List.of(), sheets.today(loaded.sheetId())));
     }
 }

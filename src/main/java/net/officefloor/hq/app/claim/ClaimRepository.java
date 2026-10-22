@@ -25,7 +25,7 @@ public class ClaimRepository {
                 rs.getString("corrects"),
                 BusinessDays.after(rs.getObject("due_from", LocalDate.class), rs.getInt("terms_days"), holidays),
                 rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
-                rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class), rs.getString("ref"));
+                rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class), rs.getString("ref"), rs.getString("tags"));
     }
 
     private final JdbcTemplate jdbc;
@@ -55,7 +55,7 @@ public class ClaimRepository {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_from, terms_days, split_from, late_entry, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_from, terms_days, split_from, late_entry, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -68,12 +68,14 @@ public class ClaimRepository {
             ps.setString(9, claim.splitFrom());
             ps.setBoolean(10, claim.lateEntry());
             ps.setString(11, claim.ref());
+            ps.setString(12, claim.tags());
             return ps;
         }, keys);
         kept(claim.sheetId(), keys.getKey().longValue());
+        used(claim.sheetId(), claim.tags());
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null, claim.ref());
+                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null, claim.ref(), claim.tags());
     }
 
     /** The person's claims, newest first. */
@@ -142,9 +144,25 @@ public class ClaimRepository {
 
     /** Store an edit of the claim, releasing its editor lock. */
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, locked_by = NULL WHERE sheet_id = ? AND id = ?",
-                claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.ref(), claim.sheetId(), claim.id());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ?",
+                claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.ref(), claim.tags(), claim.sheetId(), claim.id());
         kept(claim.sheetId(), claim.id());
+        used(claim.sheetId(), claim.tags());
+    }
+
+    /** Keep each of the tags (joined by commas; null: none) among those ever used on the sheet. */
+    private void used(String sheetId, String tags) {
+        if (tags == null) {
+            return;
+        }
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO claim_tag KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
+    }
+
+    /** Every tag ever used on the sheet's claims, sorted. */
+    public List<String> tagsUsed(String sheetId) {
+        return jdbc.queryForList("SELECT tag FROM claim_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
     }
 
     /** Move the claim from one status to another, with its settled due and who opened it: false when it no longer has
@@ -228,9 +246,9 @@ public class ClaimRepository {
     private void kept(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                 + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, deferred_until, proofs, "
-                + "split_from, late_entry, reminded_on, ref, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
+                + "split_from, late_entry, reminded_on, ref, tags, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
                 + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_from, c.terms_days, "
-                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, s.today FROM claim c JOIN sheet s ON s.id = "
+                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, s.today FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 

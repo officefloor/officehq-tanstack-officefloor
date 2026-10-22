@@ -3,13 +3,17 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.stream.Collectors;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: the amount is required, a
  *  number with up to two decimals, below 0.00 only for a correction, which names (by its number: a whole number, or <period name>-<n> / X-<n>) the claim it
  *  corrects, and only a correction names one; the date, when given, is a real yyyy-mm-dd date; a reference, when given, is
- *  at most 200 characters (whether it is already used on the sheet is checked once the sheet is read). */
+ *  at most 200 characters (whether it is already used on the sheet is checked once the sheet is read); tags, when given, are at most
+ *  1000 characters once normalised. */
 public class ValidateClaim {
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> body) throws InvalidClaimException {
         body.set(check(request));
@@ -66,6 +70,17 @@ public class ValidateClaim {
         if (ref.length() > 200) {
             throw new InvalidClaimException("A reference is at most 200 characters.");
         }
-        return new ClaimInput(request.user().trim(), value, date, note, corrects, ref.isEmpty() ? null : ref);
+        String tags = request.tags() == null ? null : tags(request.tags());
+        if (tags != null && tags.length() > 1000) {
+            throw new InvalidClaimException("Tags are at most 1000 characters.");
+        }
+        return new ClaimInput(request.user().trim(), value, date, note, corrects, ref.isEmpty() ? null : ref, tags);
+    }
+
+    /** Tags as typed, separated by commas: each trimmed and lower-cased, blanks and repeats dropped, sorted and joined
+     *  by commas ("" when none). */
+    static String tags(String typed) {
+        return Arrays.stream(typed.split(",")).map(t -> t.trim().toLowerCase(Locale.ROOT)).filter(t -> !t.isEmpty())
+                .distinct().sorted().collect(Collectors.joining(","));
     }
 }

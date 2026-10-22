@@ -26,12 +26,13 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  on its date cannot be settled or approved while it is 0 — the server refuses it), and the number
  *  of the claim it was split from (null when it was not split off one), and the last sheet-today it was reminded
  *  (yyyy-mm-dd; null when never: only an OPEN or PENDING claim, once per sheet-today), and its external reference
- *  (null when none: unique on the sheet without regard to case — the server refuses a repeat). */
+ *  (null when none: unique on the sheet without regard to case — the server refuses a repeat), and its tags (trimmed,
+ *  lower-cased, without repeats, sorted; empty when none). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
-  lateEntry: boolean; reminded: string | null; ref: string | null };
+  lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[] };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */
@@ -118,6 +119,15 @@ export function useClaims(sheetId: string) {
   return useQuery({
     queryKey: claimsKey(sheetId),
     queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`),
+  });
+}
+
+/** Every tag ever used on the sheet's claims, sorted (kept even once no claim carries it). Under the claims' key, so
+ *  it is fetched again whenever they are. */
+export function useTagsUsed(sheetId: string) {
+  return useQuery({
+    queryKey: [...claimsKey(sheetId), 'tags'] as const,
+    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/tags`),
   });
 }
 
