@@ -25,12 +25,13 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  count (raised one at a time, not on a SETTLED or VOID claim; one whose due is above the proof threshold in force
  *  on its date cannot be settled or approved while it is 0 — the server refuses it), and the number
  *  of the claim it was split from (null when it was not split off one), and the last sheet-today it was reminded
- *  (yyyy-mm-dd; null when never: only an OPEN or PENDING claim, once per sheet-today). */
+ *  (yyyy-mm-dd; null when never: only an OPEN or PENDING claim, once per sheet-today), and its external reference
+ *  (null when none: unique on the sheet without regard to case — the server refuses a repeat). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
-  lateEntry: boolean; reminded: string | null };
+  lateEntry: boolean; reminded: string | null; ref: string | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */

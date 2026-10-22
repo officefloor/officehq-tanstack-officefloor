@@ -26,7 +26,8 @@ const NUMBER = /^(\d+|.+-\d+)$/;
 
 /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
  *  date means the sheet's today (for a new claim, the sheet's entry date while it is set). A negative amount is a correction, which names the number of the SETTLED claim
- *  of the same person it corrects (the server checks that claim). A new claim the server refuses clears the form,
+ *  of the same person it corrects (the server checks that claim). A reference (trimmed; blank: none) must not be
+ *  used by another claim on the sheet, compared without regard to case (the server checks that). A new claim the server refuses clears the form,
  *  as one it adds does, leaving its error showing. */
 function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
@@ -40,11 +41,12 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
   const [corrects, setCorrects] = useState(editing?.corrects ?? '');
+  const [ref, setRef] = useState(editing?.ref ?? '');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { user: string; amount: string; date: string; note: string; corrects: string }) =>
+    mutationFn: (body: { user: string; amount: string; date: string; note: string; corrects: string; ref: string }) =>
       editing
         ? putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${editing.id}`, body)
         : postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/claims`, body),
@@ -63,6 +65,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
         setDate('');
         setNote('');
         setCorrects('');
+        setRef('');
       }
     },
     onSettled: once.done,
@@ -86,7 +89,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       return;
     }
     if (!once.start()) return;
-    save.mutate({ user, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim() });
+    save.mutate({ user, amount: amount.trim(), date: date.trim(), note, corrects: corrects.trim(), ref: ref.trim() });
   };
 
   const change = (set: (v: string) => void) => (e: { target: { value: string } }) => {
@@ -101,6 +104,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       <input data-testid="claim-form-date" placeholder={blankDate || 'yyyy-mm-dd'} value={date} onChange={change(setDate)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={change(setNote)} />{' '}
       <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={change(setCorrects)} />{' '}
+      <input data-testid="claim-form-ref" placeholder="Reference" value={ref} onChange={change(setRef)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
@@ -255,11 +259,11 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   });
 
   // The row's own amount entry: the claim form's edit with only the amount changed (its date, note and the
-  // claim it corrects stay as they are), so the server refuses it by the same rules and audits CLAIM_EDITED.
+  // claim it corrects and its reference stay as they are), so the server refuses it by the same rules and audits CLAIM_EDITED.
   const inline = useMutation({
     mutationFn: (amount: string) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}`,
-        { user, amount, date: claim.date, note: claim.note, corrects: claim.corrects ?? '' }),
+        { user, amount, date: claim.date, note: claim.note, corrects: claim.corrects ?? '', ref: claim.ref ?? '' }),
     onSuccess: async () => {
       setInlineAmount('');
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -280,6 +284,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-amount">{claim.amount}</span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
+      Ref <span data-testid="claim-ref">{claim.ref ?? ''}</span>{' '}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       Corrects <span data-testid="claim-corrects">{claim.corrects ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}

@@ -15,11 +15,11 @@ import java.time.LocalDate;
  *  deferred): an OPEN claim deferred past the sheet's today is deferred (see deferredOn); and its proofs count (0 or more,
  *  raised one at a time); and the number of the claim it was split from (null when it was not split off one); and whether it is a
  *  late entry: added while its period was soft-closed (fixed when it was added); and the last sheet-today a reminder was
- *  written for it (null: never reminded). */
+ *  written for it (null: never reminded); and its external reference (null: none), unique on the sheet without regard to case. */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
         BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
-        String splitFrom, boolean lateEntry, LocalDate reminded) {
+        String splitFrom, boolean lateEntry, LocalDate reminded, String ref) {
 
     /** Whether the claim is deferred on the sheet's today: it is OPEN and deferred until a date after today (null:
      *  no today, nothing is deferred). Deferred, it counts in no total, is not overdue, cannot be settled and is

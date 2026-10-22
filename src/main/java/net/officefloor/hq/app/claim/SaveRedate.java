@@ -29,6 +29,6 @@ public class SaveRedate {
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 input.date(), loaded.note(), loaded.status(), number, loaded.settledDue(), loaded.openedBy(),
                 loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
-                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded())));
+                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref())));
     }
 }
