@@ -1,0 +1,132 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index d8fdeb2..8d28979 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -6,15 +6,16 @@ import { PersonRow } from '../../slots/defs/personRow';
+ import { live, useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+-import { recentSettledSum, useRates } from '../rates/rates';
++import { patronShares, recentSettledSum, sharedSum, useRates } from '../rates/rates';
+ import { useFloor, useLate } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ import { patronsKey, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
+ 
+-/** A person's patrons (their names, sorted), their backing — the patrons' settled figures over their SETTLED claims
+- *  dated within the 90 days up to and including the sheet's today (see recentSettledSum); 0.00 with none — and the
+- *  picker that names one more. */
++/** A person's patrons, each as <name> <share> sorted by name — 100.00 split equally in the order they were named, the
++ *  first-named taking the remainder (see patronShares) — their backing — each patron's settled figures over their
++ *  SETTLED claims dated within the 90 days up to and including the sheet's today (see recentSettledSum) times their
++ *  share / 100, added up and rounded half to even (see sharedSum); 0.00 with none — and the picker that names one more. */
+ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const people = usePeople(sheetId).data ?? [];
+@@ -23,12 +24,19 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
+   const rates = useRates(sheetId).data ?? [];
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const patrons = (usePatrons(sheetId).data ?? [])
++  // the server lists each person's patrons in the order they were named
++  const named = (usePatrons(sheetId).data ?? [])
+     .filter((p) => p.personId === person.id)
+     .map((p) => people.find((q) => q.id === p.patronId))
+-    .filter((p): p is Person => p !== undefined)
+-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+-  const backing = recentSettledSum(patrons, claims, rates, today, floor, late);
++    .filter((p): p is Person => p !== undefined);
++  const shares = patronShares(named.length);
++  const patrons = named
++    .map((p, i) => ({ person: p, share: shares[i] }))
++    .sort((a, b) => (a.person.name < b.person.name ? -1 : a.person.name > b.person.name ? 1 : 0));
++  const backing = sharedSum(patrons.map((p) => ({
++    figure: recentSettledSum([p.person], claims, rates, today, floor, late),
++    share: p.share,
++  })));
+   const [chosen, setChosen] = useState('');
+   const [error, setError] = useState('');
+   const once = useSubmitOnce();
+@@ -47,7 +55,7 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
+ 
+   return (
+     <td>
+-      Patrons <span data-testid="person-patrons">{patrons.map((p) => p.name).join(', ')}</span>{' '}
++      Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
+       Backing <span data-testid="person-backing">{backing}</span>{' '}
+       <select
+         data-testid="person-patron-select"
+diff --git a/src/main/frontend/features/patrons/patrons.ts b/src/main/frontend/features/patrons/patrons.ts
+index d9931bf..d7e7827 100644
+--- a/src/main/frontend/features/patrons/patrons.ts
++++ b/src/main/frontend/features/patrons/patrons.ts
+@@ -6,7 +6,7 @@ export type Patron = { personId: number; patronId: number };
+ 
+ export const patronsKey = (sheetId: string) => ['sheet', sheetId, 'patrons'] as const;
+ 
+-/** Every person's patrons on the sheet. */
++/** Every person's patrons on the sheet, each person's in the order they were named. */
+ export function usePatrons(sheetId: string) {
+   return useQuery({
+     queryKey: patronsKey(sheetId),
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index a66d6d8..7cac4e0 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -143,6 +143,30 @@ export function recentSettledSum(people: Person[], claims: Claim[], rates: Rate[
+     .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late)));
+ }
+ 
++/** 100.00 split equally among n patrons in the order named: each share 100.00 / n rounded to two decimals half to
++ *  even, the first-named taking the remainder (100.00 minus the shares added up). */
++export function patronShares(n: number): string[] {
++  if (n <= 0) return [];
++  const count = BigInt(n);
++  let share = 10000n / count;
++  const rest = 10000n % count;
++  if (rest * 2n > count || (rest * 2n === count && share % 2n === 1n)) share += 1n;
++  return Array.from({ length: n }, (_, i) => fromCents(i === 0 ? 10000n - share * (count - 1n) : share));
++}
++
++/** Figures each weighted by a share: the sum of figure times share divided by 100, rounded half to even (exact, in
++ *  integers); n/a figures are skipped. */
++export function sharedSum(parts: { figure: string; share: string }[]): string {
++  const scaled = parts.filter((p) => p.figure !== 'n/a')
++    .reduce((total, p) => total + toCents(p.figure) * toCents(p.share), 0n); // in 1/10000 of a cent
++  const sign = scaled < 0n ? -1n : 1n;
++  const abs = scaled * sign;
++  let cents = abs / 10000n;
++  const rest = abs % 10000n;
++  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
++  return fromCents(cents * sign);
++}
++
+ /** A sum of figures at most the cap ('' when none); 'n/a' is not capped. */
+ export function capped(sum: string, cap: string): string {
+   return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? sum : fromCents(toCents(cap));
+diff --git a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+index 2f3a1c7..c47316a 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
++++ b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+@@ -18,10 +18,10 @@ public class PatronRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** Every person's patrons on the sheet. */
++    /** Every person's patrons on the sheet, each person's in the order they were named. */
+     public List<Patron> list(String sheetId) {
+         return jdbc.query("SELECT pp.sheet_id, pp.person_id, pp.patron_id, p.name FROM person_patron pp "
+-                + "JOIN person p ON p.id = pp.patron_id WHERE pp.sheet_id = ? ORDER BY pp.person_id, p.name", ROW, sheetId);
++                + "JOIN person p ON p.id = pp.patron_id WHERE pp.sheet_id = ? ORDER BY pp.person_id, pp.named", ROW, sheetId);
+     }
+ 
+     /** Whether the person already has this patron. */
+diff --git a/src/main/resources/db/migration/V67__person_patron_named.sql b/src/main/resources/db/migration/V67__person_patron_named.sql
+new file mode 100644
+index 0000000..d6deb26
+--- /dev/null
++++ b/src/main/resources/db/migration/V67__person_patron_named.sql
+@@ -0,0 +1,3 @@
++-- The order a person's patrons were named in: each new patron row takes the next number. Patron shares follow it.
++CREATE SEQUENCE person_patron_named_seq;
++ALTER TABLE person_patron ADD COLUMN named BIGINT DEFAULT NEXT VALUE FOR person_patron_named_seq NOT NULL;
