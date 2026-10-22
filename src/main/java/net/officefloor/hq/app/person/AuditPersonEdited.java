@@ -8,6 +8,6 @@ public class AuditPersonEdited {
     public void audit(@Val PersonRequest request, @Val Person loaded, @Val PersonResponse saved, Audit audit) {
         audit.record("PERSON_EDITED sheet=" + loaded.sheetId() + " by=" + request.user()
                 + " name=" + saved.name() + " grade=" + saved.grade()
-                + (request.terms() != null ? " terms=" + request.terms() : ""));
+                + (request.terms() != null && !request.terms().isEmpty() ? " terms=" + request.terms() : ""));
     }
 }
