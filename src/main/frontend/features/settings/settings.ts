@@ -15,10 +15,11 @@ import { useSheetToday } from '../sheet/sheet';
  *  above the one in force on its date cannot be settled or approved without a proof). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
  *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
  *  terms-A/B/C, late-pct, cap, proof-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
- *  each action the roles that may take it, comma separated ('' when blank: the standing rule). */
+ *  each action the roles that may take it, comma separated ('' when blank: the standing rule). `graceDays` is the grace days (not dated; '' when off): when the sheet's
+ *  today is changed, each open period whose to-date plus them is before the new today is closed. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; dated?: Record<string, Dated[]>;
-  perms?: Record<string, string> };
+  perms?: Record<string, string>; graceDays?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };

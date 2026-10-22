@@ -22,12 +22,17 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** Refuse every change a viewer asks for on a sheet, before any endpoint reads or writes anything: each POST or
  *  PUT under a sheet (all but loading the sheet itself) whose signed-in user (the body's {@code user}) is a viewer
- *  on that sheet is answered 403 with the reason, and nothing is written or audited. */
+ *  on that sheet is answered 403 with the reason, and nothing is written or audited. A bulk open is left to its
+ *  endpoint, which counts every selected claim refused for a viewer. */
 @Component
 public class RefuseViewerChanges extends OncePerRequestFilter {
 
     /** A change under a sheet: /api/sheets/{sheetId}/... (loading the sheet, /api/sheets/{sheetId}, is not one). */
     private static final Pattern CHANGE = Pattern.compile("^/api/sheets/([^/]+)/.+$");
+
+    /** A bulk open, left to the endpoint: it refuses each selected claim a viewer's role may not open (none), and
+     *  answers how many it opened and refused, writing nothing. */
+    private static final Pattern BULK_OPEN = Pattern.compile("^/api/sheets/[^/]+/bulk-open$");
 
     private final RoleRepository roles;
     private final JsonMapper json = JsonMapper.builder().build();
@@ -40,8 +45,10 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String method = request.getMethod();
-        Matcher change = CHANGE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
-        if (method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS") || !change.matches()) {
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        Matcher change = CHANGE.matcher(path);
+        if (method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS") || !change.matches()
+                || BULK_OPEN.matcher(path).matches()) {
             chain.doFilter(request, response);
             return;
         }
