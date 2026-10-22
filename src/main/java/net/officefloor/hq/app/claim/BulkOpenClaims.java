@@ -38,10 +38,10 @@ public class BulkOpenClaims {
             List<Claim> theirs = claims.listForPerson(sheet, person.id()).stream()
                     .filter(c -> input.claimIds().contains(c.id())).toList();
             for (Claim claim : theirs) {
-                if (claim.status().canBecome(ClaimStatus.OPEN) && periods.closedOn(sheet, claim.date()) == null
+                if (claim.status().canBecome(ClaimStatus.OPEN) && periods.closedOn(sheet, claim.dueBy()) == null
                         && ClaimStatusChange.noteRequired(claim, claims, people, rates, settings, sheets) == null) {
                     Rollup before = rollups.take(sheet);
-                    String number = claims.nextNumber(sheet, claim.date());
+                    String number = claims.nextNumber(sheet, claim.dueBy());
                     claims.changeStatus(claim, ClaimStatus.OPEN, number, claim.settledDue(), input.user());
                     log.record(claim, input.user());
                     audit.record("CLAIM_OPENED sheet=" + sheet + " by=" + input.user() + " person=" + person.name()

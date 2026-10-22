@@ -39,7 +39,7 @@ public class BulkSettleClaims {
             List<Claim> theirs = claims.listForPerson(sheet, person.id()).stream()
                     .filter(c -> input.claimIds().contains(c.id())).toList();
             for (Claim claim : theirs) {
-                if (periods.closedOn(sheet, claim.date()) != null) {
+                if (periods.closedOn(sheet, claim.dueBy()) != null) {
                     continue;
                 }
                 Rollup before = rollups.take(sheet);

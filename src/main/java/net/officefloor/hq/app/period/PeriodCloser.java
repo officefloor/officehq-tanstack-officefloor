@@ -52,7 +52,7 @@ public final class PeriodCloser {
             ClaimStatus status = atEnd.containsKey(c.id()) ? atEnd.get(c.id()) : c.status();
             if (!Dues.countsAtEnd(c, status, person != null ? person.holds() : Holds.NONE,
                     person != null ? person.retiredFrom() : null, late.today())
-                    || !period.contains(c.date())) {
+                    || !period.contains(c.dueBy())) {
                 continue;
             }
             BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);

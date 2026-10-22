@@ -98,7 +98,7 @@ final class ClaimStatusChange {
         }
         boolean opening = input.action().equals("open");
         String openedBy = opening ? input.user() : loaded.openedBy();
-        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.date()) : loaded.number();
+        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
         BigDecimal settledDue = input.action().equals("resettle")
                 ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
                 : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets)

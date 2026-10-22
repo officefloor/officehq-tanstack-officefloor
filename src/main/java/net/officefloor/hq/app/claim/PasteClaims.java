@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Check every pasted line against the sheet first, as the claim form would for its person: the name must be on
  *  the sheet (compared as names are), the claim not dated (a blank date being the sheet's entry date, else its today) after the person's
- *  retirement date nor inside a closed period. Any failure refuses the whole paste, naming the line, and nothing
+ *  retirement date nor due by (its date plus the terms it would get) inside a closed period. Any failure refuses the whole paste, naming the line, and nothing
  *  is written. Otherwise each line is added in order as a DRAFT claim, just as the claim form adds one: its
  *  CLAIM_ADDED line and then how the sheet's figures moved over it. */
 public class PasteClaims {
@@ -41,7 +41,7 @@ public class PasteClaims {
             } catch (RetiredPersonException e) {
                 throw new InvalidClaimException("Line " + line.number() + ": " + e.getMessage());
             }
-            Period closed = periods.closedOn(sheet, date);
+            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings));
             if (closed != null) {
                 throw new InvalidClaimException("Line " + line.number() + ": " + new ClosedPeriodException(closed).getMessage());
             }

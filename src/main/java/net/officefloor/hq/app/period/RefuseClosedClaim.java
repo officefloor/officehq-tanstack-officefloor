@@ -3,11 +3,11 @@ package net.officefloor.hq.app.period;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.plugin.variable.Val;
 
-/** Refuse opening, settling, voiding, moving, deferring, splitting or adding a proof to a claim dated inside a closed period. */
+/** Refuse opening, settling, voiding, moving, deferring, splitting or adding a proof to a claim whose due-by falls inside a closed period. */
 public class RefuseClosedClaim {
     public void refuse(@Val Claim loaded, PeriodRepository periods) throws ClosedPeriodException {
         periods.lockSheet(loaded.sheetId());
-        Period closed = periods.closedOn(loaded.sheetId(), loaded.date());
+        Period closed = periods.closedOn(loaded.sheetId(), loaded.dueBy());
         if (closed != null) {
             throw new ClosedPeriodException(closed);
         }
