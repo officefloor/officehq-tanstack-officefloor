@@ -106,6 +106,14 @@ export function sheetTagSum(people: Person[], claims: Claim[], rates: Rate[], to
     .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
 }
 
+/** The sheet's due-total for a calendar month (yyyy-mm): the due (as shown on its row) of each claim dated in it that
+ *  counts in the live totals (see live), every person's added up, skipping n/a; not capped or trimmed. */
+export function sheetMonthSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+    late: Late, month: string): string {
+  return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id && c.date.slice(0, 7) === month), [p], today)
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
+}
+
 export const SETTLED_STATUSES: Claim['status'][] = ['SETTLED'];
 export const OPEN_STATUSES: Claim['status'][] = ['OPEN', 'PENDING'];
 
