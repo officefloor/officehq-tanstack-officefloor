@@ -9,8 +9,8 @@ import { useSheetToday } from '../sheet/sheet';
 /** The statuses the summary counts claims by, each shown even when no claim has it. */
 const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
-/** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired on
- *  or before the sheet's today left out) and their due-totals added up (skipping n/a), per period its
+/** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
+ *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
  *  due-total, and per status how many of the sheet's claims have it. */
 function Summary({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
@@ -20,7 +20,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const active = people.filter((p) => p.retiredFrom === null || p.retiredFrom > today);
+  const active = people.filter((p) => p.retiredFrom === null);
 
   return (
     <section data-testid="summary">

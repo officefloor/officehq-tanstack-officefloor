@@ -19,6 +19,9 @@ public class SaveSettings {
         if (input.latePct() != null) {
             repository.setLatePct(sheetId.trim(), input.latePct());
         }
+        if (input.setsPolicyDate()) {
+            repository.setPolicyDate(sheetId.trim(), input.policyDate());
+        }
         settings.set(repository.of(sheetId.trim()));
     }
 }

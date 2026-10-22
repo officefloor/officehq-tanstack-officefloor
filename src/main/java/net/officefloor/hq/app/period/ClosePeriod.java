@@ -36,7 +36,7 @@ public class ClosePeriod {
         }
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         BigDecimal floor = settings.floor(id);
-        LateCharge late = LateCharge.of(id, settings, sheets);
+        LateCharge late = LateCharge.of(id, settings, sheets, claims);
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());

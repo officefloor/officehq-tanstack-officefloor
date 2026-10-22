@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.statement;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
@@ -15,16 +14,17 @@ public final class Dues {
     }
 
     /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to, else
-     *  live: its amount times its person's rate in force on its date for their grade then, divided by 100, rounded half to
-     *  even to two decimals, and at least the sheet's floor; null (n/a) when no rate applies. */
-    public static BigDecimal figure(Claim claim, Grades grades, RateRepository rates, BigDecimal floor) {
+     *  live: its amount times its person's rate in force on its date for their grade then, divided by 100, rounded to two
+     *  decimals as the claim rounds (see Rounding), and at least the sheet's floor; null (n/a) when no rate applies. */
+    public static BigDecimal figure(Claim claim, Grades grades, RateRepository rates, BigDecimal floor,
+            Rounding rounding) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
         if (claim.statedDue() != null) {
             return claim.statedDue();
         }
-        return live(claim, grades, rates, floor);
+        return live(claim, grades, rates, floor, rounding);
     }
 
     /** A claim's due as its row shows it: the due fixed when it was settled, else its figure (bound or live) with
@@ -34,15 +34,16 @@ public final class Dues {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
-        BigDecimal figure = figure(claim, grades, rates, floor);
+        BigDecimal figure = figure(claim, grades, rates, floor, late.rounding());
         return figure != null ? figure.add(late.on(claim, figure)) : null;
     }
 
     /** A claim's live due: its amount times its person's rate in force on its date for their grade then, divided by 100, rounded
-     *  half to even to two decimals, raised to the floor when below it (a correction, a negative amount, has no floor); null (n/a) when no rate applies. */
-    public static BigDecimal live(Claim claim, Grades grades, RateRepository rates, BigDecimal floor) {
+     *  to two decimals as the claim rounds (see Rounding), raised to the floor when below it (a correction, a negative amount, has no floor); null (n/a) when no rate applies. */
+    public static BigDecimal live(Claim claim, Grades grades, RateRepository rates, BigDecimal floor,
+            Rounding rounding) {
         return rates.on(claim.sheetId(), grades.on(claim.date()), claim.date())
-                .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, rounding.of(claim)))
                 .map(due -> claim.amount().signum() < 0 ? due : due.max(floor))
                 .orElse(null);
     }

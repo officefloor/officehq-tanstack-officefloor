@@ -22,5 +22,9 @@ public class AuditSettingChanged {
             audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
                     + " key=late-pct value=" + SettingsResponse.text(settings.latePct()));
         }
+        if (input.setsPolicyDate()) {
+            audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
+                    + " key=policy-date value=" + (settings.policyDate() != null ? settings.policyDate() : ""));
+        }
     }
 }

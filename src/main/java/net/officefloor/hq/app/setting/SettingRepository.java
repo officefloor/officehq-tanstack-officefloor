@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -25,7 +26,8 @@ public class SettingRepository {
 
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
-        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId));
+        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId),
+                policyDate(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -65,6 +67,16 @@ public class SettingRepository {
 
     public void setLatePct(String sheetId, BigDecimal pct) {
         jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
+    }
+
+    /** The sheet's policy date: null when blank (the sheet's today is the policy date then). */
+    public LocalDate policyDate(String sheetId) {
+        return jdbc.query("SELECT policy_date FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+    }
+
+    public void setPolicyDate(String sheetId, LocalDate date) {
+        jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", date, sheetId);
     }
 
     public void setFloor(String sheetId, BigDecimal floor) {
