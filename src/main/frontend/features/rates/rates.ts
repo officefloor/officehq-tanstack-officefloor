@@ -88,6 +88,25 @@ export function personDueSum(person: Person, claims: Claim[], rates: Rate[], tod
     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
+/** A person's dues of one kind: the due (as shown on its row; a SETTLED one's frozen) of each of their claims that
+ *  count in the live totals (see live) and whose status is one of `statuses`, added up, skipping n/a. Their
+ *  settled-total (SETTLED) and open-total (OPEN, PENDING) add up to their figures before the cap (see personDueSum). */
+export function personStatusSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+    late: Late, statuses: Claim['status'][]): string {
+  return sumDue(live(claims.filter((c) => c.personId === person.id), [person], today)
+    .filter((c) => statuses.includes(c.status))
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)));
+}
+
+export const SETTLED_STATUSES: Claim['status'][] = ['SETTLED'];
+export const OPEN_STATUSES: Claim['status'][] = ['OPEN', 'PENDING'];
+
+/** The sheet's dues of one kind: every person's (see personStatusSum) added up, not trimmed. */
+export function sheetStatusSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+    late: Late, statuses: Claim['status'][]): string {
+  return sumDue(people.map((p) => personStatusSum(p, claims, rates, today, floor, late, statuses)));
+}
+
 /** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
  *  cap ('' when none). */
 export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,

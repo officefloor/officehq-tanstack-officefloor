@@ -10,7 +10,8 @@ import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { capped, excess, personDueSum, rateOn, ratesKey, sheetDueTotal, useRates } from './rates';
+import { capped, excess, OPEN_STATUSES, personDueSum, personStatusSum, rateOn, ratesKey, SETTLED_STATUSES, sheetDueTotal,
+  sheetStatusSum, useRates } from './rates';
 import type { Rate } from './rates';
 
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
@@ -195,9 +196,47 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+/** A person's settled-total and open-total: the dues of their SETTLED, and of their OPEN and PENDING, claims that
+ *  count, added up (see personStatusSum). */
+function PersonStatusTotals({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  return (
+    <>
+      <td>
+        Settled <span data-testid="person-settled-total">{personStatusSum(person, claims, rates, today, floor, late, SETTLED_STATUSES)}</span>
+      </td>
+      <td>
+        Open <span data-testid="person-open-total">{personStatusSum(person, claims, rates, today, floor, late, OPEN_STATUSES)}</span>
+      </td>
+    </>
+  );
+}
+
+/** The sheet's settled-total and open-total: every person's added up, not trimmed (see sheetStatusSum). */
+function StatusTotals({ sheetId }: { sheetId: string; user: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  return (
+    <p>
+      Settled total <strong data-testid="rollup-settled-total">{sheetStatusSum(people, claims, rates, today, floor, late, SETTLED_STATUSES)}</strong>
+      {' '}Open total <strong data-testid="rollup-open-total">{sheetStatusSum(people, claims, rates, today, floor, late, OPEN_STATUSES)}</strong>
+    </p>
+  );
+}
+
 export const contributions = [
   SheetBody.fill({ order: 5, Component: Rates }),
   SheetBody.fill({ order: 21, Component: DueTotal }),
   PersonRow.fill({ order: 20, Component: PersonDueTotal }),
   PersonRow.fill({ order: 21, Component: PersonExcess }),
+  PersonRow.fill({ order: 23, Component: PersonStatusTotals }),
+  SheetBody.fill({ order: 21.5, Component: StatusTotals }),
 ];
