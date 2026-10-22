@@ -14,7 +14,8 @@ import type { Period } from './periods';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** One period with its due-total — fixed when it was closed, else the dues (as shown on their rows) of the
- *  claims that count (see live) whose date falls in it — whether it is closed, and the button that closes it. */
+ *  claims that count (see live) whose date falls in it — whether it is closed, and the buttons that close it and
+ *  (a steward only) reopen it. */
 function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
@@ -26,6 +27,15 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not close this period.'),
+  });
+
+  const reopen = useMutation({
+    mutationFn: () =>
+      putJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/reopen`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not reopen this period.'),
   });
 
   return (
@@ -50,6 +60,17 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
           }}
         >
           Close
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-reopen"
+          disabled={reopen.isPending}
+          onClick={() => {
+            setError('');
+            reopen.mutate();
+          }}
+        >
+          Reopen
         </button>
         {error && (
           <p data-testid="period-error" role="alert">

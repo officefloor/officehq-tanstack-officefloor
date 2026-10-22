@@ -8,7 +8,7 @@ public class ValidatePeriodClose {
     public void validate(@RequestBody PeriodCloseRequest request, Out<PeriodCloseInput> body)
             throws InvalidPeriodException {
         if (request == null || request.user() == null || request.user().isBlank()) {
-            throw new InvalidPeriodException("Sign in before closing periods.");
+            throw new InvalidPeriodException("Sign in before closing or reopening periods.");
         }
         body.set(new PeriodCloseInput(request.user().trim()));
     }
