@@ -1,0 +1,63 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index bd74e5b..6dd59b4 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -6,14 +6,15 @@ import { PersonRow } from '../../slots/defs/personRow';
+ import { live, useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+-import { personDueTotal, sumDue, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { recentSettledSum, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ import { patronsKey, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
+ 
+-/** A person's patrons (their names, sorted), their backing — the patrons' due-totals added up, skipping n/a;
+- *  0.00 with no patrons — and the picker that names one more. */
++/** A person's patrons (their names, sorted), their backing — the patrons' settled figures over their SETTLED claims
++ *  dated within the 90 days up to and including the sheet's today (see recentSettledSum); 0.00 with none — and the
++ *  picker that names one more. */
+ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const people = usePeople(sheetId).data ?? [];
+@@ -22,13 +23,12 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
+   const patrons = (usePatrons(sheetId).data ?? [])
+     .filter((p) => p.personId === person.id)
+     .map((p) => people.find((q) => q.id === p.patronId))
+     .filter((p): p is Person => p !== undefined)
+     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+-  const backing = sumDue(patrons.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
++  const backing = recentSettledSum(patrons, claims, rates, today, floor, late);
+   const [chosen, setChosen] = useState('');
+   const [error, setError] = useState('');
+   const once = useSubmitOnce();
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 223cc31..3a6bda0 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -95,6 +95,19 @@ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], t
+   return capped(personDueSum(person, claims, rates, today, floor, late), cap);
+ }
+ 
++/** These people's settled figures (each SETTLED claim's due as shown on its row: the one frozen when it was settled)
++ *  over their SETTLED claims that count, dated within the 90 days up to and including the sheet's today, added up,
++ *  skipping n/a; 0.00 with none (or while today is loading). */
++export function recentSettledSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
++    late: Late): string {
++  if (today === '') return '0.00';
++  const since = new Date(Date.parse(`${today}T00:00:00Z`) - 89 * DAY_MS).toISOString().slice(0, 10);
++  const byId = new Map(people.map((p) => [p.id, p]));
++  return sumDue(claims
++    .filter((c) => byId.has(c.personId) && c.status === 'SETTLED' && counts(c) && c.date >= since && c.date <= today)
++    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late)));
++}
++
+ /** A sum of figures at most the cap ('' when none); 'n/a' is not capped. */
+ export function capped(sum: string, cap: string): string {
+   return sum === 'n/a' || cap === '' || toCents(sum) <= toCents(cap) ? sum : fromCents(toCents(cap));
