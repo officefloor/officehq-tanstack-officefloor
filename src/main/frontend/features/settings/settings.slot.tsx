@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
+import { poolsKey } from '../pools/pools';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, GRADES, PERM_ACTIONS, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
@@ -21,7 +22,7 @@ const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string> };
+  gradeProofThreshold?: Record<string, string>; pot?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -43,6 +44,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  them is before the new today is closed by the server.
  *  The entry date (blank: off; not dated): while it is set, a new claim given no date (the claim form, the quick-add
  *  bar, a pasted line, a correction) is dated it instead of the sheet's today.
+ *  The pot (blank: none; not dated): each member of a balanced pool is shown their cut of it.
  *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
  *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
  *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
@@ -60,6 +62,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentNoteThreshold = settings.data?.noteThreshold ?? '';
   const currentGraceDays = settings.data?.graceDays ?? '';
   const currentEntryDate = settings.data?.entryDate ?? '';
+  const currentPot = settings.data?.pot ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
@@ -72,6 +75,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedNoteThreshold, setTypedNoteThreshold] = useState<string | null>(null);
   const [typedGraceDays, setTypedGraceDays] = useState<string | null>(null);
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
+  const [typedPot, setTypedPot] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const currentGradeGrace = (grade: string) => settings.data?.gradeGrace?.[grade] ?? '';
@@ -90,6 +94,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       putJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, { user, ...changes }),
     onSuccess: (saved) => {
       queryClient.setQueryData(settingsKey(sheetId), saved);
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setTypedLimit(null);
       setTypedFloor(null);
       setTypedTerms(null);
@@ -101,6 +106,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedNoteThreshold(null);
       setTypedGraceDays(null);
       setTypedEntryDate(null);
+      setTypedPot(null);
       setTypedGradeTerms({});
       setTypedGradeGrace({});
       setTypedGradeProofThreshold({});
@@ -205,6 +211,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.entryDate = entryDate;
+    }
+    if (typedPot !== null) {
+      const pot = typedPot.trim();
+      if (pot !== '' && !LIMIT.test(pot)) {
+        setError('The pot must be an amount, 0.00 or more, with up to two decimals, or blank for none.');
+        return;
+      }
+      changes.pot = pot;
     }
     for (const grade of GRADES) {
       const typedTerms = typedGradeTerms[grade];
@@ -335,7 +349,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         ))}
         Note threshold <strong data-testid="setting-note-threshold-current">{currentNoteThreshold}</strong>{' '}
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
-        Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>
+        Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
+        Pot <strong data-testid="setting-pot-current">{currentPot}</strong>
       </p>
       <p>
         {PERM_ACTIONS.map((action) => (
@@ -516,6 +531,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedEntryDate)}
             onChange={typed(setTypedEntryDate)}
             onFocus={() => setTypedEntryDate((v) => v ?? currentEntryDate)}
+          />
+        </label>{' '}
+        <label>
+          Pot{' '}
+          <input
+            data-testid="setting-pot"
+            placeholder="none"
+            value={typedPot ?? currentPot}
+            onInput={typed(setTypedPot)}
+            onChange={typed(setTypedPot)}
+            onFocus={() => setTypedPot((v) => v ?? currentPot)}
           />
         </label>{' '}
         {PERM_ACTIONS.map((action) => (

@@ -66,7 +66,7 @@ public class SettingRepository {
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
-                entryDate(sheetId), gradeGrace, gradeProofThreshold);
+                entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -193,6 +193,16 @@ public class SettingRepository {
 
     public void setEntryDate(String sheetId, LocalDate date) {
         jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", date, sheetId);
+    }
+
+    /** The sheet's pot: null when blank (none). */
+    public BigDecimal pot(String sheetId) {
+        return jdbc.query("SELECT pot FROM sheet WHERE id = ?",
+                rs -> rs.next() && rs.getBigDecimal(1) != null ? rs.getBigDecimal(1).setScale(2) : null, sheetId);
+    }
+
+    public void setPot(String sheetId, BigDecimal pot) {
+        jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
     }
 
     /** The sheet's grace days: null when blank (off). */
