@@ -71,6 +71,14 @@ public class ClaimRepository {
                 stated, statedDue, claim.sheetId(), claim.id());
     }
 
+    /** Move the claim to another person, unbinding it from any statement: false when it no longer has the person
+     *  and status it was loaded with (another user changed it first), and nothing is written. */
+    public boolean reassign(Claim claim, long personId) {
+        return jdbc.update(
+                "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
+                personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1;
+    }
+
     public void update(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
                 claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.sheetId(), claim.id());

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
-import { gradeOn } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useFloor, useLate, useTerms } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
@@ -122,6 +122,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
   const selected = useSelectedClaims(sheetId).has(claim.id);
+  const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
+  const [moveTo, setMoveTo] = useState('');
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -132,6 +134,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     },
     onError: (e, action) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400) && e.body ? e.body : `Could not ${action} this ${claim.status} claim.`),
+  });
+
+  const reassign = useMutation({
+    mutationFn: (personId: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/reassign`, { user, personId }),
+    onSuccess: async () => {
+      setMoveTo('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not move this ${claim.status} claim.`),
   });
 
   return (
@@ -194,7 +208,37 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         >
           {label}
         </button>
-      ))}
+      ))}{' '}
+      <select
+        data-testid="claim-reassign-to"
+        value={moveTo}
+        onChange={(e) => {
+          setError('');
+          setMoveTo(e.target.value);
+        }}
+      >
+        <option value="">Move to…</option>
+        {others.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="claim-reassign"
+        disabled={reassign.isPending}
+        onClick={() => {
+          setError('');
+          if (moveTo === '') {
+            setError('Choose the person to move this claim to.');
+            return;
+          }
+          reassign.mutate(moveTo);
+        }}
+      >
+        Move
+      </button>
       {error && (
         <p data-testid="claim-error" role="alert">
           {error}
