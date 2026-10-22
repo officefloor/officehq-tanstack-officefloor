@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +15,7 @@ public class ClaimRepository {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Integer.class));
+            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"));
 
     private final JdbcTemplate jdbc;
 
@@ -46,7 +47,7 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
-                claim.date(), claim.note(), ClaimStatus.DRAFT, null);
+                claim.date(), claim.note(), ClaimStatus.DRAFT, null, null);
     }
 
     public void update(Claim claim) {
@@ -54,12 +55,12 @@ public class ClaimRepository {
                 claim.amount(), claim.date(), claim.note(), claim.sheetId(), claim.id());
     }
 
-    /** Move the claim from one status to another: false when it no longer has the status it was
-     *  loaded with (another user changed it first), and nothing is written. */
-    public boolean changeStatus(Claim claim, ClaimStatus to, Integer number) {
+    /** Move the claim from one status to another, with its settled due: false when it no longer has
+     *  the status it was loaded with (another user changed it first), and nothing is written. */
+    public boolean changeStatus(Claim claim, ClaimStatus to, Integer number, BigDecimal settledDue) {
         return jdbc.update(
-                "UPDATE claim SET status = ?, claim_number = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                to.name(), number, claim.sheetId(), claim.id(), claim.status().name()) == 1;
+                "UPDATE claim SET status = ?, claim_number = ?, settled_due = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                to.name(), number, settledDue, claim.sheetId(), claim.id(), claim.status().name()) == 1;
     }
 
     /** Take the next claim number on the sheet. The update locks the sheet's row until the transaction

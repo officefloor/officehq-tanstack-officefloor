@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
-import { dueOn, useRateFor } from '../rates/rates';
+import { claimDue, useRateFor } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
@@ -103,7 +103,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-note">{claim.note}</span>{' '}
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
-      <span data-testid="claim-due">{dueOn(claim.amount, rate)}</span>{' '}
+      <span data-testid="claim-due">{claimDue(claim, rate)}</span>{' '}
       <button
         type="button"
         data-testid="claim-edit"

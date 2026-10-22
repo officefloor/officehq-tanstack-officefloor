@@ -5,10 +5,11 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status
- *  and its number on the sheet (null while a draft, or once voided). */
+/** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
+ *  its number on the sheet (null while a draft, or once voided) and, the due fixed when it was settled
+ *  (null when not settled, or its grade had no rate then: its due follows the rates). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
-  number: number | null };
+  number: number | null; settledDue: string | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
 export function counts(c: Claim): boolean {
