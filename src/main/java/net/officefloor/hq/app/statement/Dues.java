@@ -14,8 +14,8 @@ public final class Dues {
     private Dues() {
     }
 
-    /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to (not while
-     *  it is PENDING: then it is live), else
+    /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to, n/a
+     *  included (not while it is PENDING: then it is live), else
      *  live: its amount times its person's rate in force on its date for their grade then, divided by 100, rounded to two
      *  decimals as the claim rounds (see Rounding), and at least the sheet's floor; null (n/a) when no rate applies. */
     public static BigDecimal figure(Claim claim, Grades grades, RateRepository rates, BigDecimal floor,
@@ -23,7 +23,7 @@ public final class Dues {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
-        if (claim.statedDue() != null && claim.status() != ClaimStatus.PENDING) {
+        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
             return claim.statedDue();
         }
         return live(claim, grades, rates, floor, rounding);

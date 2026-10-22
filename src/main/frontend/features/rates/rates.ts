@@ -4,8 +4,9 @@ import { counts, dueBy, live, overdue, type Claim } from '../claims/claims';
 import { gradeOn, type Person } from '../people/people';
 
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
- *  null: from the beginning of time). A grade may have several, one per from-date; none when it has no rate. */
-export type Rate = { grade: string; rate: string; from: string | null };
+ *  null: from the beginning of time) through its to-date (null: with no end). A grade may have several, one
+ *  per from-date; none when it has no rate. */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
@@ -18,13 +19,15 @@ export function useRates(sheetId: string) {
 }
 
 /** A grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or before
- *  it, a rate with no from-date applying from the beginning of time; undefined when none applies. */
+ *  it, a rate with no from-date applying from the beginning of time; undefined when none applies, or that
+ *  one's to-date is before the date. */
 export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
     if (!found || (found.from ?? '') < (r.from ?? '')) found = r;
   }
+  if (found?.to != null && found.to < date) return undefined;
   return found?.rate;
 }
 
@@ -111,14 +114,14 @@ export function roundsUp(claim: Claim, late: Late): boolean {
 }
 
 /** A claim's due: the one fixed when it was settled (its late charge frozen in), else its figure — the one its
- *  person's last statement bound it to (not while it is PENDING: then it is live), else live on its amount at the rate, raised to the sheet's floor when
+ *  person's last statement bound it to, n/a included (not while it is PENDING: then it is live), else live on its amount at the rate, raised to the sheet's floor when
  *  below it — with the late charge on that figure added on top. A correction (a negative amount) has no floor
  *  and no late charge. */
 export function claimDue(claim: Claim, rate: string | undefined, floor: string, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
   const correction = toCents(claim.amount) < 0n;
   const live = dueOn(claim.amount, rate, roundsUp(claim, late));
-  const bound = claim.status === 'PENDING' ? null : claim.statedDue;
+  const bound = claim.status === 'PENDING' || !claim.stated ? null : claim.statedDue ?? 'n/a';
   const figure = bound ?? (correction ? live : floored(live, floor));
   if (correction) return figure;
   return figure === 'n/a' ? figure : fromCents(toCents(figure) + toCents(lateCharge(claim, figure, late)));

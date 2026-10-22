@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: the grade is one of A, B or C,
- *  the rate a percent 0.00 or more with up to two decimals, the from-date (optional) a real yyyy-mm-dd date. */
+ *  the rate a percent 0.00 or more with up to two decimals, the from-date and to-date (each optional) real yyyy-mm-dd dates, the to-date not before the from-date. */
 public class ValidateRate {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
@@ -35,6 +35,18 @@ public class ValidateRate {
                 throw new InvalidRateException("The from-date must be a date, yyyy-mm-dd.");
             }
         }
-        body.set(new RateInput(request.user().trim(), g, new BigDecimal(rate).setScale(2), from));
+        String toText = request.to() == null ? "" : request.to().trim();
+        LocalDate to = null;
+        if (!toText.isEmpty()) {
+            try {
+                to = LocalDate.parse(toText);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The to-date must be a date, yyyy-mm-dd.");
+            }
+            if (from != null && to.isBefore(from)) {
+                throw new InvalidRateException("The to-date must not be before the from-date.");
+            }
+        }
+        body.set(new RateInput(request.user().trim(), g, new BigDecimal(rate).setScale(2), from, to));
     }
 }

@@ -17,7 +17,7 @@ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The sheet's rates — per grade the one in force on the sheet's today, then each rate with its
- *  from-date — and the form that sets one (for a grade and from-date, replacing any it had). */
+ *  from-date and to-date — and the form that sets one (for a grade and from-date, replacing any it had). */
 function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const rates = useRates(sheetId).data ?? [];
@@ -25,23 +25,26 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { grade: string; rate: string; from: string }) =>
+    mutationFn: (body: { grade: string; rate: string; from: string; to: string }) =>
       putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/${body.grade}`, {
         user,
         rate: body.rate,
         from: body.from || null,
+        to: body.to || null,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
       setPct('');
       setFrom('');
+      setTo('');
     },
     onError: () =>
-      setError('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none.'),
+      setError('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
     onSettled: once.done,
   });
 
@@ -56,8 +59,16 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       setError('The from-date must be a date, yyyy-mm-dd, or left empty.');
       return;
     }
+    if (to.trim() !== '' && !DATE.test(to.trim())) {
+      setError('The to-date must be a date, yyyy-mm-dd, or left empty.');
+      return;
+    }
+    if (to.trim() !== '' && from.trim() !== '' && to.trim() < from.trim()) {
+      setError('The to-date must not be before the from-date.');
+      return;
+    }
     if (!once.start()) return;
-    save.mutate({ grade, rate: pct.trim(), from: from.trim() });
+    save.mutate({ grade, rate: pct.trim(), from: from.trim(), to: to.trim() });
   };
 
   const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -87,6 +98,10 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           From{' '}
           <input data-testid="rate-form-from" placeholder="yyyy-mm-dd (optional)" value={from} onChange={change(setFrom)} />
         </label>{' '}
+        <label>
+          To{' '}
+          <input data-testid="rate-form-to" placeholder="yyyy-mm-dd (optional)" value={to} onChange={change(setTo)} />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -112,11 +127,13 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
                 <tr data-testid={`rate-row-${g}-start`}>
                   <td data-testid="rate-from">from the start</td>
                   <td data-testid="rate-pct">{undated?.rate ?? 'n/a'}</td>
+                  <td data-testid="rate-to">{undated?.to ?? ''}</td>
                 </tr>
                 {dated.map((r) => (
                   <tr key={r.from} data-testid={`rate-row-${g}-${r.from}`}>
                     <td data-testid="rate-from">{r.from}</td>
                     <td data-testid="rate-pct">{r.rate}</td>
+                    <td data-testid="rate-to">{r.to ?? ''}</td>
                   </tr>
                 ))}
               </Fragment>
