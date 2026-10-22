@@ -61,17 +61,18 @@ export function sumDue(dues: string[]): string {
 }
 
 /** A person's due-total: the figures of their claims that count (each as shown on its row) added up;
- *  'n/a' when their grade has no rate today (rateToday undefined), unless a settled claim keeps a figure,
- *  then the figures there are added up. */
+ *  'n/a' when their grade has no rate today (rateToday undefined), unless a settled or stated claim keeps a
+ *  figure, then the figures there are added up. */
 export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
     rateToday: string | undefined): string {
   const counted = claims.filter(counts);
-  if (rateToday === undefined && !counted.some((c) => c.status === 'SETTLED' && c.settledDue !== null)) return 'n/a';
+  if (rateToday === undefined && !counted.some((c) => c.settledDue !== null || c.statedDue !== null)) return 'n/a';
   return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date))));
 }
 
-/** A claim's due: the one fixed when it was settled, else live on its amount at the rate. */
+/** A claim's due: the one fixed when it was settled, else the one its person's last statement bound it to,
+ *  else live on its amount at the rate. */
 export function claimDue(claim: Claim, rate: string | undefined): string {
-  return claim.settledDue ?? dueOn(claim.amount, rate);
+  return claim.settledDue ?? claim.statedDue ?? dueOn(claim.amount, rate);
 }
 

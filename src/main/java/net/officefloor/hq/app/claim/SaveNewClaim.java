@@ -11,6 +11,6 @@ public class SaveNewClaim {
             Out<Claim> claim) {
         var date = input.date() != null ? input.date() : sheets.today(person.sheetId());
         claim.set(repository.insert(new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
-                ClaimStatus.DRAFT, null, null, null)));
+                ClaimStatus.DRAFT, null, null, null, false, null)));
     }
 }

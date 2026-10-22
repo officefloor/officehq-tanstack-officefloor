@@ -110,6 +110,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-due">{claimDue(claim, rate)}</span>{' '}
+      Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       <button
         type="button"
         data-testid="claim-edit"

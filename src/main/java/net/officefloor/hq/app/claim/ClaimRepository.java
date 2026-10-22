@@ -16,7 +16,7 @@ public class ClaimRepository {
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
 
     private final JdbcTemplate jdbc;
 
@@ -48,7 +48,19 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
-                claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null);
+                claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null);
+    }
+
+    /** The person's claims, newest first. */
+    public List<Claim> listForPerson(String sheetId, long personId) {
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW, sheetId,
+                personId);
+    }
+
+    /** Bind the claim to a statement's figure (null: n/a, its due stays live), or unbind it (stated false). */
+    public void state(Claim claim, boolean stated, BigDecimal statedDue) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
+                stated, statedDue, claim.sheetId(), claim.id());
     }
 
     public void update(Claim claim) {

@@ -5,6 +5,11 @@ package net.officefloor.hq.app.claim;
 public enum ClaimStatus {
     DRAFT, OPEN, SETTLED, VOID;
 
+    /** Whether a claim with this status counts toward the totals (and is bound by a statement). */
+    public boolean counts() {
+        return this == OPEN || this == SETTLED;
+    }
+
     /** Whether a claim with this status may move to the given one. */
     public boolean canBecome(ClaimStatus to) {
         return switch (to) {

@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.person;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -11,7 +13,8 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
+            rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -48,7 +51,19 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, 0, null, null);
+    }
+
+    /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
+    public void lock(Person person) {
+        jdbc.query("SELECT id FROM person WHERE sheet_id = ? AND id = ? FOR UPDATE", rs -> null,
+                person.sheetId(), person.id());
+    }
+
+    /** Record a statement taken of the person: one more taken, with its due-total (null: n/a) and date. Leaves the version alone: a statement is not an edit of the person. */
+    public void stated(Person person, BigDecimal total, LocalDate date) {
+        jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ? "
+                + "WHERE sheet_id = ? AND id = ?", total, date, person.sheetId(), person.id());
     }
 
     /** Store the person at its new version, only while the stored person is still at version

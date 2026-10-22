@@ -8,9 +8,11 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
  *  its number on the sheet (null while a draft, or once voided) and, the due fixed when it was settled
  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
- *  (null while a draft). */
+ *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
+ *  it to (null when not bound, or n/a then: its due stays live). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
-  number: number | null; settledDue: string | null; openedBy: string | null };
+  number: number | null; settledDue: string | null; openedBy: string | null; stated: boolean;
+  statedDue: string | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
 export function counts(c: Claim): boolean {
