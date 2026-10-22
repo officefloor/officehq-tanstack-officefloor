@@ -9,6 +9,7 @@ import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.Permissions;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.hq.app.statement.Dues;
 import net.officefloor.hq.app.statement.LateCharge;
 
@@ -91,7 +92,8 @@ final class ClaimStatusChange {
     }
 
     /** Record the stored status change in the audit file as {@link AuditClaimStatus} describes. */
-    static void audit(ClaimStatusInput input, Claim loaded, ClaimResponse saved, PersonRepository people, Audit audit) {
+    static void audit(ClaimStatusInput input, Claim loaded, ClaimResponse saved, PersonRepository people,
+            WatchRepository watches, Audit audit) {
         var person = people.find(loaded.sheetId(), loaded.personId());
         String event = switch (input.action()) {
             case "open" -> "CLAIM_OPENED";
@@ -112,6 +114,12 @@ final class ClaimStatusChange {
                 + (input.reason() != null ? " reason=" + input.reason() : "")
                 + (resettled ? " old=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a")
                         + " new=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : ""));
+        if (event.equals("CLAIM_SETTLED") || event.equals("CLAIM_APPROVED") || event.equals("CLAIM_RESETTLED")) {
+            for (String watcher : watches.watchers(loaded.sheetId(), loaded.personId())) {
+                audit.record("NOTIFY sheet=" + loaded.sheetId() + " by=" + input.user() + " user=" + watcher
+                        + " person=" + person.name() + " number=" + number);
+            }
+        }
     }
 
     /** The claim as an OPEN claim bound by no statement and not yet settled, for re-settling it at today's

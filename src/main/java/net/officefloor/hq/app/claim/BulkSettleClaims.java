@@ -11,6 +11,7 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Rollups;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,14 +19,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Settle each selected claim by the signed-in user, in list order (people in the order they were added, newest
  *  claim first within a person), by exactly the rules of settling one claim: each that goes through (SETTLED, or
  *  PENDING for a clerk's settle above the clerk limit) gets its status log line, its CLAIM_SETTLED or CLAIM_PENDING
- *  line and then how the sheet's figures moved over it. A selected claim that cannot be settled (not on the sheet,
+ *  line (with its NOTIFY lines for the person's watchers when SETTLED) and then how the sheet's figures moved over it. A selected claim that cannot be settled (not on the sheet,
  *  not allowed from its status or by this user, or dated in a closed period) is left as it is and counted as
  *  refused. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimRepository claims,
             ClaimLogRepository log, PersonRepository people, PeriodRepository periods, RateRepository rates,
-            RoleRepository roles, SettingRepository settings, SheetRepository sheets, Rollups rollups, Audit audit,
-            Out<BulkSettleResponse> result) {
+            RoleRepository roles, SettingRepository settings, SheetRepository sheets, Rollups rollups,
+            WatchRepository watches, Audit audit, Out<BulkSettleResponse> result) {
         String sheet = sheetId.trim();
         periods.lockSheet(sheet);
         ClaimStatusInput settle = new ClaimStatusInput(input.user(), "settle", ClaimStatus.SETTLED, null);
@@ -44,7 +45,7 @@ public class BulkSettleClaims {
                 } catch (ClaimStatusNotAllowedException refused) {
                     continue;
                 }
-                ClaimStatusChange.audit(settle, claim, saved, people, audit);
+                ClaimStatusChange.audit(settle, claim, saved, people, watches, audit);
                 rollups.record(sheet, input.user(), before);
                 settled++;
             }
