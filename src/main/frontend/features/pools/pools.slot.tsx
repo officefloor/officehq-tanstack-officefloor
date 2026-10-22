@@ -210,7 +210,7 @@ function PoolForm({ sheetId, user }: { sheetId: string; user: string }) {
 }
 
 /** The sheet's pools: each with its members and their shares, its total share (a member retired by the sheet's
- *  today counts 0.00) and whether it is balanced, and the entry a pool is added with. */
+ *  today counts their share as given) and whether it is balanced, and the entry a pool is added with. */
 function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const pools = usePools(sheetId).data ?? [];
   return (

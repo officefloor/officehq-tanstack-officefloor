@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's pools in the order they were added, with their members, total share and whether balanced; a member
- *  retired by the sheet's today (or the as-of date, when one is given) counts 0.00 toward the total; each member of a balanced pool
+ *  retired by the sheet's today (or the as-of date, when one is given) cuts 0.00, their share still counted toward the total
+ *  and spread over the members with a cut (no cuts at all when every member is retired); each member of a balanced pool
  *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot; a pool
  *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership

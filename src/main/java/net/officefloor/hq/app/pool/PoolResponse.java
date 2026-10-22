@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** A pool as the screen shows it: its members in the order they were added, the total of their shares (a member
- *  retired by the date counts 0.00) and whether it is balanced (the total is exactly 100.00). */
+ *  retired by the date counts their share as given) and whether it is balanced (the total is exactly 100.00). */
 public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced) {
 
     /** A member: the person (or, for a member pool, null and the pool's id in poolId), their name, their share,
@@ -30,11 +30,12 @@ public record PoolResponse(long id, String name, List<Member> members, String to
 
     /** The pool with its members; retiredFrom gives each person's retirement date (absent: not retired), held the
      *  people with a hold in force on the date, and on is the date it is judged by (null: none retired). When the
-     *  pool is balanced and there is a pot (null: none), a retired or held member cuts 0.00 and each other member's
+     *  pool is balanced and there is a pot (null: none), a retired or held member cuts 0.00 (their share spread over the others) and each other member's
      *  cut is the pot (the sheet's, or for a member pool its cut in the pool above) times their share divided by the
      *  shares of the members with a cut, added up, rounded half to even to two decimals, and the pot less the cuts
      *  goes to the member with a cut with the largest share (the earliest added on a tie), so the cuts total exactly
-     *  the pot. A hold leaves the total share and balance alone. A member whose membership dates do not include the
+     *  the pot; when every member is retired there are no cuts ('' shown). A hold or a retirement leaves the total
+     *  share and balance alone. A member whose membership dates do not include the
      *  date is left out entirely: not in the total share, not in the balance, and no cut ('' shown). */
     public static PoolResponse from(Pool pool, List<PoolMember> members, Map<Long, LocalDate> retiredFrom,
             Set<Long> held, LocalDate on, BigDecimal pot) {
@@ -49,17 +50,19 @@ public record PoolResponse(long id, String name, List<Member> members, String to
             }
             LocalDate from = m.isPool() ? null : retiredFrom.get(m.personId());
             retired[i] = on != null && from != null && !from.isAfter(on);
-            if (!retired[i]) {
-                total = total.add(m.share());
-            }
+            total = total.add(m.share());
         }
         boolean balanced = total.compareTo(FULL) == 0;
         boolean[] noCut = new boolean[members.size()];
+        boolean allRetired = true;
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
             noCut[i] = outside[i] || retired[i] || (!m.isPool() && held.contains(m.personId()));
+            if (!outside[i] && !retired[i]) {
+                allRetired = false;
+            }
         }
-        BigDecimal[] cuts = balanced && pot != null ? cuts(members, noCut, pot) : null;
+        BigDecimal[] cuts = balanced && pot != null && !allRetired ? cuts(members, noCut, pot) : null;
         List<Member> shown = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);

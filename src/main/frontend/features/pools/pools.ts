@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
 /** A member of a pool — a person, or another pool (poolId; personId then null) — with their share percent, whether
- *  they are retired by the sheet's today (their share then counts 0.00 toward the pool's total), and their cut of the
- *  pool's pot ('' when the pool is unbalanced or there is no pot). A pool that is a member of none has the sheet's
+ *  they are retired by the sheet's today (their share still counts toward the pool's total but they cut 0.00, their
+ *  share spread over the others), and their cut of the pool's pot ('' when the pool is unbalanced, there is no pot
+ *  or every member is retired). A pool that is a member of none has the sheet's
  *  pot; a member pool's pot is its cut in the pool above. A membership may carry a from- and a to-date ('' when
  *  open); a member whose dates leave out the sheet's today (outside) counts nothing toward the total and has no cut. */
 export type PoolMember = {
