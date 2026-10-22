@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
 
     private final JdbcTemplate jdbc;
 
@@ -48,11 +48,13 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
     }
 
-    public void update(Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
-                person.name(), person.grade(), person.sheetId(), person.id());
+    /** Store the person at its new version, only while the stored person is still at version
+     *  `from`; false (nothing written) when it has been saved since. */
+    public boolean update(Person person, long from) {
+        return jdbc.update("UPDATE person SET name = ?, grade = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.name(), person.grade(), person.version(), person.sheetId(), person.id(), from) == 1;
     }
 }

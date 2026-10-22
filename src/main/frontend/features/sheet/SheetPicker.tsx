@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useSheetId } from '../session/session';
 
 import type { Sheet } from './sheet';
@@ -12,6 +13,7 @@ export function SheetPicker({ user }: { user: string }) {
   const queryClient = useQueryClient();
   const [sheetId, setSheetId] = useSheetId();
   const [typed, setTyped] = useState('');
+  const once = useSubmitOnce();
 
   const load = useMutation({
     mutationFn: (id: string) => putJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`, { user }),
@@ -19,6 +21,7 @@ export function SheetPicker({ user }: { user: string }) {
       await queryClient.invalidateQueries({ queryKey: ['sheet', sheet.id] });
       setSheetId(sheet.id);
     },
+    onSettled: once.done,
   });
 
   const submit = (e: FormEvent) => {
@@ -29,6 +32,7 @@ export function SheetPicker({ user }: { user: string }) {
       setSheetId(undefined);
       return;
     }
+    if (!once.start()) return;
     load.mutate(id);
   };
 

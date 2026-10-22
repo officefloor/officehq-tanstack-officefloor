@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
-/** A person on a sheet: a name and a grade (A, B or C). */
-export type Person = { id: number; name: string; grade: string };
+/** A person on a sheet: a name and a grade (A, B or C), and the version stored (one more on each edit). */
+export type Person = { id: number; name: string; grade: string; version: number };
 
 export const GRADES = ['A', 'B', 'C'] as const;
 

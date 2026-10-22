@@ -1,22 +1,27 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { HttpError, postJson, putJson } from '../../api/http';
+import { HttpError, getJson, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person } from './people';
 
-/** One form that adds a person, or edits the one whose editor is open (filled with their values). */
+/** One form that adds a person, or edits the one whose editor is open (filled with their values). The
+ *  editor remembers the version it loaded: when someone else has saved the person since, the save is
+ *  refused and the form is refilled with the person as now stored (so saving again is from that). */
 function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string; editing?: Person }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  const [version, setVersion] = useState(editing?.version);
   const [error, setError] = useState('');
+  const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { user: string; name: string; grade: string }) =>
+    mutationFn: (body: { user: string; name: string; grade: string; version?: number }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body),
@@ -26,12 +31,24 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
       setGrade('A');
       if (editing) setEditing(undefined);
     },
-    onError: (e) =>
+    onError: async (e) => {
+      if (editing && e instanceof HttpError && e.status === 412) {
+        const people = await getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
+        queryClient.setQueryData(peopleKey(sheetId), people);
+        const current = people.find((p) => p.id === editing.id);
+        if (current) {
+          setName(current.name);
+          setGrade(current.grade);
+          setVersion(current.version);
+        }
+      }
       setError(
-        e instanceof HttpError && e.status === 409 && e.body
+        e instanceof HttpError && (e.status === 409 || e.status === 412) && e.body
           ? e.body
           : 'Could not save this person: a name is required and the grade must be A, B or C.',
-      ),
+      );
+    },
+    onSettled: once.done,
   });
 
   const submit = (e: FormEvent) => {
@@ -41,7 +58,8 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
       setError('A name is required.');
       return;
     }
-    save.mutate({ user, name, grade });
+    if (!once.start()) return;
+    save.mutate({ user, name, grade, version: editing ? version : undefined });
   };
 
   return (

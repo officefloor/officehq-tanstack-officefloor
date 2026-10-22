@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
@@ -24,6 +25,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
   const [error, setError] = useState('');
+  const once = useSubmitOnce();
 
   const save = useMutation({
     mutationFn: (body: { grade: string; rate: string; from: string }) =>
@@ -39,6 +41,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
     },
     onError: () =>
       setError('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none.'),
+    onSettled: once.done,
   });
 
   const submit = (e: FormEvent) => {
@@ -52,6 +55,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       setError('The from-date must be a date, yyyy-mm-dd, or left empty.');
       return;
     }
+    if (!once.start()) return;
     save.mutate({ grade, rate: pct.trim(), from: from.trim() });
   };
 

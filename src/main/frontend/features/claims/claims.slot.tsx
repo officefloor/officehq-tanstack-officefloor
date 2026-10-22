@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
 import { claimDue, rateOn, useRates } from '../rates/rates';
@@ -23,6 +24,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
   const [error, setError] = useState('');
+  const once = useSubmitOnce();
 
   const save = useMutation({
     mutationFn: (body: { user: string; amount: string; date: string; note: string }) =>
@@ -35,6 +37,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       else onAdded();
     },
     onError: () => setError('Could not save this claim: the amount must be 0.00 or more with up to two decimals, and the date yyyy-mm-dd.'),
+    onSettled: once.done,
   });
 
   const submit = (e: FormEvent) => {
@@ -44,6 +47,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
       setError('The amount must be a number, 0.00 or more, with up to two decimals.');
       return;
     }
+    if (!once.start()) return;
     save.mutate({ user, amount: amount.trim(), date: date.trim(), note });
   };
 
