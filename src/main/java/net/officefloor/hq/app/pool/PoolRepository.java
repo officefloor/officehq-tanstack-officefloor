@@ -53,6 +53,26 @@ public class PoolRepository {
         return n != null && n > 0;
     }
 
+    /** The pool this pool is a member of, or null when it is a member of none. */
+    public Pool parent(Pool pool) {
+        return jdbc.query("SELECT p.* FROM pool p JOIN pool_member m ON m.pool_id = p.id WHERE m.member_pool_id = ?",
+                ROW, pool.id()).stream().findFirst().orElse(null);
+    }
+
+    /** The pools that are members of this pool. */
+    public List<Pool> children(Pool pool) {
+        return jdbc.query("SELECT p.* FROM pool p JOIN pool_member m ON m.member_pool_id = p.id WHERE m.pool_id = ? "
+                + "ORDER BY m.id", ROW, pool.id());
+    }
+
+    public PoolMember addMember(Pool pool, Pool member, PoolMemberInput input) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, added_by, added_on) "
+                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", pool.sheetId(), pool.id(),
+                member.id(), input.share(), input.user(), pool.sheetId());
+        return new PoolMember(pool.id(), pool.sheetId(), pool.name(), 0, member.name(), input.share(), input.user(),
+                member.id());
+    }
+
     public PoolMember addMember(Pool pool, Person person, PoolMemberInput input) {
         jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, added_by, added_on) "
                 + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", pool.sheetId(), pool.id(),
@@ -62,23 +82,24 @@ public class PoolRepository {
     }
 
     /** The pool's members in the order they were added (those added by the end of the day, when one is given),
-     *  named by the person's id only: the caller names them. */
+     *  named by the person's id (or the member pool's id) only: the caller names them. */
     public List<PoolMember> members(Pool pool, LocalDate end) {
         RowMapper<PoolMember> row = (rs, i) -> new PoolMember(pool.id(), pool.sheetId(), pool.name(),
-                rs.getLong("person_id"), null, rs.getBigDecimal("share").setScale(2), rs.getString("added_by"));
+                rs.getLong("person_id"), null, rs.getBigDecimal("share").setScale(2), rs.getString("added_by"),
+                rs.getObject("member_pool_id", Long.class));
         return end == null
                 ? jdbc.query("SELECT * FROM pool_member WHERE pool_id = ? ORDER BY id", row, pool.id())
                 : jdbc.query("SELECT * FROM pool_member WHERE pool_id = ? AND (added_on IS NULL OR added_on <= ?) "
                         + "ORDER BY id", row, pool.id(), end);
     }
 
-    /** On merging one person into another: the first's pool memberships move to the other, their share added to the
-     *  other's where the other is already a member. */
     /** Drop the person from every pool they are a member of. */
     public void drop(String sheetId, long personId) {
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
     }
 
+    /** On merging one person into another: the first's pool memberships move to the other, their share added to the
+     *  other's where the other is already a member. */
     public void merge(String sheetId, long fromId, long intoId) {
         jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f WHERE f.pool_id = m.pool_id "
                 + "AND f.person_id = ?) WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM pool_member f "

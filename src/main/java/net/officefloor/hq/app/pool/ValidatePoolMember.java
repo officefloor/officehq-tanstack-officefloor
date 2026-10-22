@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Bind the body and refuse it before anything is read or written: a signed-in user, a person, and a share of at
+/** Bind the body and refuse it before anything is read or written: a signed-in user, a person or a pool, and a share of at
  *  most two decimals, more than 0.00 and at most 100.00. */
 public class ValidatePoolMember {
 
@@ -15,8 +15,8 @@ public class ValidatePoolMember {
         if (request == null || request.user() == null || request.user().isBlank()) {
             throw new InvalidPoolException("Sign in before adding a pool member.");
         }
-        if (request.personId() == null) {
-            throw new InvalidPoolException("Choose the person to add.");
+        if ((request.personId() == null) == (request.memberPoolId() == null)) {
+            throw new InvalidPoolException("Choose the person or pool to add.");
         }
         String raw = request.share() == null ? "" : request.share().trim();
         if (!raw.matches("\\d+(\\.\\d{1,2})?")) {
@@ -26,6 +26,6 @@ public class ValidatePoolMember {
         if (share.signum() <= 0 || share.compareTo(MAX) > 0) {
             throw new InvalidPoolException("A share is more than 0.00 and at most 100.00.");
         }
-        body.set(new PoolMemberInput(request.user().trim(), request.personId(), share));
+        body.set(new PoolMemberInput(request.user().trim(), request.personId(), share, request.memberPoolId()));
     }
 }
