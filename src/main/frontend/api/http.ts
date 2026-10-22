@@ -40,6 +40,11 @@ export function getJson<T>(path: string): Promise<T> {
   return send<T>(withAsOf(path));
 }
 
+/** A read of the store as it is now, whatever date this screen shows the sheet as of. */
+export function getJsonNow<T>(path: string): Promise<T> {
+  return send<T>(path);
+}
+
 export function postJson<T>(path: string, body: unknown): Promise<T> {
   return send<T>(path, {
     method: 'POST',

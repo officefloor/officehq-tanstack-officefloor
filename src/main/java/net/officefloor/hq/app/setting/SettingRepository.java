@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
@@ -208,6 +209,11 @@ public class SettingRepository {
     /** The sheet's parent sheet: null when there is none. */
     public String parent(String sheetId) {
         return jdbc.query("SELECT parent FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
+    }
+
+    /** The sheets naming this sheet as their parent, by id. */
+    public List<String> children(String sheetId) {
+        return jdbc.queryForList("SELECT id FROM sheet WHERE parent = ? ORDER BY id", String.class, sheetId);
     }
 
     public void setParent(String sheetId, String parent) {

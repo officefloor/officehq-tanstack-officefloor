@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useClaims, type Claim } from '../claims/claims';
-import { gradeOn, usePeople } from '../people/people';
+import { gradeOn, usePeople, type Person } from '../people/people';
 import type { Late } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 
@@ -80,8 +80,8 @@ export function useParent(sheetId: string): string {
 /** The sheet's floor by date: a claim's live due is at least the one in force on its date (the starting floor
  *  while the settings load). */
 export function useFloor(sheetId: string): DatedValue {
-  const dated = useSettings(sheetId).data?.dated?.floor;
-  return useMemo(() => (date: string) => valueOn(dated, DEFAULT_FLOOR, date), [dated]);
+  const settings = useSettings(sheetId).data;
+  return useMemo(() => floorOf(settings), [settings]);
 }
 
 /** The sheet's cap in force ('' when there is none, or while the settings load). */
@@ -94,6 +94,29 @@ export function useTerms(sheetId: string): number {
   return Number(useSettings(sheetId).data?.terms ?? DEFAULT_TERMS);
 }
 
+/** The floor by date from a sheet's settings: the one in force on a date (the starting floor while they load). */
+export function floorOf(settings: Settings | undefined): DatedValue {
+  const dated = settings?.dated?.floor;
+  return (date: string) => valueOn(dated, DEFAULT_FLOOR, date);
+}
+
+/** What the late charge follows (see useLate), from a sheet's settings, its today, its claims and its people. */
+export function lateOf(settings: Settings | undefined, today: string, claims: Claim[] | undefined,
+    people: Person[] | undefined): Late {
+  const numbered = new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date]));
+  const dated = settings?.dated?.['late-pct'];
+  const pct = (date: string) => valueOn(dated, DEFAULT_LATE_PCT, date);
+  const byId = new Map((people ?? []).map((p) => [p.id, p]));
+  const history = settings?.dated;
+  const grace = (claim: Claim) => {
+    const grade = gradeOn(byId.get(claim.personId), claim.date);
+    if (grade === '') return 0;
+    const days = valueOn(history?.[`grace-${grade}`], '', claim.date);
+    return days === '' ? 0 : Number(days);
+  };
+  return { pct, today, grace, policy: settings?.policyDate || today, numbered };
+}
+
 /** What the late charge follows now: the late percent by date (a claim gains the one in force on its date) and the sheet's today, and each
  *  claim's grace (of its person's grade on its date, in force on that date; 0 while loading); and how claims round:
  *  the policy date in force (blank: the sheet's today) and the dates of the sheet's numbered claims. */
@@ -101,23 +124,6 @@ export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId).data;
   const today = useSheetToday(sheetId);
   const claims = useClaims(sheetId).data;
-  const numbered = useMemo(
-    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date])),
-    [claims],
-  );
-  const dated = settings?.dated?.['late-pct'];
-  const pct = useMemo(() => (date: string) => valueOn(dated, DEFAULT_LATE_PCT, date), [dated]);
   const people = usePeople(sheetId).data;
-  const history = settings?.dated;
-  const grace = useMemo(() => {
-    const byId = new Map((people ?? []).map((p) => [p.id, p]));
-    return (claim: Claim) => {
-      const grade = gradeOn(byId.get(claim.personId), claim.date);
-      if (grade === '') return 0;
-      const days = valueOn(history?.[`grace-${grade}`], '', claim.date);
-      return days === '' ? 0 : Number(days);
-    };
-  }, [people, history]);
-  return { pct, today, grace,
-    policy: settings?.policyDate || today, numbered };
+  return useMemo(() => lateOf(settings, today, claims, people), [settings, today, claims, people]);
 }
