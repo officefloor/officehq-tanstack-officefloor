@@ -15,6 +15,7 @@ import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
 import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
+import { useTemplates } from '../templates/templates';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
@@ -30,7 +31,9 @@ const NUMBER = /^(\d+|.+-\d+)$/;
  *  of the same person it corrects (the server checks that claim). A reference (trimmed; blank: none) must not be
  *  used by another claim on the sheet, compared without regard to case (the server checks that). Tags are separated by
  *  commas (blank: none; the server trims, lower-cases and drops repeats). A new claim the server refuses clears the form,
- *  as one it adds does, leaving its error showing. */
+ *  as one it adds does, leaving its error showing. A new claim may instead be made from a template chosen on the row:
+ *  a DRAFT with the template's amount and note as they are now and no date, added by the server by every rule of this
+ *  form; its refusal shows as this form's error. */
 function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
 }) {
@@ -46,7 +49,32 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const [ref, setRef] = useState(editing?.ref ?? '');
   const [tags, setTags] = useState(editing?.tags.join(', ') ?? '');
   const [error, setError] = useState('');
+  const [template, setTemplate] = useState('');
+  const templates = useTemplates(sheetId).data ?? [];
   const once = useSubmitOnce();
+
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/template-claims`, { user, template: name }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      onAdded();
+    },
+    onError: (e) => setError(e instanceof HttpError && (e.status === 409 || e.status === 400) && e.body
+      ? e.body
+      : 'Could not add a claim from this template.'),
+    onSettled: once.done,
+  });
+
+  const addFromTemplate = () => {
+    setError('');
+    if (template === '') {
+      setError('Choose a template.');
+      return;
+    }
+    if (!once.start()) return;
+    fromTemplate.mutate(template);
+  };
 
   const save = useMutation({
     mutationFn: (body: { user: string; amount: string; date: string; note: string; corrects: string; ref: string; tags: string }) =>
@@ -124,6 +152,22 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
         >
           Cancel
         </button>
+      )}
+      {!editing && (
+        <>
+          {' '}
+          <select data-testid="claim-template-select" value={template} onChange={change(setTemplate)}>
+            <option value="">Template…</option>
+            {templates.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>{' '}
+          <button type="button" data-testid="claim-template-add" disabled={fromTemplate.isPending} onClick={addFromTemplate}>
+            Add from template
+          </button>
+        </>
       )}
       {error && (
         <p data-testid="claim-form-error" role="alert">

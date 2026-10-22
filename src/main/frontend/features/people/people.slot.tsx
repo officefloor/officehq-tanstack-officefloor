@@ -166,6 +166,8 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
           data-testid="person-form-terms"
           value={terms}
           onKeyDown={() => setTermsGiven(true)}
+          // the same value entered again fires no change, but is still entered
+          onInput={() => setTermsGiven(true)}
           onChange={(e) => {
             setTerms(e.target.value);
             setTermsGiven(true);
@@ -179,6 +181,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
           data-testid="person-form-contact"
           value={contact}
           onKeyDown={() => setContactGiven(true)}
+          onInput={() => setContactGiven(true)}
           onChange={(e) => {
             setContact(e.target.value);
             setContactGiven(true);
