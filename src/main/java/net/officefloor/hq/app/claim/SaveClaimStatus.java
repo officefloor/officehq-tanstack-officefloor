@@ -32,11 +32,11 @@ public class SaveClaimStatus {
     }
 
     /** The claim's due now: amount times its person's grade rate in force on the claim's date, divided by
-     *  100, rounded half up to two decimals; null when no rate of the grade applies on that date. */
+     *  100, rounded half to even to two decimals; null when no rate of the grade applies on that date. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
         var person = people.find(claim.sheetId(), claim.personId());
         return rates.on(claim.sheetId(), person.grade(), claim.date())
-                .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
+                .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
                 .orElse(null);
     }
 }
