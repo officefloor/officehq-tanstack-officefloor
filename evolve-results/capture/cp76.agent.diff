@@ -1,0 +1,51 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+index 5c6c520..68e15ed 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -8,6 +8,6 @@ public class AuditPersonEdited {
+     public void audit(@Val PersonRequest request, @Val Person loaded, @Val PersonResponse saved, Audit audit) {
+         audit.record("PERSON_EDITED sheet=" + loaded.sheetId() + " by=" + request.user()
+                 + " name=" + saved.name() + " grade=" + saved.grade()
+-                + (request.terms() != null ? " terms=" + request.terms() : ""));
++                + (request.terms() != null && !request.terms().isEmpty() ? " terms=" + request.terms() : ""));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshots.java b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshots.java
+new file mode 100644
+index 0000000..366e75b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshots.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.TodayRequest;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Before the sheet's today changes: a SNAPSHOT line per person, in list order, with their due-total on the day being left. */
++public class AuditSnapshots {
++    public void audit(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val Rollup before,
++            Audit audit) {
++        String id = sheetId.trim();
++        for (Rollup.Figures f : before.people().values()) {
++            audit.record("SNAPSHOT sheet=" + id + " by=" + request.user() + " name=" + f.name()
++                    + " due-total=" + f.dueTotal());
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 86b3dee..8d805ab 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -9,6 +9,10 @@ load:
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.rollup.AuditSnapshots
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.sheet.SaveToday
