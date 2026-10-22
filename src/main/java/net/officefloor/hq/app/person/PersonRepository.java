@@ -32,6 +32,12 @@ public class PersonRepository {
                 .stream().findFirst().orElse(null);
     }
 
+    /** The person on this sheet with this name (compared as nameInUse compares), or null when absent. */
+    public Person findByName(String sheetId, String name) {
+        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW, sheetId, name)
+                .stream().findFirst().orElse(null);
+    }
+
     /** Whether another person on this sheet (other than exceptId, when given) has this name,
      *  compared without regard to case and ignoring surrounding spaces. */
     public boolean nameInUse(String sheetId, String name, Long exceptId) {
