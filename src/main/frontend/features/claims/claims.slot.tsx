@@ -173,6 +173,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [redateTo, setRedateTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
+  const [comment, setComment] = useState('');
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -234,6 +235,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
         ? e.body : `Could not remind this ${claim.status} claim.`),
+  });
+
+  const addComment = useMutation({
+    mutationFn: (text: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/comments`, { user, text }),
+    onSuccess: async () => {
+      setComment('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
+        ? e.body : `Could not comment this ${claim.status} claim.`),
   });
 
   const redate = useMutation({
@@ -318,6 +331,35 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
           <li key={i} data-testid="claim-log-line">{line}</li>
         ))}
       </ol>{' '}
+      <ol data-testid="claim-comments">
+        {claim.comments.map((line, i) => (
+          <li key={i} data-testid="claim-comments-line">{line}</li>
+        ))}
+      </ol>{' '}
+      <input
+        data-testid="claim-comment-text"
+        placeholder="Comment"
+        value={comment}
+        onChange={(e) => {
+          clearError();
+          setComment(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-comment-add"
+        disabled={addComment.isPending}
+        onClick={() => {
+          clearError();
+          if (comment.trim() === '') {
+            setError('Write the comment before adding it.');
+            return;
+          }
+          addComment.mutate(comment.trim());
+        }}
+      >
+        Comment
+      </button>{' '}
       <button
         type="button"
         data-testid="claim-edit"
