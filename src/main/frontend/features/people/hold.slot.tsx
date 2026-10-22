@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { useSheetToday } from '../sheet/sheet';
 import { peopleKey } from './people';
+import { usePersonError } from './rowError';
 import type { Person } from './people';
 
 /** Whether the person has any hold, their holds, and the form that adds one from a from-date (blank: the sheet's
@@ -16,7 +17,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
   const today = useSheetToday(sheetId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [error, setError] = useState('');
+  const { error, setError, begin } = usePersonError(sheetId, person.id);
   const once = useSubmitOnce();
 
   const hold = useMutation({
@@ -34,7 +35,7 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setError('');
+    begin();
     if (!once.start()) return;
     hold.mutate({ user, from: from.trim(), to: to.trim() });
   };

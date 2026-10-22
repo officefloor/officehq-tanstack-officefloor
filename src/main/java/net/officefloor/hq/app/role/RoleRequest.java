@@ -1,5 +1,5 @@
 package net.officefloor.hq.app.role;
 
-/** Body of a role assignment: who is making it, the user name it is for, and the role (clerk or steward). */
+/** Body of a role assignment: who is making it, the user name it is for, and the role (clerk, steward or viewer). */
 public record RoleRequest(String user, String name, String role) {
 }

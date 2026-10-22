@@ -1,0 +1,125 @@
+package net.officefloor.hq.app.role;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.databind.json.JsonMapper;
+
+/** Refuse every change a viewer asks for on a sheet, before any endpoint reads or writes anything: each POST or
+ *  PUT under a sheet (all but loading the sheet itself) whose signed-in user (the body's {@code user}) is a viewer
+ *  on that sheet is answered 403 with the reason, and nothing is written or audited. */
+@Component
+public class RefuseViewerChanges extends OncePerRequestFilter {
+
+    /** A change under a sheet: /api/sheets/{sheetId}/... (loading the sheet, /api/sheets/{sheetId}, is not one). */
+    private static final Pattern CHANGE = Pattern.compile("^/api/sheets/([^/]+)/.+$");
+
+    private final RoleRepository roles;
+    private final JsonMapper json = JsonMapper.builder().build();
+
+    public RefuseViewerChanges(RoleRepository roles) {
+        this.roles = roles;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        String method = request.getMethod();
+        Matcher change = CHANGE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
+        if (method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS") || !change.matches()) {
+            chain.doFilter(request, response);
+            return;
+        }
+        byte[] body = request.getInputStream().readAllBytes();
+        String sheetId = URLDecoder.decode(change.group(1), StandardCharsets.UTF_8).trim();
+        String user = user(body);
+        if (user != null && Role.VIEWER.equals(roles.of(sheetId, user))) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("text/plain;charset=UTF-8");
+            response.getWriter().write("A viewer can change nothing on this sheet.");
+            return;
+        }
+        chain.doFilter(new Rereadable(request, body), response);
+    }
+
+    /** The signed-in user the body names (trimmed), or null when there is none. */
+    private String user(byte[] body) {
+        try {
+            Object user = json.readValue(body, Map.class).get("user");
+            return user instanceof String name && !name.isBlank() ? name.trim() : null;
+        } catch (RuntimeException e) {
+            return null; // not a JSON object: left to the endpoint to refuse
+        }
+    }
+
+    /** The request with its body, already read here, readable again by the endpoint. */
+    private static final class Rereadable extends HttpServletRequestWrapper {
+        private final byte[] body;
+
+        Rereadable(HttpServletRequest request, byte[] body) {
+            super(request);
+            this.body = body;
+        }
+
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream in = new ByteArrayInputStream(body);
+            return new ServletInputStream() {
+                @Override
+                public int read() {
+                    return in.read();
+                }
+
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    return in.read(b, off, len);
+                }
+
+                @Override
+                public boolean isFinished() {
+                    return in.available() == 0;
+                }
+
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+
+                @Override
+                public void setReadListener(ReadListener listener) {
+                    throw new UnsupportedOperationException();
+                }
+            };
+        }
+
+        @Override
+        public BufferedReader getReader() {
+            return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public int getContentLength() {
+            return body.length;
+        }
+
+        @Override
+        public long getContentLengthLong() {
+            return body.length;
+        }
+    }
+}

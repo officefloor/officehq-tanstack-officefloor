@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { useSheetToday } from '../sheet/sheet';
 import { peopleKey } from './people';
+import { usePersonError } from './rowError';
 import type { Person } from './people';
 
 /** Whether the person is retired and from when, and the form that retires them from a date (blank: the
@@ -14,7 +15,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
   const [from, setFrom] = useState('');
-  const [error, setError] = useState('');
+  const { error, setError, begin } = usePersonError(sheetId, person.id);
   const once = useSubmitOnce();
 
   const retire = useMutation({
@@ -31,7 +32,7 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setError('');
+    begin();
     if (!once.start()) return;
     retire.mutate({ user, from: from.trim() });
   };

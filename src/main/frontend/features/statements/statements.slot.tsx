@@ -1,16 +1,16 @@
-import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { PersonRow } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/claims';
 import { peopleKey } from '../people/people';
+import { usePersonError } from '../people/rowError';
 import type { Person } from '../people/people';
 
 /** A person's statements: how many have been taken, the last one's due-total and date, and the button that
  *  takes one (recording their due-total now and binding their claims that count to the figures they show). */
 function PersonStatement({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
-  const [error, setError] = useState('');
+  const { error, setError, begin } = usePersonError(sheetId, person.id);
 
   const take = useMutation({
     mutationFn: () =>
@@ -36,7 +36,7 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
         data-testid="person-statement"
         disabled={take.isPending}
         onClick={() => {
-          setError('');
+          begin();
           take.mutate();
         }}
       >
