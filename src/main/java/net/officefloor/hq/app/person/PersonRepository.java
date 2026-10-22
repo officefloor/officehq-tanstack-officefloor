@@ -97,6 +97,48 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
+    /** The other sheets of the sheet's tree, among those that exist: its ancestors (its parent, its parent's parent,
+     *  and so on) and its descendants (the sheets naming it as their parent, their children, and so on). */
+    public List<String> tree(String sheetId) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(sheetId);
+        for (String at = parentOf(sheetId); at != null && seen.add(at); at = parentOf(at)) {
+        }
+        java.util.Deque<String> next = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!next.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent = ? ORDER BY id", String.class,
+                    next.removeFirst())) {
+                if (seen.add(child)) {
+                    next.addLast(child);
+                }
+            }
+        }
+        seen.remove(sheetId);
+        return seen.stream().filter(id -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?",
+                Integer.class, id) > 0).toList();
+    }
+
+    private String parentOf(String sheetId) {
+        return jdbc.query("SELECT parent FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
+    }
+
+    /** The first of the sheets that has this as a name or an alias (compared as nameInUse compares), or null. */
+    public String sheetUsing(List<String> sheetIds, String name) {
+        return sheetIds.stream().filter(other -> nameInUse(other, name, null)).findFirst().orElse(null);
+    }
+
+    /** The other sheet of the sheet's tree (see tree) that has this as a name or an alias, or null when none has. */
+    public String sheetInTreeUsing(String sheetId, String name) {
+        return sheetUsing(tree(sheetId), name);
+    }
+
+    /** Whether the person's name, or one of their aliases, is a name or alias on one of the sheets (their sheet's
+     *  tree, see tree). */
+    public boolean clashing(Person person, List<String> tree) {
+        return !tree.isEmpty() && (sheetUsing(tree, person.name()) != null
+                || person.aliases().stream().anyMatch(a -> sheetUsing(tree, a) != null));
+    }
+
     /** Give the person an alias (stored trimmed). Leaves the version alone: an alias is not an edit of the person. */
     public void alias(Person person, String alias) {
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, made_on) VALUES (?, ?, ?, "

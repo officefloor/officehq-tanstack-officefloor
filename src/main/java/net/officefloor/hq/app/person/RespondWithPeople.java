@@ -15,6 +15,7 @@ public class RespondWithPeople {
         String id = sheetId.trim();
         LocalDate end = AsOf.parse(asOf);
         List<Person> people = end != null ? repository.listAsOf(id, end) : repository.list(id);
-        response.send(people.stream().map(PersonResponse::from).toList());
+        List<String> tree = repository.tree(id);
+        response.send(people.stream().map(p -> PersonResponse.from(p, repository.clashing(p, tree))).toList());
     }
 }
