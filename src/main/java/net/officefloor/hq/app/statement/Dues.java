@@ -53,28 +53,39 @@ public final class Dues {
     }
 
     /** Whether a claim counts toward its person's figures and every live total: an OPEN, PENDING or SETTLED one,
-     *  except an OPEN one dated within one of its person's holds and not bound by a statement, and one deferred on the
+     *  except an OPEN one dated within one of its person's holds and not bound by a statement, an OPEN or PENDING one
+     *  not bound by a statement once its person's retirement date is reached (see retiredOut), and one deferred on the
      *  sheet's today (see Claim.deferredOn). */
-    public static boolean counts(Claim claim, Holds holds, LocalDate today) {
+    public static boolean counts(Claim claim, Holds holds, LocalDate retiredFrom, LocalDate today) {
         return claim.status().counts() && !claim.deferredOn(today)
-                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()));
+                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()))
+                && !retiredOut(claim, retiredFrom, today);
+    }
+
+    /** Whether a claim leaves the live totals because its person is retired: the sheet's today is on or after their
+     *  retirement date (null: not retired) and it is OPEN or PENDING and not bound by a statement. */
+    private static boolean retiredOut(Claim claim, LocalDate retiredFrom, LocalDate today) {
+        return retiredFrom != null && today != null && !today.isBefore(retiredFrom) && !claim.stated()
+                && (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.PENDING);
     }
 
     /** Whether a claim counts toward a period's due-totals: its status at the end of the period's last day (see
      *  ClaimLogRepository.statusesAt; null: it was added after) is OPEN, PENDING or SETTLED, and it is left out
      *  as the live rules leave it out: deferred on the sheet's today, or an OPEN one dated within one of its
-     *  person's holds and not bound by a statement. */
-    public static boolean countsAtEnd(Claim claim, ClaimStatus atEnd, Holds holds, LocalDate today) {
+     *  person's holds and not bound by a statement, or an OPEN or PENDING one of a retired person (see counts). */
+    public static boolean countsAtEnd(Claim claim, ClaimStatus atEnd, Holds holds, LocalDate retiredFrom,
+            LocalDate today) {
         return atEnd != null && atEnd.counts() && !claim.deferredOn(today)
-                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()));
+                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && holds.covers(claim.date()))
+                && !retiredOut(claim, retiredFrom, today);
     }
 
     /** A person's due-total: the dues (as shown) of their claims that count added up, skipping n/a; null (n/a) when
      *  their grade today has no rate today, unless a claim that counts has a figure (settled, stated, or live at
      *  the grade in force on its date). */
-    public static BigDecimal total(String sheetId, List<Claim> claims, Grades grades, Holds holds, LocalDate today,
-            RateRepository rates, DatedAmount floor, LateCharge late) {
-        List<Claim> counted = claims.stream().filter(c -> counts(c, holds, today)).toList();
+    public static BigDecimal total(String sheetId, List<Claim> claims, Grades grades, Holds holds,
+            LocalDate retiredFrom, LocalDate today, RateRepository rates, DatedAmount floor, LateCharge late) {
+        List<Claim> counted = claims.stream().filter(c -> counts(c, holds, retiredFrom, today)).toList();
         List<BigDecimal> figures = counted.stream().map(c -> shown(c, grades, rates, floor, late))
                 .filter(f -> f != null).toList();
         if (figures.isEmpty() && rates.on(sheetId, grades.on(today), today).isEmpty()) {

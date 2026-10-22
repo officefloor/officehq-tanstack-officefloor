@@ -84,7 +84,7 @@ export function personDue(claims: Claim[], rateOnDate: (date: string) => string 
  *  the grade in force on each claim's date and on the sheet's today. */
 export function personDueSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late): string {
-  return personDue(live(claims.filter((c) => c.personId === person.id), [person]),
+  return personDue(live(claims.filter((c) => c.personId === person.id), [person], today),
     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
@@ -142,7 +142,7 @@ export function sheetOverdueTotal(people: Person[], claims: Claim[], rates: Rate
 /** The overdue claims that count among these, with the due of each (as shown on its row). */
 export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: DatedValue): string[] {
   const byId = new Map(people.map((p) => [p.id, p]));
-  return live(claims, people)
+  return live(claims, people, late.today)
     .filter((c) => overdue(c, late.today))
     .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
 }

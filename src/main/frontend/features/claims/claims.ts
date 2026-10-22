@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { heldOn } from '../people/people';
+import { heldOn, retiredOn } from '../people/people';
 import type { Person } from '../people/people';
 
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
@@ -41,11 +41,21 @@ export function unsettled(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'PENDING';
 }
 
-/** The claims that count in the live totals among these: those that count, except an OPEN claim dated within a hold
- *  of its person (among the people given) and not bound by a statement; their other claims still count. */
-export function live(claims: Claim[], people: Person[]): Claim[] {
+/** Whether a claim is left out of the live totals by its person (among those given by id): an OPEN claim dated
+ *  within one of their holds, or an OPEN or PENDING one once their retirement date is reached on the sheet's today
+ *  (yyyy-mm-dd), either not bound by a statement. */
+function leftOut(c: Claim, byId: Map<number, Person>, today: string): boolean {
+  if (c.stated) return false;
+  const person = byId.get(c.personId);
+  return (c.status === 'OPEN' && heldOn(person, c.date))
+    || (unsettled(c) && retiredOn(person, today));
+}
+
+/** The claims that count in the live totals among these on the sheet's today (yyyy-mm-dd): those that count, except
+ *  those their person (among the people given) leaves out (see leftOut); their other claims still count. */
+export function live(claims: Claim[], people: Person[], today: string): Claim[] {
   const byId = new Map(people.map((p) => [p.id, p]));
-  return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date)));
+  return claims.filter((c) => counts(c) && !leftOut(c, byId, today));
 }
 
 /** Whether a person is active on the sheet's today (yyyy-mm-dd; '' while loading: not active): they have an OPEN or
@@ -53,7 +63,7 @@ export function live(claims: Claim[], people: Person[]): Claim[] {
 export function active(person: Person, claims: Claim[], today: string): boolean {
   if (today === '') return false;
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return live(claims.filter((c) => c.personId === person.id), [person])
+  return live(claims.filter((c) => c.personId === person.id), [person], today)
     .some((c) => unsettled(c) && c.date >= since && c.date <= today);
 }
 
@@ -71,14 +81,13 @@ export function statusAt(c: Claim, day: string): ClaimStatus | null {
 }
 
 /** The claims that count in a period's due-totals among these: those whose status at the end of the day given (see
- *  statusAt) is OPEN, PENDING or SETTLED, left out as live leaves them out: deferred on the sheet's today, or an
- *  OPEN claim dated within a hold of its person (among the people given) and not bound by a statement. */
-export function countedAt(claims: Claim[], people: Person[], day: string): Claim[] {
+ *  statusAt) is OPEN, PENDING or SETTLED, left out as live leaves them out on the sheet's today (yyyy-mm-dd):
+ *  deferred, or left out by their person (among the people given; see leftOut). */
+export function countedAt(claims: Claim[], people: Person[], day: string, today: string): Claim[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   return claims.filter((c) => {
     const at = statusAt(c, day);
-    return (at === 'OPEN' || at === 'PENDING' || at === 'SETTLED') && !c.deferred
-      && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date));
+    return (at === 'OPEN' || at === 'PENDING' || at === 'SETTLED') && !c.deferred && !leftOut(c, byId, today);
   });
 }
 

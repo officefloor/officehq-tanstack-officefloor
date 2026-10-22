@@ -56,12 +56,13 @@ public class Rollups {
         List<BigDecimal> overdues = new ArrayList<>();
         for (Person p : people.list(sheetId)) {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
-            BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.holds(), today)).map(Claim::amount)
-                    .reduce(new BigDecimal("0.00"), BigDecimal::add);
+            BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today))
+                    .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
             BigDecimal due = Dues.capped(
-                    Dues.total(sheetId, theirs, p.grades(), p.holds(), today, rates, floor, late), cap);
+                    Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late), cap);
             // overdue-total: the dues (as shown, late charge included) of their overdue claims that count, skipping n/a
-            BigDecimal overdue = theirs.stream().filter(c -> Dues.counts(c, p.holds(), today) && late.overdue(c))
+            BigDecimal overdue = theirs.stream()
+                    .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && late.overdue(c))
                     .map(c -> Dues.shown(c, p.grades(), rates, floor, late)).filter(Objects::nonNull)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
             claimedTotal = claimedTotal.add(claimed);

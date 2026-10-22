@@ -19,6 +19,12 @@ export function heldOn(person: Person | undefined, date: string): boolean {
   return (person?.holds ?? []).some((h) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to));
 }
 
+/** Whether the person's retirement date is reached on the sheet's today (yyyy-mm-dd; '' while loading: not reached):
+ *  from then their OPEN and PENDING claims not bound by a statement count in no live total. */
+export function retiredOn(person: Person | undefined, today: string): boolean {
+  return today !== '' && person?.retiredFrom != null && person.retiredFrom <= today;
+}
+
 /** A grade a person was given, in force from its from-date (yyyy-mm-dd, or null: from the beginning of time). */
 export type Grade = { grade: string; from: string | null };
 

@@ -18,9 +18,9 @@ import type { Patron } from './patrons';
 function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const people = usePeople(sheetId).data ?? [];
-  const claims = live(useClaims(sheetId).data ?? [], people);
-  const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
+  const claims = live(useClaims(sheetId).data ?? [], people, today);
+  const rates = useRates(sheetId).data ?? [];
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const patrons = (usePatrons(sheetId).data ?? [])

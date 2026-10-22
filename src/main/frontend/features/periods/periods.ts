@@ -34,7 +34,7 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
     floor: DatedValue, late: Late): string {
   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   return sumDue(
-    countedAt(claims.filter((c) => c.personId === person.id), people, period.to)
+    countedAt(claims.filter((c) => c.personId === person.id), people, period.to, late.today)
       .filter((c) => periodOf([period], c.date))
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)),
   );

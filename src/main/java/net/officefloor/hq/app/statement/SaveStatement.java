@@ -26,11 +26,11 @@ public class SaveStatement {
         var floor = settings.floor(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
         LateCharge late = LateCharge.of(person.sheetId(), settings, sheets, claims);
-        BigDecimal total = Dues.capped(Dues.total(person.sheetId(), theirs, person.grades(), person.holds(), today,
-                rates, floor, late), settings.cap(person.sheetId()));
+        BigDecimal total = Dues.capped(Dues.total(person.sheetId(), theirs, person.grades(), person.holds(),
+                person.retiredFrom(), today, rates, floor, late), settings.cap(person.sheetId()));
         int counted = 0;
         for (Claim c : theirs) {
-            if (Dues.counts(c, person.holds(), today)) {
+            if (Dues.counts(c, person.holds(), person.retiredFrom(), today)) {
                 counted++;
                 claims.state(c, true, Dues.figure(c, person.grades(), rates, late.rounding()));
             } else if (c.stated()) {

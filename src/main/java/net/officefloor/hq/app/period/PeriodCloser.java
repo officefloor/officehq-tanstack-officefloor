@@ -50,7 +50,8 @@ public final class PeriodCloser {
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());
             ClaimStatus status = atEnd.containsKey(c.id()) ? atEnd.get(c.id()) : c.status();
-            if (!Dues.countsAtEnd(c, status, person != null ? person.holds() : Holds.NONE, late.today())
+            if (!Dues.countsAtEnd(c, status, person != null ? person.holds() : Holds.NONE,
+                    person != null ? person.retiredFrom() : null, late.today())
                     || !period.contains(c.date())) {
                 continue;
             }
