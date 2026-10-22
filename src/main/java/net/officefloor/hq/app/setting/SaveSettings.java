@@ -8,7 +8,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Save the settings the input sets: each dated one recorded from its from-date (not given: the sheet's today),
  *  keeping the values already recorded (one from that same date is replaced); the policy date and the period
- *  numbering from as they are. */
+ *  numbering from and the permission matrix as
+ *  they are. */
 public class SaveSettings {
     public void save(@PathVariable("sheetId") String sheetId, @Val SettingsInput input, SettingRepository repository,
             Out<Settings> settings) {
@@ -40,6 +41,7 @@ public class SaveSettings {
         if (input.setsProofThreshold()) {
             repository.setDated(id, "proof-threshold", text(input.proofThreshold()), from(input, "proof-threshold", today));
         }
+        input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }
 

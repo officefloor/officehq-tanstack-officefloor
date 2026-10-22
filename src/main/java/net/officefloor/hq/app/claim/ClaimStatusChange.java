@@ -6,6 +6,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.setting.Permissions;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.Dues;
@@ -24,6 +25,10 @@ final class ClaimStatusChange {
             SheetRepository sheets, ClaimLogRepository log)
             throws ClaimStatusNotAllowedException {
         ClaimStatus to = input.to();
+        if (Permissions.ACTIONS.contains(input.action()) && !settings.permissions(loaded.sheetId())
+                .allows(input.action(), roles.of(loaded.sheetId(), input.user()))) {
+            throw new ClaimStatusNotAllowedException("Your role may not " + input.action() + " a claim on this sheet.");
+        }
         boolean review = input.action().equals("approve") || input.action().equals("reject");
         if (review) {
             if (loaded.status() != ClaimStatus.PENDING) {

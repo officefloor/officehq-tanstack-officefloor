@@ -14,9 +14,11 @@ import { useSheetToday } from '../sheet/sheet';
  *  due-total is at most it), and the proof threshold with two decimals ('' when there is none: a claim whose due is
  *  above the one in force on its date cannot be settled or approved without a proof). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
  *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
- *  terms-A/B/C, late-pct, cap, proof-threshold), oldest from-date first. */
+ *  terms-A/B/C, late-pct, cap, proof-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
+ *  each action the roles that may take it, comma separated ('' when blank: the standing rule). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
-  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; dated?: Record<string, Dated[]> };
+  periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; dated?: Record<string, Dated[]>;
+  perms?: Record<string, string> };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -33,6 +35,9 @@ export function valueOn(values: Dated[] | undefined, start: string, date: string
   }
   return found ? found.value : start;
 }
+
+/** The actions the permission matrix covers, in order. */
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 
 /** The grades that may have terms of their own. */
 export const GRADES = ['A', 'B', 'C'] as const;

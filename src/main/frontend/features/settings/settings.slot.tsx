@@ -4,19 +4,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, GRADES, settingsKey, useSettings, type Settings } from './settings';
+import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, GRADES, PERM_ACTIONS, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 /** The settings that carry a figure, and so are saved from a from-date. */
 const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`), 'late-pct', 'cap', 'proof-threshold'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
-  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; from?: Record<string, string> };
+  periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; from?: Record<string, string>;
+  perms?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -28,6 +30,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none).
  *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
  *  while it has no proofs; the server enforces it.
+ *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles that may take
+ *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
  *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
  *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
  *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
@@ -53,6 +57,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedProofThreshold, setTypedProofThreshold] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
+  const currentPerm = (action: string) => settings.data?.perms?.[action] ?? '';
+  const [typedPerms, setTypedPerms] = useState<Record<string, string>>({});
   // From-dates typed in since the last save, by dated setting key.
   const [typedFrom, setTypedFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -72,6 +78,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedCap(null);
       setTypedProofThreshold(null);
       setTypedGradeTerms({});
+      setTypedPerms({});
       setTypedFrom({});
     },
     onError: (e) =>
@@ -159,6 +166,16 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.gradeTerms = { ...changes.gradeTerms, [grade]: terms };
     }
+    for (const action of PERM_ACTIONS) {
+      const typedRoles = typedPerms[action];
+      if (typedRoles === undefined) continue;
+      const roles = typedRoles.trim();
+      if (roles !== '' && !ROLES.test(roles)) {
+        setError(`The roles allowed to ${action} must be a comma separated list of clerk and steward, or blank for the standing rule.`);
+        return;
+      }
+      changes.perms = { ...changes.perms, [action]: roles };
+    }
     // A dated setting with a from-date typed: saved from it, with the value typed, else the value in force.
     const shownValue: Record<string, () => void> = {
       'clerk-limit': () => { changes.clerkLimit ??= currentLimit; },
@@ -225,6 +242,13 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{currentNumberingFrom}</strong>{' '}
         Cap <strong data-testid="setting-cap-current">{currentCap}</strong>{' '}
         Proof threshold <strong data-testid="setting-proof-threshold-current">{currentProofThreshold}</strong>
+      </p>
+      <p>
+        {PERM_ACTIONS.map((action) => (
+          <span key={action}>
+            May {action} <strong data-testid={`setting-perm-${action}-current`}>{currentPerm(action)}</strong>{' '}
+          </span>
+        ))}
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -334,6 +358,21 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           />
         </label>
         {fromInput('proof-threshold')}{' '}
+        {PERM_ACTIONS.map((action) => (
+          <span key={action}>
+            <label>
+              May {action}{' '}
+              <input
+                data-testid={`setting-perm-${action}`}
+                placeholder="standing rule"
+                value={typedPerms[action] ?? currentPerm(action)}
+                onInput={typed((v) => setTypedPerms((t) => ({ ...t, [action]: v })))}
+                onChange={typed((v) => setTypedPerms((t) => ({ ...t, [action]: v })))}
+                onFocus={() => setTypedPerms((t) => (action in t ? t : { ...t, [action]: currentPerm(action) }))}
+              />
+            </label>{' '}
+          </span>
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

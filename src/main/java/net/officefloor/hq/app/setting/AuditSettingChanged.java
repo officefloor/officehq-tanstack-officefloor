@@ -36,6 +36,7 @@ public class AuditSettingChanged {
             audit.record(head + "proof-threshold value=" + SettingsResponse.text(input.proofThreshold())
                     + from(input, "proof-threshold"));
         }
+        input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 
     private static String from(SettingsInput input, String key) {

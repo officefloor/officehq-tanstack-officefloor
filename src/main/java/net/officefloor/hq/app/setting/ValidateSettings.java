@@ -3,9 +3,11 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -15,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  are a whole number of days, and a late percent (when given) that is a percent 0.00 or more with up to two decimals, and a policy date (when given) that is
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
- *  today) or a date yyyy-mm-dd. */
+ *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
     static final List<String> GRADES = List.of("A", "B", "C");
@@ -88,6 +91,34 @@ public class ValidateSettings {
                 gradeTerms.put(grade, days.isEmpty() ? null : Integer.valueOf(days));
             }
         }
+        Map<String, String> perms = new LinkedHashMap<>();
+        if (request.perms() != null) {
+            for (String action : request.perms().keySet()) {
+                if (!Permissions.ACTIONS.contains(action)) {
+                    throw new InvalidSettingException("Permissions may be set only for open, settle, void, reassign, close or reopen.");
+                }
+            }
+            for (String action : Permissions.ACTIONS) {
+                if (!request.perms().containsKey(action)) {
+                    continue;
+                }
+                String entry = request.perms().get(action) == null ? "" : request.perms().get(action).trim();
+                List<String> roles = new ArrayList<>();
+                if (!entry.isEmpty()) {
+                    for (String role : entry.split(",", -1)) {
+                        String r = role.trim();
+                        if (!r.equals(Role.CLERK) && !r.equals(Role.STEWARD)) {
+                            throw new InvalidSettingException("The roles allowed to " + action
+                                    + " must be a comma separated list of clerk and steward, or blank for the standing rule.");
+                        }
+                        if (!roles.contains(r)) {
+                            roles.add(r);
+                        }
+                    }
+                }
+                perms.put(action, String.join(",", roles));
+            }
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request.from() != null) {
             for (var e : request.from().entrySet()) {
@@ -112,6 +143,7 @@ public class ValidateSettings {
                 latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
-                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2)));
+                threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2),
+                perms));
     }
 }

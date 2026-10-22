@@ -43,7 +43,7 @@ public class SettingRepository {
         }
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
-                history.capOn(today), history.proofThresholdOn(today), history);
+                history.capOn(today), history.proofThresholdOn(today), history, permissions(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -96,6 +96,24 @@ public class SettingRepository {
      *  sheet's in force then. */
     public int termsFor(String sheetId, String grade, LocalDate date) {
         return history(sheetId).termsFor(grade, date);
+    }
+
+    /** The sheet's permission matrix: the roles each action is open to. */
+    public Permissions permissions(String sheetId) {
+        Map<String, String> roles = new HashMap<>();
+        jdbc.query("SELECT action, roles FROM sheet_permission WHERE sheet_id = ?",
+                rs -> {
+                    roles.put(rs.getString(1), rs.getString(2));
+                }, sheetId);
+        return new Permissions(roles);
+    }
+
+    /** Set the roles the action is open to (blank: the standing rule). */
+    public void setPermission(String sheetId, String action, String roles) {
+        jdbc.update("DELETE FROM sheet_permission WHERE sheet_id = ? AND action = ?", sheetId, action);
+        if (!roles.isEmpty()) {
+            jdbc.update("INSERT INTO sheet_permission (sheet_id, action, roles) VALUES (?, ?, ?)", sheetId, action, roles);
+        }
     }
 
     /** The sheet's policy date: null when blank (the sheet's today is the policy date then). */

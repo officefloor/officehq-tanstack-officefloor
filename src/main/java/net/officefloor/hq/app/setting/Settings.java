@@ -9,8 +9,8 @@ import java.util.Map;
  *  policy date (null: the sheet's today; a claim dated before it rounds half up, on or after it half to even) and the
  *  period numbering from (null: off; on or after it, by the sheet's today, a claim opened is numbered within its
  *  period) and the grades' own terms (days, by grade; a grade without its own uses the sheet's terms) and the cap
- *  (two decimals; null: none; a person's due-total is at most it) and the proof threshold (two decimals; null: none); and every value of the dated ones. */
+ *  (two decimals; null: none; a person's due-total is at most it) and the proof threshold (two decimals; null: none); and every value of the dated ones; and the permission matrix (not dated). */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, BigDecimal latePct,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, BigDecimal cap,
-        BigDecimal proofThreshold, SettingHistory history) {
+        BigDecimal proofThreshold, SettingHistory history, Permissions permissions) {
 }
