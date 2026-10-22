@@ -6,14 +6,14 @@ import type { Late } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 
 /** The sheet's settings: the clerk limit with two decimals ('' when there is none) and the floor with two
- *  decimals (a claim's live due is at least it), and the terms in days (a claim's due-by is its date plus them), and
+ *  decimals (a claim's live due is at least it), and the terms in business days (a claim's due-by is the terms-th business day after its date: not a Saturday, Sunday or holiday), and
  *  the late percent with two decimals (an overdue claim gains, of its figure, the one in force on each full 30-day boundary past its due-by), and the
  *  policy date (yyyy-mm-dd; '' when blank: the sheet's today) a claim's live figures round by, and the period numbering from (yyyy-mm-dd; '' when off: on or after it, by
  *  the sheet's today, a claim opened is numbered within its period), and each grade's own terms in days ('' when the
  *  grade has none: it uses the sheet's terms), and the cap with two decimals ('' when there is none: a person's
  *  due-total is at most it), and the proof threshold with two decimals ('' when there is none: a claim whose due is
  *  above the one in force on its date cannot be settled or approved without a proof), and the note threshold with two decimals ('' when there is none: a
- *  claim whose due is above the one in force on its date cannot be opened with an empty note). A claim's due-by is fixed when it is created. Each is the value in force on the sheet's
+ *  claim whose due is above the one in force on its date cannot be opened with an empty note). A claim's terms are fixed when it is created. Each is the value in force on the sheet's
  *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
  *  terms-A/B/C, late-pct, cap, proof-threshold, note-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
  *  each action the roles that may take it, comma separated ('' when blank: the standing rule). `graceDays` is the grace days (not dated; '' when off): when the sheet's

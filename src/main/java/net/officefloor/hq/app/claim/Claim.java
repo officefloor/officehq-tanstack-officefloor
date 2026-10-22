@@ -9,8 +9,9 @@ import java.time.LocalDate;
  *  who opened it (null while a draft), whether its person's last statement bound it (it counted then) and the
  *  figure it bound it to (null when not bound, or its figure was n/a then: its due stays live), and for a correction
  *  (a negative amount) the number of the SETTLED claim of the same person it corrects (null otherwise), and its
- *  due-by, fixed when it was created: its date plus the terms of its person's grade in force on its date (else the
- *  sheet's terms); it does not change when the terms or its date change later; and the date it is deferred until (null: never
+ *  due-by: the terms-th business day after the date it had when it was created, with the terms fixed then (its person's
+ *  own, else their grade's in force on that date, else the sheet's), skipping Saturdays, Sundays and the sheet's
+ *  holidays as they are now; it does not change when the terms or its date change later; and the date it is deferred until (null: never
  *  deferred): an OPEN claim deferred past the sheet's today is deferred (see deferredOn); and its proofs count (0 or more,
  *  raised one at a time); and the number of the claim it was split from (null when it was not split off one); and whether it is a
  *  late entry: added while its period was soft-closed (fixed when it was added); and the last sheet-today a reminder was

@@ -3,6 +3,9 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
+import net.officefloor.hq.app.holiday.BusinessDays;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -12,36 +15,47 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
-            rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
-            rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class));
+    /** A claim row, its due-by worked out from its terms and the sheet's holidays (their dates). */
+    private static RowMapper<Claim> row(Set<LocalDate> holidays) {
+        return (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+                rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
+                rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+                rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
+                rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+                rs.getString("corrects"),
+                BusinessDays.after(rs.getObject("due_from", LocalDate.class), rs.getInt("terms_days"), holidays),
+                rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
+                rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class));
+    }
 
     private final JdbcTemplate jdbc;
+    private final HolidayRepository holidays;
 
-    public ClaimRepository(JdbcTemplate jdbc) {
+    public ClaimRepository(JdbcTemplate jdbc, HolidayRepository holidays) {
         this.jdbc = jdbc;
+        this.holidays = holidays;
+    }
+
+    private RowMapper<Claim> row(String sheetId) {
+        return row(holidays.dates(sheetId));
     }
 
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", row(sheetId), sheetId);
     }
 
     /** The claim on this sheet, or null when absent. */
     public Claim find(String sheetId, long id) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND id = ?", row(sheetId), sheetId, id)
                 .stream().findFirst().orElse(null);
     }
 
-    public Claim insert(Claim claim) {
+    /** Store a new claim fixed with the terms (business days), counted from its date. */
+    public Claim insert(int terms, Claim claim) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, split_from, late_entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_from, terms_days, split_from, late_entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -49,9 +63,10 @@ public class ClaimRepository {
             ps.setObject(4, claim.date());
             ps.setString(5, claim.note());
             ps.setString(6, claim.corrects());
-            ps.setObject(7, claim.dueBy());
-            ps.setString(8, claim.splitFrom());
-            ps.setBoolean(9, claim.lateEntry());
+            ps.setObject(7, claim.date());
+            ps.setInt(8, terms);
+            ps.setString(9, claim.splitFrom());
+            ps.setBoolean(10, claim.lateEntry());
             return ps;
         }, keys);
         kept(claim.sheetId(), keys.getKey().longValue());
@@ -62,7 +77,7 @@ public class ClaimRepository {
 
     /** The person's claims, newest first. */
     public List<Claim> listForPerson(String sheetId, long personId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW, sheetId,
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", row(sheetId), sheetId,
                 personId);
     }
 
@@ -205,9 +220,9 @@ public class ClaimRepository {
     /** Keep the claim as it stands now in its history, with the sheet's today. */
     private void kept(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
-                + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, "
+                + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, deferred_until, proofs, "
                 + "split_from, late_entry, reminded_on, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
-                + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_by, "
+                + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_from, c.terms_days, "
                 + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, s.today FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
@@ -226,7 +241,7 @@ public class ClaimRepository {
     public List<Claim> listAsOf(String sheetId, LocalDate end) {
         return jdbc.query("SELECT h.claim_id AS id, h.* FROM claim_history h WHERE h.sheet_id = ? AND h.id = ("
                 + "SELECT MAX(l.id) FROM claim_history l WHERE l.sheet_id = h.sheet_id AND l.claim_id = h.claim_id "
-                + "AND (l.made_on IS NULL OR l.made_on <= ?)) ORDER BY h.claim_id DESC", ROW, sheetId, end);
+                + "AND (l.made_on IS NULL OR l.made_on <= ?)) ORDER BY h.claim_id DESC", row(sheetId), sheetId, end);
     }
 
     /** The person's claims as they stood at the end of the day: each claim's last kept state made while the sheet's
@@ -236,6 +251,6 @@ public class ClaimRepository {
         return jdbc.query("SELECT h.claim_id AS id, h.* FROM claim_history h WHERE h.sheet_id = ? AND h.id = ("
                 + "SELECT MAX(l.id) FROM claim_history l WHERE l.sheet_id = h.sheet_id AND l.claim_id = h.claim_id "
                 + "AND (l.made_on IS NULL OR l.made_on <= ?)) AND h.person_id = ? ORDER BY h.claim_id DESC",
-                ROW, sheetId, end, personId);
+                row(sheetId), sheetId, end, personId);
     }
 }

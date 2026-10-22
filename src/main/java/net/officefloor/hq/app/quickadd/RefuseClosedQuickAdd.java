@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Refuse the quick-add when the claim's due-by (its date — the sheet's entry date, else its today — plus the terms it would
+/** Refuse the quick-add when the claim's due-by (the terms-th business day after its date — the sheet's entry date, else its today — with the terms it would
  *  get: the named person's, or a new grade A person's) is inside a closed period — before any
  *  person is added, so a refused quick-add leaves nothing behind. */
 public class RefuseClosedQuickAdd {
@@ -24,7 +24,7 @@ public class RefuseClosedQuickAdd {
         var date = sheets.newClaimDate(id);
         Person found = people.findByName(id, request.name());
         var dueBy = found != null ? DueBy.of(found, date, settings, holidays)
-                : holidays.nextWorkingDay(id, date.plusDays(settings.termsFor(id, request.grade(), date)));
+                : holidays.dueBy(id, date, settings.termsFor(id, request.grade(), date));
         Period closed = periods.closedOn(id, dueBy);
         if (closed != null) {
             throw new ClosedPeriodException(closed);

@@ -16,8 +16,9 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
  *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
  *  it to (null when not bound, or n/a then: its due stays live), and for a correction (a negative amount) the
- *  number of the SETTLED claim of the same person it corrects (null otherwise), and its due-by (yyyy-mm-dd), fixed
- *  when it was created from the terms of its person's grade in force on its date (else the sheet's terms), and its
+ *  number of the SETTLED claim of the same person it corrects (null otherwise), and its due-by (yyyy-mm-dd): the
+ *  terms-th business day after its date when it was created, with the terms fixed then (its person's own, else their
+ *  grade's in force on that date, else the sheet's), past Saturdays, Sundays and the sheet's holidays now, and its
  *  status log: one line per status it has had, oldest first, as <STATUS> by <user> on <date> due=<due>, and the date
  *  it is deferred until (yyyy-mm-dd; null when never deferred) and whether it is deferred on the sheet's today (an
  *  OPEN claim deferred until after it: it counts in no total, is not overdue and cannot be settled), and its proofs
@@ -92,7 +93,7 @@ export function countedAt(claims: Claim[], people: Person[], day: string, today:
   });
 }
 
-/** A claim's due-by (yyyy-mm-dd), as fixed when it was created. */
+/** A claim's due-by (yyyy-mm-dd), as the server works it out in business days. */
 export function dueBy(claim: Claim): string {
   return claim.dueBy;
 }

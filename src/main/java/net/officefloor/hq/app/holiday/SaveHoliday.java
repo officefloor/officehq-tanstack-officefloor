@@ -5,7 +5,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Store the holiday, refusing a date already on the sheet's list. Existing claims keep their due-by. */
+/** Store the holiday, refusing a date already on the sheet's list. Every claim's due-by, worked out from the holidays
+ *  now, follows. */
 public class SaveHoliday {
     public void save(@PathVariable("sheetId") String sheetId, @Val HolidayInput input, PeriodRepository periods,
             HolidayRepository repository, Out<Holiday> holiday) throws InvalidHolidayException {

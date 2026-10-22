@@ -22,11 +22,11 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
- *  A claim's live due is at least the floor; its due-by is its date plus the terms; once overdue it gains, for every full 30
+ *  A claim's live due is at least the floor; its due-by is the terms-th business day after its date (skipping Saturdays, Sundays and holidays); once overdue it gains, for every full 30
  *  days, the late percent in force on that boundary date of its figure. A claim dated before the policy date (blank: the sheet's today)
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
  *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
- *  A grade may have terms of its own (blank: the sheet's terms); a claim's due-by is fixed when it is created, from
+ *  A grade may have terms of its own (blank: the sheet's terms); a claim's terms are fixed when it is created, from
  *  the terms of its person's grade on its date. A person's due-total is at most the cap (blank: none).
  *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
  *  while it has no proofs; the server enforces it. A claim whose due is above the note threshold (blank: none) in
@@ -125,7 +125,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
     if (typedTerms !== null) {
       const terms = typedTerms.trim();
       if (!DAYS.test(terms)) {
-        setError('The terms must be a whole number of days, 0 or more.');
+        setError('The terms must be a whole number of business days, 0 or more.');
         return;
       }
       changes.terms = terms;
@@ -199,7 +199,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       if (typedTerms === undefined) continue;
       const terms = typedTerms.trim();
       if (terms !== '' && !DAYS.test(terms)) {
-        setError(`The terms of grade ${grade} must be a whole number of days, 0 or more, or blank for the sheet's terms.`);
+        setError(`The terms of grade ${grade} must be a whole number of business days, 0 or more, or blank for the sheet's terms.`);
         return;
       }
       changes.gradeTerms = { ...changes.gradeTerms, [grade]: terms };
@@ -270,7 +270,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       <p>
         Clerk limit <strong data-testid="setting-clerk-limit-current">{currentLimit}</strong>{' '}
         Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>{' '}
-        Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> days{' '}
+        Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> business days{' '}
         {GRADES.map((grade) => (
           <span key={grade}>
             Grade {grade} terms <strong data-testid={`setting-terms-${grade}-current`}>{currentGradeTerms(grade)}</strong>{' '}
@@ -317,7 +317,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         </label>
         {fromInput('floor')}{' '}
         <label>
-          Terms (days){' '}
+          Terms (business days){' '}
           <input
             data-testid="setting-terms"
             value={typedTerms ?? currentTerms}

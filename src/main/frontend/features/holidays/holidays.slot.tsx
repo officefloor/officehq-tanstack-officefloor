@@ -37,7 +37,8 @@ function HolidayForm({ sheetId, user }: { sheetId: string; user: string }) {
   const save = useMutation({
     mutationFn: (d: string) => postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, { user, date: d }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) });
+      // Every claim's due-by counts past the holidays now, so all that reads it (overdue, late charges, periods) is re-read.
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
       setDate('');
     },
     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not add the holiday.'),
@@ -78,14 +79,14 @@ function HolidayForm({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-/** The sheet's holidays and the entry a date is added with. A new claim's due-by falling on a holiday is moved to
- *  the next day that is not one; claims already made keep theirs. */
+/** The sheet's holidays and the entry a date is added with. A holiday is not a business day: every claim's due-by,
+ *  new or already made, is counted in business days past the holidays on the list now. */
 function Holidays({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <section data-testid="holidays">
       <h2>Holidays</h2>
       <HolidayForm sheetId={sheetId} user={user} />
-      <p>A new claim due by a holiday is due by the next day that is not one.</p>
+      <p>Terms count business days: no claim is due by a Saturday, a Sunday or a holiday.</p>
       <HolidayList sheetId={sheetId} />
     </section>
   );

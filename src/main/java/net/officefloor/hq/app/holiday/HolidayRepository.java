@@ -40,14 +40,15 @@ public class HolidayRepository {
         return new Holiday(id, sheetId, input.date(), input.user());
     }
 
-    /** The date itself when it is not one of the sheet's holidays, else the next day after it that is not one. */
-    public LocalDate nextWorkingDay(String sheetId, LocalDate date) {
-        Set<LocalDate> on = new HashSet<>(jdbc.queryForList(
-                "SELECT holiday_date FROM sheet_holiday WHERE sheet_id = ? AND holiday_date >= ?", LocalDate.class,
-                sheetId, date));
-        while (on.contains(date)) {
-            date = date.plusDays(1);
-        }
-        return date;
+    /** The dates of the sheet's holidays. */
+    public Set<LocalDate> dates(String sheetId) {
+        return new HashSet<>(jdbc.queryForList("SELECT holiday_date FROM sheet_holiday WHERE sheet_id = ?",
+                LocalDate.class, sheetId));
+    }
+
+    /** The terms-th business day after the date, skipping Saturdays, Sundays and the sheet's holidays as they are
+     *  now. */
+    public LocalDate dueBy(String sheetId, LocalDate from, int terms) {
+        return BusinessDays.after(from, terms, dates(sheetId));
     }
 }

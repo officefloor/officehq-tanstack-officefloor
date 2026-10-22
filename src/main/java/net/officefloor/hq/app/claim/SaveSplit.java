@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 /** Split an amount off the loaded claim: only an OPEN claim not deferred on the sheet's today, and only an amount
  *  less than the claim's. The claim keeps the rest of its amount and loses any figure a statement bound it to; a new
  *  OPEN claim with the split-off amount, the same person, date and note, the next number, opened by the user, its
- *  due-by fixed now from the terms in force on its date (as a new claim's is) and the claim's number as its
+ *  terms fixed now from the terms in force on its date (as a new claim's is) and the claim's number as its
  *  split-from is stored (a late entry when that due-by is inside a soft-closed period), its OPEN line starting its status log. A split another user's change got to first is
  *  refused. */
 public class SaveSplit {
@@ -37,8 +37,9 @@ public class SaveSplit {
             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
         }
         var person = people.find(loaded.sheetId(), loaded.personId());
-        var dueBy = DueBy.of(person, loaded.date(), settings, holidays);
-        Claim inserted = repository.insert(new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
+        int terms = DueBy.terms(person, loaded.date(), settings);
+        var dueBy = holidays.dueBy(loaded.sheetId(), loaded.date(), terms);
+        Claim inserted = repository.insert(terms, new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
                 loaded.number(), periods.softClosedOn(loaded.sheetId(), dueBy) != null, null));
         String number = repository.nextNumber(loaded.sheetId(), dueBy);
