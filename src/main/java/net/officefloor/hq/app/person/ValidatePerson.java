@@ -15,6 +15,11 @@ public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidPersonException {
+        body.set(check(request));
+    }
+
+    /** The request as the person form's rules leave it, or refused by them. */
+    static PersonRequest check(PersonRequest request) throws InvalidPersonException {
         if (request == null || request.user() == null || request.user().isBlank()) {
             throw new InvalidPersonException("Sign in before changing people.");
         }
@@ -45,8 +50,8 @@ public class ValidatePerson {
         if (contact != null && contact.length() > 200) {
             throw new InvalidPersonException("A contact is at most 200 characters.");
         }
-        body.set(new PersonRequest(request.user().trim(), name, grade, request.version(),
+        return new PersonRequest(request.user().trim(), name, grade, request.version(),
                 gradeFrom.isEmpty() ? null : gradeFrom,
-                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact));
+                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact);
     }
 }
