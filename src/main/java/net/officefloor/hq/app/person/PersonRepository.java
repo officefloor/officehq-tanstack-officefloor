@@ -119,6 +119,25 @@ public class PersonRepository {
     public void stated(Person person, BigDecimal total, LocalDate date) {
         jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ? "
                 + "WHERE sheet_id = ? AND id = ?", total, date, person.sheetId(), person.id());
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, due_total, statement_date) VALUES (?, ?, ?, ?)",
+                person.sheetId(), person.id(), total, date);
+    }
+
+    /** Cancel the last statement taken of the person: one fewer taken, and their row shows the one before it (its
+     *  due-total and date; none when there is no earlier one kept). Leaves the version alone. */
+    public void unstated(Person person) {
+        List<Long> kept = jdbc.queryForList("SELECT id FROM person_statement WHERE sheet_id = ? AND person_id = ? "
+                + "ORDER BY id DESC", Long.class, person.sheetId(), person.id());
+        if (!kept.isEmpty()) {
+            jdbc.update("DELETE FROM person_statement WHERE id = ?", kept.get(0));
+        }
+        jdbc.update("UPDATE person SET statement_count = statement_count - 1, stated_total = NULL, statement_date = NULL "
+                + "WHERE sheet_id = ? AND id = ? AND statement_count > 0", person.sheetId(), person.id());
+        if (kept.size() > 1) {
+            jdbc.update("UPDATE person SET stated_total = (SELECT due_total FROM person_statement WHERE id = ?), "
+                    + "statement_date = (SELECT statement_date FROM person_statement WHERE id = ?) "
+                    + "WHERE sheet_id = ? AND id = ?", kept.get(1), kept.get(1), person.sheetId(), person.id());
+        }
     }
 
     /** Retire the person from the date. Leaves the version alone: retiring is not an edit of the person. */

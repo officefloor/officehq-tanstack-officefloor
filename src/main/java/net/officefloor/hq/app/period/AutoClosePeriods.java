@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.TodayRequest;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Once the sheet's new today is set: while it has grace days, close each open period whose to-date plus them is
+/** Once the sheet's new today is set: while it has grace days, close each open period (not a soft-closed one) whose to-date plus them is
  *  before the new today, in order of their to-dates, exactly as a close by hand would, each recorded as
  *  PERIOD_CLOSED with auto=yes at its end. */
 public class AutoClosePeriods {
@@ -28,7 +28,7 @@ public class AutoClosePeriods {
         }
         periods.lockSheet(id);
         var due = periods.list(id).stream()
-                .filter(p -> !p.closed() && p.to().plusDays(grace).isBefore(today))
+                .filter(p -> !p.closed() && !p.soft() && p.to().plusDays(grace).isBefore(today))
                 .sorted(Comparator.comparing(Period::to))
                 .toList();
         for (Period period : due) {

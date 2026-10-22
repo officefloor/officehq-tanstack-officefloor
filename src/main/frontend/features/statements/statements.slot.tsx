@@ -7,7 +7,8 @@ import { usePersonError } from '../people/rowError';
 import type { Person } from '../people/people';
 
 /** A person's statements: how many have been taken, the last one's due-total and date, and the button that
- *  takes one (recording their due-total now and binding their claims that count to the figures they show). */
+ *  takes one (recording their due-total now and binding their claims that count to the figures they show), and the
+ *  button that cancels the last one (a steward only: its claims are live again; the row shows the one before it). */
 function PersonStatement({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const { error, setError, begin } = usePersonError(sheetId, person.id);
@@ -25,6 +26,19 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
       setError(e instanceof HttpError && e.body ? e.body : `Could not take a statement of ${person.name}.`),
   });
 
+  const cancel = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/statements/cancel`, { user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && e.body ? e.body : `Could not cancel the statement of ${person.name}.`),
+  });
+
   const taken = person.statementCount > 0;
   return (
     <td>
@@ -34,13 +48,24 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
       <button
         type="button"
         data-testid="person-statement"
-        disabled={take.isPending}
+        disabled={take.isPending || cancel.isPending}
         onClick={() => {
           begin();
           take.mutate();
         }}
       >
         Statement
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-unstate"
+        disabled={cancel.isPending}
+        onClick={() => {
+          begin();
+          cancel.mutate();
+        }}
+      >
+        Cancel statement
       </button>
       {error && (
         <p data-testid="person-error" role="alert">
