@@ -8,7 +8,7 @@ import type { Person } from '../people/people';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { claimsKey, sumAmounts, useClaims, useEditingClaim } from './claims';
+import { claimsKey, live, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
@@ -165,7 +165,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(claims)}</td>
+      <td data-testid="person-claimed">{sumAmounts(live(claims, [person]))}</td>
       <td>
         {/* Keyed by the claim being edited (and each add), so the form fills with its values or starts blank. */}
         <ClaimForm

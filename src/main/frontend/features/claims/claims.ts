@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import type { Person } from '../people/people';
 
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
@@ -17,6 +18,13 @@ export type Claim = { id: number; personId: number; amount: string; date: string
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED ones do. */
 export function counts(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'SETTLED';
+}
+
+/** The claims that count in the live totals among these: those that count, except the OPEN claims of a person
+ *  (among the people given) who is on hold; their SETTLED claims still count. */
+export function live(claims: Claim[], people: Person[]): Claim[] {
+  const held = new Set(people.filter((p) => p.held).map((p) => p.id));
+  return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId)));
 }
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;

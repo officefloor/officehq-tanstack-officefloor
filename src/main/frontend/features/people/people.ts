@@ -4,9 +4,10 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 /** A person on a sheet: a name and a grade (A, B or C), the version stored (one more on each edit), how many
  *  statements have been taken of them, and the last one's due-total (null when n/a, or none taken) and date
- *  (the sheet's today then; null when none taken), and the date they are retired from (null: not retired). */
+ *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), and whether
+ *  they are on hold (their OPEN claims then count in no live total). */
 export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
-  statedTotal: string | null; statementDate: string | null; retiredFrom: string | null };
+  statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean };
 
 export const GRADES = ['A', 'B', 'C'] as const;
 

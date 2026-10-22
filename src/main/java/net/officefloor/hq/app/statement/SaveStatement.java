@@ -22,10 +22,10 @@ public class SaveStatement {
         Person person = people.find(loaded.sheetId(), loaded.id());
         var today = sheets.today(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
-        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), today, rates);
+        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), person.held(), today, rates);
         int counted = 0;
         for (Claim c : theirs) {
-            if (c.status().counts()) {
+            if (Dues.counts(c, person.held())) {
                 counted++;
                 claims.state(c, true, Dues.figure(c, person.grade(), rates));
             } else if (c.stated()) {

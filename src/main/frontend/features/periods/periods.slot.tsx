@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { counts, useClaims } from '../claims/claims';
+import { live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
 import { periodOf, periodsKey, usePeriods } from './periods';
@@ -13,7 +13,7 @@ import type { Period } from './periods';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** One period with its due-total — fixed when it was closed, else the dues (as shown on their rows) of the
- *  claims that count whose date falls in it — whether it is closed, and the button that closes it. */
+ *  claims that count (see live) whose date falls in it — whether it is closed, and the button that closes it. */
 function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user: string; period: Period; dueTotal: string }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
@@ -64,8 +64,8 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId).data ?? [];
-  const claims = useClaims(sheetId).data ?? [];
   const people = usePeople(sheetId).data ?? [];
+  const claims = live(useClaims(sheetId).data ?? [], people);
   const rates = useRates(sheetId).data ?? [];
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
@@ -114,7 +114,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const dueTotal = (period: Period) =>
     sumDue(
       claims
-        .filter((c) => counts(c) && periodOf([period], c.date))
+        .filter((c) => periodOf([period], c.date))
         .map((c) => {
           const grade = people.find((p) => p.id === c.personId)?.grade ?? '';
           return claimDue(c, rateOn(rates, grade, c.date));

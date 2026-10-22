@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Close the named period, fixing its due-total as it is now: the figures (as shown on their rows) of the claims
- *  that count whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
+ *  that count (an OPEN one of a held person does not) whose date falls in it, skipping n/a. Refused when there is no such period, or it is already
  *  closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
@@ -32,10 +32,10 @@ public class ClosePeriod {
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
-            if (!c.status().counts() || !period.contains(c.date())) {
+            Person person = byId.get(c.personId());
+            if (!Dues.counts(c, person != null && person.held()) || !period.contains(c.date())) {
                 continue;
             }
-            Person person = byId.get(c.personId());
             BigDecimal figure = Dues.figure(c, person != null ? person.grade() : "", rates);
             if (figure != null) {
                 total = total.add(figure);

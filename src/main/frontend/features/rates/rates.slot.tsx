@@ -5,7 +5,7 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { useClaims } from '../claims/claims';
+import { live, useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
@@ -132,14 +132,14 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; pe
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
-  const due = personDue(claims, (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today));
+  const due = personDue(live(claims, [person]), (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today));
   return <td data-testid="person-due-total">{due}</td>;
 }
 
 /** The sheet's due-total: every person's due-total added up, skipping n/a. */
 function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
-  const claims = useClaims(sheetId).data ?? [];
+  const claims = live(useClaims(sheetId).data ?? [], people);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const dues = people.map((p) =>

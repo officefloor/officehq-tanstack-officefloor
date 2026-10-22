@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.rate.RateRepository;
 
 /** Claim figures and due-totals, as the screen shows them. */
@@ -27,10 +28,17 @@ public final class Dues {
                 .orElse(null);
     }
 
+    /** Whether a claim counts toward its person's figures and every live total: an OPEN or SETTLED one, except an
+     *  OPEN one while its person is on hold. */
+    public static boolean counts(Claim claim, boolean held) {
+        return claim.status().counts() && !(held && claim.status() == ClaimStatus.OPEN);
+    }
+
     /** A person's due-total: the figures of their claims that count added up, skipping n/a; null (n/a) when
      *  their grade has no rate today, unless a claim that counts keeps a figure (settled or stated). */
-    public static BigDecimal total(String sheetId, List<Claim> claims, String grade, LocalDate today, RateRepository rates) {
-        List<Claim> counted = claims.stream().filter(c -> c.status().counts()).toList();
+    public static BigDecimal total(String sheetId, List<Claim> claims, String grade, boolean held, LocalDate today,
+            RateRepository rates) {
+        List<Claim> counted = claims.stream().filter(c -> counts(c, held)).toList();
         boolean kept = counted.stream().anyMatch(c -> c.settledDue() != null || c.statedDue() != null);
         if (!kept && rates.on(sheetId, grade, today).isEmpty()) {
             return null;
