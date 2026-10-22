@@ -1,0 +1,135 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 2787e4d..296bf5b 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -185,10 +185,12 @@ const ACTIONS = [
+   { action: 'reject', label: 'Reject' },
+   { action: 'void', label: 'Void' },
+   { action: 'resettle', label: 'Re-settle' },
++  { action: 'delete', label: 'Delete' },
++  { action: 'restore', label: 'Restore' },
+ ] as const;
+ 
+ /** One claim with its status, its due-by and whether it is overdue, who opened it and the buttons that change it
+- *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure). A change the status does not
++ *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure; a DRAFT is deleted, and restored to a DRAFT on the sheet-today it was deleted). A change the status does not
+  *  allow, a settle (or approve) by the user who opened it or last edited it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
+  *  so is editing a claim that is no longer a DRAFT, or one whose editor another user holds open (opening the editor locks
+  *  the claim until it is saved or cancelled, or the sheet's today changes), or one dated in a closed period (the server refuses those too; it refuses saving
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index ea1a826..f8a45f0 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -5,10 +5,12 @@ import { heldOn, retiredOn } from '../people/people';
+ import type { Person } from '../people/people';
+ 
+ /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
+- *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, and a steward may void a SETTLED one within 7 days of its settlement. */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++ *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, and a steward may void a SETTLED one within 7 days of its settlement; a DRAFT may be DELETED (it counts nowhere,
++ *  not even in the status counts) and restored to a DRAFT on the sheet-today it was deleted. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+-/** Every claim status, in life order: the statuses claims are counted by, each shown even when no claim has it. */
++/** Every claim status claims are counted by, in life order, each shown even when no claim has it (not DELETED: a
++ *  deleted claim counts nowhere). */
+ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+ 
+ /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 7c52818..a7696e3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -3,9 +3,10 @@ package net.officefloor.hq.app.claim;
+ /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle of a claim due above the clerk
+  *  limit makes it PENDING instead, until a steward approves it (SETTLED) or rejects it (OPEN again); a DRAFT, OPEN
+  *  or PENDING claim may be VOID, and a steward may void a SETTLED one within 7 days of its settlement (checked in
++ *  ClaimStatusChange). A DRAFT claim may be DELETED, and restored to a DRAFT on the same sheet-today (checked in
+  *  ClaimStatusChange). Only OPEN, PENDING and SETTLED claims count toward the totals. */
+ public enum ClaimStatus {
+-    DRAFT, OPEN, PENDING, SETTLED, VOID;
++    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+ 
+     /** Whether a claim with this status counts toward the totals (and is bound by a statement). */
+     public boolean counts() {
+@@ -18,14 +19,16 @@ public enum ClaimStatus {
+         return this == OPEN || this == PENDING;
+     }
+ 
+-    /** Whether a claim with this status may move to the given one by opening, settling or voiding it (approving
++    /** Whether a claim with this status may move to the given one by opening, settling, voiding, deleting or
++     *  restoring it (approving
+      *  and rejecting a PENDING claim are checked on their own). */
+     public boolean canBecome(ClaimStatus to) {
+         return switch (to) {
+             case OPEN -> this == DRAFT;
+             case SETTLED, PENDING -> this == OPEN;
+             case VOID -> this == DRAFT || this == OPEN || this == PENDING;
+-            case DRAFT -> false;
++            case DELETED -> this == DRAFT;
++            case DRAFT -> this == DELETED;
+         };
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index e3ee331..6451853 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -92,6 +92,16 @@ final class ClaimStatusChange {
+                 throw new ClaimStatusNotAllowedException("A SETTLED claim can only be voided within "
+                         + VOID_SETTLED_DAYS + " days of its settlement.");
+             }
++        } else if (input.action().equals("restore")) {
++            if (loaded.status() != ClaimStatus.DELETED) {
++                throw new ClaimStatusNotAllowedException("Only a DELETED claim can be restored; this one is "
++                        + loaded.status() + ".");
++            }
++            LocalDate deletedOn = log.lastOn(loaded.sheetId(), loaded.id(), ClaimStatus.DELETED);
++            LocalDate today = sheets.today(loaded.sheetId());
++            if (deletedOn == null || !deletedOn.equals(today)) {
++                throw new ClaimStatusNotAllowedException("A DELETED claim can only be restored on the day it was deleted.");
++            }
+         } else if (!loaded.status().canBecome(to)) {
+             throw new ClaimStatusNotAllowedException(loaded.status(), to);
+         }
+@@ -142,6 +152,8 @@ final class ClaimStatusChange {
+             case "reject" -> "CLAIM_REJECTED";
+             case "resettle" -> "CLAIM_RESETTLED";
+             case "void" -> "CLAIM_VOIDED";
++            case "delete" -> "CLAIM_DELETED";
++            case "restore" -> "CLAIM_RESTORED";
+             default -> throw new IllegalStateException("Unknown claim action: " + input.action() + ".");
+         };
+         boolean resettled = input.action().equals("resettle");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index f55cecf..b3de55c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Bind the body and refuse it before anything is read: a signed-in user, a known action, and a reason for a
+- *  reject (a resettle freezes a SETTLED claim again). A void's reason, chosen from the sheet's list, is kept
++ *  reject (a resettle freezes a SETTLED claim again; a delete makes a DRAFT DELETED, a restore a DELETED one a DRAFT again). A void's reason, chosen from the sheet's list, is kept
+  *  (blank: none) and checked once the claim is loaded. */
+ public class ValidateClaimStatus {
+     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatusInput> body)
+@@ -17,6 +17,8 @@ public class ValidateClaimStatus {
+             case "open", "reject" -> ClaimStatus.OPEN;
+             case "settle", "approve", "resettle" -> ClaimStatus.SETTLED;
+             case "void" -> ClaimStatus.VOID;
++            case "delete" -> ClaimStatus.DELETED;
++            case "restore" -> ClaimStatus.DRAFT;
+             default -> throw new InvalidClaimException("Unknown claim action: " + action + ".");
+         };
+         String reason = null;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+index 2c93356..dae898d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+@@ -1,4 +1,4 @@
+-# Change a claim's status (open, settle, approve, reject, void or resettle). A clerk's settle above the clerk limit leaves it PENDING for a steward to approve or reject. A steward's resettle freezes a SETTLED claim again at today's figure; a steward may void a SETTLED claim within 7 days of its settlement, its frozen figure leaving every total. A refused change (not allowed from the claim's status or by this user, unknown claim, a claim dated in a closed period, a void without a reason from the sheet's list while it has any) writes nothing, not even an audit line.
++# Change a claim's status (open, settle, approve, reject, void, resettle, delete or restore). A DRAFT claim is deleted (DELETED, counted nowhere) and restored to a DRAFT only on the sheet-today it was deleted. A clerk's settle above the clerk limit leaves it PENDING for a steward to approve or reject. A steward's resettle freezes a SETTLED claim again at today's figure; a steward may void a SETTLED claim within 7 days of its settlement, its frozen figure leaving every total. A refused change (not allowed from the claim's status or by this user, unknown claim, a claim dated in a closed period, a void without a reason from the sheet's list while it has any) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimStatus
+   next: load
