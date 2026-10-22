@@ -1,0 +1,167 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 261310d..0204152 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -8,6 +8,9 @@ import type { Person } from '../people/people';
+  *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID. */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ 
++/** Every claim status, in life order: the statuses claims are counted by, each shown even when no claim has it. */
++export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
+ /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
+  *  its number (sheet-wide digits, or <period name>-<n> / X-<n> when numbered within its period; null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled
+  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
+diff --git a/src/main/frontend/features/claims/overdue.slot.tsx b/src/main/frontend/features/claims/overdue.slot.tsx
+index fdd26d2..ee06039 100644
+--- a/src/main/frontend/features/claims/overdue.slot.tsx
++++ b/src/main/frontend/features/claims/overdue.slot.tsx
+@@ -1,21 +1,12 @@
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheet';
+-import { gradeOn, usePeople } from '../people/people';
++import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+-import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
+-import type { Late, Rate } from '../rates/rates';
++import { overdueDues, sumDue, useRates } from '../rates/rates';
+ import { useFloor, useLate } from '../settings/settings';
+-import { live, overdue, useClaims } from './claims';
++import { useClaims } from './claims';
+ import type { Claim } from './claims';
+ 
+-/** The overdue claims that count among these, with the due of each (as shown on its row). */
+-function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string) {
+-  const byId = new Map(people.map((p) => [p.id, p]));
+-  return live(claims, people)
+-    .filter((c) => overdue(c, late.today))
+-    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
+-}
+-
+ function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
+   const rates = useRates(sheetId).data ?? [];
+   const late = useLate(sheetId);
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+new file mode 100644
+index 0000000..beb3c2b
+--- /dev/null
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -0,0 +1,39 @@
++import { SheetBody } from '../../slots/defs/sheet';
++import { STATUSES, useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { overdueDues, sheetDueTotal, sumDue, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++
++/** The sheet's header counters, shown above everything else: its people (retired ones included), its claims
++ *  per status (as the summary counts them) and its due-total and overdue-total (as the rollup shows them). */
++function Header({ sheetId }: { sheetId: string; user: string }) {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  return (
++    <header data-testid="header">
++      <span>
++        People <strong data-testid="header-people-count">{people.length}</strong>
++      </span>
++      {STATUSES.map((s) => (
++        <span key={s}>
++          {' '}
++          {s} <strong data-testid={`header-claims-${s}-count`}>{claims.filter((c) => c.status === s).length}</strong>
++        </span>
++      ))}{' '}
++      <span>
++        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late)}</strong>
++      </span>{' '}
++      <span>
++        Overdue total <strong data-testid="header-overdue-total">{sumDue(overdueDues(claims, people, rates, late, floor))}</strong>
++      </span>
++    </header>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -1, Component: Header });
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index b998870..f4ece6a 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -10,7 +10,7 @@ import { GRADES, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useFloor, useLate } from '../settings/settings';
+-import { personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
++import { personDueTotal, rateOn, ratesKey, sheetDueTotal, useRates } from './rates';
+ import type { Rate } from './rates';
+ 
+ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
+@@ -146,10 +146,9 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const dues = people.map((p) => personDueTotal(p, claims, rates, today, floor, late));
+   return (
+     <p>
+-      Due total <strong data-testid="rollup-due-total">{sumDue(dues)}</strong>
++      Due total <strong data-testid="rollup-due-total">{sheetDueTotal(people, claims, rates, today, floor, late)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 8fececc..791adae 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -84,6 +84,20 @@ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], t
+     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
+ }
+ 
++/** The sheet's due-total: every person's due-total added up, skipping n/a. */
++export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string,
++    late: Late): string {
++  return sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late)));
++}
++
++/** The overdue claims that count among these, with the due of each (as shown on its row). */
++export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string): string[] {
++  const byId = new Map(people.map((p) => [p.id, p]));
++  return live(claims, people)
++    .filter((c) => overdue(c, late.today))
++    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
++}
++
+ /** What the late charge follows: the sheet's late percent (two decimals) and its today; and
+  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
+  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index de40bbf..62fa4fe 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,14 +1,11 @@
+ import { SheetBody } from '../../slots/defs/sheet';
+-import { useClaims } from '../claims/claims';
++import { STATUSES, useClaims } from '../claims/claims';
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+ import { periodDueTotal, usePeriods } from '../periods/periods';
+ import { personDueTotal, sumDue, useRates } from '../rates/rates';
+ import { useFloor, useLate } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ 
+-/** The statuses the summary counts claims by, each shown even when no claim has it. */
+-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+-
+ /** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
+  *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
+  *  due-total, and per status how many of the sheet's claims have it. */
+@@ -59,7 +56,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
+             <tr key={s} data-testid={`summary-status-${s}`}>
+               <th>{s}</th>
+               <td>
+-                Claims <span data-testid={`summary-status-${s}-count`}>{claims.filter((c) => (c.status as string) === s).length}</span>
++                Claims <span data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</span>
+               </td>
+             </tr>
+           ))}
