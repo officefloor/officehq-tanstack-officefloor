@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** Claims by sheet, newest first. */
+/** Claims by sheet, newest first (by when each came to its person: added, or moved to them). */
 @Repository
 public class ClaimRepository {
 
@@ -41,7 +41,7 @@ public class ClaimRepository {
     }
 
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", row(sheetId), sheetId);
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY listed DESC", row(sheetId), sheetId);
     }
 
     /** The claim on this sheet, or null when absent. */
@@ -80,7 +80,7 @@ public class ClaimRepository {
 
     /** The person's claims, newest first. */
     public List<Claim> listForPerson(String sheetId, long personId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", row(sheetId), sheetId,
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC", row(sheetId), sheetId,
                 personId);
     }
 
@@ -103,11 +103,11 @@ public class ClaimRepository {
         kept(claim.sheetId(), claim.id());
     }
 
-    /** Move the claim to another person, unbinding it from any statement: false when it no longer has the person
+    /** Move the claim to another person, the newest in their list, unbinding it from any statement: false when it no longer has the person
      *  and status it was loaded with (another user changed it first), and nothing is written. */
     public boolean reassign(Claim claim, long personId) {
         return kept(claim, jdbc.update(
-                "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
+                "UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND person_id = ? AND status = ?",
                 personId, claim.sheetId(), claim.id(), claim.personId(), claim.status().name()) == 1);
     }
 
