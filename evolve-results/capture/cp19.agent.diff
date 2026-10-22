@@ -1,0 +1,285 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 8e27528..80cc8eb 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -7,6 +7,7 @@ import { PersonRow } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
+ import type { Person } from './people';
++import { claimsKey } from '../claims/claims';
+ 
+ /** One form that adds a person, or edits the one whose editor is open (filled with their values). The
+  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
+@@ -109,6 +110,87 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
+   );
+ }
+ 
++/** The quick-add bar: a name and an amount make a DRAFT claim dated the sheet's today with an empty note for
++ *  the person of that name, adding them first with grade A when the name is new to the sheet. A refusal adds
++ *  nothing and shows why on the bar. */
++function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++  const [name, setName] = useState('');
++  const [amount, setAmount] = useState('');
++  const [error, setError] = useState('');
++  const once = useSubmitOnce();
++
++  const add = useMutation({
++    mutationFn: (body: { user: string; name: string; amount: string }) =>
++      postJson(`/api/sheets/${encodeURIComponent(sheetId)}/quick-add`, body),
++    onSuccess: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      ]);
++      setName('');
++      setAmount('');
++    },
++    onError: (e) =>
++      setError(
++        e instanceof HttpError && e.body
++          ? e.body
++          : 'Could not quick-add: a name is required and the amount must be a number, 0.00 or more, with up to two decimals.',
++      ),
++    onSettled: once.done,
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    if (name.trim() === '') {
++      setError('A name is required.');
++      return;
++    }
++    if (!/^\d{1,12}(\.\d{1,2})?$/.test(amount.trim())) {
++      setError('The amount must be a number, 0.00 or more, with up to two decimals.');
++      return;
++    }
++    if (!once.start()) return;
++    add.mutate({ user, name, amount });
++  };
++
++  return (
++    <form data-testid="quick-add" onSubmit={submit}>
++      <label>
++        Name{' '}
++        <input
++          data-testid="quick-name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <label>
++        Amount{' '}
++        <input
++          data-testid="quick-amount"
++          value={amount}
++          onChange={(e) => {
++            setAmount(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="quick-submit" disabled={add.isPending}>
++        Quick add
++      </button>
++      {error && (
++        <p data-testid="quick-error" role="alert">
++          {error}
++        </p>
++      )}
++    </form>
++  );
++}
++
+ /** The sheet's people in the order they were added, each with their name and grade. */
+ function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
+@@ -120,6 +202,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+       <h2>People</h2>
+       {/* Keyed by who is being edited, so opening an editor fills the form with their values. */}
+       <PersonForm key={editing ? editing.id : 'new'} sheetId={sheetId} user={user} editing={editing} />
++      <QuickAddBar sheetId={sheetId} user={user} />
+       <table>
+         <tbody>
+           {(people.data ?? []).map((p) => (
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 9a9ee3d..fb4f1c3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -32,6 +32,12 @@ public class PersonRepository {
+                 .stream().findFirst().orElse(null);
+     }
+ 
++    /** The person on this sheet with this name (compared as nameInUse compares), or null when absent. */
++    public Person findByName(String sheetId, String name) {
++        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW, sheetId, name)
++                .stream().findFirst().orElse(null);
++    }
++
+     /** Whether another person on this sheet (other than exceptId, when given) has this name,
+      *  compared without regard to case and ignoring surrounding spaces. */
+     public boolean nameInUse(String sheetId, String name, Long exceptId) {
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java
+new file mode 100644
+index 0000000..b70bdd8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddQuickAddPerson.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.person.AuditPersonAdded;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.rollup.Rollups;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The person on the sheet with the name (compared as the person form compares names); when there is none,
++ *  add them with grade A, recording the add and how the figures moved just as the person form does. */
++public class FindOrAddQuickAddPerson {
++    public void find(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, PersonRepository repository,
++            Rollups rollups, Audit audit, Out<Person> person) {
++        String id = sheetId.trim();
++        Person found = repository.findByName(id, request.name());
++        if (found == null) {
++            var before = rollups.take(id);
++            found = repository.insert(id, request.name(), request.grade());
++            new AuditPersonAdded().audit(request, found, audit);
++            rollups.record(id, request.user(), before);
++        }
++        person.set(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/QuickAddRequest.java b/src/main/java/net/officefloor/hq/app/quickadd/QuickAddRequest.java
+new file mode 100644
+index 0000000..5fdad28
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/QuickAddRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.quickadd;
++
++/** Body of a quick-add: who is making it, the person's name and the claim's amount as typed. */
++public record QuickAddRequest(String user, String name, String amount) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+new file mode 100644
+index 0000000..72e4557
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.quickadd;
++
++import net.officefloor.hq.app.period.ClosedPeriodException;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Refuse the quick-add when the sheet's today (the claim's date) is inside a closed period — before any
++ *  person is added, so a refused quick-add leaves nothing behind. */
++public class RefuseClosedQuickAdd {
++    public void refuse(@PathVariable("sheetId") String sheetId, SheetRepository sheets, PeriodRepository periods)
++            throws ClosedPeriodException {
++        String id = sheetId.trim();
++        periods.lockSheet(id);
++        Period closed = periods.closedOn(id, sheets.today(id));
++        if (closed != null) {
++            throw new ClosedPeriodException(closed);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+new file mode 100644
+index 0000000..963e5fa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/quickadd/ValidateQuickAdd.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.quickadd;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.claim.ClaimInput;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the body and refuse it before anything is read or written, by the rules of the person and claim
++ *  forms: a name is required (at most 200 characters); the amount is required, a number 0.00 or more with up
++ *  to two decimals. Publishes the person as a grade A add (used only when the name is new to the sheet) and
++ *  the claim with no date (the sheet's today) and an empty note. */
++public class ValidateQuickAdd {
++    public void validate(@RequestBody QuickAddRequest request, Out<PersonRequest> person, Out<ClaimInput> claim)
++            throws InvalidPersonException, InvalidClaimException {
++        if (request == null || request.user() == null || request.user().isBlank()) {
++            throw new InvalidPersonException("Sign in before changing people.");
++        }
++        String name = request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) {
++            throw new InvalidPersonException("A name is required.");
++        }
++        if (name.length() > 200) {
++            throw new InvalidPersonException("A name is at most 200 characters.");
++        }
++        String amount = request.amount() == null ? "" : request.amount().trim();
++        if (amount.isEmpty()) {
++            throw new InvalidClaimException("An amount is required.");
++        }
++        if (!amount.matches("\\d{1,12}(\\.\\d{1,2})?")) {
++            throw new InvalidClaimException("The amount must be a number, 0.00 or more, with up to two decimals.");
++        }
++        String user = request.user().trim();
++        person.set(new PersonRequest(user, name, "A", null));
++        claim.set(new ClaimInput(user, new BigDecimal(amount).setScale(2), null, ""));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+new file mode 100644
+index 0000000..b9f9b6a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -0,0 +1,37 @@
++# Quick-add a DRAFT claim for the named person, dated the sheet's today with an empty note; a name new to the
++# sheet adds the person first with grade A. One change: a refused quick-add (no name, bad amount, unknown sheet,
++# today in a closed period) adds no person and writes nothing, not even an audit line.
++validate:
++  class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: closed
++closed:
++  class: net.officefloor.hq.app.quickadd.RefuseClosedQuickAdd
++  govern: [ transaction ]
++  next: person
++person:
++  class: net.officefloor.hq.app.quickadd.FindOrAddQuickAddPerson
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveNewClaim
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAdded
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditClaimRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimCreated
++  govern: [ transaction ]
