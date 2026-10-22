@@ -13,6 +13,9 @@ public class SaveSettings {
         if (input.floor() != null) {
             repository.setFloor(sheetId.trim(), input.floor());
         }
+        if (input.terms() != null) {
+            repository.setTerms(sheetId.trim(), input.terms());
+        }
         settings.set(repository.of(sheetId.trim()));
     }
 }

@@ -4,24 +4,27 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { DEFAULT_FLOOR, settingsKey, useSettings, type Settings } from './settings';
+import { DEFAULT_FLOOR, DEFAULT_TERMS, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
+const DAYS = /^\d{1,4}$/;
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
-type Changes = { clerkLimit?: string; floor?: string };
+type Changes = { clerkLimit?: string; floor?: string; terms?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
- *  A claim's live due is at least the floor. */
+ *  A claim's live due is at least the floor; its due-by is its date plus the terms. */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
   const currentLimit = settings.data?.clerkLimit ?? '';
   const currentFloor = settings.data?.floor ?? DEFAULT_FLOOR;
+  const currentTerms = settings.data?.terms ?? DEFAULT_TERMS;
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
+  const [typedTerms, setTypedTerms] = useState<string | null>(null);
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
@@ -32,11 +35,12 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       queryClient.setQueryData(settingsKey(sheetId), saved);
       setTypedLimit(null);
       setTypedFloor(null);
+      setTypedTerms(null);
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body
         ? e.body
-        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals.'),
+        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals, the terms whole days.'),
     onSettled: once.done,
   });
 
@@ -60,6 +64,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.floor = floor;
     }
+    if (typedTerms !== null) {
+      const terms = typedTerms.trim();
+      if (!DAYS.test(terms)) {
+        setError('The terms must be a whole number of days, 0 or more.');
+        return;
+      }
+      changes.terms = terms;
+    }
     if (!once.start()) return;
     save.mutate(changes);
   };
@@ -75,7 +87,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       <h2>Settings</h2>
       <p>
         Clerk limit <strong data-testid="setting-clerk-limit-current">{currentLimit}</strong>{' '}
-        Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>
+        Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>{' '}
+        Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> days
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -95,6 +108,15 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             value={typedFloor ?? currentFloor}
             onInput={typed(setTypedFloor)}
             onChange={typed(setTypedFloor)}
+          />
+        </label>{' '}
+        <label>
+          Terms (days){' '}
+          <input
+            data-testid="setting-terms"
+            value={typedTerms ?? currentTerms}
+            onInput={typed(setTypedTerms)}
+            onChange={typed(setTypedTerms)}
           />
         </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

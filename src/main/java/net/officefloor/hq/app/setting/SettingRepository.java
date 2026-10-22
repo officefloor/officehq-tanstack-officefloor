@@ -11,6 +11,9 @@ public class SettingRepository {
     /** The floor of a sheet that has none stored yet. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
+    /** The terms of a sheet that has none stored yet. */
+    public static final int DEFAULT_TERMS = 14;
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -19,7 +22,7 @@ public class SettingRepository {
 
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
-        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId));
+        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -37,6 +40,17 @@ public class SettingRepository {
         BigDecimal floor = jdbc.query("SELECT due_floor FROM sheet WHERE id = ?",
                 rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
         return floor != null ? floor.setScale(2) : DEFAULT_FLOOR;
+    }
+
+    /** The sheet's terms in days: a claim's due-by is its date plus them. */
+    public int terms(String sheetId) {
+        Integer terms = jdbc.query("SELECT terms_days FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getInt(1) : null, sheetId);
+        return terms != null ? terms : DEFAULT_TERMS;
+    }
+
+    public void setTerms(String sheetId, int terms) {
+        jdbc.update("UPDATE sheet SET terms_days = ? WHERE id = ?", terms, sheetId);
     }
 
     public void setFloor(String sheetId, BigDecimal floor) {

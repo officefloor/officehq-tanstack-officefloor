@@ -14,5 +14,9 @@ public class AuditSettingChanged {
             audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
                     + " key=floor value=" + SettingsResponse.text(settings.floor()));
         }
+        if (input.terms() != null) {
+            audit.record("SETTING_CHANGED sheet=" + settings.sheetId() + " by=" + input.user()
+                    + " key=terms value=" + settings.terms());
+        }
     }
 }

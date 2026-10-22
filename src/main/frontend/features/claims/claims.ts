@@ -27,6 +27,18 @@ export function live(claims: Claim[], people: Person[]): Claim[] {
   return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId)));
 }
 
+/** A claim's due-by (yyyy-mm-dd): its date plus the terms in days. */
+export function dueBy(claim: Claim, terms: number): string {
+  const d = new Date(`${claim.date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + terms);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+export function overdue(claim: Claim, terms: number, today: string): boolean {
+  return claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+}
+
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
 /** Every claim on the sheet, newest first. */

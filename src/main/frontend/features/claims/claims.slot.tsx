@@ -5,11 +5,11 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
-import { useFloor } from '../settings/settings';
+import { useFloor, useTerms } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { claimsKey, live, sumAmounts, useClaims, useEditingClaim } from './claims';
+import { claimsKey, dueBy, live, overdue, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
@@ -89,15 +89,18 @@ const ACTIONS = [
   { action: 'void', label: 'Void' },
 ] as const;
 
-/** One claim with its status, who opened it and the buttons that change it. A change the status does not
+/** One claim with its status, its due-by and whether it is overdue, who opened it and the buttons that change it. A change the status does not
  *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error;
- *  so is editing a claim that is no longer a DRAFT (the server refuses that edit too). */
+ *  so is editing a claim that is no longer a DRAFT, or one dated in a closed period (the server refuses those
+ *  edits too). */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingClaim();
   const [error, setError] = useState('');
   const period = periodOf(usePeriods(sheetId).data ?? [], claim.date);
   const floor = useFloor(sheetId);
+  const terms = useTerms(sheetId);
+  const today = useSheetToday(sheetId);
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -118,6 +121,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-due">{claimDue(claim, rate, floor)}</span>{' '}
+      Due by <span data-testid="claim-due-by">{dueBy(claim, terms)}</span>{' '}
+      Overdue <span data-testid="claim-overdue">{overdue(claim, terms, today) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       <button
@@ -126,6 +131,10 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         onClick={() => {
           if (claim.status !== 'DRAFT') {
             setError(`A ${claim.status} claim cannot be edited; only a DRAFT can. Void it and add a new one.`);
+            return;
+          }
+          if (period?.closed) {
+            setError(`This claim is dated in the closed period ${period.name}; it cannot be edited.`);
             return;
           }
           setError('');
