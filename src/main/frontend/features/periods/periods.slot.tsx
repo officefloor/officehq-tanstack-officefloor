@@ -83,7 +83,76 @@ function PeriodRow({ sheetId, user, period, dueTotal }: { sheetId: string; user:
   );
 }
 
-/** The sheet's periods, each with its due-total, and the form that adds one. */
+/** The form that generates one yyyy-mm period per calendar month from the from-date's month to the to-date's month
+ *  (months already taken are left out), and how many it made. */
+function GeneratePeriods({ sheetId, user }: { sheetId: string; user: string }) {
+  const queryClient = useQueryClient();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [generated, setGenerated] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const once = useSubmitOnce();
+
+  const generate = useMutation({
+    mutationFn: (body: { from: string; to: string }) =>
+      postJson<{ generated: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate`, { user, ...body }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      setGenerated(result.generated);
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && e.body ? e.body : 'Could not generate periods.'),
+    onSettled: once.done,
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setGenerated(null);
+    if (!DATE.test(from.trim()) || !DATE.test(to.trim())) {
+      setError('The from and to dates must be dates, yyyy-mm-dd.');
+      return;
+    }
+    if (to.trim() < from.trim()) {
+      setError('The to-date must not be before the from-date.');
+      return;
+    }
+    if (!once.start()) return;
+    generate.mutate({ from: from.trim(), to: to.trim() });
+  };
+
+  const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    set(e.target.value);
+    setError('');
+    setGenerated(null);
+  };
+
+  return (
+    <form data-testid="period-generate-form" onSubmit={submit}>
+      <label>
+        From <input data-testid="period-generate-from" placeholder="yyyy-mm-dd" value={from} onChange={change(setFrom)} />
+      </label>{' '}
+      <label>
+        To <input data-testid="period-generate-to" placeholder="yyyy-mm-dd" value={to} onChange={change(setTo)} />
+      </label>{' '}
+      <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+        Generate monthly periods
+      </button>
+      {generated !== null && (
+        <span>
+          {' '}Generated <span data-testid="period-generated">{generated}</span>
+        </span>
+      )}
+      {error && (
+        <p data-testid="period-generate-error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/** The sheet's periods, each with its due-total, the form that adds one and the form that generates monthly ones. */
 function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId).data ?? [];
@@ -158,6 +227,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
           </p>
         )}
       </form>
+      <GeneratePeriods sheetId={sheetId} user={user} />
       <table>
         <tbody>
           {periods.map((p) => (
