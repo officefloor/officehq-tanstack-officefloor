@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  retired by the sheet's today (or the as-of date, when one is given) counts 0.00 toward the total; each member of a balanced pool
  *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot; a pool
  *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
- *  hold in force on that date cuts 0.00, their share spread over the members with a cut. */
+ *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
+ *  dates do not include that date is left out: no share in the total and no cut. */
 public class RespondWithPools {
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, PoolRepository repository,
@@ -52,9 +53,7 @@ public class RespondWithPools {
             List<PoolMember> named = repository.members(pool, end).stream()
                     .filter(m -> m.isPool() ? poolNames.containsKey(m.memberPoolId())
                             : names.containsKey(m.personId()))
-                    .map(m -> new PoolMember(m.poolId(), m.sheetId(), m.pool(), m.personId(),
-                            m.isPool() ? poolNames.get(m.memberPoolId()) : names.get(m.personId()), m.share(),
-                            m.by(), m.memberPoolId()))
+                    .map(m -> m.named(m.isPool() ? poolNames.get(m.memberPoolId()) : names.get(m.personId())))
                     .toList();
             members.put(pool.id(), named);
             named.stream().filter(PoolMember::isPool).forEach(m -> parents.put(m.memberPoolId(), pool));

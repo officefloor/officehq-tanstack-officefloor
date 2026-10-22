@@ -6,6 +6,7 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithPoolMember {
     public void respond(@Val PoolMember member, ObjectResponse<PoolResponse.Member> response) {
         response.send(new PoolResponse.Member(member.isPool() ? null : member.personId(), member.name(), member.share().toPlainString(),
-                false, "", member.memberPoolId()));
+                false, "", member.memberPoolId(), member.from() == null ? "" : member.from().toString(),
+                member.to() == null ? "" : member.to().toString(), false));
     }
 }

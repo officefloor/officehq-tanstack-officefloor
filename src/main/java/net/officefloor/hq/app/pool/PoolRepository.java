@@ -66,19 +66,19 @@ public class PoolRepository {
     }
 
     public PoolMember addMember(Pool pool, Pool member, PoolMemberInput input) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, added_by, added_on) "
-                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", pool.sheetId(), pool.id(),
-                member.id(), input.share(), input.user(), pool.sheetId());
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, added_by, added_on, from_date, "
+                + "to_date) VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)", pool.sheetId(),
+                pool.id(), member.id(), input.share(), input.user(), pool.sheetId(), input.from(), input.to());
         return new PoolMember(pool.id(), pool.sheetId(), pool.name(), 0, member.name(), input.share(), input.user(),
-                member.id());
+                member.id(), input.from(), input.to());
     }
 
     public PoolMember addMember(Pool pool, Person person, PoolMemberInput input) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, added_by, added_on) "
-                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", pool.sheetId(), pool.id(),
-                person.id(), input.share(), input.user(), pool.sheetId());
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, added_by, added_on, from_date, "
+                + "to_date) VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)", pool.sheetId(),
+                pool.id(), person.id(), input.share(), input.user(), pool.sheetId(), input.from(), input.to());
         return new PoolMember(pool.id(), pool.sheetId(), pool.name(), person.id(), person.name(), input.share(),
-                input.user());
+                input.user(), null, input.from(), input.to());
     }
 
     /** The pool's members in the order they were added (those added by the end of the day, when one is given),
@@ -86,7 +86,8 @@ public class PoolRepository {
     public List<PoolMember> members(Pool pool, LocalDate end) {
         RowMapper<PoolMember> row = (rs, i) -> new PoolMember(pool.id(), pool.sheetId(), pool.name(),
                 rs.getLong("person_id"), null, rs.getBigDecimal("share").setScale(2), rs.getString("added_by"),
-                rs.getObject("member_pool_id", Long.class));
+                rs.getObject("member_pool_id", Long.class), rs.getObject("from_date", LocalDate.class),
+                rs.getObject("to_date", LocalDate.class));
         return end == null
                 ? jdbc.query("SELECT * FROM pool_member WHERE pool_id = ? ORDER BY id", row, pool.id())
                 : jdbc.query("SELECT * FROM pool_member WHERE pool_id = ? AND (added_on IS NULL OR added_on <= ?) "

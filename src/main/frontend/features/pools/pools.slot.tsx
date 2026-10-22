@@ -28,18 +28,29 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
   // the chosen member: a person's id, or pool:<id>
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
+  /** Refuse the add: show why, and drop the dates typed for it (a refused membership's dates are not kept). */
+  const refuse = (message: string) => {
+    setError(message);
+    setFrom('');
+    setTo('');
+  };
+
   const add = useMutation({
-    mutationFn: (body: { personId?: number; memberPoolId?: number; share: string }) =>
+    mutationFn: (body: { personId?: number; memberPoolId?: number; share: string; from?: string; to?: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/pools/${pool.id}/members`, { user, ...body }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setPersonId('');
       setShare('');
+      setFrom('');
+      setTo('');
     },
-    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not add the pool member.'),
+    onError: (e) => refuse(e instanceof HttpError && e.body ? e.body : 'Could not add the pool member.'),
     onSettled: once.done,
   });
 
@@ -47,21 +58,28 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
     e.preventDefault();
     setError('');
     if (personId === '') {
-      setError('Choose the person or pool to add.');
+      refuse('Choose the person or pool to add.');
       return;
     }
     const s = share.trim();
     if (!validShare(s)) {
-      setError('A share is more than 0.00 and at most 100.00, with at most two decimals.');
+      refuse('A share is more than 0.00 and at most 100.00, with at most two decimals.');
+      return;
+    }
+    if (from !== '' && to !== '' && to < from) {
+      refuse('The to-date cannot be before the from-date.');
       return;
     }
     const memberPoolId = personId.startsWith('pool:') ? Number(personId.slice(5)) : null;
     if (memberPoolId === null && pool.members.some((m) => m.poolId === null && String(m.personId) === personId)) {
-      setError('That person is already in the pool.');
+      refuse('That person is already in the pool.');
       return;
     }
     if (!once.start()) return;
-    add.mutate(memberPoolId !== null ? { memberPoolId, share: s } : { personId: Number(personId), share: s });
+    const dates = { ...(from !== '' && { from }), ...(to !== '' && { to }) };
+    add.mutate(
+      memberPoolId !== null ? { memberPoolId, share: s, ...dates } : { personId: Number(personId), share: s, ...dates },
+    );
   };
 
   return (
@@ -72,7 +90,9 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
         {pool.members.map((m) => (
           <li key={memberKey(m)} data-testid={`pool-member-${pool.name}-${memberKey(m)}`}>
             {m.poolId !== null ? `pool ${m.name}` : m.name}: <span data-testid="pool-share">{m.share}</span>, cut <span data-testid="pool-cut">{m.cut}</span>
+            {(m.from || m.to) && ` (${m.from || '…'} to ${m.to || '…'})`}
             {m.retired && ' (retired)'}
+            {m.outside && ' (not a member today)'}
           </li>
         ))}
       </ul>
@@ -103,6 +123,26 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
           value={share}
           onChange={(e) => {
             setShare(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-from"
+          aria-label="Member from"
+          value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-to"
+          aria-label="Member to"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
             setError('');
           }}
         />{' '}
