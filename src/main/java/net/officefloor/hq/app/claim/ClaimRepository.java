@@ -106,8 +106,9 @@ public class ClaimRepository {
                 claim.sheetId(), claim.id(), claim.status().name()) == 1;
     }
 
+    /** Store an edit of the claim, releasing its editor lock. */
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet_id = ? AND id = ?",
                 claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.sheetId(), claim.id());
     }
 
@@ -163,5 +164,28 @@ public class ClaimRepository {
         int n = jdbc.queryForObject("SELECT last_number FROM period_number WHERE sheet_id = ? AND seq_key = ?",
                 Integer.class, sheetId, key);
         return prefix + "-" + n;
+    }
+
+    /** Lock the claim's editor for the user: false when another user holds it, and nothing is written. */
+    public boolean lock(Claim claim, String user) {
+        return jdbc.update("UPDATE claim SET locked_by = ? WHERE sheet_id = ? AND id = ? AND (locked_by IS NULL OR locked_by = ?)",
+                user, claim.sheetId(), claim.id(), user) == 1;
+    }
+
+    /** Release the user's lock on the claim's editor; another user's lock is left as it is. */
+    public void unlock(Claim claim, String user) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND id = ? AND locked_by = ?",
+                claim.sheetId(), claim.id(), user);
+    }
+
+    /** Who holds the claim's editor locked, or null when no one does. */
+    public String lockedBy(Claim claim) {
+        return jdbc.query("SELECT locked_by FROM claim WHERE sheet_id = ? AND id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, claim.sheetId(), claim.id());
+    }
+
+    /** Release every editor lock on the sheet's claims. */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
     }
 }

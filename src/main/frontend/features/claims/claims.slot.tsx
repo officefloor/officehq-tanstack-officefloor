@@ -13,8 +13,15 @@ import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, dueBy, live, overdue, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
+import { setLockRefused, useLockRefused } from './lock';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+
+/** Release the user's lock on a claim's editor as the editor is cancelled (or moves to another claim). Nothing is
+ *  shown when it fails: the lock is the server's, and it goes anyway when the sheet's today changes. */
+function releaseClaim(sheetId: string, user: string, claimId: string) {
+  void putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claimId}/unlock`, { user }).catch(() => undefined);
+}
 const NUMBER = /^(\d+|.+-\d+)$/;
 
 /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
@@ -62,6 +69,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    if (editing) setLockRefused(editing.id, '');
     if (!AMOUNT.test(amount.trim())) {
       setError('The amount must be a number with up to two decimals.');
       return;
@@ -82,6 +90,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   const change = (set: (v: string) => void) => (e: { target: { value: string } }) => {
     set(e.target.value);
     setError('');
+    if (editing) setLockRefused(editing.id, '');
   };
 
   return (
@@ -94,7 +103,14 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
         {editing ? 'Save claim' : 'Add claim'}
       </button>
       {editing && (
-        <button type="button" data-testid="claim-form-cancel" onClick={() => setEditing(undefined)}>
+        <button
+          type="button"
+          data-testid="claim-form-cancel"
+          onClick={() => {
+            releaseClaim(sheetId, user, String(editing.id));
+            setEditing(undefined);
+          }}
+        >
           Cancel
         </button>
       )}
@@ -119,13 +135,19 @@ const ACTIONS = [
 /** One claim with its status, its due-by and whether it is overdue, who opened it and the buttons that change it
  *  (a steward approves or rejects, with a reason, a PENDING claim, and re-settles a SETTLED one at today's figure). A change the status does not
  *  allow, a settle (or approve) by the user who opened it, or an approve or reject by a clerk, is refused by the server and shown as the claim's error;
- *  so is editing a claim that is no longer a DRAFT, or one dated in a closed period (the server refuses those
+ *  so is editing a claim that is no longer a DRAFT, or one whose editor another user holds open (opening the editor locks
+ *  the claim until it is saved or cancelled, or the sheet's today changes), or one dated in a closed period (the server refuses those
  *  edits too). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
  *  retirement, and a claim or new date inside a closed period. */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
-  const [, setEditing] = useEditingClaim();
+  const [editingId, setEditing] = useEditingClaim();
   const [error, setError] = useState('');
+  const refused = useLockRefused(claim.id);
+  const clearError = () => {
+    setError('');
+    setLockRefused(claim.id, '');
+  };
   const [reason, setReason] = useState('');
   const period = periodOf(usePeriods(sheetId).data ?? [], claim.date);
   const floor = useFloor(sheetId);
@@ -196,6 +218,16 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not re-date this ${claim.status} claim.`),
   });
 
+  // Opening the editor locks the claim for other users until it is saved or cancelled (or the sheet's today
+  // changes); the editor stays open on a refusal, whose error shows on the claim, and the server refuses its save.
+  const lock = useMutation({
+    mutationFn: () =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/lock`, { user }),
+    onError: (e) =>
+      setLockRefused(claim.id, e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
+        ? e.body : `Could not open this ${claim.status} claim for editing.`),
+  });
+
   const split = useMutation({
     mutationFn: (amount: string) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/split`, { user, amount }),
@@ -249,18 +281,33 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
             setError(`This claim is dated in the closed period ${period.name}; it cannot be edited.`);
             return;
           }
-          setError('');
+          clearError();
+          if (editingId !== '' && editingId !== String(claim.id)) releaseClaim(sheetId, user, editingId);
           setEditing(String(claim.id));
+          lock.mutate();
         }}
       >
         Edit
-      </button>
+      </button>{' '}
+      {editingId === String(claim.id) && (
+        <button
+          type="button"
+          data-testid="claim-cancel"
+          onClick={() => {
+            clearError();
+            releaseClaim(sheetId, user, String(claim.id));
+            setEditing(undefined);
+          }}
+        >
+          Cancel edit
+        </button>
+      )}
       <input
         data-testid="claim-reject-reason"
         placeholder="Reject reason"
         value={reason}
         onChange={(e) => {
-          setError('');
+          clearError();
           setReason(e.target.value);
         }}
       />{' '}
@@ -271,7 +318,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
           data-testid={`claim-${action}`}
           disabled={change.isPending}
           onClick={() => {
-            setError('');
+            clearError();
             change.mutate(action);
           }}
         >
@@ -282,7 +329,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         data-testid="claim-reassign-to"
         value={moveTo}
         onChange={(e) => {
-          setError('');
+          clearError();
           setMoveTo(e.target.value);
         }}
       >
@@ -298,7 +345,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         data-testid="claim-reassign"
         disabled={reassign.isPending}
         onClick={() => {
-          setError('');
+          clearError();
           if (moveTo === '') {
             setError('Choose the person to move this claim to.');
             return;
@@ -313,7 +360,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         data-testid="claim-proof"
         disabled={proof.isPending}
         onClick={() => {
-          setError('');
+          clearError();
           proof.mutate();
         }}
       >
@@ -324,7 +371,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         placeholder="Defer until yyyy-mm-dd"
         value={deferUntil}
         onChange={(e) => {
-          setError('');
+          clearError();
           setDeferUntil(e.target.value);
         }}
       />{' '}
@@ -333,7 +380,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         data-testid="claim-defer"
         disabled={defer.isPending}
         onClick={() => {
-          setError('');
+          clearError();
           if (!/^\d{4}-\d{2}-\d{2}$/.test(deferUntil.trim())) {
             setError('Give the date to defer this claim until as yyyy-mm-dd.');
             return;
@@ -348,7 +395,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         placeholder="Re-date to yyyy-mm-dd"
         value={redateTo}
         onChange={(e) => {
-          setError('');
+          clearError();
           setRedateTo(e.target.value);
         }}
       />{' '}
@@ -357,7 +404,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         data-testid="claim-redate"
         disabled={redate.isPending}
         onClick={() => {
-          setError('');
+          clearError();
           if (!/^\d{4}-\d{2}-\d{2}$/.test(redateTo.trim())) {
             setError('Give the new date of this claim as yyyy-mm-dd.');
             return;
@@ -372,7 +419,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         placeholder="Split off amount"
         value={splitAmount}
         onChange={(e) => {
-          setError('');
+          clearError();
           setSplitAmount(e.target.value);
         }}
       />{' '}
@@ -381,7 +428,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         data-testid="claim-split"
         disabled={split.isPending}
         onClick={() => {
-          setError('');
+          clearError();
           if (!/^\d+(\.\d{1,2})?$/.test(splitAmount.trim())) {
             setError('The amount to split off must be a number with up to two decimals.');
             return;
@@ -391,9 +438,9 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       >
         Split
       </button>
-      {error && (
+      {(error || refused) && (
         <p data-testid="claim-error" role="alert">
-          {error}
+          {error || refused}
         </p>
       )}
     </li>
