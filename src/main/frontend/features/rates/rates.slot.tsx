@@ -10,7 +10,7 @@ import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../settings/settings';
-import { personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
+import { personDueTotal, rateOn, ratesKey, sheetDueTotal, useRates } from './rates';
 import type { Rate } from './rates';
 
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
@@ -146,10 +146,9 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const dues = people.map((p) => personDueTotal(p, claims, rates, today, floor, late));
   return (
     <p>
-      Due total <strong data-testid="rollup-due-total">{sumDue(dues)}</strong>
+      Due total <strong data-testid="rollup-due-total">{sheetDueTotal(people, claims, rates, today, floor, late)}</strong>
     </p>
   );
 }

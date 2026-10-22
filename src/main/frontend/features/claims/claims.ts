@@ -8,6 +8,9 @@ import type { Person } from '../people/people';
  *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
+/** Every claim status, in life order: the statuses claims are counted by, each shown even when no claim has it. */
+export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+
 /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
  *  its number (sheet-wide digits, or <period name>-<n> / X-<n> when numbered within its period; null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled
  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it

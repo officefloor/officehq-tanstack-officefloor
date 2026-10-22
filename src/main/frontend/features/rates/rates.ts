@@ -84,6 +84,20 @@ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], t
     (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
+/** The sheet's due-total: every person's due-total added up, skipping n/a. */
+export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string,
+    late: Late): string {
+  return sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late)));
+}
+
+/** The overdue claims that count among these, with the due of each (as shown on its row). */
+export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string): string[] {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return live(claims, people)
+    .filter((c) => overdue(c, late.today))
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
+}
+
 /** What the late charge follows: the sheet's late percent (two decimals) and its today; and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
  *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */

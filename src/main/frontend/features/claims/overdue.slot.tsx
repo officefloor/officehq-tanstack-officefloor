@@ -1,20 +1,11 @@
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { gradeOn, usePeople } from '../people/people';
+import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
-import type { Late, Rate } from '../rates/rates';
+import { overdueDues, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
-import { live, overdue, useClaims } from './claims';
+import { useClaims } from './claims';
 import type { Claim } from './claims';
-
-/** The overdue claims that count among these, with the due of each (as shown on its row). */
-function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string) {
-  const byId = new Map(people.map((p) => [p.id, p]));
-  return live(claims, people)
-    .filter((c) => overdue(c, late.today))
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
-}
 
 function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
   const rates = useRates(sheetId).data ?? [];

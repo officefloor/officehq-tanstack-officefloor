@@ -1,13 +1,10 @@
 import { SheetBody } from '../../slots/defs/sheet';
-import { useClaims } from '../claims/claims';
+import { STATUSES, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
-
-/** The statuses the summary counts claims by, each shown even when no claim has it. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 /** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
  *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
@@ -59,7 +56,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
             <tr key={s} data-testid={`summary-status-${s}`}>
               <th>{s}</th>
               <td>
-                Claims <span data-testid={`summary-status-${s}-count`}>{claims.filter((c) => (c.status as string) === s).length}</span>
+                Claims <span data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</span>
               </td>
             </tr>
           ))}
