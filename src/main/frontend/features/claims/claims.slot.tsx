@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
+import { dueOn, useRateFor } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
@@ -79,6 +80,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const [editingId, setEditing] = useEditingClaim();
   const editing = claims.find((c) => String(c.id) === editingId);
   const [added, setAdded] = useState(0);
+  const rate = useRateFor(sheetId, person.grade);
 
   return (
     <>
@@ -99,6 +101,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-due">{dueOn(c.amount, rate)}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
                 Edit
               </button>
