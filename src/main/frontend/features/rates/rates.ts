@@ -228,3 +228,24 @@ export function floored(due: string, floor: string): string {
   return due === 'n/a' || toCents(due) >= toCents(floor) ? due : fromCents(toCents(floor));
 }
 
+
+/** A candidate rate's preview for a grade: of the OPEN and PENDING claims of people on the grade (the one in force on
+ *  each claim's date), how many would show a different due (as shown on its row) if the candidate applied to the grade
+ *  on every date, and the sum of the differences (new due minus current due; n/a counting as 0.00). A claim bound by a
+ *  statement keeps its figure (see claimDue); a settled one is not counted. Nothing is saved. */
+export function ratePreview(people: Person[], claims: Claim[], rates: Rate[], grade: string, pct: string,
+    floor: DatedValue, late: Late): { count: number; diff: string } {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  let count = 0;
+  let diff = 0n;
+  for (const c of claims) {
+    const person = byId.get(c.personId);
+    if (!person || (c.status !== 'OPEN' && c.status !== 'PENDING') || gradeOn(person, c.date) !== grade) continue;
+    const was = claimDue(c, rateOn(rates, grade, c.date), floor, late);
+    const now = claimDue(c, pct, floor, late);
+    if (was === now) continue;
+    count++;
+    diff += (now === 'n/a' ? 0n : toCents(now)) - (was === 'n/a' ? 0n : toCents(was));
+  }
+  return { count, diff: fromCents(diff) };
+}

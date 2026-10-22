@@ -10,8 +10,8 @@ import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { capped, excess, OPEN_STATUSES, personDueSum, personStatusSum, rateOn, ratesKey, SETTLED_STATUSES, sheetDueTotal,
-  sheetStatusSum, useRates } from './rates';
+import { capped, excess, OPEN_STATUSES, personDueSum, personStatusSum, rateOn, ratePreview, ratesKey, SETTLED_STATUSES,
+  sheetDueTotal, sheetStatusSum, useRates } from './rates';
 import type { Rate } from './rates';
 
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
@@ -119,6 +119,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           </p>
         )}
       </form>
+      <RatePreview sheetId={sheetId} user={user} />
       <table>
         <tbody>
           {GRADES.map((g) => {
@@ -150,6 +151,81 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** The rates panel's preview: for a grade and a candidate rate, how many OPEN and PENDING claims of people on the
+ *  grade would show a different due if the rate applied to the grade on every date, and the dues' difference added
+ *  up (see ratePreview), worked out on the sheet's people, claims and rates re-read on each press. Nothing is saved. */
+function RatePreview({ sheetId }: { sheetId: string; user: string }) {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const [grade, setGrade] = useState<string>('A');
+  const [pct, setPct] = useState('');
+  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const preview = async () => {
+    setError('');
+    setResult(null);
+    if (!PCT.test(pct.trim())) {
+      setError('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const [p, c, r] = await Promise.all([people.refetch(), claims.refetch(), rates.refetch()]);
+      if (!p.data || !c.data || !r.data) {
+        setError('Could not read the sheet to preview this rate.');
+        return;
+      }
+      setResult(ratePreview(p.data, c.data, r.data, grade, pct.trim(), floor, late));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    set(e.target.value);
+    setError('');
+    setResult(null);
+  };
+
+  return (
+    <div data-testid="rate-preview-form">
+      <label>
+        Preview grade{' '}
+        <select data-testid="rate-preview-grade" value={grade} onChange={change(setGrade)}>
+          {GRADES.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>{' '}
+      <label>
+        Candidate rate %{' '}
+        <input data-testid="rate-preview-pct" placeholder="0.00" value={pct} onChange={change(setPct)} />
+      </label>{' '}
+      <button type="button" data-testid="rate-preview" disabled={busy} onClick={() => void preview()}>
+        Preview
+      </button>
+      {result && (
+        <p>
+          Claims changing <span data-testid="rate-preview-count">{result.count}</span>, difference{' '}
+          <span data-testid="rate-preview-diff">{result.diff}</span>
+        </p>
+      )}
+      {error && (
+        <p data-testid="rate-preview-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
