@@ -7,7 +7,8 @@ import { usePersonError } from './rowError';
 import type { Person } from './people';
 
 /** The entry and button that transfer the person to another sheet by id (a steward only; not a retired person, not
- *  to this sheet). They arrive there with their grades, terms, contact, aliases and claims, and leave the list. */
+ *  to this sheet). They arrive there with their grades, terms, contact, aliases and claims, and leave the list.
+ *  Shows the sheet the person was last transferred from (nothing for anyone never transferred). */
 function PersonTransfer({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const [toSheet, setToSheet] = useState('');
@@ -31,6 +32,7 @@ function PersonTransfer({ sheetId, user, person }: { sheetId: string; user: stri
 
   return (
     <td>
+      From <span data-testid="person-origin">{person.origin ?? ''}</span>{' '}
       <input
         data-testid="person-transfer-to"
         placeholder="Sheet id"

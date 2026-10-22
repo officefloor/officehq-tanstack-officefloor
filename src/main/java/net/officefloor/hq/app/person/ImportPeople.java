@@ -79,7 +79,7 @@ public class ImportPeople {
             PersonRepository repository, SheetRepository sheets, Audit audit) throws InvalidPersonException {
         Person person = new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(), loaded.version() + 1,
                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
-                loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases());
+                loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin());
         if (!repository.update(person, loaded.version())) {
             throw new InvalidPersonException(new StalePersonException(loaded.name()).getMessage());
         }

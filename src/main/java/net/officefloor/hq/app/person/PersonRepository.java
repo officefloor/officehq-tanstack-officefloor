@@ -19,7 +19,7 @@ public class PersonRepository {
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
             rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
-            rs.getString("contact"), List.of());
+            rs.getString("contact"), List.of(), rs.getString("origin"));
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -86,7 +86,7 @@ public class PersonRepository {
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
                     new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
-                    aliasesByPerson.getOrDefault(p.id(), List.of()));
+                    aliasesByPerson.getOrDefault(p.id(), List.of()), p.origin());
         }).toList();
     }
 
@@ -184,7 +184,7 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_grade_log (sheet_id, person_id, grade, from_date, made_on) VALUES (?, ?, ?, NULL, "
                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
-                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of());
+                new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of(), null);
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -273,7 +273,7 @@ public class PersonRepository {
         }
         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
                 + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_position = " + END_POSITION
-                + " WHERE sheet_id = ? AND id = ?", toSheet, toSheet, toSheet, sheetId, person.id());
+                + ", origin = ? WHERE sheet_id = ? AND id = ?", toSheet, toSheet, toSheet, sheetId, sheetId, person.id());
     }
 
     /** Swap the person with the one above (up) or below (down) them in the list: their new position, counting from
@@ -375,7 +375,7 @@ public class PersonRepository {
             date = p.statementDate();
         }
         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
-                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases);
+                retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases, p.origin());
     }
 
     private static LocalDate toDate(Object value) {

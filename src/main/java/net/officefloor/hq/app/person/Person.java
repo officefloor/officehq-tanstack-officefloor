@@ -9,8 +9,9 @@ import java.util.List;
  *  today then; null when none taken), the date they are retired from (null: not retired), and whether they are
  *  dated grades and their dated holds (their OPEN claims dated within one, not bound by a statement, count in no
  *  live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), and their
- *  aliases, sorted as names are compared. */
+ *  aliases, sorted as names are compared, and the sheet they were last transferred from (null: never transferred). */
 public record Person(long id, String sheetId, String name, String grade, long version, int statementCount,
         BigDecimal statedTotal, LocalDate statementDate, LocalDate retiredFrom, Grades grades,
-        Holds holds, Integer terms, String contact, List<String> aliases) {
+        Holds holds, Integer terms, String contact, List<String> aliases,
+        String origin) {
 }

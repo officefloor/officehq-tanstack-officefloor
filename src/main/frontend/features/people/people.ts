@@ -8,11 +8,12 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
  *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), whether
  *  they have any hold, their dated grades, earliest first, and their holds in the order they were put on (their OPEN
  *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), their aliases, sorted as names are compared, and whether their name or an alias is also used on another
- *  sheet of the sheet's tree (its ancestors and descendants). */
+ *  sheet of the sheet's tree (its ancestors and descendants), and the sheet they were last transferred from (null:
+ *  never transferred). */
 export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
   statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   grades: Grade[]; holds: Hold[]; terms: number | null;
-  contact: string | null; aliases: string[]; clashing: boolean };
+  contact: string | null; aliases: string[]; clashing: boolean; origin: string | null };
 
 /** A hold on a person, from its from-date to its to-date, both included (yyyy-mm-dd, or null: unbounded on that side). */
 export type Hold = { from: string | null; to: string | null };

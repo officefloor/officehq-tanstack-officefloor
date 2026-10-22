@@ -7,11 +7,12 @@ import java.util.List;
  *  taken), the date they are retired from (yyyy-mm-dd; null: not retired), whether they have any hold, their dated
  *  grades, earliest first (each from its from-date, yyyy-mm-dd; null: from the beginning of time), and their holds
  *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), their contact (null: none), their aliases, sorted as
- *  names are compared, and whether their name or an alias is also used on another sheet of their sheet's tree. */
+ *  names are compared, whether their name or an alias is also used on another sheet of their sheet's tree, and the
+ *  sheet they were last transferred from (null: never transferred). */
 public record PersonResponse(long id, String name, String grade, long version, int statementCount,
         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeResponse> grades,
         List<HoldResponse> holds, Integer terms, String contact, List<String> aliases,
-        boolean clashing) {
+        boolean clashing, String origin) {
 
     /** A grade given from a from-date (yyyy-mm-dd; null: from the beginning of time). */
     public record GradeResponse(String grade, String from) {
@@ -34,6 +35,6 @@ public record PersonResponse(long id, String name, String grade, long version, i
                         .map(g -> new GradeResponse(g.grade(), g.from() != null ? g.from().toString() : null)).toList(),
                 p.holds().history().stream().map(h -> new HoldResponse(h.from() != null ? h.from().toString() : null,
                         h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact(), p.aliases(),
-                clashing);
+                clashing, p.origin());
     }
 }

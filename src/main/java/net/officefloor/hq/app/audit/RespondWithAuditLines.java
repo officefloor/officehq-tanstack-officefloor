@@ -5,25 +5,42 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's audit lines as the file holds them, newest first; with a name, only the lines about that person (a
- *  name= or person= field holding it, case and surrounding spaces ignored). Reads the file; keeps no copy. */
+ *  name= or person= field holding it, case and surrounding spaces ignored), followed, when the person of that name
+ *  (or alias) on this sheet was transferred here, by the lines about them on the sheet they came from, newest first.
+ *  Reads the file; keeps no copy. */
 public class RespondWithAuditLines {
     public void respond(@PathVariable("sheetId") String sheetId, @RequestParam(name = "name", required = false) String name,
-            Audit audit, ObjectResponse<List<String>> response) {
+            Audit audit, PersonRepository people, ObjectResponse<List<String>> response) {
         String sheet = sheetId.trim();
         String key = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> all = audit.lines();
+        List<String> lines = about(all, sheet, key);
+        if (!key.isEmpty()) {
+            Person person = people.findByName(sheet, key);
+            if (person != null && person.origin() != null) {
+                lines.addAll(about(all, person.origin(), person.name().trim().toLowerCase(Locale.ROOT)));
+            }
+        }
+        response.send(lines);
+    }
+
+    /** The sheet's lines (about the person of the key, unless blank), newest first. */
+    private static List<String> about(List<String> all, String sheet, String key) {
         List<String> lines = new ArrayList<>();
-        for (String line : audit.lines()) {
+        for (String line : all) {
             if (onSheet(line, sheet) && (key.isEmpty() || about(line, key))) {
                 lines.add(line);
             }
         }
         Collections.reverse(lines);
-        response.send(lines);
+        return lines;
     }
 
     /** Whether the line's sheet= field is the sheet. */
