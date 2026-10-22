@@ -14,7 +14,8 @@ public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-            rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class));
+            rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
+            rs.getObject("retired_from", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -57,7 +58,7 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, 0, null, null);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, 0, null, null, null);
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -70,6 +71,11 @@ public class PersonRepository {
     public void stated(Person person, BigDecimal total, LocalDate date) {
         jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ? "
                 + "WHERE sheet_id = ? AND id = ?", total, date, person.sheetId(), person.id());
+    }
+
+    /** Retire the person from the date. Leaves the version alone: retiring is not an edit of the person. */
+    public void retire(Person person, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", from, person.sheetId(), person.id());
     }
 
     /** Store the person at its new version, only while the stored person is still at version

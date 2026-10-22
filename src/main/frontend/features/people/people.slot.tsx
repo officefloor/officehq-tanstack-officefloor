@@ -5,7 +5,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
+import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
 
@@ -191,11 +191,14 @@ function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-/** The sheet's people in the order they were added, each with their name and grade. */
+/** The sheet's people in the order they were added, each with their name and grade. Retired people have no
+ *  row unless "show retired" is on. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
+  const [showRetired, setShowRetired] = useShowRetired();
+  const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
 
   return (
     <section data-testid="people">
@@ -203,9 +206,18 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
       {/* Keyed by who is being edited, so opening an editor fills the form with their values. */}
       <PersonForm key={editing ? editing.id : 'new'} sheetId={sheetId} user={user} editing={editing} />
       <QuickAddBar sheetId={sheetId} user={user} />
+      <label>
+        <input
+          type="checkbox"
+          data-testid="show-retired"
+          checked={showRetired}
+          onChange={(e) => setShowRetired(e.target.checked || undefined)}
+        />{' '}
+        Show retired
+      </label>
       <table>
         <tbody>
-          {(people.data ?? []).map((p) => (
+          {listed.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
