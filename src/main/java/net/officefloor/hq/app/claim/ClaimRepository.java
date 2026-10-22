@@ -142,10 +142,10 @@ public class ClaimRepository {
                 claim.sheetId(), claim.id(), claim.status().name()) == 1);
     }
 
-    /** Store an edit of the claim, releasing its editor lock. */
-    public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ?",
-                claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.ref(), claim.tags(), claim.sheetId(), claim.id());
+    /** Store the user's edit of the claim, releasing its editor lock and recording them as its last editor. */
+    public void update(Claim claim, String user) {
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL, edited_by = ? WHERE sheet_id = ? AND id = ?",
+                claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.ref(), claim.tags(), user, claim.sheetId(), claim.id());
         kept(claim.sheetId(), claim.id());
         used(claim.sheetId(), claim.tags());
     }
@@ -229,6 +229,12 @@ public class ClaimRepository {
     public void unlock(Claim claim, String user) {
         jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND id = ? AND locked_by = ?",
                 claim.sheetId(), claim.id(), user);
+    }
+
+    /** Who last edited the claim, or null when no one has. */
+    public String editedBy(Claim claim) {
+        return jdbc.query("SELECT edited_by FROM claim WHERE sheet_id = ? AND id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, claim.sheetId(), claim.id());
     }
 
     /** Who holds the claim's editor locked, or null when no one does. */

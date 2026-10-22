@@ -47,6 +47,9 @@ final class ClaimStatusChange {
             if (input.action().equals("approve") && input.user().equals(loaded.openedBy())) {
                 throw new ClaimStatusNotAllowedException("The user who opened a claim cannot approve it.");
             }
+            if (input.action().equals("approve") && input.user().equals(repository.editedBy(loaded))) {
+                throw new ClaimStatusNotAllowedException("The user who last edited a claim cannot approve it.");
+            }
         } else if (input.action().equals("resettle")) {
             if (loaded.status() != ClaimStatus.SETTLED) {
                 throw new ClaimStatusNotAllowedException("Only a SETTLED claim can be re-settled; this one is "
@@ -74,6 +77,9 @@ final class ClaimStatusChange {
         }
         if (input.action().equals("settle") && input.user().equals(loaded.openedBy())) {
             throw new ClaimStatusNotAllowedException("The user who opened a claim cannot settle it.");
+        }
+        if (input.action().equals("settle") && input.user().equals(repository.editedBy(loaded))) {
+            throw new ClaimStatusNotAllowedException("The user who last edited a claim cannot settle it.");
         }
         if ((input.action().equals("settle") || input.action().equals("approve")) && loaded.proofs() == 0) {
             BigDecimal threshold = settings.proofThreshold(loaded.sheetId()).on(loaded.date());

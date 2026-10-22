@@ -10,14 +10,14 @@ import net.officefloor.plugin.variable.Val;
 
 /** Move the loaded claim to its new status, refusing a change its status does not allow (or one
  *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
- *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it. Settling fixes its due
+ *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it; nor may the user who last edited it (SaveClaim records them). Settling fixes its due
  *  as its row shows it now: the bound figure, else live at the person's grade rate now in force on the claim's date,
  *  with the late charge as of today on it, at least the sheet's floor in force on its date, frozen in. A claim whose due (as shown) is above the sheet's proof threshold in force
  *  on the claim's date cannot be settled or approved while its proofs count is 0 (refused before the clerk limit is
  *  considered; no threshold, or a due of n/a, is within it). When a clerk (any user not made a steward)
  *  settles a claim whose due (as shown: bound by a statement, else live, plus any late charge) is above the sheet's
  *  clerk limit, it becomes PENDING instead (a due of n/a, or no limit, is within it). A steward other than the
- *  user who opened it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
+ *  user who opened it or last edited it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
  *  PENDING claim is not bound by a statement — frozen in) or rejects it (OPEN again, bound again by the statement
  *  that bound it). A steward re-settles a SETTLED claim: it is frozen again at the figure it would have today as an
  *  OPEN claim bound by no statement (today's rates, grades, floor and late charge). A steward voids a SETTLED claim within 7 days of its settlement (its SETTLED date in the status log, by the sheet's today): it keeps its number and its frozen figure, which leaves every total. The new status is added to the claim's status log. The rules are in {@link ClaimStatusChange}. */
