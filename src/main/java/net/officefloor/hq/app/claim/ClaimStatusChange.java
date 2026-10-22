@@ -30,6 +30,30 @@ final class ClaimStatusChange {
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
             SheetRepository sheets, ClaimLogRepository log)
             throws ClaimStatusNotAllowedException {
+        ClaimStatus to = check(input, loaded, repository, people, rates, roles, settings, sheets, log);
+        boolean opening = input.action().equals("open");
+        String openedBy = opening ? input.user() : loaded.openedBy();
+        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
+        BigDecimal settledDue = input.action().equals("resettle")
+                ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
+                : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets)
+                : to == ClaimStatus.VOID && loaded.status() == ClaimStatus.SETTLED ? loaded.settledDue() : null;
+        if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
+            // the transaction rolls back, so a number taken above is not used up
+            throw new ClaimStatusNotAllowedException(loaded.status(), to);
+        }
+        log.record(loaded, input.user());
+        return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
+                loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
+                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags()));
+    }
+
+    /** The status the claim would move to by the change as {@link SaveClaimStatus} describes (PENDING for a clerk's
+     *  settle above the clerk limit), writing nothing; throws when the change is not allowed. */
+    static ClaimStatus check(ClaimStatusInput input, Claim loaded, ClaimRepository repository,
+            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
+            SheetRepository sheets, ClaimLogRepository log)
+            throws ClaimStatusNotAllowedException {
         ClaimStatus to = input.to();
         if (Permissions.ACTIONS.contains(input.action()) && !settings.permissions(loaded.sheetId())
                 .allows(input.action(), roles.of(loaded.sheetId(), input.user()))) {
@@ -104,21 +128,7 @@ final class ClaimStatusChange {
                 to = ClaimStatus.PENDING;
             }
         }
-        boolean opening = input.action().equals("open");
-        String openedBy = opening ? input.user() : loaded.openedBy();
-        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
-        BigDecimal settledDue = input.action().equals("resettle")
-                ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
-                : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets)
-                : to == ClaimStatus.VOID && loaded.status() == ClaimStatus.SETTLED ? loaded.settledDue() : null;
-        if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
-            // the transaction rolls back, so a number taken above is not used up
-            throw new ClaimStatusNotAllowedException(loaded.status(), to);
-        }
-        log.record(loaded, input.user());
-        return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
-                loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags()));
+        return to;
     }
 
     /** Record the stored status change in the audit file as {@link AuditClaimStatus} describes. */

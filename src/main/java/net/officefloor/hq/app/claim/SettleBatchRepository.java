@@ -5,7 +5,7 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The sheet's settle batches: each bulk settle that settled at least one claim (one left PENDING counts), numbered
+/** The sheet's settle batches: each bulk settle that went through (one left PENDING counts), numbered
  *  1, 2, ... on the sheet in the order they happened, and the batch that settled each claim (none for a claim settled
  *  one at a time). */
 @Repository

@@ -14,7 +14,8 @@ import { useSheetToday } from '../sheet/sheet';
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
  *  today unless changed), keeping the grades already recorded from other dates. The person's own terms (days; blank
  *  for none) are set by an add when given, and by an edit whose terms field was entered (blank clears them); so is
- *  their contact, stored trimmed and lower-cased. A contact another person on the sheet already has is refused at once, keeping the editor open (the
+ *  their contact, stored trimmed and lower-cased. A contact another person on the sheet already has is refused at once
+ *  (an add's contact field is then cleared), keeping the editor open (the
  *  version it remembers brought up to date, so saving again is from the person as now stored). The
  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
  *  refused and the form is refilled with the person as now stored (so saving again is from that). Any other refused
@@ -103,6 +104,8 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
     const key = contact.trim().toLowerCase();
     if (key !== '' && (!editing || contactGiven) && (people.data ?? []).some((p) => p.id !== editing?.id && p.contact === key)) {
       setError(`The contact ${key} is already in use on this sheet.`);
+      // An add refused for its contact starts the next add with no contact.
+      if (!editing) setContact('');
       if (editing) {
         void getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`).then((latest) => {
           queryClient.setQueryData(peopleKey(sheetId), latest);
