@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals. */
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
     static final List<String> GRADES = List.of("A", "B", "C");
@@ -79,6 +79,15 @@ public class ValidateSettings {
         String grace = request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && !grace.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank for off.");
+        }
+        String entered = request.entryDate() == null ? null : request.entryDate().trim();
+        LocalDate entryDate = null;
+        if (entered != null && !entered.isEmpty()) {
+            try {
+                entryDate = LocalDate.parse(entered);
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The entry date must be a date, yyyy-mm-dd, or blank for off.");
+            }
         }
         Map<String, Integer> gradeTerms = new LinkedHashMap<>();
         if (request.gradeTerms() != null) {
@@ -154,6 +163,7 @@ public class ValidateSettings {
                 threshold != null, threshold == null || threshold.isEmpty() ? null : new BigDecimal(threshold).setScale(2),
                 perms, grace != null, grace == null || grace.isEmpty() ? null : Integer.valueOf(grace),
                 noteThreshold != null,
-                noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2)));
+                noteThreshold == null || noteThreshold.isEmpty() ? null : new BigDecimal(noteThreshold).setScale(2),
+                entered != null, entryDate));
     }
 }

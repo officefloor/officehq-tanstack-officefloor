@@ -2,6 +2,8 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Rollups;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -12,11 +14,16 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Give each selected person the grade from the from-date (the sheet's today when none was given), in list order
  *  (the order they were added), exactly as the person form's edit would: a new version, the grade recorded from
  *  the date keeping those from other dates, name and terms kept, its PERSON_EDITED line and then how the sheet's
- *  figures moved over it. A selected id not on the sheet is skipped. */
+ *  figures moved over it. A selected id not on the sheet is skipped. A viewer's bulk grade changes nobody and writes
+ *  nothing. */
 public class BulkGradePeople {
     public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeInput input, PersonRepository people,
-            SheetRepository sheets, Rollups rollups, Audit audit, Out<BulkGradeResponse> result) {
+            SheetRepository sheets, RoleRepository roles, Rollups rollups, Audit audit, Out<BulkGradeResponse> result) {
         String sheet = sheetId.trim();
+        if (Role.VIEWER.equals(roles.of(sheet, input.user()))) {
+            result.set(new BulkGradeResponse(0));
+            return;
+        }
         LocalDate from = input.from() != null ? input.from() : sheets.today(sheet);
         int changed = 0;
         for (Person loaded : people.list(sheet)) {

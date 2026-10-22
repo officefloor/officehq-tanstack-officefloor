@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
  *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
  *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
  *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
- *  refused for a viewer or on an archived sheet; so is a bulk settle on an archived sheet. Every change sent from a
+ *  refused for a viewer or on an archived sheet; so is a viewer's bulk grade, which changes nobody; so is a bulk settle on an archived sheet. Every change sent from a
  *  screen showing the sheet as of a date (the X-As-Of header), a bulk one included, is answered 403 the same way. */
 @Component
 public class RefuseViewerChanges extends OncePerRequestFilter {
@@ -36,6 +36,9 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
     /** A bulk open, left to the endpoint: it refuses each selected claim a viewer's role may not open (none), and
      *  answers how many it opened and refused, writing nothing. */
     private static final Pattern BULK_OPEN = Pattern.compile("^/api/sheets/[^/]+/bulk-open$");
+
+    /** A bulk grade, left to the endpoint for a viewer: it grades nobody and answers that none was changed. */
+    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/bulk-grade$");
 
     /** A bulk settle, left to the endpoint on an archived sheet: it counts every selected claim refused. */
     private static final Pattern BULK_SETTLE = Pattern.compile("^/api/sheets/[^/]+/bulk-settle$");
@@ -76,7 +79,7 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
         byte[] body = request.getInputStream().readAllBytes();
         String sheetId = URLDecoder.decode(change.group(1), StandardCharsets.UTF_8).trim();
         String user = user(body);
-        if (user != null && Role.VIEWER.equals(roles.of(sheetId, user))) {
+        if (user != null && !BULK_GRADE.matcher(path).matches() && Role.VIEWER.equals(roles.of(sheetId, user))) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("text/plain;charset=UTF-8");
             response.getWriter().write("A viewer can change nothing on this sheet.");

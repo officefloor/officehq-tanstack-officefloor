@@ -43,6 +43,9 @@ public class AuditSettingChanged {
         if (input.setsGraceDays()) {
             audit.record(head + "grace-days value=" + (input.graceDays() != null ? input.graceDays() : ""));
         }
+        if (input.setsEntryDate()) {
+            audit.record(head + "entry-date value=" + (input.entryDate() != null ? input.entryDate() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

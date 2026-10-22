@@ -8,7 +8,7 @@ import { claimsKey } from './claims';
 
 type PasteResult = { added: number };
 
-/** The paste box: one name,amount,date,note line per claim (a blank date is the sheet's today, the note may be
+/** The paste box: one name,amount,date,note line per claim (a blank date is the sheet's entry date while it is set, else its today, the note may be
  *  absent and may hold commas). The server checks every line by the claim form's rules first; one failing line
  *  refuses the whole paste and shows why on the box, otherwise each line is added in order as a DRAFT claim for
  *  the named person and the box shows how many were added. */

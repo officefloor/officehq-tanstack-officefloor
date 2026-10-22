@@ -51,7 +51,8 @@ public class SettingRepository {
         }
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
-                history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId));
+                history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
+                entryDate(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -162,6 +163,16 @@ public class SettingRepository {
 
     public void setPeriodNumberingFrom(String sheetId, LocalDate date) {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", date, sheetId);
+    }
+
+    /** The sheet's entry date: null when blank (off: a new claim given no date is dated the sheet's today). */
+    public LocalDate entryDate(String sheetId) {
+        return jdbc.query("SELECT entry_date FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+    }
+
+    public void setEntryDate(String sheetId, LocalDate date) {
+        jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", date, sheetId);
     }
 
     /** The sheet's grace days: null when blank (off). */

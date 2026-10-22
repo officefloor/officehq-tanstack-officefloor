@@ -47,6 +47,9 @@ public class SaveSettings {
         if (input.setsGraceDays()) {
             repository.setGraceDays(id, input.graceDays());
         }
+        if (input.setsEntryDate()) {
+            repository.setEntryDate(id, input.entryDate());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

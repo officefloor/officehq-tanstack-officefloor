@@ -36,6 +36,13 @@ public class SheetRepository {
                 rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, id);
     }
 
+    /** The date a new claim given no date gets: the sheet's entry date while it is set, else its today. Null when
+     *  absent. */
+    public LocalDate newClaimDate(String id) {
+        return jdbc.query("SELECT COALESCE(entry_date, today) FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, id);
+    }
+
     public void setToday(String id, LocalDate today) {
         jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", today, id);
     }

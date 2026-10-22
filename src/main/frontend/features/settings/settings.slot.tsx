@@ -18,7 +18,7 @@ const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
-  perms?: Record<string, string>; graceDays?: string };
+  perms?: Record<string, string>; graceDays?: string; entryDate?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -35,6 +35,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
  *  The grace days (blank: off; not dated): when the sheet's today is changed, each open period whose to-date plus
  *  them is before the new today is closed by the server.
+ *  The entry date (blank: off; not dated): while it is set, a new claim given no date (the claim form, the quick-add
+ *  bar, a pasted line, a correction) is dated it instead of the sheet's today.
  *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
  *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
  *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
@@ -51,6 +53,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentProofThreshold = settings.data?.proofThreshold ?? '';
   const currentNoteThreshold = settings.data?.noteThreshold ?? '';
   const currentGraceDays = settings.data?.graceDays ?? '';
+  const currentEntryDate = settings.data?.entryDate ?? '';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
@@ -62,6 +65,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedProofThreshold, setTypedProofThreshold] = useState<string | null>(null);
   const [typedNoteThreshold, setTypedNoteThreshold] = useState<string | null>(null);
   const [typedGraceDays, setTypedGraceDays] = useState<string | null>(null);
+  const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const currentPerm = (action: string) => settings.data?.perms?.[action] ?? '';
@@ -86,6 +90,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedProofThreshold(null);
       setTypedNoteThreshold(null);
       setTypedGraceDays(null);
+      setTypedEntryDate(null);
       setTypedGradeTerms({});
       setTypedPerms({});
       setTypedFrom({});
@@ -181,6 +186,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.graceDays = graceDays;
     }
+    if (typedEntryDate !== null) {
+      const entryDate = typedEntryDate.trim();
+      if (entryDate !== '' && !DATE.test(entryDate)) {
+        setError('The entry date must be a date, yyyy-mm-dd, or blank for off.');
+        return;
+      }
+      changes.entryDate = entryDate;
+    }
     for (const grade of GRADES) {
       const typedTerms = typedGradeTerms[grade];
       if (typedTerms === undefined) continue;
@@ -269,7 +282,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Cap <strong data-testid="setting-cap-current">{currentCap}</strong>{' '}
         Proof threshold <strong data-testid="setting-proof-threshold-current">{currentProofThreshold}</strong>{' '}
         Note threshold <strong data-testid="setting-note-threshold-current">{currentNoteThreshold}</strong>{' '}
-        Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>
+        Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
+        Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>
       </p>
       <p>
         {PERM_ACTIONS.map((action) => (
@@ -407,6 +421,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedGraceDays)}
             onChange={typed(setTypedGraceDays)}
             onFocus={() => setTypedGraceDays((v) => v ?? currentGraceDays)}
+          />
+        </label>{' '}
+        <label>
+          Entry date{' '}
+          <input
+            data-testid="setting-entry-date"
+            placeholder="off"
+            value={typedEntryDate ?? currentEntryDate}
+            onInput={typed(setTypedEntryDate)}
+            onChange={typed(setTypedEntryDate)}
+            onFocus={() => setTypedEntryDate((v) => v ?? currentEntryDate)}
           />
         </label>{' '}
         {PERM_ACTIONS.map((action) => (

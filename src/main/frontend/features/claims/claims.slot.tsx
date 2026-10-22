@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { useFloor, useLate } from '../settings/settings';
+import { useFloor, useLate, useSettings } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
@@ -25,7 +25,7 @@ function releaseClaim(sheetId: string, user: string, claimId: string) {
 const NUMBER = /^(\d+|.+-\d+)$/;
 
 /** One form on the person's row that adds a claim, or edits the claim whose editor is open. A blank
- *  date means the sheet's today. A negative amount is a correction, which names the number of the SETTLED claim
+ *  date means the sheet's today (for a new claim, the sheet's entry date while it is set). A negative amount is a correction, which names the number of the SETTLED claim
  *  of the same person it corrects (the server checks that claim). A new claim the server refuses clears the form,
  *  as one it adds does, leaving its error showing. */
 function ClaimForm({ sheetId, user, person, editing, onAdded }: {
@@ -33,6 +33,8 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
 }) {
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
+  const entryDate = useSettings(sheetId).data?.entryDate ?? '';
+  const blankDate = editing ? today : entryDate || today;
   const [, setEditing] = useEditingClaim();
   const [amount, setAmount] = useState(editing?.amount ?? '');
   const [date, setDate] = useState(editing?.date ?? '');
@@ -96,7 +98,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   return (
     <form data-testid="claim-form" onSubmit={submit}>
       <input data-testid="claim-form-amount" placeholder="Amount" value={amount} onChange={change(setAmount)} />{' '}
-      <input data-testid="claim-form-date" placeholder={today || 'yyyy-mm-dd'} value={date} onChange={change(setDate)} />{' '}
+      <input data-testid="claim-form-date" placeholder={blankDate || 'yyyy-mm-dd'} value={date} onChange={change(setDate)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={change(setNote)} />{' '}
       <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={change(setCorrects)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
