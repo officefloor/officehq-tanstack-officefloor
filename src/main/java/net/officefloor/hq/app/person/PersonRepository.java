@@ -1,8 +1,11 @@
 package net.officefloor.hq.app.person;
 
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -13,9 +16,15 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
+            rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
-            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"));
+            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"), Grades.NONE);
+
+    private record GradeRow(long personId, Grades.Grade grade) {
+    }
+
+    private static final RowMapper<GradeRow> GRADE_ROW = (rs, i) -> new GradeRow(rs.getLong("person_id"),
+            new Grades.Grade(rs.getString("grade"), rs.getObject("from_date", LocalDate.class)));
 
     private final JdbcTemplate jdbc;
 
@@ -24,19 +33,37 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
     }
 
     /** The person on this sheet, or null when absent. */
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
+        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))
                 .stream().findFirst().orElse(null);
     }
 
     /** The person on this sheet with this name (compared as nameInUse compares), or null when absent. */
     public Person findByName(String sheetId, String name) {
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW, sheetId, name)
-                .stream().findFirst().orElse(null);
+        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW,
+                sheetId, name)).stream().findFirst().orElse(null);
+    }
+
+    /** The people with their dated grades, and the grade in force on the sheet's today. */
+    private List<Person> graded(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return people;
+        }
+        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+        Map<Long, List<Grades.Grade>> byPerson = jdbc.query(
+                "SELECT * FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_date NULLS FIRST", GRADE_ROW,
+                sheetId).stream().collect(Collectors.groupingBy(GradeRow::personId,
+                        Collectors.mapping(GradeRow::grade, Collectors.toList())));
+        return people.stream().map(p -> {
+            Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
+            return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
+                    p.statedTotal(), p.statementDate(), p.retiredFrom(), p.held(), grades);
+        }).toList();
     }
 
     /** Whether another person on this sheet (other than exceptId, when given) has this name,
@@ -48,17 +75,20 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
+    /** Add a person with their first grade, which applies from the beginning of time. */
     public Person insert(String sheetId, String name, String grade) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)",
-                    new String[] { "id" });
+            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name) VALUES (?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
-            ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0, 0, null, null, null, false);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, NULL)",
+                sheetId, id, grade);
+        return new Person(id, sheetId, name, grade, 0, 0, null, null, null, false,
+                new Grades(List.of(new Grades.Grade(grade, null))));
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -83,10 +113,20 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?", held, person.sheetId(), person.id());
     }
 
-    /** Store the person at its new version, only while the stored person is still at version
+    /** Store the person's name at its new version, only while the stored person is still at version
      *  `from`; false (nothing written) when it has been saved since. */
     public boolean update(Person person, long from) {
-        return jdbc.update("UPDATE person SET name = ?, grade = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.name(), person.grade(), person.version(), person.sheetId(), person.id(), from) == 1;
+        return jdbc.update("UPDATE person SET name = ?, version = ? WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.name(), person.version(), person.sheetId(), person.id(), from) == 1;
+    }
+
+    /** Give the person the grade from the from-date (null: from the beginning of time), replacing any they were
+     *  given from that same date and keeping the rest. */
+    public void grade(Person person, String grade, LocalDate from) {
+        Date fromDate = from != null ? Date.valueOf(from) : null;
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ? AND from_date IS NOT DISTINCT FROM ?",
+                person.sheetId(), person.id(), fromDate);
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)",
+                person.sheetId(), person.id(), grade, fromDate);
     }
 }

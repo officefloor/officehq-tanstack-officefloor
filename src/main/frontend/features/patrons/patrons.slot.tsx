@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { live, useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { personDue, rateOn, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
@@ -31,8 +31,8 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
     patrons.map((p) =>
       personDue(
         claims.filter((c) => c.personId === p.id),
-        (d) => rateOn(rates, p.grade, d),
-        rateOn(rates, p.grade, today),
+        (d) => rateOn(rates, gradeOn(p, d), d),
+        rateOn(rates, gradeOn(p, today), today),
         floor,
         late,
       ),

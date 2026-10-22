@@ -10,6 +10,6 @@ public class SaveHold {
         repository.hold(loaded, held);
         saved.set(PersonResponse.from(new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
                 loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(),
-                loaded.retiredFrom(), held)));
+                loaded.retiredFrom(), held, loaded.grades())));
     }
 }

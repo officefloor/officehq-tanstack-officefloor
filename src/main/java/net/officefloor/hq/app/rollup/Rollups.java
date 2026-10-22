@@ -54,7 +54,7 @@ public class Rollups {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.held())).map(Claim::amount)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
-            BigDecimal due = Dues.total(sheetId, theirs, p.grade(), p.held(), today, rates, floor, late);
+            BigDecimal due = Dues.total(sheetId, theirs, p.grades(), p.held(), today, rates, floor, late);
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) {
                 dueTotal = dueTotal.add(due);

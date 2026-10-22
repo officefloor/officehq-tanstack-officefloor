@@ -61,13 +61,14 @@ export function sumDue(dues: string[]): string {
 }
 
 /** A person's due-total: the figures of their claims that count (each as shown on its row) added up;
- *  'n/a' when their grade has no rate today (rateToday undefined), unless a settled or stated claim keeps a
- *  figure, then the figures there are added up. */
+ *  'n/a' when their grade today has no rate today (rateToday undefined), unless a claim that counts has a
+ *  figure (settled, stated, or live at the grade in force on its date), then the figures there are added up. */
 export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
     rateToday: string | undefined, floor: string, late: Late): string {
   const counted = claims.filter(counts);
-  if (rateToday === undefined && !counted.some((c) => c.settledDue !== null || c.statedDue !== null)) return 'n/a';
-  return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date), floor, late)));
+  const dues = counted.map((c) => claimDue(c, rateOnDate(c.date), floor, late));
+  if (rateToday === undefined && dues.every((d) => d === 'n/a')) return 'n/a';
+  return sumDue(dues);
 }
 
 /** What the late charge follows: the sheet's terms in days, its late percent (two decimals) and its today. */

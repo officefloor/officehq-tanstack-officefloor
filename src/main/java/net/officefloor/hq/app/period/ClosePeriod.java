@@ -6,6 +6,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.person.Grades;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -42,7 +43,7 @@ public class ClosePeriod {
             if (!Dues.counts(c, person != null && person.held()) || !period.contains(c.date())) {
                 continue;
             }
-            BigDecimal figure = Dues.shown(c, person != null ? person.grade() : "", rates, floor, late);
+            BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);
             if (figure != null) {
                 total = total.add(figure);
             }

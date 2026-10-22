@@ -11,6 +11,6 @@ public class SaveRetire {
         var from = input.from() != null ? input.from() : sheets.today(loaded.sheetId());
         repository.retire(loaded, from);
         saved.set(PersonResponse.from(new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
-                loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), from, loaded.held())));
+                loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), from, loaded.held(), loaded.grades())));
     }
 }

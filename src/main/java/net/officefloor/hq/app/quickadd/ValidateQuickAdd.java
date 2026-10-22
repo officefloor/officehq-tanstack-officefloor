@@ -33,7 +33,7 @@ public class ValidateQuickAdd {
             throw new InvalidClaimException("The amount must be a number, 0.00 or more, with up to two decimals.");
         }
         String user = request.user().trim();
-        person.set(new PersonRequest(user, name, "A", null));
+        person.set(new PersonRequest(user, name, "A", null, null));
         claim.set(new ClaimInput(user, new BigDecimal(amount).setScale(2), null, ""));
     }
 }

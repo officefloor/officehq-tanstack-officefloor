@@ -8,8 +8,11 @@ import { SheetBody } from '../../slots/defs/sheet';
 import { GRADES, peopleKey, useEditingPerson, usePeople, useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
+import { useSheetToday } from '../sheet/sheet';
 
-/** One form that adds a person, or edits the one whose editor is open (filled with their values). The
+/** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
+ *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
+ *  today unless changed), keeping the grades already recorded from other dates. The
  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
  *  refused and the form is refilled with the person as now stored (so saving again is from that). */
 function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string; editing?: Person }) {
@@ -18,11 +21,14 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
   const [version, setVersion] = useState(editing?.version);
+  const today = useSheetToday(sheetId);
+  const [gradeFromEntered, setGradeFrom] = useState<string>();
+  const gradeFrom = gradeFromEntered ?? today;
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const save = useMutation({
-    mutationFn: (body: { user: string; name: string; grade: string; version?: number }) =>
+    mutationFn: (body: { user: string; name: string; grade: string; version?: number; gradeFrom?: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body),
@@ -46,7 +52,7 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
       setError(
         e instanceof HttpError && (e.status === 409 || e.status === 412) && e.body
           ? e.body
-          : 'Could not save this person: a name is required and the grade must be A, B or C.',
+          : 'Could not save this person: a name is required, the grade must be A, B or C and the from-date a date.',
       );
     },
     onSettled: once.done,
@@ -60,7 +66,11 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
       return;
     }
     if (!once.start()) return;
-    save.mutate({ user, name, grade, version: editing ? version : undefined });
+    save.mutate(
+      editing
+        ? { user, name, grade, version, gradeFrom: gradeFrom.trim() === '' ? undefined : gradeFrom }
+        : { user, name, grade },
+    );
   };
 
   return (
@@ -93,6 +103,22 @@ function PersonForm({ sheetId, user, editing }: { sheetId: string; user: string;
           ))}
         </select>
       </label>{' '}
+      {editing && (
+        <>
+          <label>
+            Grade from{' '}
+            <input
+              type="date"
+              data-testid="person-form-grade-from"
+              value={gradeFrom}
+              onChange={(e) => {
+                setGradeFrom(e.target.value);
+                setError('');
+              }}
+            />
+          </label>{' '}
+        </>
+      )}
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing ? 'Save' : 'Add person'}
       </button>

@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { live, useClaims } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
+import { GRADES, gradeOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../settings/settings';
@@ -135,7 +135,7 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; pe
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const due = personDue(live(claims, [person]), (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today),
+  const due = personDue(live(claims, [person]), (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today),
     floor, late);
   return <td data-testid="person-due-total">{due}</td>;
 }
@@ -151,8 +151,8 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const dues = people.map((p) =>
     personDue(
       claims.filter((c) => c.personId === p.id),
-      (d) => rateOn(rates, p.grade, d),
-      rateOn(rates, p.grade, today),
+      (d) => rateOn(rates, gradeOn(p, d), d),
+      rateOn(rates, gradeOn(p, today), today),
       floor,
       late,
     ),

@@ -1,20 +1,26 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Apply the edit to the loaded person and store it, refused when the person has been saved since
- *  the version the edit was made from. */
+ *  the version the edit was made from. The grade is recorded from the edit's from-date (the sheet's today
+ *  when none was given), keeping the grades already recorded from other dates. */
 public class SavePerson {
     public void save(@Val PersonRequest request, @Val Person loaded, PersonRepository repository,
-            Out<PersonResponse> saved) throws StalePersonException {
+            SheetRepository sheets, Out<PersonResponse> saved) throws StalePersonException {
         long from = request.version() == null ? loaded.version() : request.version();
-        Person person = new Person(loaded.id(), loaded.sheetId(), request.name(), request.grade(), from + 1,
+        Person person = new Person(loaded.id(), loaded.sheetId(), request.name(), loaded.grade(), from + 1,
                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
-                loaded.held());
+                loaded.held(), loaded.grades());
         if (!repository.update(person, from)) {
             throw new StalePersonException(loaded.name());
         }
-        saved.set(PersonResponse.from(person));
+        LocalDate gradeFrom = request.gradeFrom() != null ? LocalDate.parse(request.gradeFrom())
+                : sheets.today(loaded.sheetId());
+        repository.grade(person, request.grade(), gradeFrom);
+        saved.set(PersonResponse.from(repository.find(loaded.sheetId(), loaded.id())));
     }
 }

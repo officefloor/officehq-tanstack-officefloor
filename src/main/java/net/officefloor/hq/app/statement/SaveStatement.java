@@ -26,13 +26,13 @@ public class SaveStatement {
         BigDecimal floor = settings.floor(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
         LateCharge late = LateCharge.of(person.sheetId(), settings, sheets);
-        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), person.held(), today, rates, floor,
+        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grades(), person.held(), today, rates, floor,
                 late);
         int counted = 0;
         for (Claim c : theirs) {
             if (Dues.counts(c, person.held())) {
                 counted++;
-                claims.state(c, true, Dues.figure(c, person.grade(), rates, floor));
+                claims.state(c, true, Dues.figure(c, person.grades(), rates, floor));
             } else if (c.stated()) {
                 claims.state(c, false, null);
             }

@@ -61,7 +61,7 @@ public class SaveClaimStatus {
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets) {
         var person = people.find(claim.sheetId(), claim.personId());
-        return Dues.shown(claim, person.grade(), rates, settings.floor(claim.sheetId()),
+        return Dues.shown(claim, person.grades(), rates, settings.floor(claim.sheetId()),
                 LateCharge.of(claim.sheetId(), settings, sheets));
     }
 }
