@@ -47,6 +47,15 @@ export function live(claims: Claim[], people: Person[]): Claim[] {
   return claims.filter((c) => counts(c) && !(c.status === 'OPEN' && !c.stated && heldOn(byId.get(c.personId), c.date)));
 }
 
+/** Whether a person is active on the sheet's today (yyyy-mm-dd; '' while loading: not active): they have an OPEN or
+ *  PENDING claim that counts in the live totals (see live) dated within the 30 days up to and including it. */
+export function active(person: Person, claims: Claim[], today: string): boolean {
+  if (today === '') return false;
+  const since = new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return live(claims.filter((c) => c.personId === person.id), [person])
+    .some((c) => unsettled(c) && c.date >= since && c.date <= today);
+}
+
 /** A claim's status at the end of the day given (yyyy-mm-dd), as its status log records it: the last status given on
  *  or before that day (one given while the sheet had no today counts as given by then); null when every status was
  *  given after it (it was added later). A claim with no log has its status now. */

@@ -1,5 +1,5 @@
 import { SheetBody } from '../../slots/defs/sheet';
-import { STATUSES, useClaims } from '../claims/claims';
+import { STATUSES, active as isActive, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
@@ -8,7 +8,7 @@ import { useSheetToday } from '../sheet/sheet';
 
 /** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
  *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
- *  due-total, and per status how many of the sheet's claims have it. */
+ *  due-total, how many of them are active (see claims' active), and per status how many of the sheet's claims have it. */
 function Summary({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -37,6 +37,12 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
                   Due total{' '}
                   <span data-testid={`summary-grade-${g}-due-total`}>
                     {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)))}
+                  </span>
+                </td>
+                <td>
+                  Active{' '}
+                  <span data-testid={`summary-grade-${g}-active`}>
+                    {onGrade.filter((p) => isActive(p, claims, today)).length}
                   </span>
                 </td>
               </tr>
