@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
 import { claimDue, rateOn, useRates } from '../rates/rates';
+import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
@@ -90,6 +91,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const queryClient = useQueryClient();
   const [, setEditing] = useEditingClaim();
   const [error, setError] = useState('');
+  const period = periodOf(usePeriods(sheetId).data ?? [], claim.date);
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -110,6 +112,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       <span data-testid="claim-due">{claimDue(claim, rate)}</span>{' '}
+      Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}
       <button
         type="button"
