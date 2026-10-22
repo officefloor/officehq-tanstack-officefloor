@@ -15,7 +15,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    /** A claim row, its due-by worked out from its terms and the sheet's holidays (their dates). */
+    /** A claim row, its due-by as fixed (one stored before due-bys were fixed: worked out from its terms and the
+     *  sheet's holidays, their dates). */
     private static RowMapper<Claim> row(Set<LocalDate> holidays) {
         return (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
                 rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
@@ -23,9 +24,14 @@ public class ClaimRepository {
                 rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
                 rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"),
-                BusinessDays.after(rs.getObject("due_from", LocalDate.class), rs.getInt("terms_days"), holidays),
+                dueBy(rs.getObject("due_by", LocalDate.class), rs.getObject("due_from", LocalDate.class),
+                        rs.getInt("terms_days"), holidays),
                 rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
                 rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class), rs.getString("ref"), rs.getString("tags"));
+    }
+
+    private static LocalDate dueBy(LocalDate fixed, LocalDate from, int terms, Set<LocalDate> holidays) {
+        return fixed != null ? fixed : BusinessDays.after(from, terms, holidays);
     }
 
     private final JdbcTemplate jdbc;
@@ -50,12 +56,43 @@ public class ClaimRepository {
                 .stream().findFirst().orElse(null);
     }
 
+    /** Fix the due-by of each of the sheet's claims stored before due-bys were fixed, over the sheet's holidays as they
+     *  are now. */
+    public void fixDueBys(String sheetId) {
+        var dates = holidays.dates(sheetId);
+        jdbc.query("SELECT id, due_from, terms_days FROM claim WHERE sheet_id = ? AND due_by IS NULL", rs -> {
+            jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?",
+                    BusinessDays.after(rs.getObject("due_from", LocalDate.class), rs.getInt("terms_days"), dates),
+                    sheetId, rs.getLong("id"));
+        }, sheetId);
+    }
+
+    /** Re-fix the due-by of each of the sheet's claims not SETTLED or VOID whose due-by is on or after the holiday:
+     *  worked out again from its date, with the terms it was fixed with, over the sheet's holidays as they are now. */
+    public void refixDueBys(String sheetId, LocalDate holiday) {
+        var dates = holidays.dates(sheetId);
+        record Fixed(long id, LocalDate dueBy) {
+        }
+        List<Fixed> moved = new java.util.ArrayList<>();
+        jdbc.query("SELECT id, due_from, terms_days, due_by FROM claim WHERE sheet_id = ? AND due_by >= ? AND status NOT IN (?, ?)",
+                rs -> {
+                    LocalDate now = BusinessDays.after(rs.getObject("due_from", LocalDate.class), rs.getInt("terms_days"), dates);
+                    if (!now.equals(rs.getObject("due_by", LocalDate.class))) {
+                        moved.add(new Fixed(rs.getLong("id"), now));
+                    }
+                }, sheetId, holiday, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name());
+        for (Fixed f : moved) {
+            jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?", f.dueBy(), sheetId, f.id());
+            kept(sheetId, f.id());
+        }
+    }
+
     /** Store a new claim fixed with the terms (business days), counted from its date. */
     public Claim insert(int terms, Claim claim) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_from, terms_days, split_from, late_entry, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_from, terms_days, split_from, late_entry, ref, tags, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -69,6 +106,7 @@ public class ClaimRepository {
             ps.setBoolean(10, claim.lateEntry());
             ps.setString(11, claim.ref());
             ps.setString(12, claim.tags());
+            ps.setObject(13, claim.dueBy());
             return ps;
         }, keys);
         kept(claim.sheetId(), keys.getKey().longValue());
@@ -252,9 +290,9 @@ public class ClaimRepository {
     private void kept(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                 + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, deferred_until, proofs, "
-                + "split_from, late_entry, reminded_on, ref, tags, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
+                + "split_from, late_entry, reminded_on, ref, tags, due_by, made_on) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
                 + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_from, c.terms_days, "
-                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, s.today FROM claim c JOIN sheet s ON s.id = "
+                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 
