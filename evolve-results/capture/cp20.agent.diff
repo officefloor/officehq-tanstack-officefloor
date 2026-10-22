@@ -1,0 +1,111 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 40da030..22d59da 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -89,7 +89,8 @@ const ACTIONS = [
+ ] as const;
+ 
+ /** One claim with its status, who opened it and the buttons that change it. A change the status does not
+- *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error. */
++ *  allow, or a settle by the user who opened it, is refused by the server and shown as the claim's error;
++ *  so is editing a claim that is no longer a DRAFT (the server refuses that edit too). */
+ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
+   const queryClient = useQueryClient();
+   const [, setEditing] = useEditingClaim();
+@@ -121,6 +122,10 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+         type="button"
+         data-testid="claim-edit"
+         onClick={() => {
++          if (claim.status !== 'DRAFT') {
++            setError(`A ${claim.status} claim cannot be edited; only a DRAFT can. Void it and add a new one.`);
++            return;
++          }
+           setError('');
+           setEditing(String(claim.id));
+         }}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index e200aae..91d7a5c 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -6,7 +6,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
+- *  its number on the sheet (null while a draft, or once voided) and, the due fixed when it was settled
++ *  its number on the sheet (null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled
+  *  (null when not settled, or its grade had no rate then: its due follows the rates), and who opened it
+  *  (null while a draft), whether its person's last statement bound it (it counted then) and the figure it bound
+  *  it to (null when not bound, or n/a then: its due stays live). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 072fd09..7e6670e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -4,7 +4,7 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+ /** A person's claim: an amount (0.00 or more, two decimals), a date, a note (may be empty), its
+- *  status, its number on the sheet (null while a draft, or once voided) and, once settled, the due fixed
++ *  status, its number on the sheet (null while a draft; a voided claim keeps the one it had) and, once settled, the due fixed
+  *  at settling (null before then, or when the person's grade had no rate then: its due stays live), and
+  *  who opened it (null while a draft), whether its person's last statement bound it (it counted then) and the
+  *  figure it bound it to (null when not bound, or its figure was n/a then: its due stays live). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftClaimEdit.java b/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftClaimEdit.java
+new file mode 100644
+index 0000000..c06ce85
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftClaimEdit.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuse an edit of a claim that is no longer a DRAFT: an OPEN claim is changed by voiding it and adding a new one. */
++public class RefuseNonDraftClaimEdit {
++    public void refuse(@Val Claim loaded) throws ClaimStatusNotAllowedException {
++        if (loaded.status() != ClaimStatus.DRAFT) {
++            throw new ClaimStatusNotAllowedException("A " + loaded.status()
++                    + " claim cannot be edited; only a DRAFT can. Void it and add a new one.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+index 8f228f6..416a72b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Move the loaded claim to its new status, refusing a change its status does not allow (or one
+  *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
+- *  clears it. Opening records who opened it, and that user may not settle it. Settling fixes its due
++ *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it. Settling fixes its due
+  *  at the person's grade rate now in force on the claim's date. */
+ public class SaveClaimStatus {
+     public void save(@Val ClaimStatusInput input, @Val Claim loaded, ClaimRepository repository,
+@@ -24,7 +24,6 @@ public class SaveClaimStatus {
+         String openedBy = input.to() == ClaimStatus.OPEN ? input.user() : loaded.openedBy();
+         Integer number = switch (input.to()) {
+             case OPEN -> repository.nextNumber(loaded.sheetId());
+-            case VOID -> null;
+             default -> loaded.number();
+         };
+         BigDecimal settledDue = input.to() == ClaimStatus.SETTLED ? dueNow(loaded, people, rates) : null;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 94a9c39..092ff27 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,10 +1,14 @@
+-# Edit a claim's amount, date and note. A refused edit (bad amount or date, unknown claim, a claim dated in a closed period) writes nothing, not even an audit line.
++# Edit a claim's amount, date and note. A refused edit (bad amount or date, unknown claim, a claim that is not a DRAFT, a claim dated in a closed period) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: draft
++draft:
++  class: net.officefloor.hq.app.claim.RefuseNonDraftClaimEdit
++  govern: [ transaction ]
+   next: closed
+ closed:
+   class: net.officefloor.hq.app.period.RefuseClosedClaimEdit
