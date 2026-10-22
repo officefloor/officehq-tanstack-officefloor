@@ -1,0 +1,241 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index a59e92e..76ac377 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -40,6 +40,11 @@ export function getJson<T>(path: string): Promise<T> {
+   return send<T>(withAsOf(path));
+ }
+ 
++/** A read of the store as it is now, whatever date this screen shows the sheet as of. */
++export function getJsonNow<T>(path: string): Promise<T> {
++  return send<T>(path);
++}
++
+ export function postJson<T>(path: string, body: unknown): Promise<T> {
+   return send<T>(path, {
+     method: 'POST',
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 0000000..1937bab
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,65 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJsonNow } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheet';
++import type { Claim } from '../claims/claims';
++import type { Person } from '../people/people';
++import { sheetDueTotal, sheetOverdueTotal, sumDue, type Rate } from '../rates/rates';
++import { floorOf, lateOf, type Settings } from '../settings/settings';
++import type { Sheet } from '../sheet/sheet';
++
++/** One read of a sheet as the store holds it now, whatever date this screen shows the sheet as of. Keyed under the
++ *  sheet, so a load of that sheet re-reads it. */
++function useNow<T>(sheetId: string, part: string) {
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'now', part],
++    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`),
++  });
++}
++
++type Figures = { people: number; due: string; overdue: string };
++
++/** Adds the figures of sheets[at] to `sum`, then goes on to the next sheet; past the last, shows the figures added
++ *  up. One component per sheet keeps each sheet's reads in hooks of its own. */
++function Accumulate({ sheets, at, sum }: { sheets: string[]; at: number; sum: Figures }) {
++  if (at >= sheets.length) return <Shown figures={sum} />;
++  return <SheetFigures key={sheets[at]} sheets={sheets} at={at} sum={sum} />;
++}
++
++/** A sheet's figures as it shows them now: its people (retired ones included), its due-total and its overdue-total
++ *  (as its header shows them). */
++function SheetFigures({ sheets, at, sum }: { sheets: string[]; at: number; sum: Figures }) {
++  const sheetId = sheets[at];
++  const people = useNow<Person[]>(sheetId, 'people').data ?? [];
++  const claims = useNow<Claim[]>(sheetId, 'claims').data ?? [];
++  const rates = useNow<Rate[]>(sheetId, 'rates').data ?? [];
++  const settings = useNow<Settings>(sheetId, 'settings').data;
++  const today = useNow<Sheet>(sheetId, '').data?.today ?? '';
++  const floor = floorOf(settings);
++  const late = lateOf(settings, today, claims, people);
++  const next: Figures = {
++    people: sum.people + people.length,
++    due: sumDue([sum.due, sheetDueTotal(people, claims, rates, today, floor, late, settings?.cap ?? '')]),
++    overdue: sumDue([sum.overdue, sheetOverdueTotal(people, claims, rates, late, floor)]),
++  };
++  return <Accumulate sheets={sheets} at={at + 1} sum={next} />;
++}
++
++function Shown({ figures }: { figures: Figures }) {
++  return (
++    <p data-testid="consolidated">
++      Consolidated: people <strong data-testid="consolidated-people-count">{figures.people}</strong>{' '}
++      due total <strong data-testid="consolidated-due-total">{figures.due}</strong>{' '}
++      overdue total <strong data-testid="consolidated-overdue-total">{figures.overdue}</strong>
++    </p>
++  );
++}
++
++/** Consolidated figures over the sheet and all its descendants (its children — the sheets naming it as their
++ *  parent — theirs, and so on), as the store holds them now: the people, and each sheet's due-total and
++ *  overdue-total (as that sheet shows them) added up. A sheet with no children shows its own. */
++function Consolidated({ sheetId }: { sheetId: string; user: string }) {
++  const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
++  return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={{ people: 0, due: '0.00', overdue: '0.00' }} />;
++}
++
++export const contribution = SheetBody.fill({ order: -1, Component: Consolidated });
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index ae051e1..ecdf268 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -2,7 +2,7 @@ import { useMemo } from 'react';
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { useClaims, type Claim } from '../claims/claims';
+-import { gradeOn, usePeople } from '../people/people';
++import { gradeOn, usePeople, type Person } from '../people/people';
+ import type { Late } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+ 
+@@ -80,8 +80,8 @@ export function useParent(sheetId: string): string {
+ /** The sheet's floor by date: a claim's live due is at least the one in force on its date (the starting floor
+  *  while the settings load). */
+ export function useFloor(sheetId: string): DatedValue {
+-  const dated = useSettings(sheetId).data?.dated?.floor;
+-  return useMemo(() => (date: string) => valueOn(dated, DEFAULT_FLOOR, date), [dated]);
++  const settings = useSettings(sheetId).data;
++  return useMemo(() => floorOf(settings), [settings]);
+ }
+ 
+ /** The sheet's cap in force ('' when there is none, or while the settings load). */
+@@ -94,6 +94,29 @@ export function useTerms(sheetId: string): number {
+   return Number(useSettings(sheetId).data?.terms ?? DEFAULT_TERMS);
+ }
+ 
++/** The floor by date from a sheet's settings: the one in force on a date (the starting floor while they load). */
++export function floorOf(settings: Settings | undefined): DatedValue {
++  const dated = settings?.dated?.floor;
++  return (date: string) => valueOn(dated, DEFAULT_FLOOR, date);
++}
++
++/** What the late charge follows (see useLate), from a sheet's settings, its today, its claims and its people. */
++export function lateOf(settings: Settings | undefined, today: string, claims: Claim[] | undefined,
++    people: Person[] | undefined): Late {
++  const numbered = new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date]));
++  const dated = settings?.dated?.['late-pct'];
++  const pct = (date: string) => valueOn(dated, DEFAULT_LATE_PCT, date);
++  const byId = new Map((people ?? []).map((p) => [p.id, p]));
++  const history = settings?.dated;
++  const grace = (claim: Claim) => {
++    const grade = gradeOn(byId.get(claim.personId), claim.date);
++    if (grade === '') return 0;
++    const days = valueOn(history?.[`grace-${grade}`], '', claim.date);
++    return days === '' ? 0 : Number(days);
++  };
++  return { pct, today, grace, policy: settings?.policyDate || today, numbered };
++}
++
+ /** What the late charge follows now: the late percent by date (a claim gains the one in force on its date) and the sheet's today, and each
+  *  claim's grace (of its person's grade on its date, in force on that date; 0 while loading); and how claims round:
+  *  the policy date in force (blank: the sheet's today) and the dates of the sheet's numbered claims. */
+@@ -101,23 +124,6 @@ export function useLate(sheetId: string): Late {
+   const settings = useSettings(sheetId).data;
+   const today = useSheetToday(sheetId);
+   const claims = useClaims(sheetId).data;
+-  const numbered = useMemo(
+-    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number as string, c.date])),
+-    [claims],
+-  );
+-  const dated = settings?.dated?.['late-pct'];
+-  const pct = useMemo(() => (date: string) => valueOn(dated, DEFAULT_LATE_PCT, date), [dated]);
+   const people = usePeople(sheetId).data;
+-  const history = settings?.dated;
+-  const grace = useMemo(() => {
+-    const byId = new Map((people ?? []).map((p) => [p.id, p]));
+-    return (claim: Claim) => {
+-      const grade = gradeOn(byId.get(claim.personId), claim.date);
+-      if (grade === '') return 0;
+-      const days = valueOn(history?.[`grace-${grade}`], '', claim.date);
+-      return days === '' ? 0 : Number(days);
+-    };
+-  }, [people, history]);
+-  return { pct, today, grace,
+-    policy: settings?.policyDate || today, numbered };
++  return useMemo(() => lateOf(settings, today, claims, people), [settings, today, claims, people]);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+new file mode 100644
+index 0000000..579575c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.ArrayDeque;
++import java.util.ArrayList;
++import java.util.Deque;
++import java.util.LinkedHashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The sheet's descendants: its children (the sheets naming it as their parent), their children, and so on, each
++ *  once, nearest first. */
++public class RespondWithDescendants {
++    public void respond(@PathVariable("sheetId") String sheetId, SettingRepository settings,
++            ObjectResponse<List<String>> response) {
++        String id = sheetId.trim();
++        Set<String> seen = new LinkedHashSet<>();
++        seen.add(id);
++        Deque<String> next = new ArrayDeque<>(List.of(id));
++        while (!next.isEmpty()) {
++            for (String child : settings.children(next.removeFirst())) {
++                if (seen.add(child)) {
++                    next.addLast(child);
++                }
++            }
++        }
++        seen.remove(id);
++        response.send(new ArrayList<>(seen));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 7733f46..67d7d11 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.HashMap;
+ import java.util.LinkedHashMap;
++import java.util.List;
+ import java.util.Map;
+ import java.util.NavigableMap;
+ import java.util.TreeMap;
+@@ -210,6 +211,11 @@ public class SettingRepository {
+         return jdbc.query("SELECT parent FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
+     }
+ 
++    /** The sheets naming this sheet as their parent, by id. */
++    public List<String> children(String sheetId) {
++        return jdbc.queryForList("SELECT id FROM sheet WHERE parent = ? ORDER BY id", String.class, sheetId);
++    }
++
+     public void setParent(String sheetId, String parent) {
+         jdbc.update("UPDATE sheet SET parent = ? WHERE id = ?", parent, sheetId);
+     }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 0000000..e605ba0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,8 @@
++# The sheet's descendants (its children, their children, ...), each once, nearest first. 404 for an id never loaded.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithDescendants
++  govern: [ readonly-transaction ]
