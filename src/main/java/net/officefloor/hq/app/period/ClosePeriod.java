@@ -10,7 +10,9 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.Dues;
+import net.officefloor.hq.app.statement.LateCharge;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 
@@ -20,7 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
             PeriodRepository periods, ClaimRepository claims, PersonRepository people, RateRepository rates,
-            SettingRepository settings,
+            SettingRepository settings, SheetRepository sheets,
             Out<Period> closed) throws InvalidPeriodException {
         String id = sheetId.trim();
         periods.lockSheet(id);
@@ -33,13 +35,14 @@ public class ClosePeriod {
         }
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         BigDecimal floor = settings.floor(id);
+        LateCharge late = LateCharge.of(id, settings, sheets);
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
             Person person = byId.get(c.personId());
             if (!Dues.counts(c, person != null && person.held()) || !period.contains(c.date())) {
                 continue;
             }
-            BigDecimal figure = Dues.figure(c, person != null ? person.grade() : "", rates, floor);
+            BigDecimal figure = Dues.shown(c, person != null ? person.grade() : "", rates, floor, late);
             if (figure != null) {
                 total = total.add(figure);
             }

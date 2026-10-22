@@ -16,6 +16,9 @@ public class SaveSettings {
         if (input.terms() != null) {
             repository.setTerms(sheetId.trim(), input.terms());
         }
+        if (input.latePct() != null) {
+            repository.setLatePct(sheetId.trim(), input.latePct());
+        }
         settings.set(repository.of(sheetId.trim()));
     }
 }

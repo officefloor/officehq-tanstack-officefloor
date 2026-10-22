@@ -3,30 +3,29 @@ import { SheetBody } from '../../slots/defs/sheet';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
-import type { Rate } from '../rates/rates';
-import { useFloor, useTerms } from '../settings/settings';
-import { useSheetToday } from '../sheet/sheet';
+import type { Late, Rate } from '../rates/rates';
+import { useFloor, useLate } from '../settings/settings';
 import { live, overdue, useClaims } from './claims';
 import type { Claim } from './claims';
 
 /** The overdue claims that count among these, with the due of each (as shown on its row). */
-function overdueDues(claims: Claim[], people: Person[], rates: Rate[], terms: number, today: string, floor: string) {
+function overdueDues(claims: Claim[], people: Person[], rates: Rate[], late: Late, floor: string) {
   const grades = new Map(people.map((p) => [p.id, p.grade]));
   return live(claims, people)
-    .filter((c) => overdue(c, terms, today))
-    .map((c) => claimDue(c, rateOn(rates, grades.get(c.personId) ?? '', c.date), floor));
+    .filter((c) => overdue(c, late.terms, late.today))
+    .map((c) => claimDue(c, rateOn(rates, grades.get(c.personId) ?? '', c.date), floor, late));
 }
 
 function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
   const rates = useRates(sheetId).data ?? [];
-  const terms = useTerms(sheetId);
-  const today = useSheetToday(sheetId);
+  const late = useLate(sheetId);
   const floor = useFloor(sheetId);
-  const dues = overdueDues(claims, people, rates, terms, today, floor);
+  const dues = overdueDues(claims, people, rates, late, floor);
   return { count: dues.length, total: sumDue(dues) };
 }
 
-/** A person's overdue count and overdue-total: the due of their overdue claims that count added up. */
+/** A person's overdue count and overdue-total: the due of their overdue claims that count
+ *  (late charges included) added up. */
 function PersonOverdue({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const { count, total } = useOverdue(sheetId, [person], claims);

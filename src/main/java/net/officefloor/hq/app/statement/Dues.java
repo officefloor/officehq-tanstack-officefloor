@@ -26,6 +26,17 @@ public final class Dues {
         return live(claim, grade, rates, floor);
     }
 
+    /** A claim's due as its row shows it: the due fixed when it was settled, else its figure (bound or live) with
+     *  the late charge on it added on top; null (n/a) when it has no figure. */
+    public static BigDecimal shown(Claim claim, String grade, RateRepository rates, BigDecimal floor,
+            LateCharge late) {
+        if (claim.settledDue() != null) {
+            return claim.settledDue();
+        }
+        BigDecimal figure = figure(claim, grade, rates, floor);
+        return figure != null ? figure.add(late.on(claim, figure)) : null;
+    }
+
     /** A claim's live due: its amount times its person's grade rate in force on its date, divided by 100, rounded
      *  half to even to two decimals, raised to the floor when below it; null (n/a) when no rate applies. */
     public static BigDecimal live(Claim claim, String grade, RateRepository rates, BigDecimal floor) {
@@ -41,16 +52,16 @@ public final class Dues {
         return claim.status().counts() && !(held && claim.status() == ClaimStatus.OPEN);
     }
 
-    /** A person's due-total: the figures of their claims that count added up, skipping n/a; null (n/a) when
+    /** A person's due-total: the dues (as shown) of their claims that count added up, skipping n/a; null (n/a) when
      *  their grade has no rate today, unless a claim that counts keeps a figure (settled or stated). */
     public static BigDecimal total(String sheetId, List<Claim> claims, String grade, boolean held, LocalDate today,
-            RateRepository rates, BigDecimal floor) {
+            RateRepository rates, BigDecimal floor, LateCharge late) {
         List<Claim> counted = claims.stream().filter(c -> counts(c, held)).toList();
         boolean kept = counted.stream().anyMatch(c -> c.settledDue() != null || c.statedDue() != null);
         if (!kept && rates.on(sheetId, grade, today).isEmpty()) {
             return null;
         }
-        return counted.stream().map(c -> figure(c, grade, rates, floor)).filter(f -> f != null)
+        return counted.stream().map(c -> shown(c, grade, rates, floor, late)).filter(f -> f != null)
                 .reduce(new BigDecimal("0.00"), BigDecimal::add);
     }
 }

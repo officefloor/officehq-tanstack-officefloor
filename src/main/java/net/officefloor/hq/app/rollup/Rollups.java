@@ -15,6 +15,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.Dues;
+import net.officefloor.hq.app.statement.LateCharge;
 import org.springframework.stereotype.Service;
 
 /** Takes the sheet's figures, and records in the audit file how they moved over a change: a ROLLUP line per
@@ -44,6 +45,7 @@ public class Rollups {
     public Rollup take(String sheetId) {
         var today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        LateCharge late = LateCharge.of(sheetId, settings, sheets);
         List<Claim> all = claims.list(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = new BigDecimal("0.00");
@@ -52,7 +54,7 @@ public class Rollups {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.held())).map(Claim::amount)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
-            BigDecimal due = Dues.total(sheetId, theirs, p.grade(), p.held(), today, rates, floor);
+            BigDecimal due = Dues.total(sheetId, theirs, p.grade(), p.held(), today, rates, floor, late);
             claimedTotal = claimedTotal.add(claimed);
             if (due != null) {
                 dueTotal = dueTotal.add(due);

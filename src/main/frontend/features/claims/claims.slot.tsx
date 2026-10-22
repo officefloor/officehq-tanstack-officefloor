@@ -5,7 +5,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
-import { useFloor, useTerms } from '../settings/settings';
+import { useFloor, useLate, useTerms } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
@@ -101,6 +101,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const floor = useFloor(sheetId);
   const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId);
+  const late = useLate(sheetId);
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -120,7 +121,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
-      <span data-testid="claim-due">{claimDue(claim, rate, floor)}</span>{' '}
+      <span data-testid="claim-due">{claimDue(claim, rate, floor, late)}</span>{' '}
       Due by <span data-testid="claim-due-by">{dueBy(claim, terms)}</span>{' '}
       Overdue <span data-testid="claim-overdue">{overdue(claim, terms, today) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}

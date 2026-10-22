@@ -13,8 +13,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Take the person's statement: record their due-total now and the sheet's today, bind each of their claims
- *  that counts to the figure it shows now, and unbind the rest (their due is live again). A settled claim's
+/** Take the person's statement: record their due-total now (late charges included) and the sheet's today, bind
+ *  each of their claims that counts to the figure under it now (never its late charge, which keeps following the
+ *  sheet's today), and unbind the rest (their due is live again). A settled claim's
  *  fixed due is left as it is. */
 public class SaveStatement {
     public void save(@Val Person loaded, PersonRepository people, ClaimRepository claims, RateRepository rates,
@@ -24,7 +25,9 @@ public class SaveStatement {
         var today = sheets.today(person.sheetId());
         BigDecimal floor = settings.floor(person.sheetId());
         List<Claim> theirs = claims.listForPerson(person.sheetId(), person.id());
-        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), person.held(), today, rates, floor);
+        LateCharge late = LateCharge.of(person.sheetId(), settings, sheets);
+        BigDecimal total = Dues.total(person.sheetId(), theirs, person.grade(), person.held(), today, rates, floor,
+                late);
         int counted = 0;
         for (Claim c : theirs) {
             if (Dues.counts(c, person.held())) {

@@ -4,27 +4,31 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
-import { DEFAULT_FLOOR, DEFAULT_TERMS, settingsKey, useSettings, type Settings } from './settings';
+import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, settingsKey, useSettings, type Settings } from './settings';
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
+const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
-type Changes = { clerkLimit?: string; floor?: string; terms?: string };
+type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
- *  A claim's live due is at least the floor; its due-by is its date plus the terms. */
+ *  A claim's live due is at least the floor; its due-by is its date plus the terms; once overdue it gains the late
+ *  percent of its figure for every full 30 days. */
 function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
   const currentLimit = settings.data?.clerkLimit ?? '';
   const currentFloor = settings.data?.floor ?? DEFAULT_FLOOR;
   const currentTerms = settings.data?.terms ?? DEFAULT_TERMS;
+  const currentLatePct = settings.data?.latePct ?? DEFAULT_LATE_PCT;
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
   const [typedTerms, setTypedTerms] = useState<string | null>(null);
+  const [typedLatePct, setTypedLatePct] = useState<string | null>(null);
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
@@ -36,11 +40,12 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedLimit(null);
       setTypedFloor(null);
       setTypedTerms(null);
+      setTypedLatePct(null);
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body
         ? e.body
-        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals, the terms whole days.'),
+        : 'Could not save the settings: the clerk limit and floor must be amounts with up to two decimals, the terms whole days, the late percent a percent.'),
     onSettled: once.done,
   });
 
@@ -72,11 +77,20 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.terms = terms;
     }
+    if (typedLatePct !== null) {
+      const latePct = typedLatePct.trim();
+      if (!PCT.test(latePct)) {
+        setError('The late percent must be a percent, 0.00 or more, with up to two decimals.');
+        return;
+      }
+      changes.latePct = latePct;
+    }
     if (!once.start()) return;
     save.mutate(changes);
   };
 
-  // onInput as well as onChange: retyping the value in force still counts as setting it.
+  // onInput as well as onChange, and focusing the field: retyping (or clearing) the value in force still counts
+  // as setting it.
   const typed = (set: (v: string) => void) => (e: FormEvent<HTMLInputElement>) => {
     set(e.currentTarget.value);
     setError('');
@@ -88,7 +102,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       <p>
         Clerk limit <strong data-testid="setting-clerk-limit-current">{currentLimit}</strong>{' '}
         Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>{' '}
-        Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> days
+        Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> days{' '}
+        Late <strong data-testid="setting-late-pct-current">{currentLatePct}</strong>%
       </p>
       <form data-testid="settings-form" onSubmit={submit}>
         <label>
@@ -99,6 +114,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             value={typedLimit ?? currentLimit}
             onInput={typed(setTypedLimit)}
             onChange={typed(setTypedLimit)}
+            onFocus={() => setTypedLimit((v) => v ?? currentLimit)}
           />
         </label>{' '}
         <label>
@@ -108,6 +124,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             value={typedFloor ?? currentFloor}
             onInput={typed(setTypedFloor)}
             onChange={typed(setTypedFloor)}
+            onFocus={() => setTypedFloor((v) => v ?? currentFloor)}
           />
         </label>{' '}
         <label>
@@ -117,6 +134,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             value={typedTerms ?? currentTerms}
             onInput={typed(setTypedTerms)}
             onChange={typed(setTypedTerms)}
+            onFocus={() => setTypedTerms((v) => v ?? currentTerms)}
+          />
+        </label>{' '}
+        <label>
+          Late percent{' '}
+          <input
+            data-testid="setting-late-pct"
+            value={typedLatePct ?? currentLatePct}
+            onInput={typed(setTypedLatePct)}
+            onChange={typed(setTypedLatePct)}
+            onFocus={() => setTypedLatePct((v) => v ?? currentLatePct)}
           />
         </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

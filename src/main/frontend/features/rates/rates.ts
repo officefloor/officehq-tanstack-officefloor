@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts, type Claim } from '../claims/claims';
+import { counts, dueBy, overdue, type Claim } from '../claims/claims';
 
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
  *  null: from the beginning of time). A grade may have several, one per from-date; none when it has no rate. */
@@ -64,16 +64,33 @@ export function sumDue(dues: string[]): string {
  *  'n/a' when their grade has no rate today (rateToday undefined), unless a settled or stated claim keeps a
  *  figure, then the figures there are added up. */
 export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
-    rateToday: string | undefined, floor: string): string {
+    rateToday: string | undefined, floor: string, late: Late): string {
   const counted = claims.filter(counts);
   if (rateToday === undefined && !counted.some((c) => c.settledDue !== null || c.statedDue !== null)) return 'n/a';
-  return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date), floor)));
+  return sumDue(counted.map((c) => claimDue(c, rateOnDate(c.date), floor, late)));
 }
 
-/** A claim's due: the one fixed when it was settled, else the one its person's last statement bound it to,
- *  else live on its amount at the rate, raised to the sheet's floor when below it. */
-export function claimDue(claim: Claim, rate: string | undefined, floor: string): string {
-  return claim.settledDue ?? claim.statedDue ?? floored(dueOn(claim.amount, rate), floor);
+/** What the late charge follows: the sheet's terms in days, its late percent (two decimals) and its today. */
+export type Late = { terms: number; pct: string; today: string };
+
+/** A claim's due: the one fixed when it was settled (its late charge frozen in), else its figure — the one its
+ *  person's last statement bound it to, else live on its amount at the rate, raised to the sheet's floor when
+ *  below it — with the late charge on that figure added on top. */
+export function claimDue(claim: Claim, rate: string | undefined, floor: string, late: Late): string {
+  if (claim.settledDue !== null) return claim.settledDue;
+  const figure = claim.statedDue ?? floored(dueOn(claim.amount, rate), floor);
+  return figure === 'n/a' ? figure : fromCents(toCents(figure) + toCents(lateCharge(claim, figure, late)));
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The late charge on a claim whose figure is `figure`: the late percent of it for every full 30 days the
+ *  claim is overdue (past its due-by, on the sheet's today), rounded like a due; 0.00 when not overdue. */
+export function lateCharge(claim: Claim, figure: string, late: Late): string {
+  if (!overdue(claim, late.terms, late.today)) return '0.00';
+  const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(claim, late.terms)}T00:00:00Z`)) / DAY_MS);
+  const periods = BigInt(Math.floor(days / 30));
+  return dueOn(figure, fromCents(toCents(late.pct) * periods));
 }
 
 /** A live due raised to the floor when below it; 'n/a' stays 'n/a'. */

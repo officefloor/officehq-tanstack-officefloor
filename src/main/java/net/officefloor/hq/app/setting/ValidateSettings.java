@@ -7,8 +7,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Bind the body and refuse it before anything is read or written: a signed-in user, a clerk limit (when given)
  *  that is blank (no limit) or an amount 0.00 or more with up to two decimals, and a floor (when given) that is an
  *  amount 0.00 or more with up to two decimals, and terms (when given) that
- *  are a whole number of days. */
+ *  are a whole number of days, and a late percent (when given) that is a percent 0.00 or more with up to two decimals. */
 public class ValidateSettings {
+    private static final String PERCENT = "\\d{1,3}(\\.\\d{1,2})?";
     private static final String AMOUNT = "\\d{1,12}(\\.\\d{1,2})?";
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body) throws InvalidSettingException {
@@ -27,9 +28,14 @@ public class ValidateSettings {
         if (terms != null && !terms.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The terms must be a whole number of days, 0 or more.");
         }
+        String latePct = request.latePct() == null ? null : request.latePct().trim();
+        if (latePct != null && !latePct.matches(PERCENT)) {
+            throw new InvalidSettingException("The late percent must be a percent, 0.00 or more, with up to two decimals.");
+        }
         body.set(new SettingsInput(request.user().trim(), limit != null,
                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
                 floor == null ? null : new BigDecimal(floor).setScale(2),
-                terms == null ? null : Integer.valueOf(terms)));
+                terms == null ? null : Integer.valueOf(terms),
+                latePct == null ? null : new BigDecimal(latePct).setScale(2)));
     }
 }

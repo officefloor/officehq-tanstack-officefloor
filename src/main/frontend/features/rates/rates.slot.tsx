@@ -9,7 +9,7 @@ import { live, useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloor } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
 import { personDue, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
@@ -134,8 +134,9 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; pe
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
   const due = personDue(live(claims, [person]), (d) => rateOn(rates, person.grade, d), rateOn(rates, person.grade, today),
-    floor);
+    floor, late);
   return <td data-testid="person-due-total">{due}</td>;
 }
 
@@ -146,12 +147,14 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
   const dues = people.map((p) =>
     personDue(
       claims.filter((c) => c.personId === p.id),
       (d) => rateOn(rates, p.grade, d),
       rateOn(rates, p.grade, today),
       floor,
+      late,
     ),
   );
   return (

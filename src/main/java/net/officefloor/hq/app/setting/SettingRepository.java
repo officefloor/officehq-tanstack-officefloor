@@ -14,6 +14,9 @@ public class SettingRepository {
     /** The terms of a sheet that has none stored yet. */
     public static final int DEFAULT_TERMS = 14;
 
+    /** The late percent of a sheet that has none stored yet. */
+    public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
@@ -22,7 +25,7 @@ public class SettingRepository {
 
     /** The sheet's settings as they are now. */
     public Settings of(String sheetId) {
-        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId));
+        return new Settings(sheetId, clerkLimit(sheetId), floor(sheetId), terms(sheetId), latePct(sheetId));
     }
 
     /** The sheet's clerk limit: two decimals, or null when there is none. */
@@ -51,6 +54,17 @@ public class SettingRepository {
 
     public void setTerms(String sheetId, int terms) {
         jdbc.update("UPDATE sheet SET terms_days = ? WHERE id = ?", terms, sheetId);
+    }
+
+    /** The sheet's late percent: two decimals; an overdue claim gains it, of its figure, every full 30 days. */
+    public BigDecimal latePct(String sheetId) {
+        BigDecimal pct = jdbc.query("SELECT late_pct FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBigDecimal(1) : null, sheetId);
+        return pct != null ? pct.setScale(2) : DEFAULT_LATE_PCT;
+    }
+
+    public void setLatePct(String sheetId, BigDecimal pct) {
+        jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
     }
 
     public void setFloor(String sheetId, BigDecimal floor) {
