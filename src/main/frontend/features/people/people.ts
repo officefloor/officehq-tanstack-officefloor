@@ -46,7 +46,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in list order (by their position; new people go to the end). */
 export function usePeople(sheetId: string) {
   return useQuery({
     queryKey: peopleKey(sheetId),

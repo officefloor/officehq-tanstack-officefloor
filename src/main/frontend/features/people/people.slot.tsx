@@ -306,7 +306,7 @@ function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-/** The sheet's people in the order they were added, each with their name and grade. Retired people have no
+/** The sheet's people in list order, each with their name and grade. Retired people have no
  *  row unless "show retired" is on. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);

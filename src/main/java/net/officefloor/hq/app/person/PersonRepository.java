@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** People by sheet, in the order they were added. */
+/** People by sheet, in list order: by their position in the list (new people go to the end). */
 @Repository
 public class PersonRepository {
 
@@ -39,6 +39,9 @@ public class PersonRepository {
     private static final RowMapper<AliasRow> ALIAS_ROW = (rs, i) -> new AliasRow(rs.getLong("person_id"),
             rs.getString("alias"));
 
+    /** The position after the last on a sheet (the sheet id its one parameter). */
+    private static final String END_POSITION = "(SELECT COALESCE(MAX(p.list_position), 0) + 1 FROM person p WHERE p.sheet_id = ?)";
+
     private final JdbcTemplate jdbc;
 
     public PersonRepository(JdbcTemplate jdbc) {
@@ -46,7 +49,7 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId));
+        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId));
     }
 
     /** The person on this sheet, or null when absent. */
@@ -164,14 +167,15 @@ public class PersonRepository {
     public Person insert(String sheetId, String name, String grade, Integer terms, String contact) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms, contact, added_on) VALUES (?, ?, ?, ?, "
-                    + "(SELECT today FROM sheet WHERE id = ?))",
+            var ps = con.prepareStatement("INSERT INTO person (sheet_id, name, terms, contact, added_on, list_position) VALUES (?, ?, ?, ?, "
+                    + "(SELECT today FROM sheet WHERE id = ?), " + END_POSITION + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
             ps.setString(4, contact);
             ps.setString(5, sheetId);
+            ps.setString(6, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -268,8 +272,27 @@ public class PersonRepository {
                     person.id());
         }
         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
-                + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?) WHERE sheet_id = ? AND id = ?",
-                toSheet, toSheet, sheetId, person.id());
+                + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_position = " + END_POSITION
+                + " WHERE sheet_id = ? AND id = ?", toSheet, toSheet, toSheet, sheetId, person.id());
+    }
+
+    /** Swap the person with the one above (up) or below (down) them in the list: their new position, counting from
+     *  1, or 0 (nothing written) when there is no one there to swap with. Leaves the version alone. */
+    public int move(Person person, boolean up) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY list_position, id FOR UPDATE",
+                Long.class, person.sheetId());
+        int at = ids.indexOf(person.id());
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= ids.size()) {
+            return 0;
+        }
+        // renumber the sheet's list as it stands, then swap the two places
+        for (int i = 0; i < ids.size(); i++) {
+            long id = ids.get(i);
+            long position = i == at ? to + 1 : i == to ? at + 1 : i + 1;
+            jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", position, person.sheetId(), id);
+        }
+        return to + 1;
     }
 
     /** Set the person's own terms in days (null: none). */
@@ -312,11 +335,11 @@ public class PersonRepository {
 
     // ---- as of a date: the changes made while the sheet's today was on or before it -------------------------
 
-    /** The sheet's people as they stood at the end of the day, in the order they were added: those added by then,
+    /** The sheet's people as they stood at the end of the day, in list order: those added by then,
      *  each with their grades, holds, retirement and statements then, and the grade in force on that day. */
     public List<Person> listAsOf(String sheetId, LocalDate end) {
         Map<Long, List<String>> aliasesByPerson = aliases(sheetId, end);
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY id",
+        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY list_position, id",
                 ROW, sheetId, end).stream().map(p -> asOf(p, end, aliasesByPerson.getOrDefault(p.id(), List.of())))
                 .toList();
     }

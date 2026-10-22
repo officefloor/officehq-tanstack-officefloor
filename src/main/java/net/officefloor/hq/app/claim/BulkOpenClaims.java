@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Open each selected claim that can be opened, in list order (people in the order they were added, newest
+/** Open each selected claim that can be opened, in list order (people in list order, newest
  *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
  *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
  *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, dated in a closed period, or with an empty note and a due above the note threshold in force on its date) is left as it is and counted as refused. */

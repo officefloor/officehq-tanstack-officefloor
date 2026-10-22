@@ -53,6 +53,7 @@ function BulkGrade({ sheetId, user }: { sheetId: string; user: string }) {
           onChange={(e) => {
             setGrade(e.target.value);
             setError('');
+            setResult(null);
           }}
         >
           {GRADES.map((g) => (
@@ -71,6 +72,7 @@ function BulkGrade({ sheetId, user }: { sheetId: string; user: string }) {
           onChange={(e) => {
             setFrom(e.target.value);
             setError('');
+            setResult(null);
           }}
         />
       </label>{' '}
