@@ -58,7 +58,9 @@ public class Rollups {
         List<BigDecimal> overdues = new ArrayList<>();
         for (Person p : people.list(sheetId)) {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
-            BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today))
+            // claimed: the amounts of their claims that count, leaving out corrections of another claim
+            BigDecimal claimed = theirs.stream()
+                    .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && c.corrects() == null)
                     .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
             BigDecimal due = Dues.capped(
                     Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late), cap);

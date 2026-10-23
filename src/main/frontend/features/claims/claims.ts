@@ -152,10 +152,10 @@ export function useEditingClaim() {
   return useSearchParam('editClaim', asString);
 }
 
-/** The amounts of the claims that count (OPEN, PENDING and SETTLED) added up exactly (in cents) and shown
- *  with two decimals. */
+/** The amounts of the claims that count (OPEN, PENDING and SETTLED), leaving out those that correct another,
+ *  added up exactly (in cents) and shown with two decimals: the claimed figure. */
 export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.filter(counts).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => counts(c) && !c.corrects).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
   const abs = Math.abs(cents);
   return `${cents < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
 }
