@@ -1,0 +1,138 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index 7cdc111..46db77c 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -9,7 +9,7 @@ import type { Person } from '../people/people';
+ import { plansKey, usePlans } from './plans';
+ import type { Plan } from './plans';
+ 
+-/** The person's plans, each with how many claims it has made so far, and the form that adds one: an amount, a start
++/** The person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form that adds one: an amount, a start
+  *  date, every N days (a whole number, at least 1) or
+  *  monthly on a day of the month (1 to 31), and an end date, not before the start. */
+ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+@@ -58,7 +58,8 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
+         {plans.map((p) => (
+           <li key={p.id} data-testid={`plan-row-${p.id}`}>
+             {p.amount} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}; made{' '}
+-            <span data-testid="plan-generated">{p.generated}</span>
++            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
++            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
+           </li>
+         ))}
+       </ul>
+diff --git a/src/main/frontend/features/plans/plans.ts b/src/main/frontend/features/plans/plans.ts
+index 23418b1..a41f283 100644
+--- a/src/main/frontend/features/plans/plans.ts
++++ b/src/main/frontend/features/plans/plans.ts
+@@ -13,6 +13,8 @@ export type Plan = {
+   day: number | null;
+   end: string;
+   generated: number;
++  /** The first five plan dates after the sheet's today and on or before the end, in order. */
++  nextDates: string[];
+ };
+ 
+ export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java b/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java
+index cd52264..8b1cf96 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java
++++ b/src/main/java/net/officefloor/hq/app/plan/AuditPlanAdded.java
+@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Record the stored plan in the audit file, as the screen shows it. */
+ public class AuditPlanAdded {
+     public void audit(@Val PlanInput input, @Val Person person, @Val Plan plan, Audit audit) {
+-        PlanResponse shown = PlanResponse.from(plan);
++        PlanResponse shown = PlanResponse.from(plan, null);
+         audit.record("PLAN_ADDED sheet=" + plan.sheetId() + " by=" + input.user() + " name=" + person.name()
+                 + " amount=" + shown.amount() + " start=" + shown.start() + (shown.day() != null ? " day=" + shown.day() : " every=" + shown.every())
+                 + " end=" + shown.end());
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index fd092bb..f8f9e29 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -32,4 +32,15 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
+             }
+         }
+     }
++
++    /** The first `count` plan dates after the given today and on or before the end, in order. */
++    public List<LocalDate> nextDates(LocalDate today, int count) {
++        List<LocalDate> next = new ArrayList<>();
++        for (LocalDate date : dates(end)) {
++            if (date.isAfter(today) && next.size() < count) {
++                next.add(date);
++            }
++        }
++        return next;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index b80d1e9..00c1ec3 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -1,11 +1,16 @@
+ package net.officefloor.hq.app.plan;
+ 
++import java.time.LocalDate;
++import java.util.List;
++
+ /** A plan as the screen gets it: whose it is, its amount (two decimals), dates (yyyy-mm-dd), every N days or the day of
+- *  the month it runs on monthly (the other null), and how many claims it has made so far. */
++ *  the month it runs on monthly (the other null), how many claims it has made so far, and its next five plan dates after
++ *  the sheet's today (none when the sheet has no today). */
+ public record PlanResponse(long id, long personId, String amount, String start, Integer every, Integer day, String end,
+-        int generated) {
+-    public static PlanResponse from(Plan p) {
++        int generated, List<String> nextDates) {
++    public static PlanResponse from(Plan p, LocalDate today) {
+         return new PlanResponse(p.id(), p.personId(), p.amount().setScale(2).toPlainString(), p.start().toString(),
+-                p.every(), p.day(), p.end().toString(), p.generated());
++                p.every(), p.day(), p.end().toString(), p.generated(),
++                today == null ? List.of() : p.nextDates(today, 5).stream().map(LocalDate::toString).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlanCreated.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlanCreated.java
+index c743b1f..c82f5b4 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlanCreated.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlanCreated.java
+@@ -1,12 +1,13 @@
+ package net.officefloor.hq.app.plan;
+ 
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ 
+ public class RespondWithPlanCreated {
+-    public void respond(@Val Plan plan, ObjectResponse<ResponseEntity<PlanResponse>> response) {
+-        response.send(new ResponseEntity<>(PlanResponse.from(plan), HttpStatus.CREATED));
++    public void respond(@Val Plan plan, SheetRepository sheets, ObjectResponse<ResponseEntity<PlanResponse>> response) {
++        response.send(new ResponseEntity<>(PlanResponse.from(plan, sheets.today(plan.sheetId())), HttpStatus.CREATED));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 8b7aef8..469f484 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.plan;
+ 
+ import java.util.List;
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Every plan on the sheet, in the order they were added. */
++/** Every plan on the sheet, in the order they were added, each with its next dates after the sheet's today. */
+ public class RespondWithPlans {
+-    public void respond(@PathVariable("sheetId") String sheetId, PlanRepository repository,
++    public void respond(@PathVariable("sheetId") String sheetId, PlanRepository repository, SheetRepository sheets,
+             ObjectResponse<List<PlanResponse>> response) {
+-        response.send(repository.list(sheetId.trim()).stream().map(PlanResponse::from).toList());
++        LocalDate today = sheets.today(sheetId.trim());
++        response.send(repository.list(sheetId.trim()).stream().map(p -> PlanResponse.from(p, today)).toList());
+     }
+ }
