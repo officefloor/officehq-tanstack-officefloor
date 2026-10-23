@@ -1,0 +1,179 @@
+diff --git a/src/main/frontend/features/people/inlinegrade.slot.tsx b/src/main/frontend/features/people/inlinegrade.slot.tsx
+new file mode 100644
+index 0000000..22648c7
+--- /dev/null
++++ b/src/main/frontend/features/people/inlinegrade.slot.tsx
+@@ -0,0 +1,75 @@
++import { useEffect, useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { PersonRow } from '../../slots/defs/personRow';
++import { claimsKey } from '../claims/claims';
++import { poolsKey } from '../pools/pools';
++import { GRADES, peopleKey } from './people';
++import { usePersonError } from './rowError';
++import type { Person } from './people';
++
++/** A grade select and save button on the person's row: saves the chosen grade from the sheet's today exactly as
++ *  the person form's edit would (name, terms and contact kept), refused when the person has been saved since the
++ *  version the row shows. */
++function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [grade, setGrade] = useState(person.grade);
++  const { error, setError, begin } = usePersonError(sheetId, person.id);
++  const once = useSubmitOnce();
++
++  // follow the grade the row shows once it changes (a save here, or another's re-loaded)
++  useEffect(() => setGrade(person.grade), [person.grade, person.version]);
++
++  const save = useMutation({
++    mutationFn: (body: { user: string; grade: string; version: number }) =>
++      putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/grade`, body),
++    onSuccess: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      ]);
++    },
++    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : `Could not grade ${person.name}.`),
++    onSettled: once.done,
++  });
++
++  return (
++    <td>
++      <select
++        data-testid="person-inline-grade"
++        value={grade}
++        onChange={(e) => {
++          setGrade(e.target.value);
++          setError('');
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="person-inline-grade-save"
++        disabled={save.isPending}
++        onClick={() => {
++          begin();
++          if (!once.start()) return;
++          save.mutate({ user, grade, version: person.version });
++        }}
++      >
++        Save grade
++      </button>
++      {error && (
++        <p data-testid="person-error" role="alert">
++          {error}
++        </p>
++      )}
++    </td>
++  );
++}
++
++export const contribution = PersonRow.fill({ order: 2, Component: PersonInlineGrade });
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildInlineGradeEdit.java b/src/main/java/net/officefloor/hq/app/person/BuildInlineGradeEdit.java
+new file mode 100644
+index 0000000..e23e881
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BuildInlineGradeEdit.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** The row's grade as the person form's edit of the loaded person: its name kept, the grade from the sheet's today,
++ *  terms, contact and tags left as they are. */
++public class BuildInlineGradeEdit {
++    public void build(@Val InlineGradeRequest request, @Val Person loaded, Out<PersonRequest> edit) {
++        edit.set(new PersonRequest(request.user(), loaded.name(), request.grade(), request.version(), null, null, null,
++                null));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java b/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java
+new file mode 100644
+index 0000000..f05cfb5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a grade saved from a person's row: who is saving it, the grade, and the version of the person the row
++ *  showed (null: not checked). The grade applies from the sheet's today. */
++public record InlineGradeRequest(String user, String grade, Long version) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java b/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java
+new file mode 100644
+index 0000000..d49a54e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.person;
++
++import java.util.Set;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the body and refuse it before anything is read or written: a signed-in user and a grade of A, B or C. */
++public class ValidateInlineGrade {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void validate(@RequestBody InlineGradeRequest request, Out<InlineGradeRequest> body)
++            throws InvalidPersonException {
++        if (request == null || request.user() == null || request.user().isBlank()) {
++            throw new InvalidPersonException("Sign in before changing people.");
++        }
++        String grade = request.grade() == null ? "" : request.grade().trim();
++        if (!GRADES.contains(grade)) {
++            throw new InvalidPersonException("The grade must be A, B or C.");
++        }
++        body.set(new InlineGradeRequest(request.user().trim(), grade, request.version()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.PUT.yml
+new file mode 100644
+index 0000000..ca34a65
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.PUT.yml
+@@ -0,0 +1,33 @@
++# Save the grade chosen on a person's row from the sheet's today, exactly as the person form's edit would (name, terms,
++# contact and tags kept): its PERSON_EDITED line and then how the sheet's figures moved over it. A refused grade (no
++# user, bad grade, unknown person, a person saved by someone else since the row's version) writes nothing.
++validate:
++  class: net.officefloor.hq.app.person.ValidateInlineGrade
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.person.BuildInlineGradeEdit
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.person.SavePerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditPersonRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
