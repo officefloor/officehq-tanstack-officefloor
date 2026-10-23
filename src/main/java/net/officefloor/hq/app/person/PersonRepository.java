@@ -19,7 +19,7 @@ public class PersonRepository {
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
             rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
-            rs.getString("contact"), List.of(), rs.getString("origin"), List.of(), rs.getString("tags"));
+            rs.getString("contact"), List.of(), rs.getString("origin"), List.of(), rs.getString("tags"), List.of());
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -38,6 +38,12 @@ public class PersonRepository {
 
     private static final RowMapper<RetirementRow> RETIREMENT_ROW = (rs, i) -> new RetirementRow(rs.getLong("person_id"),
             new Person.Retirement(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+
+    private record StatementRow(long personId, Person.StatementLine line) {
+    }
+
+    private static final RowMapper<StatementRow> STATEMENT_ROW = (rs, i) -> new StatementRow(rs.getLong("person_id"),
+            new Person.StatementLine(rs.getObject("statement_date", LocalDate.class), rs.getBigDecimal("due_total")));
 
     private record AliasRow(long personId, String alias) {
     }
@@ -88,13 +94,19 @@ public class PersonRepository {
                         Collectors.mapping(HoldRow::hold, Collectors.toList())));
         Map<Long, List<String>> aliasesByPerson = aliases(sheetId, null);
         Map<Long, List<Person.Retirement>> retirementsByPerson = retirements(sheetId, null);
+        Map<Long, List<Person.StatementLine>> statementsByPerson = jdbc.query(
+                "SELECT person_id, due_total, statement_date FROM person_statement WHERE sheet_id = ? AND NOT cancelled "
+                        + "ORDER BY person_id, id", STATEMENT_ROW, sheetId).stream()
+                .collect(Collectors.groupingBy(StatementRow::personId,
+                        Collectors.mapping(StatementRow::line, Collectors.toList())));
         return people.stream().map(p -> {
             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
                     new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
                     aliasesByPerson.getOrDefault(p.id(), List.of()), p.origin(),
-                    retirementsByPerson.getOrDefault(p.id(), List.of()), p.tags());
+                    retirementsByPerson.getOrDefault(p.id(), List.of()), p.tags(),
+                    statementsByPerson.getOrDefault(p.id(), List.of()));
         }).toList();
     }
 
@@ -212,7 +224,7 @@ public class PersonRepository {
                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
                 new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of(), null,
-                List.of(), null);
+                List.of(), null, List.of());
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -430,6 +442,7 @@ public class PersonRepository {
         Long last = null;
         BigDecimal total = null;
         LocalDate date = null;
+        List<Person.StatementLine> lines = new java.util.ArrayList<>();
         for (var row : jdbc.queryForList("SELECT id, due_total, statement_date, made_on, cancelled, cancelled_on "
                 + "FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY id", p.sheetId(), p.id())) {
             rows++;
@@ -447,6 +460,7 @@ public class PersonRepository {
                 last = ((Number) row.get("id")).longValue();
                 total = (BigDecimal) row.get("due_total");
                 date = toDate(row.get("statement_date"));
+                lines.add(new Person.StatementLine(date, total));
             }
         }
         if (rows == 0) { // none kept: the person's last statement, if any, was taken before history was kept
@@ -455,7 +469,7 @@ public class PersonRepository {
         }
         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
                 retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases, p.origin(),
-                retirements, p.tags());
+                retirements, p.tags(), lines);
     }
 
     private static LocalDate toDate(Object value) {

@@ -16,6 +16,6 @@ public class SaveUnretire {
         saved.set(PersonResponse.from(new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
                 loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), null,
                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
-                retirements, loaded.tags())));
+                retirements, loaded.tags(), loaded.statements())));
     }
 }

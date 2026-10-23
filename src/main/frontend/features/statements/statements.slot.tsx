@@ -8,7 +8,7 @@ import { usePersonError } from '../people/rowError';
 import type { Person } from '../people/people';
 import { useColumnShown } from '../people/columns';
 
-/** A person's statements: how many have been taken, the last one's due-total and date, and the button that
+/** A person's statements: one line per statement still standing, oldest first, as its date and due-total; how many have been taken, the last one's due-total and date, and the button that
  *  takes one (recording their due-total now and binding their claims that count to the figures they show; or, with a
  *  date in the as-of entry beside it, as they stood at the end of that date), and the
  *  button that cancels the last one (a steward only: its claims are live again; the row shows the one before it). */
@@ -51,6 +51,13 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
   const showDate = useColumnShown('statement-date');
   return (
     <td>
+      <ul data-testid="person-statement-lines">
+        {(person.statements ?? []).map((s, i) => (
+          <li key={i} data-testid="person-statement-line-line">
+            {`${s.date ?? ''} ${s.dueTotal ?? 'n/a'}`}
+          </li>
+        ))}
+      </ul>
       {showCount && (
         <>
           Statements <span data-testid="person-statement-count">{person.statementCount}</span>{' '}

@@ -16,7 +16,7 @@ public class SavePerson {
         Person person = new Person(loaded.id(), loaded.sheetId(), request.name(), loaded.grade(), from + 1,
                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
-                loaded.retirements(), loaded.tags());
+                loaded.retirements(), loaded.tags(), loaded.statements());
         if (!repository.update(person, from)) {
             throw new StalePersonException(loaded.name());
         }

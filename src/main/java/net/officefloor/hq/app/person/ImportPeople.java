@@ -80,7 +80,7 @@ public class ImportPeople {
         Person person = new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(), loaded.version() + 1,
                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
-                loaded.retirements(), loaded.tags());
+                loaded.retirements(), loaded.tags(), loaded.statements());
         if (!repository.update(person, loaded.version())) {
             throw new InvalidPersonException(new StalePersonException(loaded.name()).getMessage());
         }

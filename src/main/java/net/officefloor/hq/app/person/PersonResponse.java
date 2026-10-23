@@ -9,11 +9,16 @@ import java.util.List;
  *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), their contact (null: none), their aliases, sorted as
  *  names are compared, whether their name or an alias is also used on another sheet of their sheet's tree, and the
  *  sheet they were last transferred from (null: never transferred), and their past retirements, in the order they
- *  ended, and their tags, sorted (empty when none). */
+ *  ended, and their tags, sorted (empty when none), and their statements still standing, in the order taken. */
 public record PersonResponse(long id, String name, String grade, long version, int statementCount,
         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeResponse> grades,
         List<HoldResponse> holds, Integer terms, String contact, List<String> aliases,
-        boolean clashing, String origin, List<RetirementResponse> retirements, List<String> tags) {
+        boolean clashing, String origin, List<RetirementResponse> retirements, List<String> tags,
+        List<StatementLineResponse> statements) {
+
+    /** A statement still standing: its date (yyyy-mm-dd) and due-total (two decimals; null: n/a). */
+    public record StatementLineResponse(String date, String dueTotal) {
+    }
 
     /** A past retirement from a from-date to the day they were unretired (yyyy-mm-dd). */
     public record RetirementResponse(String from, String to) {
@@ -42,6 +47,9 @@ public record PersonResponse(long id, String name, String grade, long version, i
                         h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact(), p.aliases(),
                 clashing, p.origin(), p.retirements().stream()
                         .map(r -> new RetirementResponse(r.from().toString(), r.to().toString())).toList(),
-                p.tags() != null ? List.of(p.tags().split(",")) : List.of());
+                p.tags() != null ? List.of(p.tags().split(",")) : List.of(),
+                p.statements().stream().map(s -> new StatementLineResponse(
+                        s.date() != null ? s.date().toString() : null,
+                        s.dueTotal() != null ? s.dueTotal().toPlainString() : null)).toList());
     }
 }
