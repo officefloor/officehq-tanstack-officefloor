@@ -12,6 +12,8 @@ import { claimsKey } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
 import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
 import { useColumnShown } from './columns';
+import { useCrews } from '../crews/crews';
+import { useActingRole } from '../roles/roles.slot';
 
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
@@ -356,8 +358,24 @@ function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
+/** The people this user's people list may show: everyone, unless the user acts as restricted — then only the
+ *  person with their name and the leads and members of the crews that person leads or belongs to. */
+function useVisiblePeople(sheetId: string, user: string, people: Person[]): Person[] {
+  const restricted = useActingRole(sheetId, user) === 'restricted';
+  const crews = useCrews(sheetId).data ?? [];
+  if (!restricted) return people;
+  const self = people.filter((p) => p.name === user.trim()).map((p) => p.id);
+  const ids = new Set(self);
+  for (const crew of crews) {
+    const ofCrew = [crew.leadId, ...crew.members.map((m) => m.personId)];
+    if (ofCrew.some((id) => self.includes(id))) ofCrew.forEach((id) => ids.add(id));
+  }
+  return people.filter((p) => ids.has(p.id));
+}
+
 /** The sheet's people, in list order unless this user's screen sorts them otherwise, each with their name and
- *  grade. Retired people have no row unless "show retired" is on. */
+ *  grade. Retired people have no row unless "show retired" is on. A restricted user sees only the person with their
+ *  name and the people of the crews that person leads or belongs to (no row at all when no person has their name). */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const people = usePeople(sheetId);
@@ -372,7 +390,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   // Loading another sheet drops the terms this screen just saved on this one.
   useEffect(() => () => queryClient.removeQueries({ queryKey: savedTermsKey(sheetId) }), [queryClient, sheetId]);
   const showContact = useColumnShown('contact');
-  const listed = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
+  const visible = useVisiblePeople(sheetId, user, people.data ?? []);
+  const listed = useSortedPeople(sheetId, visible.filter((p) => showRetired || p.retiredFrom === null));
 
   return (
     <section data-testid="people">

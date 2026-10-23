@@ -5,9 +5,9 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: a signed-in user, a user name, and a role
- *  of clerk, steward or viewer. */
+ *  of clerk, steward, viewer or restricted. */
 public class ValidateRole {
-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
+    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER, Role.RESTRICTED);
 
     public void validate(@RequestBody RoleRequest request, Out<RoleInput> body) throws InvalidRoleException {
         if (request == null || request.user() == null || request.user().isBlank()) {
@@ -19,7 +19,7 @@ public class ValidateRole {
         }
         String role = request.role() == null ? "" : request.role().trim();
         if (!ROLES.contains(role)) {
-            throw new InvalidRoleException("The role must be clerk, steward or viewer.");
+            throw new InvalidRoleException("The role must be clerk, steward, viewer or restricted.");
         }
         body.set(new RoleInput(request.user().trim(), name, role));
     }

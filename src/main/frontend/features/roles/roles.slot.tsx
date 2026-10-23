@@ -5,12 +5,22 @@ import { getJson, HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 
-/** A user name's role on the sheet: clerk, steward or viewer. A name with no role assigned is a clerk. */
+/** A user name's role on the sheet: clerk, steward, viewer or restricted. A name with no role assigned is a clerk. */
 export type Role = { user: string; role: string };
 
 export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
 
-const ROLES = ['clerk', 'steward', 'viewer'];
+const ROLES = ['clerk', 'steward', 'viewer', 'restricted'];
+
+/** The role the user acts in on the sheet (a delegation in force makes them a steward). Keyed under the
+ *  sheet's roles, so setting a role re-reads it. */
+export function useActingRole(sheetId: string, user: string) {
+  return useQuery({
+    queryKey: [...rolesKey(sheetId), user] as const,
+    queryFn: () =>
+      getJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles/${encodeURIComponent(user)}`),
+  }).data?.role;
+}
 
 /** The sheet's assigned roles and the form that assigns one (replacing any the name had). */
 function Roles({ sheetId, user }: { sheetId: string; user: string }) {
@@ -33,7 +43,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
       setRole('');
     },
     onError: (e) =>
-      setError(e instanceof HttpError && e.body ? e.body : 'Could not set this role: give a user name and clerk, steward or viewer.'),
+      setError(e instanceof HttpError && e.body ? e.body : 'Could not set this role: give a user name and clerk, steward, viewer or restricted.'),
     onSettled: once.done,
   });
 
@@ -45,7 +55,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
       return;
     }
     if (!ROLES.includes(role.trim())) {
-      setError('The role must be clerk, steward or viewer.');
+      setError('The role must be clerk, steward, viewer or restricted.');
       return;
     }
     if (!once.start()) return;
@@ -62,7 +72,7 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
       <h2>Roles</h2>
       <form data-testid="role-form" onSubmit={submit}>
         <input data-testid="role-form-user" placeholder="User name" value={name} onChange={change(setName)} />{' '}
-        <input data-testid="role-form-role" placeholder="clerk, steward or viewer" list="role-options" value={role}
+        <input data-testid="role-form-role" placeholder="clerk, steward, viewer or restricted" list="role-options" value={role}
           onChange={change(setRole)} />
         <datalist id="role-options">
           {ROLES.map((r) => (
@@ -78,7 +88,8 @@ function Roles({ sheetId, user }: { sheetId: string; user: string }) {
           </p>
         )}
       </form>
-      <p>Anyone not listed is a clerk. A viewer sees everything and can change nothing.</p>
+      <p>Anyone not listed is a clerk. A viewer sees everything and can change nothing. A restricted user sees on the
+        people list only their own crews' people and themselves.</p>
       <ul>
         {roles.map((r) => (
           <li key={r.user} data-testid={`role-row-${r.user}`}>
