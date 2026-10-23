@@ -1,0 +1,393 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 8818132..3449533 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -16,6 +16,7 @@ import { setSelected, useSelectedClaims } from './selection';
+ import { setLockRefused, useLockRefused } from './lock';
+ import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
+ import { useTemplates } from '../templates/templates';
++import { useColumnShown } from '../people/columns';
+ 
+ const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+ 
+@@ -742,12 +743,13 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+   const [editingId] = useEditingClaim();
+   const editing = claims.find((c) => String(c.id) === editingId);
+   const [added, setAdded] = useState(0);
++  const showClaimed = useColumnShown('claimed');
+   const rates = useRates(sheetId).data ?? [];
+   const today = useSheetToday(sheetId);
+ 
+   return (
+     <>
+-      <td data-testid="person-claimed">{sumAmounts(live(claims, [person], today))}</td>
++      {showClaimed && <td data-testid="person-claimed">{sumAmounts(live(claims, [person], today))}</td>}
+       <td>
+         {/* Keyed by the claim being edited (and each add), so the form fills with its values or starts blank. */}
+         <ClaimForm
+diff --git a/src/main/frontend/features/claims/overdue.slot.tsx b/src/main/frontend/features/claims/overdue.slot.tsx
+index 5ffca9b..7994b26 100644
+--- a/src/main/frontend/features/claims/overdue.slot.tsx
++++ b/src/main/frontend/features/claims/overdue.slot.tsx
+@@ -6,6 +6,7 @@ import { overdueDues, sheetOverdueTotal, sumDue, useRates } from '../rates/rates
+ import { useFloor, useLate } from '../settings/settings';
+ import { useClaims } from './claims';
+ import type { Claim } from './claims';
++import { useColumnShown } from '../people/columns';
+ 
+ function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
+   const rates = useRates(sheetId).data ?? [];
+@@ -20,10 +21,12 @@ function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
+ function PersonOverdue({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+   const { count, total } = useOverdue(sheetId, [person], claims);
++  const showCount = useColumnShown('overdue-count');
++  const showTotal = useColumnShown('overdue-total');
+   return (
+     <>
+-      <td data-testid="person-overdue-count">{count}</td>
+-      <td data-testid="person-overdue-total">{total}</td>
++      {showCount && <td data-testid="person-overdue-count">{count}</td>}
++      {showTotal && <td data-testid="person-overdue-total">{total}</td>}
+     </>
+   );
+ }
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 8d28979..193fc44 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -11,12 +11,15 @@ import { useFloor, useLate } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ import { patronsKey, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
++import { useColumnShown } from '../people/columns';
+ 
+ /** A person's patrons, each as <name> <share> sorted by name — 100.00 split equally in the order they were named, the
+  *  first-named taking the remainder (see patronShares) — their backing — each patron's settled figures over their
+  *  SETTLED claims dated within the 90 days up to and including the sheet's today (see recentSettledSum) times their
+  *  share / 100, added up and rounded half to even (see sharedSum); 0.00 with none — and the picker that names one more. */
+ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const showPatrons = useColumnShown('patrons');
++  const showBacking = useColumnShown('backing');
+   const queryClient = useQueryClient();
+   const people = usePeople(sheetId).data ?? [];
+   const today = useSheetToday(sheetId);
+@@ -55,8 +58,16 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
+ 
+   return (
+     <td>
+-      Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
+-      Backing <span data-testid="person-backing">{backing}</span>{' '}
++      {showPatrons && (
++        <>
++          Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
++        </>
++      )}
++      {showBacking && (
++        <>
++          Backing <span data-testid="person-backing">{backing}</span>{' '}
++        </>
++      )}
+       <select
+         data-testid="person-patron-select"
+         value={chosen}
+diff --git a/src/main/frontend/features/people/alias.slot.tsx b/src/main/frontend/features/people/alias.slot.tsx
+index 0775e3e..2830ffc 100644
+--- a/src/main/frontend/features/people/alias.slot.tsx
++++ b/src/main/frontend/features/people/alias.slot.tsx
+@@ -7,11 +7,13 @@ import { PersonRow } from '../../slots/defs/personRow';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+ import type { Person } from './people';
++import { useColumnShown } from './columns';
+ 
+ /** The person's aliases, sorted as names are compared, and the form that gives them another. An alias shares the
+  *  names' uniqueness: it must not equal, as names are compared, any name or alias on the sheet. The quick-add bar and
+  *  the paste box find a person by an alias as well as by their name. */
+ function PersonAliases({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const showAliases = useColumnShown('aliases');
+   const queryClient = useQueryClient();
+   const [alias, setAlias] = useState('');
+   const { error, setError, begin } = usePersonError(sheetId, person.id);
+@@ -42,7 +44,11 @@ function PersonAliases({ sheetId, user, person }: { sheetId: string; user: strin
+ 
+   return (
+     <td>
+-      Aliases <span data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</span>
++      {showAliases && (
++        <>
++          Aliases <span data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</span>
++        </>
++      )}
+       <form onSubmit={submit} style={{ display: 'inline' }}>
+         {' '}
+         <input
+diff --git a/src/main/frontend/features/people/columns.slot.tsx b/src/main/frontend/features/people/columns.slot.tsx
+new file mode 100644
+index 0000000..2202cc5
+--- /dev/null
++++ b/src/main/frontend/features/people/columns.slot.tsx
+@@ -0,0 +1,25 @@
++import { SheetBody } from '../../slots/defs/sheet';
++import { COLUMNS, useHiddenColumns } from './columns';
++
++/** A checkbox per column of the people list: which of them this user's screen shows. */
++function ColumnChooser(_: { sheetId: string; user: string }) {
++  const [hidden, setShown] = useHiddenColumns();
++  return (
++    <p>
++      Columns{' '}
++      {COLUMNS.map((c) => (
++        <label key={c}>
++          <input
++            type="checkbox"
++            data-testid={`column-${c}`}
++            checked={!hidden.has(c)}
++            onChange={(e) => setShown(c, e.target.checked)}
++          />{' '}
++          {c}{' '}
++        </label>
++      ))}
++    </p>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 9.9, Component: ColumnChooser });
+diff --git a/src/main/frontend/features/people/columns.ts b/src/main/frontend/features/people/columns.ts
+new file mode 100644
+index 0000000..dee7954
+--- /dev/null
++++ b/src/main/frontend/features/people/columns.ts
+@@ -0,0 +1,56 @@
++import { useNavigate, useSearch } from '@tanstack/react-router';
++
++/** The people list's columns this user's screen can switch off, each named as its cell is. */
++export const COLUMNS = [
++  'claimed',
++  'due-total',
++  'excess',
++  'statement-count',
++  'stated-total',
++  'statement-date',
++  'overdue-count',
++  'overdue-total',
++  'patrons',
++  'backing',
++  'hold',
++  'retired',
++  'terms',
++  'contact',
++  'aliases',
++] as const;
++
++export type Column = (typeof COLUMNS)[number];
++
++/** The columns switched off on this user's screen: every column is shown when the screen is first opened,
++ *  and loading a sheet leaves the choice as it is. Only the screen changes — no figure does. */
++export function useHiddenColumns(): [Set<string>, (column: Column, shown: boolean) => void] {
++  const search = useSearch({ strict: false }) as Record<string, unknown>;
++  const navigate = useNavigate();
++  const set = (column: Column, shown: boolean) => {
++    void navigate({
++      to: '.',
++      // Worked out from the URL as it is when the change lands, so switches made in quick succession all count.
++      search: (prev: Record<string, unknown>) => {
++        const next = { ...prev };
++        const off = hiddenIn(prev.hideColumns);
++        if (shown) off.delete(column);
++        else off.add(column);
++        const value = COLUMNS.filter((c) => off.has(c)).join(',');
++        if (value === '') delete next.hideColumns;
++        else next.hideColumns = value;
++        return next;
++      },
++      replace: true,
++    });
++  };
++  return [hiddenIn(search.hideColumns), set];
++}
++
++function hiddenIn(raw: unknown): Set<string> {
++  return new Set((typeof raw === 'string' ? raw : '').split(',').filter((c) => c !== ''));
++}
++
++/** Whether this user's screen shows the column. */
++export function useColumnShown(column: Column): boolean {
++  return !useHiddenColumns()[0].has(column);
++}
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index bf79ea5..11e6efb 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -9,11 +9,13 @@ import { poolsKey } from '../pools/pools';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+ import type { Person } from './people';
++import { useColumnShown } from './columns';
+ 
+ /** Whether the person has any hold, their holds, and the form that adds one from a from-date (blank: the sheet's
+  *  today) to an optional to-date (blank: open-ended). Only their OPEN claims dated within a hold, and not bound by
+  *  a statement, count in no live total; a hold ends on its to-date. */
+ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const showHold = useColumnShown('hold');
+   const queryClient = useQueryClient();
+   const today = useSheetToday(sheetId);
+   const [from, setFrom] = useState('');
+@@ -50,7 +52,11 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string;
+ 
+   return (
+     <td>
+-      Hold <span data-testid="person-hold">{person.holds.length > 0 ? 'yes' : 'no'}</span>
++      {showHold && (
++        <>
++          Hold <span data-testid="person-hold">{person.holds.length > 0 ? 'yes' : 'no'}</span>
++        </>
++      )}
+       <ul>
+         {person.holds.map((h, i) => (
+           <li key={i} data-testid="person-hold-line">
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 5ff9ad6..7335b91 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -10,6 +10,7 @@ import type { Person } from './people';
+ import { claimsKey } from '../claims/claims';
+ import { useSheetToday } from '../sheet/sheet';
+ import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
++import { useColumnShown } from './columns';
+ 
+ /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
+  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
+@@ -339,6 +340,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const [showRetired, setShowRetired] = useShowRetired();
+   const [carried, setCarried] = useState('');
+   const [sortBy, setSortBy] = useSortBy();
++  const showTerms = useColumnShown('terms');
++  const showContact = useColumnShown('contact');
+   const listed = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
+ 
+   return (
+@@ -373,8 +376,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+               <td data-testid="person-name">{p.name}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+-              <td data-testid="person-terms">{p.terms ?? ''}</td>
+-              <td data-testid="person-contact">{p.contact ?? ''}</td>
++              {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}
++              {showContact && <td data-testid="person-contact">{p.contact ?? ''}</td>}
+               <td data-testid="person-tags">{p.tags.join(', ')}</td>
+               <td>
+                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => {
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index ad2a7c2..d911204 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -9,11 +9,13 @@ import { useSheetToday } from '../sheet/sheet';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+ import type { Person } from './people';
++import { useColumnShown } from './columns';
+ 
+ /** Whether the person is retired and from when, their past retirements, the form that retires them from a date
+  *  (blank: the sheet's today) and the button that unretires them on the sheet's today. A claim dated after the
+  *  retirement date, or after the from and before the to of a past retirement, is refused. */
+ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
++  const showRetired = useColumnShown('retired');
+   const queryClient = useQueryClient();
+   const today = useSheetToday(sheetId);
+   const [from, setFrom] = useState('');
+@@ -56,7 +58,11 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+ 
+   return (
+     <td>
+-      Retired <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
++      {showRetired && (
++        <>
++          Retired <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
++        </>
++      )}
+       from <span data-testid="person-retired-from">{person.retiredFrom ?? ''}</span>{' '}
+       <form onSubmit={submit} style={{ display: 'inline' }}>
+         <input
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index bbecbd9..35b8552 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -13,6 +13,7 @@ import { useCap, useFloor, useLate } from '../settings/settings';
+ import { capped, excess, OPEN_STATUSES, ownRates, personDueSum, personStatusSum, rateOn, ratePreview, ratesKey, SETTLED_STATUSES,
+   sheetDueTotal, sheetStatusSum, useRates } from './rates';
+ import type { Rate } from './rates';
++import { useColumnShown } from '../people/columns';
+ 
+ const PCT = /^\d{1,5}(\.\d{1,2})?$/;
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+@@ -235,23 +236,27 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
+ /** A person's due-total: the figures of their claims that count added up, at most the sheet's cap (see
+  *  personDueTotal). */
+ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const shown = useColumnShown('due-total');
+   const claims = useClaims(sheetId).data ?? [];
+   const rates = useRates(sheetId).data ?? [];
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
++  if (!shown) return null;
+   return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late), cap)}</td>;
+ }
+ 
+ /** A person's excess: how far their figures added up are above the sheet's cap; 0.00 when not above it. */
+ function PersonExcess({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const shown = useColumnShown('excess');
+   const claims = useClaims(sheetId).data ?? [];
+   const rates = useRates(sheetId).data ?? [];
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
++  if (!shown) return null;
+   return (
+     <td>
+       Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late), cap)}</span>
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 280270d..d62ada1 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -6,6 +6,7 @@ import { claimsKey } from '../claims/claims';
+ import { peopleKey } from '../people/people';
+ import { usePersonError } from '../people/rowError';
+ import type { Person } from '../people/people';
++import { useColumnShown } from '../people/columns';
+ 
+ /** A person's statements: how many have been taken, the last one's due-total and date, and the button that
+  *  takes one (recording their due-total now and binding their claims that count to the figures they show; or, with a
+@@ -45,11 +46,26 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
+   });
+ 
+   const taken = person.statementCount > 0;
++  const showCount = useColumnShown('statement-count');
++  const showTotal = useColumnShown('stated-total');
++  const showDate = useColumnShown('statement-date');
+   return (
+     <td>
+-      Statements <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+-      last <span data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</span>{' '}
+-      on <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
++      {showCount && (
++        <>
++          Statements <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
++        </>
++      )}
++      {showTotal && (
++        <>
++          last <span data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</span>{' '}
++        </>
++      )}
++      {showDate && (
++        <>
++          on <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
++        </>
++      )}
+       <input
+         type="date"
+         aria-label="Statement as of"
