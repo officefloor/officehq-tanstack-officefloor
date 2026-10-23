@@ -1,0 +1,43 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index ab74d1a..329efb8 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -334,12 +334,14 @@ export function ratePreview(people: Person[], claims: Claim[], rates: Rate[], gr
+   return { count, diff: fromCents(diff) };
+ }
+ 
+-/** A person's score: their settled figures (see personStatusSum, SETTLED) divided by 100, minus 5 for each of their
++/** A person's score: their settled figures (see personStatusSum, SETTLED, leaving out corrections of another claim)
++ *  divided by 100, minus 5 for each of their
+  *  overdue claims that count (see overdueDues), rounded half to even to a whole number (exact, in integers). */
+ export function personScore(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+     late: Late): string {
+   const own = claims.filter((c) => c.personId === person.id);
+-  const settled = toCents(personStatusSum(person, own, rates, today, floor, late, SETTLED_STATUSES));
++  const settled = toCents(personStatusSum(person, own.filter((c) => !c.corrects), rates, today, floor, late,
++    SETTLED_STATUSES));
+   const overdueCount = BigInt(overdueDues(own, [person], rates, late, floor).length);
+   const scaled = settled - overdueCount * 50000n; // in 1/10000 of a point
+   const sign = scaled < 0n ? -1n : 1n;
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+index 320f27f..ff0b1eb 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+@@ -86,7 +86,7 @@ public class Rollups {
+     }
+ 
+     /** Each person's score as it is now, in list order: their settled figures (the due, as shown, of each SETTLED
+-     *  claim that counts, skipping n/a) divided by 100, minus 5 for each of their overdue claims that count, rounded
++     *  claim that counts and corrects no other claim, skipping n/a) divided by 100, minus 5 for each of their overdue claims that count, rounded
+      *  half to even to a whole number. */
+     public List<Score> scores(String sheetId) {
+         var today = sheets.today(sheetId);
+@@ -97,7 +97,7 @@ public class Rollups {
+         for (Person p : people.list(sheetId)) {
+             List<Claim> counted = all.stream()
+                     .filter(c -> c.personId() == p.id() && Dues.counts(c, p.holds(), p.retiredFrom(), today)).toList();
+-            BigDecimal settled = counted.stream().filter(c -> c.status() == ClaimStatus.SETTLED)
++            BigDecimal settled = counted.stream().filter(c -> c.status() == ClaimStatus.SETTLED && c.corrects() == null)
+                     .map(c -> Dues.shown(c, p.grades(), rates, floor, late)).filter(Objects::nonNull)
+                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
+             long overdue = counted.stream().filter(late::overdue).count();
