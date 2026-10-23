@@ -1,0 +1,94 @@
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index 8557891..ad2a7c2 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { PersonRow } from '../../slots/defs/personRow';
++import { poolsKey } from '../pools/pools';
+ import { useSheetToday } from '../sheet/sheet';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+@@ -23,7 +24,10 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+     mutationFn: (body: { user: string; from: string }) =>
+       putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/retire`, body),
+     onSuccess: async () => {
+-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      ]);
+       setFrom('');
+     },
+     onError: (e) =>
+@@ -34,7 +38,11 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
+   const unretire = useMutation({
+     mutationFn: (body: { user: string }) =>
+       putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/unretire`, body),
+-    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++    onSuccess: () =>
++      Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
++      ]),
+     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : `Could not unretire ${person.name}.`),
+     onSettled: once.done,
+   });
+diff --git a/src/main/frontend/features/pools/export.slot.tsx b/src/main/frontend/features/pools/export.slot.tsx
+new file mode 100644
+index 0000000..3b5f017
+--- /dev/null
++++ b/src/main/frontend/features/pools/export.slot.tsx
+@@ -0,0 +1,51 @@
++import { useQueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheet';
++import { poolsKey } from './pools';
++import type { Pool } from './pools';
++
++/** A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote or a line
++ *  break, else as it is. */
++function csvValue(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
++}
++
++/** The button that downloads the pools as a CSV file: a header line, then one line per member, pools in the order
++ *  added and members in the order added, a member pool as pool:<name>, and the cut as shown on the pool (empty when
++ *  none); each line ends with a line feed. The pools are re-read first, so the file matches the store. */
++function ExportPools({ sheetId }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++
++  const download = async () => {
++    const pools = await queryClient.fetchQuery({
++      queryKey: poolsKey(sheetId),
++      queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
++      staleTime: 0,
++    });
++    const lines = [
++      ['pool', 'member', 'share', 'cut'],
++      ...pools.flatMap((p) =>
++        p.members.map((m) => [p.name, m.poolId !== null ? `pool:${m.name}` : m.name, m.share, m.cut]),
++      ),
++    ];
++    const csv = lines.map((values) => values.map(csvValue).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
++    const link = document.createElement('a');
++    link.href = url;
++    link.download = `pools-${sheetId}.csv`;
++    document.body.appendChild(link);
++    link.click();
++    link.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 0);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-pools" onClick={() => void download()}>
++        Export pools (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 7.9, Component: ExportPools });
