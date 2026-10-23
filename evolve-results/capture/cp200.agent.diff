@@ -1,0 +1,83 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index c828d39..205b37e 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,7 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+-import { heldOn, retiredOn } from '../people/people';
++import { retiredOn } from '../people/people';
+ import type { Person } from '../people/people';
+ 
+ /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
+@@ -63,14 +63,13 @@ export function unsettled(c: Claim): boolean {
+   return c.status === 'OPEN' || c.status === 'PENDING';
+ }
+ 
+-/** Whether a claim is left out of the live totals by its own hold or its person (among those given by id): an OPEN
+- *  claim held itself or dated within one of their holds, or an OPEN or PENDING one once their retirement date is reached on the sheet's today
+- *  (yyyy-mm-dd), either not bound by a statement. */
++/** Whether a claim is left out of the live totals by its person (among those given by id): an OPEN or PENDING one
++ *  once their retirement date is reached on the sheet's today (yyyy-mm-dd), not bound by a statement. A hold (the
++ *  claim's own or its person's) leaves nothing out of the totals; it only takes the person out of the pools' cuts. */
+ function leftOut(c: Claim, byId: Map<number, Person>, today: string): boolean {
+   if (c.stated) return false;
+   const person = byId.get(c.personId);
+-  return (c.status === 'OPEN' && (c.held || heldOn(person, c.date)))
+-    || (unsettled(c) && retiredOn(person, today));
++  return unsettled(c) && retiredOn(person, today);
+ }
+ 
+ /** The claims that count in the live totals among these on the sheet's today (yyyy-mm-dd): those that count, except
+@@ -80,8 +79,7 @@ export function live(claims: Claim[], people: Person[], today: string): Claim[]
+   return claims.filter((c) => counts(c) && !leftOut(c, byId, today));
+ }
+ 
+-/** The claims that count toward claimed among these on the sheet's today (yyyy-mm-dd): as live, except a hold (the
+- *  claim's own or its person's) does not take a claim out of claimed — only its due leaves the totals while held. */
++/** The claims that count toward claimed among these on the sheet's today (yyyy-mm-dd): as live. */
+ export function claimedLive(claims: Claim[], people: Person[], today: string): Claim[] {
+   const byId = new Map(people.map((p) => [p.id, p]));
+   return claims.filter((c) => counts(c) && !(!c.stated && unsettled(c) && retiredOn(byId.get(c.personId), today)));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Dues.java b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+index c429bd1..01396af 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+@@ -59,17 +59,15 @@ public final class Dues {
+     }
+ 
+     /** Whether a claim counts toward its person's figures and every live total: an OPEN, PENDING or SETTLED one,
+-     *  except an OPEN one held itself or dated within one of its person's holds and not bound by a statement, an OPEN or PENDING one
+-     *  not bound by a statement once its person's retirement date is reached (see retiredOut), and one deferred on the
+-     *  sheet's today (see Claim.deferredOn). */
++     *  except an OPEN or PENDING one not bound by a statement once its person's retirement date is reached (see
++     *  retiredOut), and one deferred on the sheet's today (see Claim.deferredOn). A hold (the claim's own or its
++     *  person's) does not take a claim out of any total; it only takes the person out of the pools' cuts. */
+     public static boolean counts(Claim claim, Holds holds, LocalDate retiredFrom, LocalDate today) {
+         return claim.status().counts() && !claim.deferredOn(today)
+-                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && (claim.held() || holds.covers(claim.date())))
+                 && !retiredOut(claim, retiredFrom, today);
+     }
+ 
+-    /** Whether a claim counts toward claimed and the claimed-total: as it counts (see counts), except a hold (the
+-     *  claim's own or its person's) does not take it out — only its due leaves the totals while held. */
++    /** Whether a claim counts toward claimed and the claimed-total: as it counts (see counts). */
+     public static boolean countsClaimed(Claim claim, LocalDate retiredFrom, LocalDate today) {
+         return claim.status().counts() && !claim.deferredOn(today) && !retiredOut(claim, retiredFrom, today);
+     }
+@@ -83,12 +81,11 @@ public final class Dues {
+ 
+     /** Whether a claim counts toward a period's due-totals: its status at the end of the period's last day (see
+      *  ClaimLogRepository.statusesAt; null: it was added after) is OPEN, PENDING or SETTLED, and it is left out
+-     *  as the live rules leave it out: deferred on the sheet's today, or an OPEN one dated within one of its
+-     *  person's holds and not bound by a statement, or an OPEN or PENDING one of a retired person (see counts). */
++     *  as the live rules leave it out: deferred on the sheet's today, or an OPEN or PENDING one of a retired person
++     *  (see counts). */
+     public static boolean countsAtEnd(Claim claim, ClaimStatus atEnd, Holds holds, LocalDate retiredFrom,
+             LocalDate today) {
+         return atEnd != null && atEnd.counts() && !claim.deferredOn(today)
+-                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && (claim.held() || holds.covers(claim.date())))
+                 && !retiredOut(claim, retiredFrom, today);
+     }
+ 
