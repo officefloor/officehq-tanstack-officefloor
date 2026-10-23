@@ -11,9 +11,10 @@ import java.util.List;
  *  no `every` but a `day` of the month (1 to 31): its plan dates are that day in every month from the start's month, a
  *  day beyond the month's length falling on its last day, dates before the start left out. A plan date inside one of
  *  its `pauses` is skipped, not postponed; the plan is paused while its last pause has not been resumed. The amount is the
- *  current one, its `changes` (oldest first) each the amount it was changed to and when. */
+ *  current one, its `changes` (oldest first) each the amount it was changed to and when. A plan naming a `targetSheet` (one
+ *  of its sheet's descendants; null: none) makes its claims there, for the person of the same name. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
-        LocalDate end, int generated, List<PlanPause> pauses, List<PlanChange> changes) {
+        LocalDate end, int generated, List<PlanPause> pauses, List<PlanChange> changes, String targetSheet) {
 
     /** Whether the plan is paused now: its last pause not resumed. */
     public boolean paused() {

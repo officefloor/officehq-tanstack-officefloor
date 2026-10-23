@@ -32,6 +32,9 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  resumed (any after it, while still paused) is skipped for good, not postponed. Each is added as the claim form adds one — its CLAIM_ADDED line and then how
  *  the sheet's figures moved over it — and a date the claim form would refuse (its rules, or after the person's
  *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time.
+ *  A plan naming one of the sheet's descendants makes its claims there instead — for the person on that sheet with
+ *  the plan person's name (none when there is no such person), by that sheet's rules and in that sheet's audit — its
+ *  dates still running up to this sheet's today; it still counts what it made.
  *  A viewer generates none: nothing is made or audited, and the answer is 0. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId, @Val GenerateRequest request, PlanRepository plans,
@@ -51,6 +54,17 @@ public class GeneratePlanClaims {
             if (person == null || today == null) {
                 continue;
             }
+            String on = sheet;
+            if (plan.targetSheet() != null) {
+                on = plan.targetSheet();
+                String name = person.name().trim();
+                person = people.list(on).stream().filter(p -> p.name().trim().equalsIgnoreCase(name)).findFirst()
+                        .orElse(null);
+                if (person == null) {
+                    continue;
+                }
+                periods.lockSheet(on);
+            }
             for (LocalDate date : plan.dates(today)) {
                 if (plans.made(plan.id(), date)) {
                     continue;
@@ -63,12 +77,12 @@ public class GeneratePlanClaims {
                 } catch (InvalidClaimException | RetiredPersonException e) {
                     continue;
                 }
-                if (periods.closedByHandFor(sheet, date, DueBy.of(person, date, settings, sheets, holidays)) != null) {
+                if (periods.closedByHandFor(on, date, DueBy.of(person, date, settings, sheets, holidays)) != null) {
                     continue;
                 }
-                Rollup before = rollups.take(sheet);
+                Rollup before = rollups.take(on);
                 Claim added = ClaimFormRules.add(claim, person, sheets, settings, holidays, periods, claims, log, audit);
-                rollups.record(sheet, request.user(), before);
+                rollups.record(on, request.user(), before);
                 plans.made(plan.id(), date, added.id());
                 made++;
             }

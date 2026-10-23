@@ -16,7 +16,8 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, i) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("start_date", LocalDate.class),
             rs.getObject("every_days", Integer.class), rs.getObject("day_of_month", Integer.class),
-            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of(), List.of());
+            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of(), List.of(),
+            rs.getString("target_sheet"));
 
     private final JdbcTemplate jdbc;
 
@@ -27,7 +28,7 @@ public class PlanRepository {
     /** Every plan on the sheet (its people's), in the order they were added, each with how many claims it has made. */
     public List<Plan> list(String sheetId) {
         return jdbc.query("SELECT pl.id, p.sheet_id, pl.person_id, pl.amount, pl.start_date, pl.every_days, pl.day_of_month, "
-                + "pl.end_date, "
+                + "pl.end_date, pl.target_sheet, "
                 + "(SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = pl.id) AS generated "
                 + "FROM plan pl JOIN person p ON p.id = pl.person_id WHERE p.sheet_id = ? ORDER BY pl.id", ROW, sheetId)
                 .stream().map(this::withPauses).toList();
@@ -45,7 +46,7 @@ public class PlanRepository {
         return new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(), p.day(), p.end(),
                 p.generated(), pauses, jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
                         (rs, i) -> new PlanChange(rs.getObject("changed_on", LocalDate.class), rs.getBigDecimal("amount")),
-                        p.id()));
+                        p.id()), p.targetSheet());
     }
 
     /** Change the plan's amount from this day: the claims generated from then on are made of it. */
@@ -74,7 +75,7 @@ public class PlanRepository {
         var keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             var ps = con.prepareStatement("INSERT INTO plan (person_id, amount, start_date, every_days, day_of_month, end_date, "
-                    + "added_by) VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                    + "added_by, target_sheet) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setLong(1, person.id());
             ps.setBigDecimal(2, input.amount());
             ps.setObject(3, input.start());
@@ -82,10 +83,11 @@ public class PlanRepository {
             ps.setObject(5, input.day(), java.sql.Types.INTEGER);
             ps.setObject(6, input.end());
             ps.setString(7, input.user());
+            ps.setString(8, input.sheet());
             return ps;
         }, keys);
         return new Plan(keys.getKey().longValue(), person.sheetId(), person.id(), input.amount(), input.start(),
-                input.every(), input.day(), input.end(), 0, List.of(), List.of());
+                input.every(), input.day(), input.end(), 0, List.of(), List.of(), input.sheet());
     }
 
     /** Whether the plan has made a claim for this plan date. */

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.plan;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A validated plan add: either every N days, or monthly on a day of the month (the other is null). */
-public record PlanInput(String user, BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end) {
+/** A validated plan add: either every N days, or monthly on a day of the month (the other is null), and the
+ *  descendant sheet it makes its claims on (null: its own). */
+public record PlanInput(String user, BigDecimal amount, LocalDate start, Integer every, Integer day, LocalDate end, String sheet) {
 }

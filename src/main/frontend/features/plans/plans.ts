@@ -20,6 +20,8 @@ export type Plan = {
   paused: boolean;
   /** Its amount changes, oldest first, each as "yyyy-mm-dd amount=0.00"; the amount is the current one. */
   changes: string[];
+  /** The descendant sheet the plan makes its claims on, for the person of the same name there; null: its own. */
+  sheet: string | null;
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
