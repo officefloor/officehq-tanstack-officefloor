@@ -139,6 +139,23 @@ public class ClaimRepository {
                 Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
     }
 
+    /** What remains of the SETTLED claim of the person with the number: its amount less the amounts of the corrections
+     *  made against it that are neither VOID nor DELETED, leaving out the claim with the given id (null: none); null
+     *  when there is no such claim. */
+    public BigDecimal correctable(String sheetId, long personId, String number, Long excludeId) {
+        List<BigDecimal> target = jdbc.queryForList(
+                "SELECT amount FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ? AND status = ?",
+                BigDecimal.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
+        if (target.isEmpty()) {
+            return null;
+        }
+        BigDecimal corrected = jdbc.queryForObject(
+                "SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ? AND corrects = ? AND status NOT IN (?, ?) AND id <> ?",
+                BigDecimal.class, sheetId, personId, number, ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(),
+                excludeId == null ? -1L : excludeId);
+        return target.get(0).add(corrected);
+    }
+
     /** Bind the claim to a statement's figure (null: n/a, its due stays live), or unbind it (stated false). */
     public void state(Claim claim, boolean stated, BigDecimal statedDue) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
