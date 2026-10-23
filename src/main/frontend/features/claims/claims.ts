@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { heldOn, retiredOn } from '../people/people';
+import { retiredOn } from '../people/people';
 import type { Person } from '../people/people';
 
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
@@ -63,14 +63,13 @@ export function unsettled(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'PENDING';
 }
 
-/** Whether a claim is left out of the live totals by its own hold or its person (among those given by id): an OPEN
- *  claim held itself or dated within one of their holds, or an OPEN or PENDING one once their retirement date is reached on the sheet's today
- *  (yyyy-mm-dd), either not bound by a statement. */
+/** Whether a claim is left out of the live totals by its person (among those given by id): an OPEN or PENDING one
+ *  once their retirement date is reached on the sheet's today (yyyy-mm-dd), not bound by a statement. A hold (the
+ *  claim's own or its person's) leaves nothing out of the totals; it only takes the person out of the pools' cuts. */
 function leftOut(c: Claim, byId: Map<number, Person>, today: string): boolean {
   if (c.stated) return false;
   const person = byId.get(c.personId);
-  return (c.status === 'OPEN' && (c.held || heldOn(person, c.date)))
-    || (unsettled(c) && retiredOn(person, today));
+  return unsettled(c) && retiredOn(person, today);
 }
 
 /** The claims that count in the live totals among these on the sheet's today (yyyy-mm-dd): those that count, except
@@ -80,8 +79,7 @@ export function live(claims: Claim[], people: Person[], today: string): Claim[] 
   return claims.filter((c) => counts(c) && !leftOut(c, byId, today));
 }
 
-/** The claims that count toward claimed among these on the sheet's today (yyyy-mm-dd): as live, except a hold (the
- *  claim's own or its person's) does not take a claim out of claimed — only its due leaves the totals while held. */
+/** The claims that count toward claimed among these on the sheet's today (yyyy-mm-dd): as live. */
 export function claimedLive(claims: Claim[], people: Person[], today: string): Claim[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   return claims.filter((c) => counts(c) && !(!c.stated && unsettled(c) && retiredOn(byId.get(c.personId), today)));

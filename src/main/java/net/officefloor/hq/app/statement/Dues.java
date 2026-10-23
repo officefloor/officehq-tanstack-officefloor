@@ -59,17 +59,15 @@ public final class Dues {
     }
 
     /** Whether a claim counts toward its person's figures and every live total: an OPEN, PENDING or SETTLED one,
-     *  except an OPEN one held itself or dated within one of its person's holds and not bound by a statement, an OPEN or PENDING one
-     *  not bound by a statement once its person's retirement date is reached (see retiredOut), and one deferred on the
-     *  sheet's today (see Claim.deferredOn). */
+     *  except an OPEN or PENDING one not bound by a statement once its person's retirement date is reached (see
+     *  retiredOut), and one deferred on the sheet's today (see Claim.deferredOn). A hold (the claim's own or its
+     *  person's) does not take a claim out of any total; it only takes the person out of the pools' cuts. */
     public static boolean counts(Claim claim, Holds holds, LocalDate retiredFrom, LocalDate today) {
         return claim.status().counts() && !claim.deferredOn(today)
-                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && (claim.held() || holds.covers(claim.date())))
                 && !retiredOut(claim, retiredFrom, today);
     }
 
-    /** Whether a claim counts toward claimed and the claimed-total: as it counts (see counts), except a hold (the
-     *  claim's own or its person's) does not take it out — only its due leaves the totals while held. */
+    /** Whether a claim counts toward claimed and the claimed-total: as it counts (see counts). */
     public static boolean countsClaimed(Claim claim, LocalDate retiredFrom, LocalDate today) {
         return claim.status().counts() && !claim.deferredOn(today) && !retiredOut(claim, retiredFrom, today);
     }
@@ -83,12 +81,11 @@ public final class Dues {
 
     /** Whether a claim counts toward a period's due-totals: its status at the end of the period's last day (see
      *  ClaimLogRepository.statusesAt; null: it was added after) is OPEN, PENDING or SETTLED, and it is left out
-     *  as the live rules leave it out: deferred on the sheet's today, or an OPEN one dated within one of its
-     *  person's holds and not bound by a statement, or an OPEN or PENDING one of a retired person (see counts). */
+     *  as the live rules leave it out: deferred on the sheet's today, or an OPEN or PENDING one of a retired person
+     *  (see counts). */
     public static boolean countsAtEnd(Claim claim, ClaimStatus atEnd, Holds holds, LocalDate retiredFrom,
             LocalDate today) {
         return atEnd != null && atEnd.counts() && !claim.deferredOn(today)
-                && !(claim.status() == ClaimStatus.OPEN && !claim.stated() && (claim.held() || holds.covers(claim.date())))
                 && !retiredOut(claim, retiredFrom, today);
     }
 
