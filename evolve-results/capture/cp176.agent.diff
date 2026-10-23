@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 3d2cb70..e062bfd 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -271,16 +271,15 @@ export function roundsUp(claim: Claim, late: Late): boolean {
+   return late.policy !== '' && date < late.policy;
+ }
+ 
+-/** A claim's due: the one fixed when it was settled (its late charge frozen in), else the greater of the sheet's floor
+- *  in force on its date and its figure — the one its person's last statement bound it to, n/a included (an OPEN or
+- *  PENDING one alike), else live on its amount at the rate — with the late charge on that figure added. A
+- *  correction (a negative amount) has no floor and no late charge. */
++/** A claim's due: the one fixed when it was settled (its late charge frozen in), else the one its person's last
++ *  statement bound it to as shown then (late charge and floor included; n/a included; an OPEN or PENDING one alike),
++ *  else the greater of the sheet's floor in force on its date and its live figure on its amount at the rate with the
++ *  late charge on it added. A correction (a negative amount) has no floor and no late charge. */
+ export function claimDue(claim: Claim, rate: string | undefined, floor: DatedValue, late: Late): string {
+   if (claim.settledDue !== null) return claim.settledDue;
++  if (claim.stated) return claim.statedDue ?? 'n/a';
+   const correction = toCents(claim.amount) < 0n;
+-  const live = dueOn(claim.amount, rate, roundsUp(claim, late));
+-  const bound = !claim.stated ? null : claim.statedDue ?? 'n/a';
+-  const figure = bound ?? live;
++  const figure = dueOn(claim.amount, rate, roundsUp(claim, late));
+   if (correction || figure === 'n/a') return figure;
+   return floored(fromCents(toCents(figure) + toCents(lateCharge(claim, figure, late))), floor(claim.date));
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index f5bcabc..83f985e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -7,7 +7,7 @@ import java.time.LocalDate;
+  *  status, its number (sheet-wide digits as given before fiscal-year numbering, FY<yyyy>-<n> within the tree's fiscal year, or <period name>-<n> / X-<n> when numbered within its period; null while a draft; a voided claim keeps the one it had) and, once settled, the due fixed
+  *  at settling (null before then, or when the person's grade had no rate then: its due stays live), and
+  *  who opened it (null while a draft), whether its person's last statement bound it (it counted then) and the
+- *  figure it bound it to (null when not bound, or its figure was n/a then: its due stays live), and for a correction
++ *  due as shown then it bound it to, late charge included (null when not bound, or it was n/a then), and for a correction
+  *  (a negative amount) the number of the SETTLED claim of the same person it corrects (null otherwise), and its
+  *  due-by: the terms-th business day after the date it had when it was created, with the terms fixed then (its person's
+  *  own, else their grade's in force on that date, else the sheet's), skipping Saturdays, Sundays and the sheet's
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Dues.java b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+index 1590b74..6174b27 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+@@ -29,14 +29,18 @@ public final class Dues {
+         return live(claim, grades, rates, rounding);
+     }
+ 
+-    /** A claim's due as its row shows it: the due fixed when it was settled, else the greater of the floor in force
+-     *  on its date and its figure (bound or live) with the late charge on it added (a correction, a negative amount,
+-     *  has no floor and no charge); null (n/a) when it has no figure. */
++    /** A claim's due as its row shows it: the due fixed when it was settled, else the one its last statement bound
++     *  it to as shown then (late charge and floor included; n/a included), else the greater of the floor in force on
++     *  its date and its live figure with the late charge on it added (a correction, a negative amount, has no floor
++     *  and no charge); null (n/a) when it has no figure. */
+     public static BigDecimal shown(Claim claim, Grades grades, Rates rates, DatedAmount floor,
+             LateCharge late) {
+         if (claim.settledDue() != null) {
+             return claim.settledDue();
+         }
++        if (claim.stated()) {
++            return claim.statedDue();
++        }
+         BigDecimal figure = figure(claim, grades, rates, late.rounding());
+         if (figure == null || claim.amount().signum() < 0) {
+             return figure;
+diff --git a/src/main/java/net/officefloor/hq/app/statement/SaveStatement.java b/src/main/java/net/officefloor/hq/app/statement/SaveStatement.java
+index 4561433..b26de03 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/SaveStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/SaveStatement.java
+@@ -23,13 +23,13 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Take the person's statement: record their due-total now (late charges included, at most the sheet's cap) and the sheet's today, bind
+- *  each of their claims that counts to its rate figure now (never the floor or its late charge, which keep following
+- *  the sheet's floor and today), and unbind the rest (their due is live again; a claim deferred on today is left unbound). A settled claim's
++ *  each of their claims that counts to its due as shown now (late charge and floor included: while bound it no longer
++ *  follows the sheet's today; one already bound is bound again to the figure it shows), and unbind the rest (their due is live again; a claim deferred on today is left unbound). A settled claim's
+  *  fixed due is left as it is.
+  *  <p>Taken as of a date (on or before the sheet's today; refused after it, or for a person added after it), the
+  *  same is done with the sheet as it stood at the end of that date: every change made while the sheet's today was on
+  *  or before it counts, every later one does not, and the date stands in for the sheet's today. Their claims that
+- *  counted then are bound to their figures then, the rest are unbound, and the date is recorded as the statement's. */
++ *  counted then are bound to their dues as shown then, the rest are unbound, and the date is recorded as the statement's. */
+ public class SaveStatement {
+     public void save(@Val StatementRequest request, @Val Person loaded, PersonRepository people,
+             ClaimRepository claims, RateRepository rates, SheetRepository sheets, SettingRepository settings,
+@@ -86,7 +86,7 @@ public class SaveStatement {
+         Map<Long, BigDecimal> bound = new HashMap<>();
+         for (Claim c : then) {
+             if (Dues.counts(c, holds, retiredFrom, on)) {
+-                bound.put(c.id(), Dues.figure(c, grades, ratesThen, late.rounding()));
++                bound.put(c.id(), Dues.shown(c, grades, ratesThen, floor, late));
+             }
+         }
+         for (Claim c : theirs) {
