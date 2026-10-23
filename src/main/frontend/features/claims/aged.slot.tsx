@@ -1,10 +1,13 @@
 import { PersonRow } from '../../slots/defs/personRow';
+import { SheetBody } from '../../slots/defs/sheet';
 import type { Person } from '../people/people';
-import { gradeOn } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
+import type { Rate } from '../rates/rates';
 import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { live, unsettled, useClaims } from './claims';
+import type { Claim } from './claims';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -13,30 +16,62 @@ function ageOf(date: string, today: string): number {
   return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / DAY_MS);
 }
 
+type Buckets = [string, string, string];
+
 /** A person's aged dues: the due (as shown on its row) of their OPEN and PENDING claims that count in the live
  *  totals, added up by the claim's age on the sheet's today — 0 to 30 days (a claim dated after today included),
  *  31 to 60, and 61 or more — skipping n/a. */
-function PersonAged({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
-  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
-  const rates = useRates(sheetId).data ?? [];
-  const today = useSheetToday(sheetId);
-  const floor = useFloor(sheetId);
-  const late = useLate(sheetId);
+function personAged(person: Person, claims: Claim[], rates: Rate[], today: string,
+    floor: ReturnType<typeof useFloor>, late: ReturnType<typeof useLate>): Buckets {
   const buckets: [string[], string[], string[]] = [[], [], []];
   if (today !== '') {
-    for (const c of live(claims, [person], today).filter(unsettled)) {
+    for (const c of live(claims.filter((c) => c.personId === person.id), [person], today).filter(unsettled)) {
       const age = ageOf(c.date, today);
       const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date, c.id), floor, late);
       buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(due);
     }
   }
+  return [sumDue(buckets[0]), sumDue(buckets[1]), sumDue(buckets[2])];
+}
+
+function useAgedInputs(sheetId: string) {
+  return {
+    claims: useClaims(sheetId).data ?? [],
+    rates: useRates(sheetId).data ?? [],
+    today: useSheetToday(sheetId),
+    floor: useFloor(sheetId),
+    late: useLate(sheetId),
+  };
+}
+
+function PersonAged({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+  const { claims, rates, today, floor, late } = useAgedInputs(sheetId);
+  const buckets = personAged(person, claims, rates, today, floor, late);
   return (
     <>
-      <td data-testid="person-aged-0-30">{sumDue(buckets[0])}</td>
-      <td data-testid="person-aged-31-60">{sumDue(buckets[1])}</td>
-      <td data-testid="person-aged-61">{sumDue(buckets[2])}</td>
+      <td data-testid="person-aged-0-30">{buckets[0]}</td>
+      <td data-testid="person-aged-31-60">{buckets[1]}</td>
+      <td data-testid="person-aged-61">{buckets[2]}</td>
     </>
   );
 }
 
-export const contribution = PersonRow.fill({ order: 26, Component: PersonAged });
+/** The sheet's aged dues: every person's aged buckets added up, not trimmed. */
+function SheetAged({ sheetId }: { sheetId: string; user: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const { claims, rates, today, floor, late } = useAgedInputs(sheetId);
+  const all = people.map((p) => personAged(p, claims, rates, today, floor, late));
+  const total = (i: number) => sumDue(all.map((b) => b[i]));
+  return (
+    <p>
+      Aged 0–30 <strong data-testid="rollup-aged-0-30">{total(0)}</strong>
+      {' '}31–60 <strong data-testid="rollup-aged-31-60">{total(1)}</strong>
+      {' '}61+ <strong data-testid="rollup-aged-61">{total(2)}</strong>
+    </p>
+  );
+}
+
+export const contributions = [
+  SheetBody.fill({ order: 22.5, Component: SheetAged }),
+  PersonRow.fill({ order: 26, Component: PersonAged }),
+];
