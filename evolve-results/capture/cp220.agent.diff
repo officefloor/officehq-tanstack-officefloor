@@ -1,0 +1,181 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index ed2a9eb4..b416a84e 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -39,7 +39,8 @@ function PlanRow({ sheetId, user, person, plan: p }: { sheetId: string; user: st
+     mutationFn: (to: string) =>
+       postJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { user, amount: to }),
+     onSuccess: async () => {
+-      await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
++      // the plan's DRAFT claims take the new amount too: re-read the sheet
++      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+       setAmount('');
+     },
+     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not change the plan.'),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+index 907dac6b..19b2b3c8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+@@ -9,8 +10,11 @@ import net.officefloor.plugin.variable.Val;
+ public class AuditClaimEdited {
+     public void audit(@Val ClaimInput input, @Val Claim loaded, @Val ClaimResponse saved, PersonRepository people,
+             Audit audit) {
+-        var person = people.find(loaded.sheetId(), loaded.personId());
+-        audit.record("CLAIM_EDITED sheet=" + loaded.sheetId() + " by=" + input.user()
++        record(input.user(), loaded, people.find(loaded.sheetId(), loaded.personId()), saved, audit);
++    }
++
++    static void record(String user, Claim loaded, Person person, ClaimResponse saved, Audit audit) {
++        audit.record("CLAIM_EDITED sheet=" + loaded.sheetId() + " by=" + user
+                 + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
+                 + (saved.number() != null ? " number=" + saved.number() : ""));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFormRules.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFormRules.java
+index 7128b28c..d24081c6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFormRules.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFormRules.java
+@@ -3,7 +3,10 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import java.math.BigDecimal;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.RetiredPersonException;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+@@ -27,4 +30,45 @@ public final class ClaimFormRules {
+         AuditClaimAdded.record(input, person, added, audit);
+         return added;
+     }
++
++    /** Edit the claim's amount as the claim form would (its date, note, reference and tags kept), and write its
++     *  CLAIM_EDITED line (the caller records how the sheet's figures moved): false, writing nothing, when the claim
++     *  form would refuse it (not a DRAFT, its editor locked by another user, lines totalling another amount, dated
++     *  after its person's retirement date, its due-by inside a closed period). */
++    public static boolean editAmount(Claim loaded, String user, BigDecimal amount, SheetRepository sheets,
++            PersonRepository people, PeriodRepository periods, ClaimRepository repository, ClaimLineRepository lines,
++            Audit audit) {
++        if (loaded.status() != ClaimStatus.DRAFT) {
++            return false;
++        }
++        String holder = repository.lockedBy(loaded);
++        if (holder != null && !holder.equals(user)) {
++            return false;
++        }
++        BigDecimal total = lines.total(loaded);
++        if (total != null && total.compareTo(amount) != 0) {
++            return false;
++        }
++        Person person = people.find(loaded.sheetId(), loaded.personId());
++        if (person == null) {
++            return false;
++        }
++        try {
++            RetiredPersonException.refuse(person, loaded.date() != null ? loaded.date() : sheets.today(loaded.sheetId()));
++        } catch (RetiredPersonException e) {
++            return false;
++        }
++        periods.lockSheet(loaded.sheetId());
++        if (periods.closedOn(loaded.sheetId(), loaded.dueBy()) != null) {
++            return false;
++        }
++        Claim claim = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), amount, loaded.date(), loaded.note(),
++                loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(),
++                loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
++                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(),
++                loaded.tags(), loaded.waived(), loaded.photos(), loaded.held());
++        repository.update(claim, user);
++        AuditClaimEdited.record(user, loaded, person, ClaimResponse.from(claim), audit);
++        return true;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/EditPlanDrafts.java b/src/main/java/net/officefloor/hq/app/plan/EditPlanDrafts.java
+new file mode 100644
+index 00000000..dc7cd7ec
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/EditPlanDrafts.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimFormRules;
++import net.officefloor.hq.app.claim.ClaimLineRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.Rollups;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Bring the changed amount to the claims the plan generated that are still DRAFT, by plan date: each is edited as the
++ *  claim form would edit it (its CLAIM_EDITED line and then how the sheet's figures moved over it), one the claim form
++ *  would refuse is left as it is; claims in any other status keep their amount. A plan naming a descendant sheet edits
++ *  its claims there, in that sheet's audit. */
++public class EditPlanDrafts {
++    public void edit(@Val PlanAmountInput input, @Val Plan loaded, PlanRepository plans, ClaimRepository claims,
++            ClaimLineRepository lines, PersonRepository people, SheetRepository sheets, PeriodRepository periods,
++            Rollups rollups, Audit audit) {
++        String on = loaded.targetSheet() != null ? loaded.targetSheet() : loaded.sheetId();
++        for (long id : plans.claimIds(loaded.id())) {
++            Claim claim = claims.find(on, id);
++            if (claim == null) {
++                continue;
++            }
++            Rollup before = rollups.take(on);
++            if (ClaimFormRules.editAmount(claim, input.user(), input.amount(), sheets, people, periods, claims, lines,
++                    audit)) {
++                rollups.record(on, input.user(), before);
++            }
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+index ba38b092..5666517d 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+@@ -101,4 +101,10 @@ public class PlanRepository {
+     public void made(long planId, LocalDate date, long claimId) {
+         jdbc.update("INSERT INTO plan_claim (plan_id, on_date, claim_id) VALUES (?, ?, ?)", planId, date, claimId);
+     }
++
++    /** The ids of the claims the plan has made, by plan date. */
++    public List<Long> claimIds(long planId) {
++        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? "
++                + "ORDER BY on_date", Long.class, planId);
++    }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+index 5c193536..4f6775bb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+@@ -1,5 +1,6 @@
+ # Change a plan's amount from the sheet's today: the claims generated from then on are made of the new amount, those
+-# already generated keep theirs. A refused change (a bad amount, no today, unknown plan) writes nothing, not even an
++# already generated keep theirs, but for those still DRAFT, which are edited to it as the claim form would edit them (one
++# the claim form would refuse keeps its amount). A refused change (a bad amount, no today, unknown plan) writes nothing, not even an
+ # audit line.
+ validate:
+   class: net.officefloor.hq.app.plan.ValidatePlanAmount
+@@ -15,6 +16,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.plan.AuditPlanAmount
+   govern: [ transaction ]
++  next: drafts
++drafts:
++  class: net.officefloor.hq.app.plan.EditPlanDrafts
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.plan.RespondWithPlan
