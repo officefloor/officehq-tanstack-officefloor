@@ -25,7 +25,7 @@ public class SaveNewClaim {
         var dueBy = holidays.dueBy(person.sheetId(), date, terms);
         Claim added = repository.insert(terms, new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0, null,
-                periods.softClosedOn(person.sheetId(), dueBy) != null, null, input.ref(), input.tags() == null || input.tags().isEmpty() ? null : input.tags()));
+                periods.softClosedOn(person.sheetId(), dueBy) != null, null, input.ref(), input.tags() == null || input.tags().isEmpty() ? null : input.tags(), false));
         log.record(added, input.user());
         return added;
     }

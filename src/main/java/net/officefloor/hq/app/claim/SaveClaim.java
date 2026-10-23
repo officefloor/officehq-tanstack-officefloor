@@ -13,7 +13,8 @@ public class SaveClaim {
                 loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(),
                 loaded.stated(), loaded.statedDue(), input.corrects(), loaded.dueBy(), loaded.deferredUntil(),
                 loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), input.ref(),
-                input.tags() == null ? loaded.tags() : input.tags().isEmpty() ? null : input.tags());
+                input.tags() == null ? loaded.tags() : input.tags().isEmpty() ? null : input.tags(),
+                loaded.waived());
         repository.update(claim, input.user());
         saved.set(ClaimResponse.from(claim));
     }

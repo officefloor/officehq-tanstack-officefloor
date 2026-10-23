@@ -16,12 +16,13 @@ import java.time.LocalDate;
  *  raised one at a time); and the number of the claim it was split from (null when it was not split off one); and whether it is a
  *  late entry: added while its period was soft-closed (fixed when it was added); and the last sheet-today a reminder was
  *  written for it (null: never reminded); and its external reference (null: none), unique on the sheet without regard to case;
- *  and its tags (null: none): trimmed, lower-cased, without repeats, sorted and joined by commas. */
+ *  and its tags (null: none): trimmed, lower-cased, without repeats, sorted and joined by commas; and whether a steward waived its late charge
+ *  (it then bears none, overdue or not). */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
         BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
         String splitFrom, boolean lateEntry, LocalDate reminded, String ref,
-        String tags) {
+        String tags, boolean waived) {
 
     /** Whether the claim is deferred on the sheet's today: it is OPEN and deferred until a date after today (null:
      *  no today, nothing is deferred). Deferred, it counts in no total, is not overdue, cannot be settled and is

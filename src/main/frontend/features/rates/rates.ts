@@ -291,10 +291,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *  plus its grace, on the sheet's today), the late percent in force on that boundary date (its due-by plus its grace
  *  plus 30, 60, 90 ... days) of it plus the charges of the boundaries before (compounding), each
  *  rounded like the claim's due, the charges added up (a boundary whose percent is 0.00 adds nothing); 0.00 when not
- *  overdue, or a correction (a negative amount). */
+ *  overdue, or a correction (a negative amount), or its late charge was waived. */
 export function lateCharge(claim: Claim, figure: string, late: Late): string {
   const grace = late.grace(claim);
-  if (!overdue(claim, late.today, grace) || toCents(claim.amount) < 0n) return '0.00';
+  if (!overdue(claim, late.today, grace) || toCents(claim.amount) < 0n || claim.waived) return '0.00';
   const from = Date.parse(`${lateFrom(claim, grace)}T00:00:00Z`);
   const days = Math.round((Date.parse(`${late.today}T00:00:00Z`) - from) / DAY_MS);
   let total = 0n;

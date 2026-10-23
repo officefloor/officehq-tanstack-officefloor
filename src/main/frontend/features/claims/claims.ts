@@ -36,13 +36,15 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  none did: it was settled one at a time, or is not settled), and its lines, in the order added, as
  *  <label> <qty> x <unit> (only a DRAFT takes a line; a claim with lines has their total as its amount — the server
  *  refuses an edit typing another), and its review day (yyyy-mm-dd): the sheet's today when it went to REVIEW (null
- *  when it never did). */
+ *  when it never did), and whether a steward waived its late charge (only an OPEN or PENDING claim, once: it then
+ *  bears no late charge, overdue or not). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
-  comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null };
+  comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null;
+  waived: boolean };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */
