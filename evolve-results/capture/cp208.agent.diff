@@ -1,0 +1,214 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index f951d60..b435526 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -34,7 +34,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?:
+  *  A claim's live due is at least the floor; its due-by is the terms-th business day after its date (skipping Saturdays, Sundays and holidays); once overdue it gains, for every full 30
+  *  days, the late percent in force on that boundary date of its figure. A claim dated before the policy date (blank: the sheet's today)
+  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
+- *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
++ *  on or before the sheet's today, a claim settled is numbered within its period (<period>-<n>, X-<n> in none).
+  *  A grade may have terms of its own (blank: the sheet's terms); a claim's terms are fixed when it is created, from
+  *  the terms of its person's grade on its date. A grade may have grace days (blank: none); a claim whose person's grade
+  *  on its date has a grace in force on that date is overdue only past its due-by plus them, and its late charge's
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+index cd8fddb..7c243c0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+@@ -14,9 +14,9 @@ public class AuditClaimSplit {
+         audit.record("CLAIM_SPLIT sheet=" + split.original().sheetId() + " by=" + input.user()
+                 + " person=" + person.name() + " amount=" + original.amount() + " date=" + original.date()
+                 + (original.number() != null ? " number=" + original.number() : "")
+-                + " into=" + added.number());
++                + " into=" + (added.number() != null ? added.number() : ""));
+         audit.record("CLAIM_OPENED sheet=" + split.added().sheetId() + " by=" + input.user()
+                 + " person=" + person.name() + " amount=" + added.amount() + " date=" + added.date()
+-                + " number=" + added.number());
++                + (added.number() != null ? " number=" + added.number() : ""));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+index 333d748..2ce1e6a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenClaims.java
+@@ -18,10 +18,10 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Open each selected claim that can be opened, in list order (people in list order, newest
+- *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
++ *  claim first within a person), leaving each unnumbered (a claim is numbered when settled). Each is opened as a single open would be,
+  *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
+  *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, dated in a closed period, its person already at its period's cap of OPEN or PENDING claims, or with an empty note and a due above the note threshold in force on its date, or its person flagged in force and the user not a steward) is left as it is and counted as refused. One whose due is above the review threshold in force on
+- *  its date goes to REVIEW instead, unnumbered, with a CLAIM_REVIEW line, and is counted as opened. */
++ *  its date goes to REVIEW instead, with a CLAIM_REVIEW line, and is counted as opened. */
+ public class BulkOpenClaims {
+     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims, ClaimLogRepository log,
+             PersonRepository people, PeriodRepository periods, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+@@ -47,13 +47,12 @@ public class BulkOpenClaims {
+                         && !flagged(claim, input.user(), roles, flags)) {
+                     Rollup before = rollups.take(sheet);
+                     boolean review = ClaimStatusChange.reviewRequired(claim, claims, people, rates, settings, sheets);
+-                    String number = review ? null : claims.nextNumber(sheet, claim.dueBy());
+-                    claims.changeStatus(claim, review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, number,
++                    claims.changeStatus(claim, review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, claim.number(),
+                             claim.settledDue(), input.user());
+                     log.record(claim, input.user());
+                     audit.record((review ? "CLAIM_REVIEW" : "CLAIM_OPENED") + " sheet=" + sheet + " by=" + input.user()
+                             + " person=" + person.name() + " amount=" + claim.amount().toPlainString()
+-                            + " date=" + claim.date() + (review ? "" : " number=" + number));
++                            + " date=" + claim.date() + (claim.number() != null ? " number=" + claim.number() : ""));
+                     rollups.record(sheet, input.user(), before);
+                     opened++;
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 86e625e..14f986f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -327,7 +327,7 @@ public class ClaimRepository {
+                 rs -> rs.next() ? rs.getBoolean(1) : false, sheetId));
+     }
+ 
+-    /** Take the next number for a claim due by the date, as it is opened. While the sheet's period numbering from
++    /** Take the next number for a claim due by the date, as it is settled. While the sheet's period numbering from
+      *  is a date and the sheet's today is on or after it, that is the next in the claim's period (the one holding its due-by: <period name>-<n>),
+      *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the next number of the
+      *  sheet's tree (the sheet's root, reached through its parents, and every descendant of the root) within the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 59b15b4..6a1a67e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -35,8 +35,8 @@ final class ClaimStatusChange {
+         ClaimStatus to = check(input, loaded, repository, people, rates, roles, settings, sheets, log);
+         boolean opening = input.action().equals("open");
+         String openedBy = opening ? input.user() : loaded.openedBy();
+-        // a claim gone to REVIEW is numbered only once a steward reviews it OPEN
+-        String number = (opening && to == ClaimStatus.OPEN) || input.action().equals("review")
++        // a claim is numbered only once it is settled (or approved); one numbered already keeps its number
++        String number = to == ClaimStatus.SETTLED && loaded.number() == null
+                 ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
+         BigDecimal settledDue = input.action().equals("resettle")
+                 ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
+diff --git a/src/main/java/net/officefloor/hq/app/claim/DueBy.java b/src/main/java/net/officefloor/hq/app/claim/DueBy.java
+index 431b64b..ba32f2c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/DueBy.java
++++ b/src/main/java/net/officefloor/hq/app/claim/DueBy.java
+@@ -13,19 +13,19 @@ public final class DueBy {
+     private DueBy() {
+     }
+ 
+-    /** The terms (business days) a new claim of the person is fixed with: those in force on the day it is created
+-     *  (the sheet's today), not on its date — the person's own terms in force on that day, else the terms of their
+-     *  grade then in force on it (else the sheet's terms in force on it). */
+-    public static int terms(Person person, SettingRepository settings, SheetRepository sheets) {
++    /** The terms (business days) a new claim of the person dated on the date is fixed with: those in force on the day
++     *  it is created (the sheet's today) — the person's own terms in force on that day, else the terms in force on it
++     *  of their grade on the claim's date (else the sheet's terms in force on it). */
++    public static int terms(Person person, LocalDate date, SettingRepository settings, SheetRepository sheets) {
+         var today = sheets.today(person.sheetId());
+         Integer own = person.terms().on(today);
+-        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(today), today);
++        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(date), today);
+     }
+ 
+     /** The due-by of a new claim of the person dated on the date: the terms-th business day after the date, skipping
+      *  Saturdays, Sundays and the sheet's holidays as they are now. */
+     public static LocalDate of(Person person, LocalDate date, SettingRepository settings, SheetRepository sheets,
+             HolidayRepository holidays) {
+-        return holidays.dueBy(person.sheetId(), date, terms(person, settings, sheets));
++        return holidays.dueBy(person.sheetId(), date, terms(person, date, settings, sheets));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java
+index 4f1a19f..7909005 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java
+@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  is written. Otherwise each line, in order, is added just as the claim form adds one (its CLAIM_ADDED line) — or, when
+  *  the person has a claim of the line's date and note, that claim is updated: a DRAFT is edited to the line's amount
+  *  (CLAIM_EDITED when it changes), a claim of any other status refuses the paste — and then opened by the user as the
+- *  open button would open it (numbered in paste order, its CLAIM_OPENED line, then how the sheet's figures moved over
++ *  open button would open it (its CLAIM_OPENED line, then how the sheet's figures moved over
+  *  the line). Any refusal the open button would give refuses the whole paste: nothing stored is kept and no audit line
+  *  is written. */
+ public class PasteClaims {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+index 4f490cb..996f33e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimStatus.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Move the loaded claim to its new status, refusing a change its status does not allow (or one
+- *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
++ *  another user's change got to first). Settling (or approving) gives an unnumbered claim the next number in its sequence, by its due-by then; voiding
+  *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it; nor may the user who last edited it (SaveClaim records them). Settling fixes its due
+  *  as its row shows it now: the bound figure, else live at the person's grade rate now in force on the claim's date,
+  *  floored to at least the sheet's floor in force on its date, with the late charge as of today on that, frozen in. A claim whose due (as shown) is above the sheet's proof threshold in force
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java
+index 2912795..8d0e446 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java
+@@ -21,7 +21,7 @@ public class SaveNewClaim {
+     static Claim insert(ClaimInput input, Person person, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
+             PeriodRepository periods, ClaimRepository repository, ClaimLogRepository log) {
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+-        int terms = DueBy.terms(person, settings, sheets);
++        int terms = DueBy.terms(person, date, settings, sheets);
+         var dueBy = holidays.dueBy(person.sheetId(), date, terms);
+         Claim added = repository.insert(terms, new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
+                 ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0, null,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index e2694a2..229f21d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Split an amount off the loaded claim: only an OPEN claim not deferred on the sheet's today, and only an amount
+  *  less than the claim's. The claim keeps the rest of its amount and loses any figure a statement bound it to; a new
+- *  OPEN claim with the split-off amount, the same person, date and note, the next number, opened by the user, its
++ *  OPEN claim with the split-off amount, the same person, date and note, no number (it is numbered when settled), opened by the user, its
+  *  terms fixed now from the terms in force on the sheet's today (as a new claim's is) and the claim's number as its
+  *  split-from is stored (a late entry when that due-by is inside a soft-closed period), its OPEN line starting its status log. A split another user's change got to first is
+  *  refused. */
+@@ -37,13 +37,12 @@ public class SaveSplit {
+             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
+         }
+         var person = people.find(loaded.sheetId(), loaded.personId());
+-        int terms = DueBy.terms(person, settings, sheets);
++        int terms = DueBy.terms(person, loaded.date(), settings, sheets);
+         var dueBy = holidays.dueBy(loaded.sheetId(), loaded.date(), terms);
+         Claim inserted = repository.insert(terms, new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
+                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
+                 loaded.number(), periods.softClosedOn(loaded.sheetId(), dueBy) != null, null, null, loaded.tags(), false, 0, false));
+-        String number = repository.nextNumber(loaded.sheetId(), dueBy);
+-        repository.changeStatus(inserted, ClaimStatus.OPEN, number, null, input.user());
++        repository.changeStatus(inserted, ClaimStatus.OPEN, null, null, input.user());
+         log.record(inserted, input.user());
+         Claim original = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), rest, loaded.date(),
+                 loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(), false, null,
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+index 73fe440..b215e2c 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+@@ -25,7 +25,7 @@ public class RefuseClosedQuickAdd {
+         periods.lockSheet(id);
+         var date = sheets.newClaimDate(id);
+         Person found = people.findByName(id, request.name());
+-        int terms = found != null ? DueBy.terms(found, settings, sheets) : settings.termsFor(id, request.grade(), sheets.today(id));
++        int terms = found != null ? DueBy.terms(found, date, settings, sheets) : settings.termsFor(id, request.grade(), sheets.today(id));
+         Period closed = periods.closedByHandFor(id, date, holidays.dueBy(id, date, terms));
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 2d55fc8..b2d36dc 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -7,7 +7,7 @@ import java.util.Map;
+ /** A sheet's settings in force on its today: the clerk limit (two decimals; null: no limit) the floor (two
+  *  decimals) and the terms (days; a claim's due-by is its date plus them) and the late percent (two decimals) and the
+  *  policy date (null: the sheet's today; a claim dated before it rounds half up, on or after it half to even) and the
+- *  period numbering from (null: off; on or after it, by the sheet's today, a claim opened is numbered within its
++ *  period numbering from (null: off; on or after it, by the sheet's today, a claim settled is numbered within its
+  *  period) and the grades' own terms (days, by grade; a grade without its own uses the sheet's terms) and the cap
+  *  (two decimals; null: none; a person's due-total is at most it) and the proof threshold (two decimals; null: none) and the note threshold (two decimals; null: none); and every value of the dated ones; and the permission matrix (not dated); and the grace days (null: off; not dated); and the entry date (null: off; not dated; a new claim given no date is dated it); and the grades' grace (days, by grade; a grade without one has none); and the grades' own proof thresholds (two decimals, by grade; a grade without one uses the sheet's); and the pot (two decimals; null: none; not dated); and the parent sheet (a sheet id; null: none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold (two decimals; null: off; not dated); and the rounding mode (half-up or half-even; null: none); and the review threshold (two decimals; null: none); and the escalation gap (days; null: off; not dated); and the review SLA (days; null: none; not dated); and the proof kinds (a comma separated list of proof kinds; null: none; not dated); and the default grade (A, B or C; null: blank, A; not dated); and the grades' own clerk limits (two decimals, by grade; a grade without one uses the sheet's). */
+ public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, BigDecimal latePct,
