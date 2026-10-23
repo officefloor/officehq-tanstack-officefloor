@@ -25,7 +25,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** For every plan on the sheet, in the order they were added, make a DRAFT claim of the plan's amount, dated that day
+/** For every plan on the sheet, in the order they were added, make a DRAFT claim of the plan's amount (its current
+ *  one: a change of the amount applies to the claims generated from then on), dated that day
  *  with an empty note, for every plan date (the start, then every N days; or a monthly plan's day in each month) up to the plan's end and the sheet's today
  *  that the plan has made none for yet; a plan date on or after a day the plan was paused and before the day it was
  *  resumed (any after it, while still paused) is skipped for good, not postponed. Each is added as the claim form adds one — its CLAIM_ADDED line and then how

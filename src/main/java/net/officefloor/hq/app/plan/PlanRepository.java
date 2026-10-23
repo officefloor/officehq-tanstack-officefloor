@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.plan;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.person.Person;
@@ -15,7 +16,7 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, i) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("start_date", LocalDate.class),
             rs.getObject("every_days", Integer.class), rs.getObject("day_of_month", Integer.class),
-            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of());
+            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -32,7 +33,7 @@ public class PlanRepository {
                 .stream().map(this::withPauses).toList();
     }
 
-    /** The plan on the sheet with this id, with its pauses, or null when there is none. */
+    /** The plan on the sheet with this id, with its pauses and changes, or null when there is none. */
     public Plan find(String sheetId, long planId) {
         return list(sheetId).stream().filter(p -> p.id() == planId).findFirst().orElse(null);
     }
@@ -42,7 +43,17 @@ public class PlanRepository {
                 (rs, i) -> new PlanPause(rs.getObject("paused_on", LocalDate.class),
                         rs.getObject("resumed_on", LocalDate.class)), p.id());
         return new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(), p.day(), p.end(),
-                p.generated(), pauses);
+                p.generated(), pauses, jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                        (rs, i) -> new PlanChange(rs.getObject("changed_on", LocalDate.class), rs.getBigDecimal("amount")),
+                        p.id()));
+    }
+
+    /** Change the plan's amount from this day: the claims generated from then on are made of it. */
+    public void changeAmount(long planId, LocalDate on, BigDecimal amount, String user) {
+        jdbc.queryForList("SELECT id FROM plan WHERE id = ? FOR UPDATE", planId);
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount, changed_by) VALUES (?, ?, ?, ?)", planId, on,
+                amount, user);
     }
 
     /** Pause the plan from this day: false when it is already paused (nothing written). */
@@ -74,7 +85,7 @@ public class PlanRepository {
             return ps;
         }, keys);
         return new Plan(keys.getKey().longValue(), person.sheetId(), person.id(), input.amount(), input.start(),
-                input.every(), input.day(), input.end(), 0, List.of());
+                input.every(), input.day(), input.end(), 0, List.of(), List.of());
     }
 
     /** Whether the plan has made a claim for this plan date. */

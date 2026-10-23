@@ -10,9 +10,10 @@ import java.util.List;
  *  the end, made when the plans are generated; `generated` is how many claims it has made so far. A monthly plan has
  *  no `every` but a `day` of the month (1 to 31): its plan dates are that day in every month from the start's month, a
  *  day beyond the month's length falling on its last day, dates before the start left out. A plan date inside one of
- *  its `pauses` is skipped, not postponed; the plan is paused while its last pause has not been resumed. */
+ *  its `pauses` is skipped, not postponed; the plan is paused while its last pause has not been resumed. The amount is the
+ *  current one, its `changes` (oldest first) each the amount it was changed to and when. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
-        LocalDate end, int generated, List<PlanPause> pauses) {
+        LocalDate end, int generated, List<PlanPause> pauses, List<PlanChange> changes) {
 
     /** Whether the plan is paused now: its last pause not resumed. */
     public boolean paused() {

@@ -9,8 +9,9 @@ import type { Person } from '../people/people';
 import { plansKey, usePlans } from './plans';
 import type { Plan } from './plans';
 
-/** One plan: its dates, how many claims it has made, its next dates, whether it is paused, and the buttons that pause
- *  and resume it; a refused pause or resume shows in the plan's own error, cleared by the next action on the row. */
+/** One plan: its dates, how many claims it has made, its next dates, whether it is paused, the buttons that pause
+ *  and resume it, the entry that changes its amount from the sheet's today, and its amount changes, oldest first; a
+ *  refused pause, resume or change shows in the plan's own error, cleared by the next action on the row. */
 function PlanRow({ sheetId, user, person, plan: p }: { sheetId: string; user: string; person: Person; plan: Plan }) {
   const queryClient = useQueryClient();
   const { error, setError, begin } = usePersonError(sheetId, person.id);
@@ -33,6 +34,24 @@ function PlanRow({ sheetId, user, person, plan: p }: { sheetId: string; user: st
     toggle.mutate(action);
   };
 
+  const [amount, setAmount] = useState('');
+  const change = useMutation({
+    mutationFn: (to: string) =>
+      postJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { user, amount: to }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+      setAmount('');
+    },
+    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not change the plan.'),
+    onSettled: once.done,
+  });
+
+  const save = () => {
+    begin();
+    if (!once.start()) return;
+    change.mutate(amount.trim());
+  };
+
   return (
     <li data-testid={`plan-row-${p.id}`}>
       {p.amount} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}; made{' '}
@@ -44,7 +63,26 @@ function PlanRow({ sheetId, user, person, plan: p }: { sheetId: string; user: st
       </button>{' '}
       <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => act('resume')}>
         Resume
+      </button>{' '}
+      <input
+        data-testid="plan-amount"
+        placeholder="new amount"
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          setError('');
+        }}
+      />{' '}
+      <button type="button" data-testid="plan-amount-save" disabled={change.isPending} onClick={save}>
+        Save amount
       </button>
+      <ul>
+        {p.changes.map((c, i) => (
+          <li key={i} data-testid="plan-change-line">
+            {c}
+          </li>
+        ))}
+      </ul>
       {error && (
         <p data-testid="plan-error" role="alert">
           {error}

@@ -18,6 +18,8 @@ export type Plan = {
   /** Whether the plan is paused: a plan date on or after the day it was paused and before the day it is resumed is
    *  skipped, not postponed. */
   paused: boolean;
+  /** Its amount changes, oldest first, each as "yyyy-mm-dd amount=0.00"; the amount is the current one. */
+  changes: string[];
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
