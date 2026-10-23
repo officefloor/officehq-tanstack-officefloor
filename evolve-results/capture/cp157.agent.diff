@@ -1,0 +1,510 @@
+diff --git a/src/main/frontend/features/locale/LocaleFigures.tsx b/src/main/frontend/features/locale/LocaleFigures.tsx
+new file mode 100644
+index 0000000..f422342
+--- /dev/null
++++ b/src/main/frontend/features/locale/LocaleFigures.tsx
+@@ -0,0 +1,62 @@
++import { useEffect, useRef } from 'react';
++import type { ReactNode } from 'react';
++import { formatFigure } from './locale';
++import type { Locale } from './locale';
++
++// Text inside these is never a figure shown in a cell (option labels are matched by tests and people as typed).
++const SKIP = new Set(['OPTION', 'TEXTAREA', 'SCRIPT', 'STYLE']);
++
++/** Shows every figure inside it in the user's locale: any element whose whole text is a number with two decimals
++ *  (an amount, due, total, rate, share, cut...) is shown as 1.234,56 under de. Done on the screen's text, after
++ *  React renders it, so each feature keeps rendering the plain figure it reads from the server (as exports and
++ *  audit lines carry it); when the locale goes back to en every figure changed here is put back. */
++export function LocaleFigures({ locale, children }: { locale: Locale; children: ReactNode }) {
++  const ref = useRef<HTMLDivElement>(null);
++
++  useEffect(() => {
++    const root = ref.current;
++    if (!root || locale === 'en') return;
++    // The text React rendered, for each text node shown differently here — to put back.
++    const changed = new Map<Text, { plain: string; shown: string }>();
++
++    const visit = (node: Text) => {
++      const parent = node.parentElement;
++      if (!parent || SKIP.has(parent.tagName)) return;
++      const text = node.nodeValue ?? '';
++      if ((parent.textContent ?? '').trim() !== text.trim()) return;
++      const shown = formatFigure(text, locale);
++      if (shown === text) return;
++      changed.set(node, { plain: text, shown });
++      node.nodeValue = shown;
++    };
++    const walk = (node: Node) => {
++      if (node.nodeType === Node.TEXT_NODE) {
++        visit(node as Text);
++        return;
++      }
++      const texts = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
++      for (let t = texts.nextNode(); t; t = texts.nextNode()) visit(t as Text);
++    };
++
++    walk(root);
++    const observer = new MutationObserver((records) => {
++      for (const r of records) {
++        if (r.type === 'characterData') walk(r.target);
++        else r.addedNodes.forEach(walk);
++      }
++    });
++    observer.observe(root, { subtree: true, childList: true, characterData: true });
++    return () => {
++      observer.disconnect();
++      for (const [node, { plain, shown }] of changed) {
++        if (node.isConnected && node.nodeValue === shown) node.nodeValue = plain;
++      }
++    };
++  }, [locale]);
++
++  return (
++    <div ref={ref} style={{ display: 'contents' }}>
++      {children}
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/locale/UserLocale.tsx b/src/main/frontend/features/locale/UserLocale.tsx
+new file mode 100644
+index 0000000..68a294e
+--- /dev/null
++++ b/src/main/frontend/features/locale/UserLocale.tsx
+@@ -0,0 +1,61 @@
++import { useEffect, useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { LOCALES, localeKey, localePath, useLocale } from './locale';
++import type { Locale, UserLocale as Saved } from './locale';
++
++/** The signed-in user's locale: shown, and chosen with a select (saved per user; no audit line). */
++export function UserLocale({ user }: { user: string }) {
++  const queryClient = useQueryClient();
++  const current = useLocale(user);
++  const [chosen, setChosen] = useState<Locale>(current);
++  const once = useSubmitOnce();
++
++  useEffect(() => setChosen(current), [current]);
++
++  const save = useMutation({
++    mutationFn: (locale: Locale) => putJson<Saved>(localePath(user), { locale }),
++    onSuccess: (saved) => queryClient.setQueryData(localeKey(user), saved),
++    onSettled: once.done,
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    save.reset();
++    if (!once.start()) return;
++    save.mutate(chosen);
++  };
++
++  return (
++    <form data-testid="user-locale-form" onSubmit={submit}>
++      Locale <strong data-testid="user-locale-current">{current}</strong>{' '}
++      <label>
++        Show figures as{' '}
++        <select
++          data-testid="user-locale"
++          value={chosen}
++          onChange={(e) => {
++            setChosen(e.target.value as Locale);
++            save.reset();
++          }}
++        >
++          {LOCALES.map((l) => (
++            <option key={l} value={l}>
++              {l}
++            </option>
++          ))}
++        </select>
++      </label>{' '}
++      <button type="submit" data-testid="user-locale-save" disabled={save.isPending}>
++        Save locale
++      </button>
++      {save.isError && (
++        <p data-testid="user-locale-error" role="alert">
++          {save.error instanceof HttpError && save.error.body ? save.error.body : 'Could not change the locale.'}
++        </p>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/locale/locale.ts b/src/main/frontend/features/locale/locale.ts
+new file mode 100644
+index 0000000..3f8ed1c
+--- /dev/null
++++ b/src/main/frontend/features/locale/locale.ts
+@@ -0,0 +1,37 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJsonNow } from '../../api/http';
++
++/** How figures are shown to a user: en (1234.56) or de (1.234,56). Entries are always typed with a dot. */
++export type Locale = 'en' | 'de';
++
++export const LOCALES: Locale[] = ['en', 'de'];
++
++export type UserLocale = { user: string; locale: Locale };
++
++// Kept per user, not per sheet: not under ['sheet', ...].
++export const localeKey = (user: string) => ['user', user, 'locale'] as const;
++
++export function localePath(user: string): string {
++  return `/api/users/${encodeURIComponent(user)}/locale`;
++}
++
++/** The signed-in user's locale ('en' until it is read, or until they choose one). */
++export function useLocale(user: string): Locale {
++  const q = useQuery({
++    queryKey: localeKey(user),
++    queryFn: () => getJsonNow<UserLocale>(localePath(user)),
++    enabled: user !== '',
++  });
++  return q.data?.locale ?? 'en';
++}
++
++/** A figure: a number with two decimals, the whole of its text. */
++const FIGURE = /^(-?)(\d+)\.(\d{2})$/;
++
++/** The figure as shown under the locale; any other text unchanged. */
++export function formatFigure(text: string, locale: Locale): string {
++  if (locale !== 'de') return text;
++  const m = FIGURE.exec(text.trim());
++  if (!m) return text;
++  return `${m[1]}${m[2].replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${m[3]}`;
++}
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index d2f6df8..bbecbd9 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -14,7 +14,7 @@ import { capped, excess, OPEN_STATUSES, ownRates, personDueSum, personStatusSum,
+   sheetDueTotal, sheetStatusSum, useRates } from './rates';
+ import type { Rate } from './rates';
+ 
+-const PCT = /^\d{1,3}(\.\d{1,2})?$/;
++const PCT = /^\d{1,5}(\.\d{1,2})?$/;
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
+ /** The sheet's rates — per grade the one in force on the sheet's today, then each rate with its
+@@ -46,7 +46,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
+       setTo('');
+     },
+     onError: () =>
+-      refuse('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
++      refuse('Could not set this rate: it must be a percent, 0.00 to 99999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
+     onSettled: once.done,
+   });
+ 
+@@ -61,7 +61,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
+     e.preventDefault();
+     setError('');
+     if (!PCT.test(pct.trim())) {
+-      refuse('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
++      refuse('The rate must be a percent, 0.00 to 99999.99, with up to two decimals.');
+       return;
+     }
+     if (from.trim() !== '' && !DATE.test(from.trim())) {
+@@ -176,7 +176,7 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
+     setError('');
+     setResult(null);
+     if (!PCT.test(pct.trim())) {
+-      setError('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
++      setError('The rate must be a percent, 0.00 to 99999.99, with up to two decimals.');
+       return;
+     }
+     setBusy(true);
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 19f1e6e..2569a32 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,4 +1,7 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { LocaleFigures } from '../features/locale/LocaleFigures';
++import { UserLocale } from '../features/locale/UserLocale';
++import { useLocale } from '../features/locale/locale';
+ import { CurrentUser, SignIn } from '../features/session/SignIn';
+ import { useSheetId, useUser } from '../features/session/session';
+ import { SheetPicker } from '../features/sheet/SheetPicker';
+@@ -12,6 +15,7 @@ export const Route = createFileRoute('/')({
+ function Home() {
+   const [user] = useUser();
+   const [sheetId] = useSheetId();
++  const locale = useLocale(user ?? '');
+ 
+   if (!user) {
+     return (
+@@ -21,15 +25,17 @@ function Home() {
+       </>
+     );
+   }
++  // Every figure shown to the signed-in user is in their locale.
+   return (
+-    <>
++    <LocaleFigures locale={locale}>
+       <CurrentUser user={user} />
++      <UserLocale user={user} />
+       <SheetPicker user={user} />
+       {sheetId ? (
+         <SheetBody.Slot key={sheetId} sheetId={sheetId} user={user} />
+       ) : (
+         <p data-testid="home-empty">Nothing here yet.</p>
+       )}
+-    </>
++    </LocaleFigures>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/locale/HandleInvalidLocale.java b/src/main/java/net/officefloor/hq/app/locale/HandleInvalidLocale.java
+new file mode 100644
+index 0000000..0d4a65d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/HandleInvalidLocale.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.locale;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidLocale {
++    public void handle(@Parameter InvalidLocaleException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/InvalidLocaleException.java b/src/main/java/net/officefloor/hq/app/locale/InvalidLocaleException.java
+new file mode 100644
+index 0000000..7552efa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/InvalidLocaleException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.locale;
++
++/** A locale choice with no signed-in user, or a locale not offered. */
++public class InvalidLocaleException extends Exception {
++    public InvalidLocaleException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/LocaleInput.java b/src/main/java/net/officefloor/hq/app/locale/LocaleInput.java
+new file mode 100644
+index 0000000..5c5387e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/LocaleInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.locale;
++
++/** A validated locale choice: the signed-in user and one of the locales offered. */
++public record LocaleInput(String user, String locale) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/LocaleRepository.java b/src/main/java/net/officefloor/hq/app/locale/LocaleRepository.java
+new file mode 100644
+index 0000000..7ffc7b9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/LocaleRepository.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.locale;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Each user's chosen locale, per user (not per sheet). */
++@Repository
++public class LocaleRepository {
++
++    /** The locale of a user who never chose one. */
++    public static final String DEFAULT = "en";
++
++    /** The locales a user may choose. */
++    public static final List<String> LOCALES = List.of("en", "de");
++
++    private final JdbcTemplate jdbc;
++
++    public LocaleRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public String localeOf(String user) {
++        List<String> found = jdbc.queryForList("SELECT locale FROM user_locale WHERE user_name = ?", String.class, user);
++        return found.isEmpty() ? DEFAULT : found.get(0);
++    }
++
++    public void save(String user, String locale) {
++        jdbc.update("MERGE INTO user_locale (user_name, locale) KEY (user_name) VALUES (?, ?)", user, locale);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/LocaleRequest.java b/src/main/java/net/officefloor/hq/app/locale/LocaleRequest.java
+new file mode 100644
+index 0000000..00550ee
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/LocaleRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.locale;
++
++/** Body of choosing a locale: the locale the signed-in user is to see figures in. */
++public record LocaleRequest(String locale) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/LocaleResponse.java b/src/main/java/net/officefloor/hq/app/locale/LocaleResponse.java
+new file mode 100644
+index 0000000..e031f1b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/LocaleResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.locale;
++
++/** A user's locale. */
++public record LocaleResponse(String user, String locale) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/RespondWithLocale.java b/src/main/java/net/officefloor/hq/app/locale/RespondWithLocale.java
+new file mode 100644
+index 0000000..02f8a40
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/RespondWithLocale.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.locale;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithLocale {
++    public void respond(@Val LocaleResponse saved, ObjectResponse<LocaleResponse> response) {
++        response.send(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/RespondWithUserLocale.java b/src/main/java/net/officefloor/hq/app/locale/RespondWithUserLocale.java
+new file mode 100644
+index 0000000..b082d1b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/RespondWithUserLocale.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.locale;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The user's locale: 'en' until they choose one. */
++public class RespondWithUserLocale {
++    public void respond(@PathVariable("user") String user, LocaleRepository locales,
++            ObjectResponse<LocaleResponse> response) {
++        String name = user == null ? "" : user.trim();
++        response.send(new LocaleResponse(name, locales.localeOf(name)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/SaveLocale.java b/src/main/java/net/officefloor/hq/app/locale/SaveLocale.java
+new file mode 100644
+index 0000000..ec97894
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/SaveLocale.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.locale;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Keep the user's locale (no audit line: it changes only how figures are shown to them). */
++public class SaveLocale {
++    public void save(@Val LocaleInput input, LocaleRepository locales, Out<LocaleResponse> saved) {
++        locales.save(input.user(), input.locale());
++        saved.set(new LocaleResponse(input.user(), input.locale()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/locale/ValidateLocale.java b/src/main/java/net/officefloor/hq/app/locale/ValidateLocale.java
+new file mode 100644
+index 0000000..01bc1fa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/locale/ValidateLocale.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.locale;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the body and refuse it before anything is written: a signed-in user and a locale offered. */
++public class ValidateLocale {
++    public void validate(@PathVariable("user") String user, @RequestBody LocaleRequest request, Out<LocaleInput> body)
++            throws InvalidLocaleException {
++        if (user == null || user.isBlank()) {
++            throw new InvalidLocaleException("Sign in before choosing a locale.");
++        }
++        String locale = request == null || request.locale() == null ? "" : request.locale().trim();
++        if (!LocaleRepository.LOCALES.contains(locale)) {
++            throw new InvalidLocaleException("Choose a locale: " + String.join(" or ", LocaleRepository.LOCALES) + ".");
++        }
++        body.set(new LocaleInput(user.trim(), locale));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRules.java b/src/main/java/net/officefloor/hq/app/rate/RateRules.java
+index b1e2f7d..36b8b77 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRules.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRules.java
+@@ -22,8 +22,8 @@ public final class RateRules {
+             throw new InvalidRateException("The grade must be A, B or C.");
+         }
+         String rate = request.rate() == null ? "" : request.rate().trim();
+-        if (!rate.matches("\\d{1,3}(\\.\\d{1,2})?")) {
+-            throw new InvalidRateException("The rate must be a percent, 0.00 to 999.99, with up to two decimals.");
++        if (!rate.matches("\\d{1,5}(\\.\\d{1,2})?")) {
++            throw new InvalidRateException("The rate must be a percent, 0.00 to 99999.99, with up to two decimals.");
+         }
+         String fromText = request.from() == null ? "" : request.from().trim();
+         LocalDate from = null;
+diff --git a/src/main/resources/db/migration/V88__user_locale.sql b/src/main/resources/db/migration/V88__user_locale.sql
+new file mode 100644
+index 0000000..e35ccf0
+--- /dev/null
++++ b/src/main/resources/db/migration/V88__user_locale.sql
+@@ -0,0 +1,5 @@
++-- Each user's locale (how figures are shown to them), kept per user across every sheet. A user with no row is 'en'.
++CREATE TABLE user_locale (
++    user_name VARCHAR(100) PRIMARY KEY,
++    locale    VARCHAR(10)  NOT NULL
++);
+diff --git a/src/main/resources/db/migration/V89__rate_pct_wider.sql b/src/main/resources/db/migration/V89__rate_pct_wider.sql
+new file mode 100644
+index 0000000..14f35fe
+--- /dev/null
++++ b/src/main/resources/db/migration/V89__rate_pct_wider.sql
+@@ -0,0 +1,3 @@
++-- A rate may be a percent up to 99999.99.
++ALTER TABLE rate ALTER COLUMN pct DECIMAL(7, 2);
++ALTER TABLE rate_log ALTER COLUMN pct DECIMAL(7, 2);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.locale.InvalidLocaleException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.locale.InvalidLocaleException.yml
+new file mode 100644
+index 0000000..4eed092
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.locale.InvalidLocaleException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.locale.HandleInvalidLocale
+diff --git a/src/main/resources/officefloor/rest/api/users/{user}/locale.GET.yml b/src/main/resources/officefloor/rest/api/users/{user}/locale.GET.yml
+new file mode 100644
+index 0000000..ec54a21
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/users/{user}/locale.GET.yml
+@@ -0,0 +1,4 @@
++# The user's locale (per user, across every sheet): 'en' until they choose one.
++respond:
++  class: net.officefloor.hq.app.locale.RespondWithUserLocale
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/users/{user}/locale.PUT.yml b/src/main/resources/officefloor/rest/api/users/{user}/locale.PUT.yml
+new file mode 100644
+index 0000000..ea68291
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/users/{user}/locale.PUT.yml
+@@ -0,0 +1,12 @@
++# Choose the user's locale (en or de): how figures are shown to them. Writes no audit line. A refused choice (no
++# user, a locale not offered) writes nothing.
++validate:
++  class: net.officefloor.hq.app.locale.ValidateLocale
++  next: save
++save:
++  class: net.officefloor.hq.app.locale.SaveLocale
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.locale.RespondWithLocale
++  govern: [ transaction ]
