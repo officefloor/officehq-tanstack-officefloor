@@ -1,0 +1,92 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 5ff4531..4b7193c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -139,6 +139,23 @@ public class ClaimRepository {
+                 Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
+     }
+ 
++    /** What remains of the SETTLED claim of the person with the number: its amount less the amounts of the corrections
++     *  made against it that are neither VOID nor DELETED, leaving out the claim with the given id (null: none); null
++     *  when there is no such claim. */
++    public BigDecimal correctable(String sheetId, long personId, String number, Long excludeId) {
++        List<BigDecimal> target = jdbc.queryForList(
++                "SELECT amount FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ? AND status = ?",
++                BigDecimal.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
++        if (target.isEmpty()) {
++            return null;
++        }
++        BigDecimal corrected = jdbc.queryForObject(
++                "SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ? AND corrects = ? AND status NOT IN (?, ?) AND id <> ?",
++                BigDecimal.class, sheetId, personId, number, ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(),
++                excludeId == null ? -1L : excludeId);
++        return target.get(0).add(corrected);
++    }
++
+     /** Bind the claim to a statement's figure (null: n/a, its due stays live), or unbind it (stated false). */
+     public void state(Claim claim, boolean stated, BigDecimal statedDue) {
+         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionEdit.java b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionEdit.java
+index 5278bdb..9311fcb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionEdit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidCorrectionEdit.java
+@@ -1,15 +1,24 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuse an edit into a correction unless the number it names is a SETTLED claim of the claim's person. */
++/** Refuse an edit into a correction unless the number it names is a SETTLED claim of the claim's person, and it does
++ *  not exceed what remains of that claim (its amount less the other corrections made against it, VOID or DELETED ones left out). */
+ public class RefuseInvalidCorrectionEdit {
+     public void refuse(@Val ClaimInput input, @Val Claim loaded, ClaimRepository repository)
+             throws InvalidClaimException {
+-        if (input.corrects() != null
+-                && !repository.settledNumbered(loaded.sheetId(), loaded.personId(), input.corrects())) {
++        if (input.corrects() == null) {
++            return;
++        }
++        BigDecimal remains = repository.correctable(loaded.sheetId(), loaded.personId(), input.corrects(), loaded.id());
++        if (remains == null) {
+             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person; there is no SETTLED claim "
+                     + input.corrects() + " of this person.");
+         }
++        if (input.amount().negate().compareTo(remains) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of " + input.corrects() + ": "
++                    + remains.setScale(2) + ".");
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidNewCorrection.java b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidNewCorrection.java
+index f3fb1e5..f6532fc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidNewCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseInvalidNewCorrection.java
+@@ -1,15 +1,25 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuse a new correction unless the number it names is a SETTLED claim of the same person. */
++/** Refuse a new correction unless the number it names is a SETTLED claim of the same person, and it does not exceed
++ *  what remains of that claim (its amount less the corrections already made against it, VOID or DELETED ones left out). */
+ public class RefuseInvalidNewCorrection {
+     public void refuse(@Val ClaimInput input, @Val Person person, ClaimRepository repository)
+             throws InvalidClaimException {
+-        if (input.corrects() != null && !repository.settledNumbered(person.sheetId(), person.id(), input.corrects())) {
++        if (input.corrects() == null) {
++            return;
++        }
++        BigDecimal remains = repository.correctable(person.sheetId(), person.id(), input.corrects(), null);
++        if (remains == null) {
+             throw new InvalidClaimException("A correction must name a SETTLED claim of the same person; "
+                     + person.name() + " has no SETTLED claim " + input.corrects() + ".");
+         }
++        if (input.amount().negate().compareTo(remains) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of " + input.corrects() + ": "
++                    + remains.setScale(2) + ".");
++        }
+     }
+ }
