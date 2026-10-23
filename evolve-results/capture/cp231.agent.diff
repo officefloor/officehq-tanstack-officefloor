@@ -1,0 +1,194 @@
+diff --git a/src/main/frontend/features/periods/export.slot.tsx b/src/main/frontend/features/periods/export.slot.tsx
+new file mode 100644
+index 00000000..b663494b
+--- /dev/null
++++ b/src/main/frontend/features/periods/export.slot.tsx
+@@ -0,0 +1,63 @@
++import { SheetBody } from '../../slots/defs/sheet';
++import { useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
++
++/** A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote or a line
++ *  break, else as it is. */
++function csvValue(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
++}
++
++/** The button that downloads the period figures as a CSV file: a header line, then one line per person and period,
++ *  people in list order (retired people included) and periods in the order added, with the person's due-total and
++ *  carried figure for the period as their row shows them (see personPeriodDueTotal and personPeriodCarried); each
++ *  line ends with a line feed. */
++function ExportPeriods({ sheetId }: { sheetId: string; user: string }) {
++  const periods = usePeriods(sheetId).data ?? [];
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  const download = () => {
++    // The periods come earliest first: they are put in the order added (earliest first among any not numbered).
++    const added = periods
++      .map((p, i) => ({ p, i }))
++      .sort((x, y) => (x.p.added ?? x.i) - (y.p.added ?? y.i) || x.i - y.i)
++      .map((x) => x.p);
++    const lines = [
++      ['person', 'period', 'figure', 'carried'],
++      ...people.flatMap((person) =>
++        added.map((p) => [
++          person.name,
++          p.name,
++          personPeriodDueTotal(p, person, claims, people, rates, floor, late),
++          personPeriodCarried(p, periods, person, claims, people, rates, floor, late),
++        ]),
++      ),
++    ];
++    const csv = lines.map((values) => values.map(csvValue).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
++    const link = document.createElement('a');
++    link.href = url;
++    link.download = `periods-${sheetId}.csv`;
++    document.body.appendChild(link);
++    link.click();
++    link.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 0);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-periods" onClick={download}>
++        Export period figures (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 6.3, Component: ExportPeriods });
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 24cc905d..8bb21b66 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -10,10 +10,10 @@ import type { DatedValue } from '../settings/settings';
+  *  person's due-total and carried figure fixed then, by person id (empty while open). A soft-closed period keeps them fixed the same
+  *  way, while its claims can still be added and changed. A period may cap the OPEN or PENDING claims each person has in
+  *  it (null: no cap); opening one past the cap is refused. A steward may lock a period: a locked one cannot be reopened. Each person's opening balance pasted for the period, by person
+- *  id (none: 0.00), adds to their carried figure. */
++ *  id (none: 0.00), adds to their carried figure. Its position in the order the periods were added (0 first) is in added. */
+ export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
+   personTotals: Record<string, string>; soft: boolean; cap: number | null; personCarried: Record<string, string>;
+-  personOpenings?: Record<string, string>; locked?: boolean };
++  personOpenings?: Record<string, string>; locked?: boolean; added?: number | null };
+ 
+ export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 1ec4fa01..ed0e4711 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -194,6 +194,16 @@ public class PeriodRepository {
+                 String.class, sheetId));
+     }
+ 
++    /** The sheet's period names in the order they were added, each with its position (0 first). */
++    public Map<String, Integer> addedOrder(String sheetId) {
++        Map<String, Integer> order = new HashMap<>();
++        for (String name : jdbc.queryForList("SELECT name FROM period WHERE sheet_id = ? ORDER BY added_seq, from_date",
++                String.class, sheetId)) {
++            order.put(name, order.size());
++        }
++        return order;
++    }
++
+     /** Whether the period is locked. */
+     public boolean locked(Period period) {
+         return lockedNames(period.sheetId()).contains(period.name());
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index d4b384cd..665d12e0 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -8,10 +8,10 @@ import java.util.TreeMap;
+  *  due-total fixed when it was closed (null while open), and each person's due-total fixed then, by person id
+  *  (empty while open), and each person's carried figure fixed then, by person id (empty while open, and for a
+  *  person whose figure was not fixed), each person's opening balance pasted for it (added to their carried figure
+- *  while open, and part of the figure fixed when closed), by person id, and whether it is soft-closed (its figures fixed as for a closed one), and its cap on each person's OPEN or PENDING claims (null: none), and whether it is locked. */
++ *  while open, and part of the figure fixed when closed), by person id, and whether it is soft-closed (its figures fixed as for a closed one), and its cap on each person's OPEN or PENDING claims (null: none), and whether it is locked, and its position in the order the periods were added (0 first; null when not given). */
+ public record PeriodResponse(String name, String from, String to, boolean closed, String closedTotal,
+         Map<Long, String> personTotals, boolean soft, Integer cap, Map<Long, String> personCarried,
+-        Map<Long, String> personOpenings, boolean locked) {
++        Map<Long, String> personOpenings, boolean locked, Integer added) {
+     public static PeriodResponse from(Period p, Map<Long, BigDecimal> personTotals) {
+         return from(p, personTotals, null);
+     }
+@@ -36,12 +36,18 @@ public record PeriodResponse(String name, String from, String to, boolean closed
+         }
+         return new PeriodResponse(p.name(), p.from().toString(), p.to().toString(), p.closed(),
+                 p.closedTotal() != null ? p.closedTotal().toPlainString() : null, shown, p.soft(), p.cap(), carried,
+-                openings, false);
++                openings, false, null);
+     }
+ 
+     /** This period as shown, locked or not. */
+     public PeriodResponse locked(boolean locked) {
+         return new PeriodResponse(name, from, to, closed, closedTotal, personTotals, soft, cap, personCarried,
+-                personOpenings, locked);
++                personOpenings, locked, added);
++    }
++
++    /** This period as shown, with its position in the order the periods were added. */
++    public PeriodResponse added(Integer added) {
++        return new PeriodResponse(name, from, to, closed, closedTotal, personTotals, soft, cap, personCarried,
++                personOpenings, locked, added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index 8ad8ef53..39f12d48 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -16,16 +16,18 @@ public class RespondWithPeriods {
+         LocalDate end = AsOf.parse(asOf);
+         var openings = repository.personOpenings(id);
+         var locked = repository.lockedNames(id);
++        var added = repository.addedOrder(id);
+         if (end != null) {
+             response.send(repository.listAsOf(id, end).stream()
+                     .map(p -> PeriodResponse.from(p.period(), p.personTotals(), p.personCarried(),
+-                            openings.get(p.period().name())).locked(locked.contains(p.period().name()))).toList());
++                            openings.get(p.period().name())).locked(locked.contains(p.period().name()))
++                            .added(added.get(p.period().name()))).toList());
+             return;
+         }
+         var totals = repository.personTotals(id);
+         var carried = repository.personCarried(id);
+         response.send(repository.list(id).stream()
+                 .map(p -> PeriodResponse.from(p, totals.get(p.name()), carried.get(p.name()),
+-                        openings.get(p.name())).locked(locked.contains(p.name()))).toList());
++                        openings.get(p.name())).locked(locked.contains(p.name())).added(added.get(p.name()))).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index b029f200..a62e9e60 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -49,7 +49,7 @@ public class SheetCloner {
+         copyRows("claim_template", "name, amount, note, saved_by", "name", from, to);
+         copyRows("claim_tag", "tag", "tag", from, to);
+         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) SELECT ?, name, from_date, to_date, "
+-                + "added_on FROM period WHERE sheet_id = ? ORDER BY from_date, name", to, from);
++                + "added_on FROM period WHERE sheet_id = ? ORDER BY added_seq, from_date, name", to, from);
+         Map<Long, Long> people = copyPeople(from, to);
+         copyPools(from, to, people);
+         markForwardRates(to, copyClaims(from, to, people));
+diff --git a/src/main/resources/db/migration/V125__period_added_seq.sql b/src/main/resources/db/migration/V125__period_added_seq.sql
+new file mode 100644
+index 00000000..73d591ca
+--- /dev/null
++++ b/src/main/resources/db/migration/V125__period_added_seq.sql
+@@ -0,0 +1,5 @@
++-- The order periods were added in: each new period takes the next number from the sequence. Periods already
++-- stored are numbered as they are found (ties with from_date are broken by from_date wherever the order is read).
++CREATE SEQUENCE period_added_seq START WITH 1;
++ALTER TABLE period ADD COLUMN added_seq BIGINT DEFAULT NEXT VALUE FOR period_added_seq;
++UPDATE period SET added_seq = NEXT VALUE FOR period_added_seq WHERE added_seq IS NULL;
