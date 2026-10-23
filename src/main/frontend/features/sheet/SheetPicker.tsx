@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { claimsQuery } from '../claims/claims';
+import { notesQuery } from '../notes/notes';
 import { peopleQuery } from '../people/people';
 import { useSheetId } from '../session/session';
 
@@ -21,10 +22,11 @@ export function SheetPicker({ user }: { user: string }) {
     mutationFn: (id: string) => putJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`, { user }),
     onSuccess: async (sheet) => {
       await queryClient.invalidateQueries({ queryKey: ['sheet', sheet.id] });
-      // The sheet shows as loaded once its people and claims are read, so its lists are never seen empty while they come.
+      // The sheet shows as loaded once its people, claims and notes are read, so its lists are never seen empty while they come.
       await Promise.all([
         queryClient.fetchQuery(peopleQuery(sheet.id)).catch(() => undefined),
         queryClient.fetchQuery(claimsQuery(sheet.id)).catch(() => undefined),
+        queryClient.fetchQuery(notesQuery(sheet.id)).catch(() => undefined),
       ]);
       setSheetId(sheet.id);
     },
