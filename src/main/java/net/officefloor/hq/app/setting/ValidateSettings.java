@@ -94,6 +94,10 @@ public class ValidateSettings {
         if (pot != null && !pot.isEmpty() && !pot.matches(AMOUNT)) {
             throw new InvalidSettingException("The pot must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
         }
+        String alert = request.alertThreshold() == null ? null : request.alertThreshold().trim();
+        if (alert != null && !alert.isEmpty() && !alert.matches(AMOUNT)) {
+            throw new InvalidSettingException("The alert threshold must be an amount, 0.00 or more, with up to two decimals, or blank for off.");
+        }
         String parent = request.parent() == null ? null : request.parent().trim();
         String fiscal = request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
         if (fiscal != null && !fiscal.matches("[1-9]|1[0-2]")) {
@@ -216,6 +220,7 @@ public class ValidateSettings {
                 entered != null, entryDate, gradeGrace, gradeProofThreshold,
                 pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
                 parent != null, parent == null || parent.isEmpty() ? null : parent,
-                fiscal == null ? null : Integer.valueOf(fiscal)));
+                fiscal == null ? null : Integer.valueOf(fiscal),
+                alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2)));
     }
 }

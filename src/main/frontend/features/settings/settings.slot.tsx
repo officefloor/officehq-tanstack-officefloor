@@ -23,7 +23,7 @@ const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -46,6 +46,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  The entry date (blank: off; not dated): while it is set, a new claim given no date (the claim form, the quick-add
  *  bar, a pasted line, a correction) is dated it instead of the sheet's today.
  *  The pot (blank: none; not dated): each member of a balanced pool is shown their cut of it.
+ *  The alert threshold (blank: off; not dated): the server alerts, in the audit file, each person whose due-total
+ *  crosses above it over a change.
  *  The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on this sheet takes
  *  the parent's, then its parent's, up to three levels up. The server refuses the sheet itself, a sheet never
  *  loaded, or one that has this sheet as an ancestor.
@@ -68,6 +70,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentGraceDays = settings.data?.graceDays ?? '';
   const currentEntryDate = settings.data?.entryDate ?? '';
   const currentPot = settings.data?.pot ?? '';
+  const currentAlertThreshold = settings.data?.alertThreshold ?? '';
   const currentParent = settings.data?.parent ?? '';
   const currentFiscalStartMonth = settings.data?.fiscalStartMonth ?? '1';
   // null: not typed in since the last save, so the field shows the setting in force.
@@ -83,6 +86,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedGraceDays, setTypedGraceDays] = useState<string | null>(null);
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const [typedPot, setTypedPot] = useState<string | null>(null);
+  const [typedAlertThreshold, setTypedAlertThreshold] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
   const [typedFiscalStartMonth, setTypedFiscalStartMonth] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
@@ -117,6 +121,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedGraceDays(null);
       setTypedEntryDate(null);
       setTypedPot(null);
+      setTypedAlertThreshold(null);
       setTypedParent(null);
       setTypedFiscalStartMonth(null);
       setTypedGradeTerms({});
@@ -231,6 +236,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.pot = pot;
+    }
+    if (typedAlertThreshold !== null) {
+      const threshold = typedAlertThreshold.trim();
+      if (threshold !== '' && !LIMIT.test(threshold)) {
+        setError('The alert threshold must be an amount, 0.00 or more, with up to two decimals, or blank for off.');
+        return;
+      }
+      changes.alertThreshold = threshold;
     }
     if (typedParent !== null) {
       changes.parent = typedParent.trim();
@@ -374,6 +387,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
         Pot <strong data-testid="setting-pot-current">{currentPot}</strong>{' '}
+        Alert threshold <strong data-testid="setting-alert-threshold-current">{currentAlertThreshold}</strong>{' '}
         Parent <strong data-testid="setting-parent-current">{currentParent}</strong>{' '}
         Fiscal year start month <strong data-testid="setting-fiscal-start-month-current">{currentFiscalStartMonth}</strong>
       </p>
@@ -567,6 +581,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedPot)}
             onChange={typed(setTypedPot)}
             onFocus={() => setTypedPot((v) => v ?? currentPot)}
+          />
+        </label>{' '}
+        <label>
+          Alert threshold{' '}
+          <input
+            data-testid="setting-alert-threshold"
+            placeholder="off"
+            value={typedAlertThreshold ?? currentAlertThreshold}
+            onInput={typed(setTypedAlertThreshold)}
+            onChange={typed(setTypedAlertThreshold)}
+            onFocus={() => setTypedAlertThreshold((v) => v ?? currentAlertThreshold)}
           />
         </label>{' '}
         <label>

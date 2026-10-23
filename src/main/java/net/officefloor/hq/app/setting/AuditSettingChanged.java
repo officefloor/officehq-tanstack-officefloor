@@ -59,6 +59,9 @@ public class AuditSettingChanged {
         if (input.fiscalStartMonth() != null) {
             audit.record(head + "fiscal-start-month value=" + input.fiscalStartMonth());
         }
+        if (input.setsAlertThreshold()) {
+            audit.record(head + "alert-threshold value=" + SettingsResponse.text(input.alertThreshold()));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

@@ -22,7 +22,9 @@ import org.springframework.stereotype.Service;
 /** Takes the sheet's figures, and records in the audit file how they moved over a change: a ROLLUP line per
  *  person whose figures (claimed, due-total, overdue-total) changed (a person new to the sheet counting as changed), in the order they were added,
  *  then a TOTALS line when the sheet's totals changed (its due-total and overdue-total leave out the single highest and
- *  single lowest person's figure when three or more people have one; n/a is no figure). A change that moves no figure records nothing. */
+ *  single lowest person's figure when three or more people have one; n/a is no figure), then, when the sheet has an
+ *  alert threshold, an ALERT line per person whose due-total went from at or below it (or none) to above it, in
+ *  list order. A change that moves no figure records nothing. */
 @Service
 public class Rollups {
 
@@ -94,6 +96,22 @@ public class Rollups {
             audit.record("TOTALS sheet=" + sheetId + " by=" + user + " claimed-total=" + after.claimedTotal()
                     + " due-total=" + after.dueTotal() + " overdue-total=" + after.overdueTotal());
         }
+        BigDecimal threshold = settings.alertThreshold(sheetId);
+        if (threshold != null) {
+            for (var e : after.people().entrySet()) {
+                Rollup.Figures was = before.people().get(e.getKey());
+                Rollup.Figures now = e.getValue();
+                if (!above(was != null ? was.dueTotal() : null, threshold) && above(now.dueTotal(), threshold)) {
+                    audit.record("ALERT sheet=" + sheetId + " by=" + user + " name=" + now.name()
+                            + " due-total=" + now.dueTotal());
+                }
+            }
+        }
+    }
+
+    /** Whether a due-total as shown (n/a or none: no due-total) is above the threshold. */
+    private static boolean above(String dueTotal, BigDecimal threshold) {
+        return dueTotal != null && !"n/a".equals(dueTotal) && new BigDecimal(dueTotal).compareTo(threshold) > 0;
     }
 
     /** Per-person figures added up, leaving out the single highest and the single lowest when there are three or more. */

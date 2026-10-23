@@ -26,11 +26,13 @@ import { useSheetToday } from '../sheet/sheet';
  *  with two decimals (not dated; '' when there is none): each member of a balanced pool is shown their cut of it. `parent` is
  *  the parent sheet's id (not dated; '' when there is none): a grade with no rate in force on a date on this sheet takes
  *  the parent's rate for it on that date, then the parent's parent's, up to three levels up. `fiscalStartMonth` is the
- *  month (1 to 12, not dated; 1 unless set) a fiscal year starts on the first day of (see fiscalYearOf). */
+ *  month (1 to 12, not dated; 1 unless set) a fiscal year starts on the first day of (see fiscalYearOf). `alertThreshold`
+ *  is the alert threshold with two decimals (not dated; '' when off): a person whose due-total crosses above it over a
+ *  change is alerted in the audit file. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };

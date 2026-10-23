@@ -68,7 +68,7 @@ public class SettingRepository {
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
-                fiscalStartMonth(sheetId));
+                fiscalStartMonth(sheetId), alertThreshold(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -205,6 +205,16 @@ public class SettingRepository {
 
     public void setPot(String sheetId, BigDecimal pot) {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+    }
+
+    /** The sheet's alert threshold: null when blank (off). */
+    public BigDecimal alertThreshold(String sheetId) {
+        return jdbc.query("SELECT alert_threshold FROM sheet WHERE id = ?",
+                rs -> rs.next() && rs.getBigDecimal(1) != null ? rs.getBigDecimal(1).setScale(2) : null, sheetId);
+    }
+
+    public void setAlertThreshold(String sheetId, BigDecimal threshold) {
+        jdbc.update("UPDATE sheet SET alert_threshold = ? WHERE id = ?", threshold, sheetId);
     }
 
     /** The sheet's parent sheet: null when there is none. */
