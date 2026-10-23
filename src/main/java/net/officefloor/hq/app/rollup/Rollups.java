@@ -86,7 +86,7 @@ public class Rollups {
     }
 
     /** Each person's score as it is now, in list order: their settled figures (the due, as shown, of each SETTLED
-     *  claim that counts, skipping n/a) divided by 100, minus 5 for each of their overdue claims that count, rounded
+     *  claim that counts and corrects no other claim, skipping n/a) divided by 100, minus 5 for each of their overdue claims that count, rounded
      *  half to even to a whole number. */
     public List<Score> scores(String sheetId) {
         var today = sheets.today(sheetId);
@@ -97,7 +97,7 @@ public class Rollups {
         for (Person p : people.list(sheetId)) {
             List<Claim> counted = all.stream()
                     .filter(c -> c.personId() == p.id() && Dues.counts(c, p.holds(), p.retiredFrom(), today)).toList();
-            BigDecimal settled = counted.stream().filter(c -> c.status() == ClaimStatus.SETTLED)
+            BigDecimal settled = counted.stream().filter(c -> c.status() == ClaimStatus.SETTLED && c.corrects() == null)
                     .map(c -> Dues.shown(c, p.grades(), rates, floor, late)).filter(Objects::nonNull)
                     .reduce(new BigDecimal("0.00"), BigDecimal::add);
             long overdue = counted.stream().filter(late::overdue).count();

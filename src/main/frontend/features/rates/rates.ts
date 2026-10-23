@@ -334,12 +334,14 @@ export function ratePreview(people: Person[], claims: Claim[], rates: Rate[], gr
   return { count, diff: fromCents(diff) };
 }
 
-/** A person's score: their settled figures (see personStatusSum, SETTLED) divided by 100, minus 5 for each of their
+/** A person's score: their settled figures (see personStatusSum, SETTLED, leaving out corrections of another claim)
+ *  divided by 100, minus 5 for each of their
  *  overdue claims that count (see overdueDues), rounded half to even to a whole number (exact, in integers). */
 export function personScore(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late): string {
   const own = claims.filter((c) => c.personId === person.id);
-  const settled = toCents(personStatusSum(person, own, rates, today, floor, late, SETTLED_STATUSES));
+  const settled = toCents(personStatusSum(person, own.filter((c) => !c.corrects), rates, today, floor, late,
+    SETTLED_STATUSES));
   const overdueCount = BigInt(overdueDues(own, [person], rates, late, floor).length);
   const scaled = settled - overdueCount * 50000n; // in 1/10000 of a point
   const sign = scaled < 0n ? -1n : 1n;
