@@ -470,6 +470,16 @@ public class PersonRepository {
                 person.sheetId());
     }
 
+    /** Retroactively turn every grade record of the person on the one grade into the other, whatever its from-date,
+     *  logged as made on the sheet's today so the sheet as it stood before is kept. */
+    public void regrade(Person person, String from, String into) {
+        for (var row : jdbc.queryForList("SELECT from_date FROM person_grade WHERE sheet_id = ? AND person_id = ? "
+                + "AND grade = ? ORDER BY from_date NULLS FIRST", person.sheetId(), person.id(), from)) {
+            LocalDate fromDate = toDate(row.get("from_date"));
+            grade(person, into, fromDate);
+        }
+    }
+
     // ---- as of a date: the changes made while the sheet's today was on or before it -------------------------
 
     /** The sheet's people as they stood at the end of the day, in list order: those added by then,

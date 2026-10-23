@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Merge a grade into another: only a steward may, and not into a retired grade. GRADE_MERGED is recorded, then
  *  every person whose grade in force on the sheet's today is the merged grade is given the other from the sheet's
  *  today, in list order, exactly as the person form's edit would: a new version, the grade recorded from today
- *  keeping those from other dates, its PERSON_EDITED line and then how the sheet's figures moved over it; then how the sheet's figures moved over the whole merge. */
+ *  keeping those from other dates, its PERSON_EDITED line and then how the sheet's figures moved over it. The merge is then made retroactive for
+ *  each person it moved: every grade record of theirs on the merged grade becomes the other, so all their claims use
+ *  the other grade's rates, terms and thresholds (frozen and statement-bound figures stay as they are); then how the sheet's figures moved over the whole merge. */
 public class MergeGrade {
     public void merge(@PathVariable("sheetId") String sheetId, @Val GradeMergeRequest request, PeriodRepository periods,
             RoleRepository roles, GradeRepository grades, PersonRepository people, SheetRepository sheets,
@@ -52,6 +54,7 @@ public class MergeGrade {
             audit.record("PERSON_EDITED sheet=" + sheet + " by=" + request.user()
                     + " name=" + saved.name() + " grade=" + saved.grade());
             rollups.record(sheet, request.user(), before);
+            people.regrade(person, request.from(), request.into());
             changed++;
         }
         rollups.record(sheet, request.user(), start);
