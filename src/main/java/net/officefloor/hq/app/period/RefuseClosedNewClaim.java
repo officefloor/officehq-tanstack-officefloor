@@ -9,7 +9,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Refuse a new claim whose due-by (its date — a blank date being the sheet's entry date, else its today — plus the
- *  terms it would get) falls inside a closed period: a claim belongs to the period holding its due-by, as a pasted or
+ *  terms it would get) falls inside a period closed by hand (one closed automatically does not refuse it): a claim belongs to the period holding its due-by, as a pasted or
  *  template claim does. A claim whose date and due-by straddle a closed period (it would run across it: the period
  *  starts after its date and ends before its due-by) is refused too. */
 public class RefuseClosedNewClaim {
@@ -19,13 +19,7 @@ public class RefuseClosedNewClaim {
         periods.lockSheet(person.sheetId());
         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
         var dueBy = DueBy.of(person, date, settings, holidays);
-        Period closed = periods.closedOn(person.sheetId(), dueBy);
-        if (closed == null && date.isBefore(dueBy)) {
-            // straddled: the closed period starts after its date and ends before its due-by
-            closed = periods.list(person.sheetId()).stream()
-                    .filter(p -> p.closed() && p.from().isAfter(date) && p.to().isBefore(dueBy))
-                    .findFirst().orElse(null);
-        }
+        Period closed = periods.closedByHandFor(person.sheetId(), date, dueBy);
         if (closed != null) {
             throw new ClosedPeriodException(closed);
         }

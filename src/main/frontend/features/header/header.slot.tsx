@@ -1,4 +1,5 @@
 import { SheetBody } from '../../slots/defs/sheet';
+import { crewDueTotal, useCrews } from '../crews/crews';
 import { STATUSES, useClaims } from '../claims/claims';
 import { usePeople, type Person } from '../people/people';
 import { overdueDues, personDueTotal, sheetDueTotal, sheetOverdueTotal, sumDue, useRates } from '../rates/rates';
@@ -8,7 +9,9 @@ import { useSheetToday } from '../sheet/sheet';
 /** The sheet's header counters, shown above everything else: its people (retired ones included), its claims
  *  per status (as the summary counts them) and its due-total and overdue-total (as the rollup shows them); and the
  *  signed-in user's own figures: the due-total and overdue-total of the person whose name or alias is the user's
- *  name (as names are compared), shown on their row; nothing when there is no such person. */
+ *  name (as names are compared), shown on their row; nothing when there is no such person; and the user's crew
+ *  total: the due-totals of the crews that person leads (as shown on the crew rows), added up; nothing when they
+ *  lead no crew. */
 function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -17,7 +20,10 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const crews = useCrews(sheetId).data ?? [];
   const me = personNamed(people, user);
+  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, cap);
+  const led = me ? crews.filter((c) => c.leadId === me.id) : [];
 
   return (
     <header data-testid="header">
@@ -38,12 +44,17 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
       </span>{' '}
       <span>
         My due total <strong data-testid="my-due-total">
-          {me ? personDueTotal(me, claims, rates, today, floor, late, cap) : ''}
+          {me ? due(me) : ''}
         </strong>
       </span>{' '}
       <span>
         My overdue total <strong data-testid="my-overdue-total">
           {me ? sumDue(overdueDues(claims.filter((c) => c.personId === me.id), [me], rates, late, floor)) : ''}
+        </strong>
+      </span>{' '}
+      <span>
+        My crew due total <strong data-testid="my-crew-due-total">
+          {led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, people, due))) : ''}
         </strong>
       </span>
     </header>

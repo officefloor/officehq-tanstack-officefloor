@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Once the sheet's new today is set: while it has grace days, close each open period (not a soft-closed one) whose to-date plus them is
  *  before the new today, in order of their to-dates, exactly as a close by hand would, each recorded as
  *  PERIOD_CLOSED with auto=yes at its end, and closed (to a sheet read as of a date) from the day after its to-date
- *  plus the grace days. */
+ *  plus the grace days; it is marked as closed automatically (it does not refuse new claims). */
 public class AutoClosePeriods {
     public void close(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val LocalDate today,
             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people,
@@ -34,6 +34,7 @@ public class AutoClosePeriods {
                 .toList();
         for (Period period : due) {
             Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets);
+            periods.markAutoClosed(closed);
             // it stands closed from the day after its to-date plus the grace days, as a sheet read as of a date sees
             periods.dateLastKept(period, period.to().plusDays(grace + 1L));
             audit.record("PERIOD_CLOSED sheet=" + closed.sheetId() + " by=" + request.user()

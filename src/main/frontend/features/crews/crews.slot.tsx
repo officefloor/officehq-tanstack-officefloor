@@ -6,10 +6,10 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
-import { personDueTotal, sumDue, useRates } from '../rates/rates';
+import { personDueTotal, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../settings/settings';
-import { crewsKey, useCrews } from './crews';
+import { crewDueTotal, crewsKey, useCrews } from './crews';
 import type { Crew } from './crews';
 
 /** A crew's due-total: its lead's and its members' due-totals (as shown on their rows) added up, skipping n/a. */
@@ -21,8 +21,7 @@ function useCrewDueTotal(sheetId: string, crew: Crew): string {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  const ids = new Set([crew.leadId, ...crew.members.map((m) => m.personId)]);
-  return sumDue(people.filter((p) => ids.has(p.id)).map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
+  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, cap));
 }
 
 /** One crew: its lead, its due-total, its members, and the entry a member is added with. */

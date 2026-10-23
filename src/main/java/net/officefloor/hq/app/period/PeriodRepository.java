@@ -61,6 +61,23 @@ public class PeriodRepository {
         return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
     }
 
+    /** The period on the sheet closed by hand (not automatically) that would hold a new claim dated on the date and
+     *  due by the due-by: the one whose dates contain its due-by, else one it would run across (the period starts
+     *  after its date and ends before its due-by); null when none does. */
+    public Period closedByHandFor(String sheetId, LocalDate date, LocalDate dueBy) {
+        var closed = jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND closed AND NOT auto_closed ORDER BY from_date",
+                ROW, sheetId);
+        return closed.stream().filter(p -> p.contains(dueBy)).findFirst()
+                .or(() -> closed.stream().filter(p -> p.from().isAfter(date) && p.to().isBefore(dueBy)).findFirst())
+                .orElse(null);
+    }
+
+    /** Mark the closed period as closed automatically. */
+    public void markAutoClosed(Period period) {
+        jdbc.update("UPDATE period SET auto_closed = TRUE WHERE sheet_id = ? AND name = ? AND closed",
+                period.sheetId(), period.name());
+    }
+
     /** The closed period on the sheet whose dates overlap from..to (both included), or null when none does. */
     public Period closedBetween(String sheetId, LocalDate from, LocalDate to) {
         return list(sheetId).stream().filter(p -> p.closed() && p.overlaps(from, to)).findFirst().orElse(null);
@@ -75,7 +92,7 @@ public class PeriodRepository {
      *  (by person id) afresh: false when it was already closed, and nothing is written. */
     public boolean close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals,
             Map<Long, BigDecimal> personCarried) {
-        if (jdbc.update("UPDATE period SET closed = TRUE, soft = FALSE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
+        if (jdbc.update("UPDATE period SET closed = TRUE, soft = FALSE, auto_closed = FALSE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
                 total, period.sheetId(), period.name()) != 1) {
             return false;
         }
@@ -130,7 +147,7 @@ public class PeriodRepository {
     /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
      *  is written. */
     public boolean reopen(Period period) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, auto_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
                 period.sheetId(), period.name()) != 1) {
             return false;
         }
