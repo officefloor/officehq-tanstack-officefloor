@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.plugin.variable.Val;
 
@@ -9,8 +10,11 @@ import net.officefloor.plugin.variable.Val;
 public class AuditClaimEdited {
     public void audit(@Val ClaimInput input, @Val Claim loaded, @Val ClaimResponse saved, PersonRepository people,
             Audit audit) {
-        var person = people.find(loaded.sheetId(), loaded.personId());
-        audit.record("CLAIM_EDITED sheet=" + loaded.sheetId() + " by=" + input.user()
+        record(input.user(), loaded, people.find(loaded.sheetId(), loaded.personId()), saved, audit);
+    }
+
+    static void record(String user, Claim loaded, Person person, ClaimResponse saved, Audit audit) {
+        audit.record("CLAIM_EDITED sheet=" + loaded.sheetId() + " by=" + user
                 + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
                 + (saved.number() != null ? " number=" + saved.number() : ""));
     }

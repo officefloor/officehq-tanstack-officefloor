@@ -101,4 +101,10 @@ public class PlanRepository {
     public void made(long planId, LocalDate date, long claimId) {
         jdbc.update("INSERT INTO plan_claim (plan_id, on_date, claim_id) VALUES (?, ?, ?)", planId, date, claimId);
     }
+
+    /** The ids of the claims the plan has made, by plan date. */
+    public List<Long> claimIds(long planId) {
+        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? "
+                + "ORDER BY on_date", Long.class, planId);
+    }
 }

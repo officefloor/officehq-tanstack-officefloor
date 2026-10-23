@@ -39,7 +39,8 @@ function PlanRow({ sheetId, user, person, plan: p }: { sheetId: string; user: st
     mutationFn: (to: string) =>
       postJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/amount`, { user, amount: to }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+      // the plan's DRAFT claims take the new amount too: re-read the sheet
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
       setAmount('');
     },
     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not change the plan.'),
