@@ -1,0 +1,715 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 76ac377e..46f7b280 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -20,8 +20,21 @@ export function setRequestAsOf(date: string): void {
+   asOf = date;
+ }
+ 
++/** The date this screen previews the sheet's today as ('' when none): every read asks for the sheet's current records
++ *  figured on it (?preview=); changes are sent unmarked, made on the sheet's real today. Kept in step with the URL's
++ *  preview by features/sheet/preview; read from the URL at start-up so the first reads already carry it. */
++let preview = typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('preview') ?? '';
++
++export function setRequestPreview(date: string): void {
++  preview = date;
++}
++
++function withParam(path: string, key: string, value: string): string {
++  return value === '' ? path : `${path}${path.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(value)}`;
++}
++
+ function withAsOf(path: string): string {
+-  return asOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
++  return withParam(withParam(path, 'asOf', asOf), 'preview', preview);
+ }
+ 
+ function changeHeaders(): Record<string, string> {
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 74477196..e65bd82b 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -9,7 +9,7 @@ import type { Person } from '../people/people';
+ import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settings';
+ import { claimDue, rateOn, useRates } from '../rates/rates';
+ import { periodOf, usePeriods } from '../periods/periods';
+-import { useSheetToday } from '../sheet/sheet';
++import { useSheetToday, useChangeToday } from '../sheet/sheet';
+ import { claimsKey, dueBy, PROOF_KINDS, claimedLive, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
+ import type { Claim } from './claims';
+ import { setSelected, useSelectedClaims } from './selection';
+@@ -40,7 +40,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
+   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
+ }) {
+   const queryClient = useQueryClient();
+-  const today = useSheetToday(sheetId);
++  const today = useChangeToday(sheetId);
+   const entryDate = useSettings(sheetId).data?.entryDate ?? '';
+   const blankDate = editing ? today : entryDate || today;
+   const [, setEditing] = useEditingClaim();
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 57519ac7..efdda5de 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -5,15 +5,16 @@ import { STATUSES, type Claim } from '../claims/claims';
+ import { GRADES, gradeOn, type Person } from '../people/people';
+ import { overdueDues, personDueTotal, sumDue, trimmedSum, type Rate } from '../rates/rates';
+ import { floorOf, lateOf, type Settings } from '../settings/settings';
+-import { useAsOf, type Sheet } from '../sheet/sheet';
++import { useAsOf, usePreview, type Sheet } from '../sheet/sheet';
+ 
+ /** One read of a sheet as the store holds it now, or (asOf given, yyyy-mm-dd) as it stood at the end of that day,
+- *  whatever date this screen shows its own sheet as of. Keyed under the sheet, so a load of that sheet re-reads it. */
+-function useNow<T>(sheetId: string, part: string, asOf = '') {
++ *  whatever date this screen shows its own sheet as of; given a preview date (and no asOf), its current records
++ *  figured on that date. Keyed under the sheet, so a load of that sheet re-reads it. */
++function useNow<T>(sheetId: string, part: string, asOf = '', preview = '') {
++  const query = asOf !== '' ? `?asOf=${encodeURIComponent(asOf)}` : preview !== '' ? `?preview=${encodeURIComponent(preview)}` : '';
+   return useQuery({
+-    queryKey: ['sheet', sheetId, 'now', part, asOf],
+-    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`
+-      + (asOf === '' ? '' : `?asOf=${encodeURIComponent(asOf)}`)),
++    queryKey: ['sheet', sheetId, 'now', part, asOf, preview],
++    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}${query}`),
+   });
+ }
+ 
+@@ -30,23 +31,29 @@ const NONE: Figures = {
+ 
+ /** Adds the figures of sheets[at] to `sum`, then goes on to the next sheet; past the last, shows the figures added
+  *  up. One component per sheet keeps each sheet's reads in hooks of its own. */
+-function Accumulate({ sheets, at, sum, asOf }: { sheets: string[]; at: number; sum: Figures; asOf: string }) {
++function Accumulate({ sheets, at, sum, asOf, preview }: {
++  sheets: string[]; at: number; sum: Figures; asOf: string; preview: string;
++}) {
+   if (at >= sheets.length) return <Shown figures={sum} />;
+-  return <SheetFigures key={sheets[at]} sheets={sheets} at={at} sum={sum} asOf={asOf} />;
++  return <SheetFigures key={sheets[at]} sheets={sheets} at={at} sum={sum} asOf={asOf} preview={preview} />;
+ }
+ 
+ /** A sheet's figures as it shows them now (or, asOf given, as it showed them at the end of that day, with that day
+  *  as its today): its people (retired ones included), its due-total and its overdue-total (as its header shows
+  *  them), per grade the due-totals of its people on that grade today (retired ones left out, as its summary shows
+- *  them), and per status how many of its claims have it. */
+-function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number; sum: Figures; asOf: string }) {
++ *  them), and per status how many of its claims have it. Given a preview date (and no asOf), its current records with
++ *  that date as its today. */
++function SheetFigures({ sheets, at, sum, asOf, preview }: {
++  sheets: string[]; at: number; sum: Figures; asOf: string; preview: string;
++}) {
+   const sheetId = sheets[at];
+   const people = useNow<Person[]>(sheetId, 'people', asOf).data ?? [];
+-  const claims = useNow<Claim[]>(sheetId, 'claims', asOf).data ?? [];
++  const claims = useNow<Claim[]>(sheetId, 'claims', asOf, preview).data ?? [];
+   const rates = useNow<Rate[]>(sheetId, 'rates', asOf).data ?? [];
+   const settings = useNow<Settings>(sheetId, 'settings', asOf).data;
+   const sheetToday = useNow<Sheet>(sheetId, '', asOf).data?.today ?? '';
+-  const today = asOf !== '' && sheetToday !== '' ? asOf : sheetToday;
++  const shownOn = asOf !== '' ? asOf : preview;
++  const today = shownOn !== '' && sheetToday !== '' ? shownOn : sheetToday;
+   const floor = floorOf(settings);
+   const late = lateOf(settings, today, claims, people);
+   const next: Figures = {
+@@ -60,7 +67,7 @@ function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number;
+     statuses: Object.fromEntries(STATUSES.map((s) => [s,
+       sum.statuses[s] + claims.filter((c) => c.status === s).length])),
+   };
+-  return <Accumulate sheets={sheets} at={at + 1} sum={next} asOf={asOf} />;
++  return <Accumulate sheets={sheets} at={at + 1} sum={next} asOf={asOf} preview={preview} />;
+ }
+ 
+ /** A name as names are compared: without regard to case, ignoring surrounding spaces. */
+@@ -103,15 +110,17 @@ function Shown({ figures }: { figures: Figures }) {
+ 
+ /** Consolidated figures over the sheet and all its descendants (its children — the sheets naming it as their
+  *  parent — theirs, and so on), as the store holds them now (while this screen shows the sheet as of a date: every
+- *  sheet of the tree as it stood at the end of that day, with that date as its today): the people (those whose names or
++ *  sheet of the tree as it stood at the end of that day, with that date as its today; while it previews a date: every
++ *  sheet of the tree as the store holds it now, with that date as its today): the people (those whose names or
+  *  aliases match, as names are compared, counted once), the due-total and overdue-total over every person of the tree
+  *  (each as their sheet shows it), trimmed once over the whole tree (see trimmedSum), per grade its people's due-totals and per status its claims
+  *  counted. A sheet with no children shows its own. */
+ function Consolidated({ sheetId }: { sheetId: string; user: string }) {
+   const [asOf] = useAsOf();
++  const [preview] = usePreview();
+   const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
+   return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE}
+-    asOf={asOf ?? ''} />;
++    asOf={asOf ?? ''} preview={asOf ? '' : preview} />;
+ }
+ 
+ export const contribution = SheetBody.fill({ order: -1, Component: Consolidated });
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+index 690a6a47..cd8155cc 100644
+--- a/src/main/frontend/features/dashboard/dashboard.slot.tsx
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -6,13 +6,15 @@ import type { Person } from '../people/people';
+ import { overdueDues, type Rate } from '../rates/rates';
+ import { useActingRole } from '../roles/roles.slot';
+ import { floorOf, lateOf, type Settings } from '../settings/settings';
+-import { useAsOf, type Sheet } from '../sheet/sheet';
++import { useAsOf, usePreview, type Sheet } from '../sheet/sheet';
+ 
+-/** One read of a sheet as the store holds it now. Keyed under the sheet, so a load of that sheet re-reads it. */
+-function useNow<T>(sheetId: string, part: string) {
++/** One read of a sheet as the store holds it now (given a preview date, figured on it). Keyed under the sheet, so a
++ *  load of that sheet re-reads it. */
++function useNow<T>(sheetId: string, part: string, preview = '') {
+   return useQuery({
+-    queryKey: ['sheet', sheetId, 'now', part, ''],
+-    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`),
++    queryKey: ['sheet', sheetId, 'now', part, '', preview],
++    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`
++      + (preview === '' ? '' : `?preview=${encodeURIComponent(preview)}`)),
+   });
+ }
+ 
+@@ -23,27 +25,32 @@ const NONE: Counts = { pending: 0, review: 0, overdue: 0 };
+ 
+ /** Adds the counts of sheets[at] to `sum`, then goes on to the next sheet; past the last, shows the counts added
+  *  up. One component per sheet keeps each sheet's reads in hooks of its own. */
+-function Accumulate({ sheets, at, sum, steward }: { sheets: string[]; at: number; sum: Counts; steward: boolean }) {
++function Accumulate({ sheets, at, sum, steward, preview }: {
++  sheets: string[]; at: number; sum: Counts; steward: boolean; preview: string;
++}) {
+   if (at >= sheets.length) return <Shown counts={sum} steward={steward} />;
+-  return <SheetCounts key={sheets[at]} sheets={sheets} at={at} sum={sum} steward={steward} />;
++  return <SheetCounts key={sheets[at]} sheets={sheets} at={at} sum={sum} steward={steward} preview={preview} />;
+ }
+ 
+ /** A sheet's counts as it shows them now: its PENDING claims, its REVIEW claims, and its overdue claims that count
+- *  (as its overdue rollup counts them, with its own today and settings). */
+-function SheetCounts({ sheets, at, sum, steward }: { sheets: string[]; at: number; sum: Counts; steward: boolean }) {
++ *  (as its overdue rollup counts them, with its own today and settings; the preview date instead, given one). */
++function SheetCounts({ sheets, at, sum, steward, preview }: {
++  sheets: string[]; at: number; sum: Counts; steward: boolean; preview: string;
++}) {
+   const sheetId = sheets[at];
+   const people = useNow<Person[]>(sheetId, 'people').data ?? [];
+-  const claims = useNow<Claim[]>(sheetId, 'claims').data ?? [];
++  const claims = useNow<Claim[]>(sheetId, 'claims', preview).data ?? [];
+   const rates = useNow<Rate[]>(sheetId, 'rates').data ?? [];
+   const settings = useNow<Settings>(sheetId, 'settings').data;
+-  const today = useNow<Sheet>(sheetId, '').data?.today ?? '';
++  const sheetToday = useNow<Sheet>(sheetId, '').data?.today ?? '';
++  const today = preview !== '' && sheetToday !== '' ? preview : sheetToday;
+   const late = lateOf(settings, today, claims, people);
+   const next: Counts = {
+     pending: sum.pending + claims.filter((c) => c.status === 'PENDING').length,
+     review: sum.review + claims.filter((c) => c.status === 'REVIEW').length,
+     overdue: sum.overdue + overdueDues(claims, people, rates, late, floorOf(settings)).length,
+   };
+-  return <Accumulate sheets={sheets} at={at + 1} sum={next} steward={steward} />;
++  return <Accumulate sheets={sheets} at={at + 1} sum={next} steward={steward} preview={preview} />;
+ }
+ 
+ function Shown({ counts, steward }: { counts: Counts; steward: boolean }) {
+@@ -77,9 +84,10 @@ function Shown({ counts, steward }: { counts: Counts; steward: boolean }) {
+  *  cells empty, and so does everyone while the screen shows the sheet as of a date. */
+ function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
+   const [asOf] = useAsOf();
++  const [preview] = usePreview();
+   const steward = useActingRole(sheetId, user) === 'steward' && !asOf;
+   const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
+-  return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE} steward={steward} />;
++  return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE} steward={steward} preview={preview} />;
+ }
+ 
+ export const contribution = SheetBody.fill({ order: 21, Component: Dashboard });
+diff --git a/src/main/frontend/features/people/bulkgrade.slot.tsx b/src/main/frontend/features/people/bulkgrade.slot.tsx
+index 6a287bf9..e33b259b 100644
+--- a/src/main/frontend/features/people/bulkgrade.slot.tsx
++++ b/src/main/frontend/features/people/bulkgrade.slot.tsx
+@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { claimsKey } from '../claims/claims';
+-import { useSheetToday } from '../sheet/sheet';
++import { useChangeToday } from '../sheet/sheet';
+ import { GRADES, peopleKey, usePeople, useShowRetired } from './people';
+ import { clearSelectedPeople, useSelectedPeople } from './selection';
+ 
+@@ -19,7 +19,7 @@ function BulkGrade({ sheetId, user }: { sheetId: string; user: string }) {
+   const [showRetired] = useShowRetired();
+   const chosen = useSelectedPeople(sheetId);
+   const ids = people.filter((p) => (showRetired || p.retiredFrom === null) && chosen.has(p.id)).map((p) => p.id);
+-  const today = useSheetToday(sheetId);
++  const today = useChangeToday(sheetId);
+   const [grade, setGrade] = useState('A');
+   const [fromEntered, setFrom] = useState<string>();
+   const from = fromEntered ?? today;
+diff --git a/src/main/frontend/features/people/bulkretire.slot.tsx b/src/main/frontend/features/people/bulkretire.slot.tsx
+index fee46584..01216d98 100644
+--- a/src/main/frontend/features/people/bulkretire.slot.tsx
++++ b/src/main/frontend/features/people/bulkretire.slot.tsx
+@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { claimsKey } from '../claims/claims';
+ import { poolsKey } from '../pools/pools';
+-import { useSheetToday } from '../sheet/sheet';
++import { useChangeToday } from '../sheet/sheet';
+ import { peopleKey, usePeople, useShowRetired } from './people';
+ import { clearSelectedPeople, useSelectedPeople } from './selection';
+ 
+@@ -19,7 +19,7 @@ function BulkRetire({ sheetId, user }: { sheetId: string; user: string }) {
+   const [showRetired] = useShowRetired();
+   const chosen = useSelectedPeople(sheetId);
+   const ids = people.filter((p) => (showRetired || p.retiredFrom === null) && chosen.has(p.id)).map((p) => p.id);
+-  const today = useSheetToday(sheetId);
++  const today = useChangeToday(sheetId);
+   const [from, setFrom] = useState('');
+   const [result, setResult] = useState<BulkRetireResult | null>(null);
+   const [error, setError] = useState('');
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index 11e6efb5..4901bf0e 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { PersonRow } from '../../slots/defs/personRow';
+-import { useSheetToday } from '../sheet/sheet';
++import { useChangeToday } from '../sheet/sheet';
+ import { poolsKey } from '../pools/pools';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+@@ -17,7 +17,7 @@ import { useColumnShown } from './columns';
+ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const showHold = useColumnShown('hold');
+   const queryClient = useQueryClient();
+-  const today = useSheetToday(sheetId);
++  const today = useChangeToday(sheetId);
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+   const { error, setError, begin } = usePersonError(sheetId, person.id);
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index e88c93f9..1751359e 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -9,7 +9,7 @@ import { GRADES, nameWithGrade, peopleKey, savedTermsKey, useCloseEditor, useEdi
+   useShowRetired } from './people';
+ import type { Person } from './people';
+ import { claimsKey } from '../claims/claims';
+-import { useSheetToday } from '../sheet/sheet';
++import { useSheetToday, useChangeToday } from '../sheet/sheet';
+ import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
+ import { useColumnShown } from './columns';
+ import { useCrews } from '../crews/crews';
+@@ -46,7 +46,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
+   const isRetired = useIsGradeRetired(sheetId);
+   const closeEditor = useCloseEditor();
+   const [version, setVersion] = useState(editing?.version);
+-  const today = useSheetToday(sheetId);
++  const today = useChangeToday(sheetId);
+   const [gradeFromEntered, setGradeFrom] = useState<string>();
+   const [termsFrom, setTermsFrom] = useState('');
+   const gradeFrom = gradeFromEntered ?? today;
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index d9112042..0bb09c80 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -5,7 +5,7 @@ import { HttpError, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { poolsKey } from '../pools/pools';
+-import { useSheetToday } from '../sheet/sheet';
++import { useChangeToday } from '../sheet/sheet';
+ import { peopleKey } from './people';
+ import { usePersonError } from './rowError';
+ import type { Person } from './people';
+@@ -17,7 +17,7 @@ import { useColumnShown } from './columns';
+ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+   const showRetired = useColumnShown('retired');
+   const queryClient = useQueryClient();
+-  const today = useSheetToday(sheetId);
++  const today = useChangeToday(sheetId);
+   const [from, setFrom] = useState('');
+   const { error, setError, begin } = usePersonError(sheetId, person.id);
+   const once = useSubmitOnce();
+diff --git a/src/main/frontend/features/sheet/preview.slot.tsx b/src/main/frontend/features/sheet/preview.slot.tsx
+new file mode 100644
+index 00000000..36cf8baf
+--- /dev/null
++++ b/src/main/frontend/features/sheet/preview.slot.tsx
+@@ -0,0 +1,86 @@
++import { useEffect, useState } from 'react';
++import type { FormEvent } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { setRequestPreview } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheet';
++import { usePreview } from './sheet';
++
++/** Whether the text is a real date as yyyy-mm-dd. */
++function isDate(text: string): boolean {
++  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
++  const d = new Date(`${text}T00:00:00Z`);
++  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text;
++}
++
++/** The preview date of this user's screen: shown ('' when none), set and cleared. Setting or clearing it re-reads
++ *  everything under the sheet, its current records figured as if its today were that date, or on its real today.
++ *  Changes are made on the real today all the while, and nothing a change of today does happens. */
++function SheetPreview({ sheetId }: { sheetId: string; user: string }) {
++  const queryClient = useQueryClient();
++  const [preview, setPreview] = usePreview();
++  const [typed, setTyped] = useState('');
++  const [invalid, setInvalid] = useState(false);
++
++  useEffect(() => {
++    setRequestPreview(preview);
++  }, [preview]);
++
++  const show = async (date: string) => {
++    setRequestPreview(date);
++    setPreview(date === '' ? undefined : date);
++    await queryClient.resetQueries({ queryKey: ['sheet', sheetId] });
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const date = typed.trim();
++    if (!isDate(date)) {
++      setInvalid(true);
++      return;
++    }
++    setInvalid(false);
++    void show(date);
++  };
++
++  return (
++    <section>
++      <form data-testid="preview-form" onSubmit={submit}>
++        <label>
++          Preview today as{' '}
++          <input
++            data-testid="preview-date"
++            placeholder="yyyy-mm-dd"
++            value={typed}
++            onChange={(e) => {
++              setTyped(e.target.value);
++              setInvalid(false);
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="preview-set">
++          Preview
++        </button>{' '}
++        <button
++          type="button"
++          data-testid="preview-clear"
++          onClick={() => {
++            setInvalid(false);
++            void show('');
++          }}
++        >
++          Clear preview
++        </button>
++      </form>
++      <p>
++        Previewing today as <strong data-testid="sheet-preview">{preview}</strong>
++      </p>
++      {invalid && (
++        <p data-testid="preview-error" role="alert">
++          Enter the preview date as a real date (yyyy-mm-dd).
++        </p>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 0.6, Component: SheetPreview });
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index 34c2eaf5..746e991b 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -21,12 +21,31 @@ export function useAsOf() {
+   return useSearchParam('asOf', asString);
+ }
+ 
++/** The date this user's screen previews the sheet's today as (yyyy-mm-dd; '' when none). It belongs to the screen,
++ *  not the sheet: other users are unaffected. While it is set, every figure is shown over the sheet's current records
++ *  as if its today were that date; every change is still made on the sheet's real today. */
++export function usePreview() {
++  return useSearchParam('preview', asString);
++}
++
+ /**
+- * The sheet's today — the date every date-dependent decision and every default date on the sheet
++ * The sheet's today as the screen figures it — the date every date-dependent figure on the sheet
+  * uses. Never read the real clock (`new Date()`) for these; use this instead. '' while loading.
+- * While the screen shows the sheet as of a date, that date stands in for it.
++ * While the screen shows the sheet as of a date, that date stands in for it; else while it
++ * previews a date, that one does. A default date a change is made on uses useChangeToday.
+  */
+ export function useSheetToday(sheetId: string): string {
++  const [asOf] = useAsOf();
++  const [preview] = usePreview();
++  const today = useChangeToday(sheetId);
++  return asOf === '' && preview !== '' && today !== '' ? preview : today;
++}
++
++/**
++ * The sheet's today a change is made on — every default date of a change (a form's blank date,
++ * a from-date left as today). A preview date never stands in for it. '' while loading.
++ */
++export function useChangeToday(sheetId: string): string {
+   const [asOf] = useAsOf();
+   const today = useSheet(sheetId).data?.today ?? '';
+   return asOf !== '' && today !== '' ? asOf : today;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index eabcc90a..7bed5fb4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -10,10 +10,12 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's claims, newest first, each with its status log and its comments and its lines and whether it is deferred on the sheet's today and the settle batch that settled it and its review day and its shares and the user assigned to review it; given
+- *  an as-of date, as they stood at the end of it, with their logs and comments then and deferred on it. */
++ *  an as-of date, as they stood at the end of it, with their logs and comments then and deferred on it; given a preview
++ *  date, as they are now, deferred on it. */
+ public class RespondWithClaims {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(name = "asOf", required = false) String asOf, ClaimRepository repository,
++            @RequestParam(name = "asOf", required = false) String asOf,
++            @RequestParam(name = "preview", required = false) String preview, ClaimRepository repository,
+             ClaimLogRepository logs, ClaimCommentRepository comments, ClaimLineRepository claimLines, ClaimShareRepository claimShares, SheetRepository sheets, SettleBatchRepository batches,
+             ObjectResponse<List<ClaimResponse>> response) {
+         String id = sheetId.trim();
+@@ -25,7 +27,8 @@ public class RespondWithClaims {
+         Map<Long, Integer> settledBy = batches.byClaim(id);
+         Map<Long, LocalDate> reviewDays = repository.reviewDays(id);
+         Map<Long, String> reviewers = repository.reviewers(id);
+-        var today = end != null ? end : sheets.today(id);
++        LocalDate on = AsOf.figuredOn(end, preview);
++        var today = on != null ? on : sheets.today(id);
+         List<Claim> claims = end != null ? repository.listAsOf(id, end) : repository.list(id);
+         response.send(claims.stream()
+                 .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.id(), List.of()), today,
+diff --git a/src/main/java/net/officefloor/hq/app/flag/FlagRepository.java b/src/main/java/net/officefloor/hq/app/flag/FlagRepository.java
+index fed791c8..85c87429 100644
+--- a/src/main/java/net/officefloor/hq/app/flag/FlagRepository.java
++++ b/src/main/java/net/officefloor/hq/app/flag/FlagRepository.java
+@@ -31,6 +31,16 @@ public class FlagRepository {
+ 
+     /** The flags in force on the sheet's today, by person id. */
+     public List<FlagResponse> allInForce(String sheetId) {
++        return allInForce(sheetId, null);
++    }
++
++    /** The flags in force on the date (null: the sheet's today). */
++    public List<FlagResponse> allInForce(String sheetId, LocalDate on) {
++        if (on != null) {
++            return jdbc.query("SELECT f.* FROM person_flag f WHERE f.sheet_id = ? AND ? <= f.until_date ORDER BY f.person_id",
++                    (rs, i) -> new FlagResponse(rs.getLong("person_id"), rs.getString("reason"),
++                            rs.getObject("until_date", LocalDate.class).toString()), sheetId, on);
++        }
+         return jdbc.query("SELECT f.* FROM person_flag f JOIN sheet s ON s.id = f.sheet_id "
+                 + "WHERE f.sheet_id = ? AND s.today <= f.until_date ORDER BY f.person_id",
+                 (rs, i) -> new FlagResponse(rs.getLong("person_id"), rs.getString("reason"),
+diff --git a/src/main/java/net/officefloor/hq/app/flag/RespondWithFlags.java b/src/main/java/net/officefloor/hq/app/flag/RespondWithFlags.java
+index 32a5dc77..a2d8343c 100644
+--- a/src/main/java/net/officefloor/hq/app/flag/RespondWithFlags.java
++++ b/src/main/java/net/officefloor/hq/app/flag/RespondWithFlags.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.flag;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The flags on the sheet in force on its today. */
++/** The flags on the sheet in force on its today (or on the preview date, when one is given). */
+ public class RespondWithFlags {
+-    public void respond(@PathVariable("sheetId") String sheetId, FlagRepository flags,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "preview", required = false) String preview, FlagRepository flags,
+             ObjectResponse<List<FlagResponse>> response) {
+-        response.send(flags.allInForce(sheetId.trim()));
++        response.send(flags.allInForce(sheetId.trim(), AsOf.parse(preview)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 5cab379f..5de3c6e1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -61,7 +61,12 @@ public class PersonRepository {
+     }
+ 
+     public List<Person> list(String sheetId) {
+-        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId));
++        return list(sheetId, null);
++    }
++
++    /** The people as they are now, their grade and terms those in force on the day (null: the sheet's today). */
++    public List<Person> list(String sheetId, LocalDate on) {
++        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId), on);
+     }
+ 
+     /** The person's approver (who may approve or reject their PENDING claims as a steward may), or null when none. */
+@@ -86,10 +91,15 @@ public class PersonRepository {
+ 
+     /** The people with their dated grades, the grade in force on the sheet's today, their holds and their aliases. */
+     private List<Person> graded(String sheetId, List<Person> people) {
++        return graded(sheetId, people, null);
++    }
++
++    /** As graded, the grade and terms in force on the day instead (null: the sheet's today). */
++    private List<Person> graded(String sheetId, List<Person> people, LocalDate on) {
+         if (people.isEmpty()) {
+             return people;
+         }
+-        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
++        LocalDate today = on != null ? on : jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                 rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+         Map<Long, List<Grades.Grade>> byPerson = jdbc.query(
+                 "SELECT * FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_date NULLS FIRST", GRADE_ROW,
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index fe697347..8d960f9a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -7,14 +7,16 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The sheet's people, in the order they were added (as they stood at the end of the as-of date, when one is given). */
++/** The sheet's people, in the order they were added (as they stood at the end of the as-of date, when one is given;
++ *  given a preview date, as they are now with the grade and terms in force on it). */
+ public class RespondWithPeople {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(name = "asOf", required = false) String asOf, PersonRepository repository,
++            @RequestParam(name = "asOf", required = false) String asOf,
++            @RequestParam(name = "preview", required = false) String preview, PersonRepository repository,
+             ObjectResponse<List<PersonResponse>> response) {
+         String id = sheetId.trim();
+         LocalDate end = AsOf.parse(asOf);
+-        List<Person> people = end != null ? repository.listAsOf(id, end) : repository.list(id);
++        List<Person> people = end != null ? repository.listAsOf(id, end) : repository.list(id, AsOf.parse(preview));
+         List<String> tree = repository.tree(id);
+         response.send(people.stream().map(p -> PersonResponse.from(p, repository.clashing(p, tree))).toList());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 469f4846..23f1e4fc 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -2,15 +2,20 @@ package net.officefloor.hq.app.plan;
+ 
+ import java.util.List;
+ import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Every plan on the sheet, in the order they were added, each with its next dates after the sheet's today. */
++/** Every plan on the sheet, in the order they were added, each with its next dates after the sheet's today (or the
++ *  preview date, when one is given). */
+ public class RespondWithPlans {
+-    public void respond(@PathVariable("sheetId") String sheetId, PlanRepository repository, SheetRepository sheets,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "preview", required = false) String preview, PlanRepository repository, SheetRepository sheets,
+             ObjectResponse<List<PlanResponse>> response) {
+-        LocalDate today = sheets.today(sheetId.trim());
++        LocalDate previewed = AsOf.parse(preview);
++        LocalDate today = previewed != null ? previewed : sheets.today(sheetId.trim());
+         response.send(repository.list(sheetId.trim()).stream().map(p -> PlanResponse.from(p, today)).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 87809ad7..4f777b29 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -28,11 +28,12 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class RespondWithPools {
+     public void respond(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "asOf", required = false) String asOf,
++            @RequestParam(name = "preview", required = false) String preview,
+             @RequestParam(name = "period", required = false) String periodName, PoolRepository repository,
+             CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings,
+             PeriodRepository periods, ObjectResponse<List<PoolResponse>> response) {
+         String id = sheetId.trim();
+-        List<PoolResponse> all = ShownPools.list(id, AsOf.parse(asOf), repository, crews, people, sheets, settings);
++        List<PoolResponse> all = ShownPools.list(id, AsOf.parse(asOf), AsOf.parse(preview), repository, crews, people, sheets, settings);
+         Period period = periodName != null ? periods.find(id, periodName) : null;
+         if (period != null && (period.closed() || period.soft())) {
+             Map<String, String> fixed = repository.fixedCuts(id, period.name());
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ShownPools.java b/src/main/java/net/officefloor/hq/app/pool/ShownPools.java
+index f50cb420..c07cbd59 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/ShownPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/ShownPools.java
+@@ -25,7 +25,14 @@ public final class ShownPools {
+     /** The sheet's pools and crews as shown on the sheet's today (or as of the end of the day, when one is given). */
+     public static List<PoolResponse> list(String id, LocalDate end, PoolRepository repository, CrewRepository crews,
+             PersonRepository people, SheetRepository sheets, SettingRepository settings) {
+-        LocalDate on = end != null ? end : sheets.today(id);
++        return list(id, end, null, repository, crews, people, sheets, settings);
++    }
++
++    /** As list, the sheet's current records shown on the preview date instead of its today (when one is given and no
++     *  as-of date is). */
++    public static List<PoolResponse> list(String id, LocalDate end, LocalDate preview, PoolRepository repository,
++            CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings) {
++        LocalDate on = end != null ? end : preview != null ? preview : sheets.today(id);
+         List<Person> persons = end != null ? people.listAsOf(id, end) : people.list(id);
+         Map<Long, LocalDate> retiredFrom = new HashMap<>();
+         Map<Long, String> names = new HashMap<>();
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 0028ccde..11cfd511 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -6,13 +6,17 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The sheet's settings as they are now (as they stood at the end of the as-of date, when one is given). */
++/** The sheet's settings as they are now (as they stood at the end of the as-of date, when one is given;
++ *  in force on the preview date, when one is given). */
+ public class RespondWithSettings {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(name = "asOf", required = false) String asOf, SettingRepository repository,
++            @RequestParam(name = "asOf", required = false) String asOf,
++            @RequestParam(name = "preview", required = false) String preview, SettingRepository repository,
+             ObjectResponse<SettingsResponse> response) {
+         String id = sheetId.trim();
+         LocalDate end = AsOf.parse(asOf);
+-        response.send(SettingsResponse.from(end != null ? repository.asOf(id, end) : repository.of(id)));
++        LocalDate previewed = AsOf.parse(preview);
++        response.send(SettingsResponse.from(end != null ? repository.asOf(id, end)
++                : previewed != null ? repository.on(id, previewed) : repository.of(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 3c6b712d..905e25ae 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -40,6 +40,11 @@ public class SettingRepository {
+         return of(sheetId, history(sheetId), today(sheetId));
+     }
+ 
++    /** The sheet's settings as they are now, in force on the day (a preview of the sheet's today). */
++    public Settings on(String sheetId, LocalDate day) {
++        return of(sheetId, history(sheetId), day);
++    }
++
+     /** The sheet's settings as they stood at the end of the day, in force on it: its dated settings then (see
+      *  historyAsOf); the ones that are not dated as they are now. */
+     public Settings asOf(String sheetId, LocalDate end) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+index e6d5ed1c..9b1ba365 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOf.java
+@@ -11,6 +11,12 @@ public final class AsOf {
+     private AsOf() {
+     }
+ 
++    /** The date a read is figured on: the as-of date when one is given, else the preview date (?preview=: the sheet's
++     *  current records figured as if its today were that date), else the sheet's today (null). */
++    public static LocalDate figuredOn(LocalDate end, String preview) {
++        return end != null ? end : parse(preview);
++    }
++
+     /** The as-of date given (null: blank or not a date, the sheet as it is now). */
+     public static LocalDate parse(String raw) {
+         if (raw == null || raw.isBlank()) {
