@@ -9,6 +9,7 @@ import { GRADES, peopleKey, useCloseEditor, useEditingPerson, usePeople, useShow
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
+import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
 
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
@@ -329,15 +330,16 @@ function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
   );
 }
 
-/** The sheet's people in list order, each with their name and grade. Retired people have no
- *  row unless "show retired" is on. */
+/** The sheet's people, in list order unless this user's screen sorts them otherwise, each with their name and
+ *  grade. Retired people have no row unless "show retired" is on. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
   const [showRetired, setShowRetired] = useShowRetired();
   const [carried, setCarried] = useState('');
-  const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
+  const [sortBy, setSortBy] = useSortBy();
+  const listed = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
 
   return (
     <section data-testid="people">
@@ -354,6 +356,16 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
           onChange={(e) => setShowRetired(e.target.checked || undefined)}
         />{' '}
         Show retired
+      </label>{' '}
+      <label>
+        Sort by{' '}
+        <select data-testid="sort-by" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+          {SORT_KEYS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
       </label>
       <table>
         <tbody>

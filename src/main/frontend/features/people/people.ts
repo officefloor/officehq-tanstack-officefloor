@@ -52,12 +52,15 @@ export const GRADES = ['A', 'B', 'C'] as const;
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
+/** The query of the sheet's people, in list order (by their position; new people go to the end). */
+export const peopleQuery = (sheetId: string) => ({
+  queryKey: peopleKey(sheetId),
+  queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
+});
+
 /** The sheet's people, in list order (by their position; new people go to the end). */
 export function usePeople(sheetId: string) {
-  return useQuery({
-    queryKey: peopleKey(sheetId),
-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
-  });
+  return useQuery(peopleQuery(sheetId));
 }
 
 /** The id of the person whose editor is open ('' when the form adds a new person). */

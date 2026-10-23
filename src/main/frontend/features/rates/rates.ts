@@ -54,7 +54,7 @@ export function useRateFor(sheetId: string, grade: string, date: string): string
 }
 
 /** A two-decimal amount (may be negative) as whole cents, exactly. */
-function toCents(amount: string): bigint {
+export function toCents(amount: string): bigint {
   const trimmed = amount.trim();
   const negative = trimmed.startsWith('-');
   const [whole, frac = ''] = (negative ? trimmed.slice(1) : trimmed).split('.');
