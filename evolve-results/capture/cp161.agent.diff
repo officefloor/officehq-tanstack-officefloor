@@ -1,0 +1,180 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 7335b91..a45aa7e 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -17,7 +17,8 @@ import { useColumnShown } from './columns';
+  *  today unless changed), keeping the grades already recorded from other dates. The person's own terms (days; blank
+  *  for none) are set by an add when given, and by an edit whose terms field was entered (blank clears them); so is
+  *  their contact, stored trimmed and lower-cased. Their tags (comma separated; stored trimmed, lower-cased, without
+- *  repeats and sorted) are set by every add and edit, the editor filled with those stored. A contact another person on the sheet already has is refused at once
++ *  repeats and sorted) are set by every add and edit, the editor filled with those stored. An add the server refuses
++ *  starts the next add with no terms, no contact and no tags. A contact another person on the sheet already has is refused at once
+  *  (an add's contact field is then cleared), keeping the editor open (the
+  *  version it remembers brought up to date, so saving again is from the person as now stored). The
+  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
+@@ -84,10 +85,11 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
+           setVersion(current.version);
+         }
+       }
+-      // An add the server refused starts the next add with no terms and no contact.
++      // An add the server refused starts the next add with no terms, no contact and no tags.
+       if (!editing) {
+         setTerms('');
+         setContact('');
++        setTags('');
+       }
+       refuse(
+         e instanceof HttpError && (e.status === 409 || e.status === 412) && e.body
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithLastBatch.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithLastBatch.java
+index 290c5c8..527df9e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithLastBatch.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithLastBatch.java
+@@ -1,12 +1,19 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The number of the sheet's last settle batch (null when there has been none). */
++/** The number of the sheet's last settle batch (null when there has been none); given an as-of date, the last made
++ *  on or before it. */
+ public class RespondWithLastBatch {
+-    public void respond(@PathVariable("sheetId") String sheetId, SettleBatchRepository batches,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, SettleBatchRepository batches,
+             ObjectResponse<LastBatchResponse> response) {
+-        response.send(new LastBatchResponse(batches.last(sheetId.trim())));
++        String id = sheetId.trim();
++        LocalDate end = AsOf.parse(asOf);
++        response.send(new LastBatchResponse(end != null ? batches.lastAsOf(id, end) : batches.last(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleBatchRepository.java b/src/main/java/net/officefloor/hq/app/claim/SettleBatchRepository.java
+index b3eea8a..af0a4db 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleBatchRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleBatchRepository.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import java.util.HashMap;
+ import java.util.Map;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -23,11 +24,19 @@ public class SettleBatchRepository {
+                 rs -> rs.next() ? (Integer) rs.getObject(1, Integer.class) : null, sheetId);
+     }
+ 
+-    /** Start the sheet's next batch: its number. */
++    /** The number of the sheet's last batch as it stood at the end of the day: the last one made while the sheet's
++     *  today was on or before it; null when there had been none. */
++    public Integer lastAsOf(String sheetId, LocalDate end) {
++        return jdbc.query("SELECT MAX(batch) FROM settle_batch WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?)",
++                rs -> rs.next() ? (Integer) rs.getObject(1, Integer.class) : null, sheetId, end);
++    }
++
++    /** Start the sheet's next batch, made on the sheet's today: its number. */
+     public int start(String sheetId) {
+         Integer last = last(sheetId);
+         int next = last != null ? last + 1 : 1;
+-        jdbc.update("INSERT INTO settle_batch (sheet_id, batch) VALUES (?, ?)", sheetId, next);
++        jdbc.update("INSERT INTO settle_batch (sheet_id, batch, made_on) VALUES (?, ?, "
++                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, next, sheetId);
+         return next;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index d6e8ac5..294ac31 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -19,7 +19,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** The sheet's pools in the order they were added, with their members, total share and whether balanced; a member
+  *  retired by the sheet's today (or the as-of date, when one is given) cuts 0.00, their share still counted toward the total
+  *  and spread over the members with a cut (no cuts at all when every member is retired); each member of a balanced pool
+- *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot; a pool
++ *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot (as it stood
++ *  then, given an as-of date); a pool
+  *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
+  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
+  *  dates do not include that date is left out: no share in the total and no cut. */
+@@ -35,7 +36,7 @@ public class RespondWithPools {
+         Map<Long, LocalDate> retiredFrom = new HashMap<>();
+         Map<Long, String> names = new HashMap<>();
+         Set<Long> held = new HashSet<>();
+-        BigDecimal pot = settings.pot(id);
++        BigDecimal pot = end != null ? settings.potAsOf(id, end) : settings.pot(id);
+         for (Person p : persons) {
+             names.put(p.id(), p.name());
+             if (p.retiredFrom() != null) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index 7199721..4926bd3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -210,8 +210,18 @@ public class SettingRepository {
+                 rs -> rs.next() && rs.getBigDecimal(1) != null ? rs.getBigDecimal(1).setScale(2) : null, sheetId);
+     }
+ 
++    /** The sheet's pot as it stood at the end of the day: the last one set while its today was on or before it;
++     *  null when none was (or it was blank). */
++    public BigDecimal potAsOf(String sheetId, LocalDate end) {
++        return jdbc.query("SELECT val FROM pot_log WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?) "
++                + "ORDER BY id DESC LIMIT 1",
++                rs -> rs.next() && rs.getBigDecimal(1) != null ? rs.getBigDecimal(1).setScale(2) : null, sheetId, end);
++    }
++
+     public void setPot(String sheetId, BigDecimal pot) {
+         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
++        jdbc.update("INSERT INTO pot_log (sheet_id, val, made_on) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                sheetId, pot, sheetId);
+     }
+ 
+     /** The sheet's alert threshold: null when blank (off). */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 7fbea3b..bcb2ea1 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -13,7 +13,8 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+ 
+ /** Copies a sheet to an id never used. The clone gets the sheet's today and settings (dated ones, their log, the
+- *  permissions and the sheet-wide ones; never archived), roles, rates (and their log), holidays, void reasons,
++ *  permissions and the sheet-wide ones, the pot and its log; never archived), roles, rates (and their log), holidays,
++ *  void reasons,
+  *  templates and tags used, its people (in their place in the list, with their grades, terms, contact, aliases, holds,
+  *  retirements and patrons), its pools and their members, its periods (all open) and its claims (status, settled dues,
+  *  due-bys, dates, notes, tags, references, comments, void reasons, logs and history; each numbered claim takes a new
+@@ -41,6 +42,7 @@ public class SheetCloner {
+         copyRows("sheet_permission", "action, roles", "action", from, to);
+         copyRows("setting_value", "setting_key, from_date, val", "setting_key, from_date", from, to);
+         copyRows("setting_log", "setting_key, from_date, val, made_on", "id", from, to);
++        copyRows("pot_log", "val, made_on", "id", from, to);
+         copyRows("sheet_holiday", "holiday_date, added_by", "id", from, to);
+         copyRows("sheet_void_reason", "reason, added_by", "id", from, to);
+         copyRows("claim_template", "name, amount, note, saved_by", "name", from, to);
+diff --git a/src/main/resources/db/migration/V91__pot_log.sql b/src/main/resources/db/migration/V91__pot_log.sql
+new file mode 100644
+index 0000000..6a40a05
+--- /dev/null
++++ b/src/main/resources/db/migration/V91__pot_log.sql
+@@ -0,0 +1,10 @@
++-- Each value the sheet's pot was set to, in the order set, with the sheet's today then (made_on; null: set before
++-- this was kept, counting on every date): the pot as of a date is the last one set on or before it (none if none).
++CREATE TABLE pot_log (
++    id       BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(100)   NOT NULL REFERENCES sheet(id),
++    val      DECIMAL(14, 2),
++    made_on  DATE
++);
++CREATE INDEX pot_log_sheet ON pot_log(sheet_id, id);
++INSERT INTO pot_log (sheet_id, val, made_on) SELECT id, pot, NULL FROM sheet WHERE pot IS NOT NULL;
+diff --git a/src/main/resources/db/migration/V92__settle_batch_made_on.sql b/src/main/resources/db/migration/V92__settle_batch_made_on.sql
+new file mode 100644
+index 0000000..5e150d8
+--- /dev/null
++++ b/src/main/resources/db/migration/V92__settle_batch_made_on.sql
+@@ -0,0 +1,3 @@
++-- The sheet's today when each batch happened (null: before this was kept, counting on every date): the last batch as
++-- of a date is the last one made on or before it.
++ALTER TABLE settle_batch ADD COLUMN made_on DATE;
