@@ -17,6 +17,7 @@ import { setLockRefused, useLockRefused } from './lock';
 import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
 import { useColumnShown } from '../people/columns';
+import { ClaimTimeline } from './timeline';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
@@ -410,6 +411,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
           <li key={i} data-testid="claim-log-line">{line}</li>
         ))}
       </ol>{' '}
+      <ClaimTimeline sheetId={sheetId} claimId={claim.id} />{' '}
       <ol data-testid="claim-comments">
         {claim.comments.map((line, i) => (
           <li key={i} data-testid="claim-comments-line">{line}</li>
