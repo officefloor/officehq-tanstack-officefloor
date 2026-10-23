@@ -15,6 +15,8 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.RetiredPersonException;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Rollups;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -27,13 +29,18 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  with an empty note, for every plan date (the start, then every N days; or a monthly plan's day in each month) up to the plan's end and the sheet's today
  *  that the plan has made none for yet. Each is added as the claim form adds one — its CLAIM_ADDED line and then how
  *  the sheet's figures moved over it — and a date the claim form would refuse (its rules, or after the person's
- *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time. */
+ *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time.
+ *  A viewer generates none: nothing is made or audited, and the answer is 0. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId, @Val GenerateRequest request, PlanRepository plans,
             PersonRepository people, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository log, Rollups rollups, Audit audit,
-            Out<GenerateResponse> result) {
+            RoleRepository roles, Out<GenerateResponse> result) {
         String sheet = sheetId.trim();
+        if (Role.VIEWER.equals(roles.of(sheet, request.user()))) {
+            result.set(new GenerateResponse(0));
+            return;
+        }
         periods.lockSheet(sheet);
         LocalDate today = sheets.today(sheet);
         int made = 0;
