@@ -6,11 +6,11 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settings';
+import { useFloor, useLate, usePendingSla, useReviewSla, useSettings } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday, useChangeToday } from '../sheet/sheet';
-import { claimsKey, dueBy, PROOF_KINDS, claimedLive, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
+import { claimsKey, dueBy, PROOF_KINDS, claimedLive, overdue, pendingLate, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
@@ -230,6 +230,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
   const reviewSla = useReviewSla(sheetId);
+  const pendingSla = usePendingSla(sheetId);
   const selected = useSelectedClaims(sheetId).has(claim.id);
   const everyone = usePeople(sheetId).data ?? [];
   const others = everyone.filter((p) => p.id !== claim.personId);
@@ -477,6 +478,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Due by <span data-testid="claim-due-by">{dueBy(claim)}</span>{' '}
       Overdue <span data-testid="claim-overdue">{overdue(claim, today, late.grace(claim)) ? 'yes' : 'no'}</span>{' '}
       Review late <span data-testid="claim-review-late">{reviewLate(claim, today, reviewSla) ? 'yes' : 'no'}</span>{' '}
+      Pending late <span data-testid="claim-pending-late">{pendingLate(claim, today, pendingSla) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Late entry <span data-testid="claim-late-entry">{claim.lateEntry ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}

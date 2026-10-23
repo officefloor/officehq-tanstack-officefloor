@@ -93,6 +93,10 @@ public class ValidateSettings {
         if (reviewSla != null && !reviewSla.isEmpty() && !reviewSla.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank for none.");
         }
+        String pendingSla = request.pendingSla() == null ? null : request.pendingSla().trim();
+        if (pendingSla != null && !pendingSla.isEmpty() && !pendingSla.matches("\\d{1,4}")) {
+            throw new InvalidSettingException("The pending SLA must be a whole number of days, 0 or more, or blank for none.");
+        }
         String scoreMid = request.scoreMid() == null ? null : request.scoreMid().trim();
         if (scoreMid != null && !scoreMid.isEmpty() && !scoreMid.matches("-?\\d{1,6}")) {
             throw new InvalidSettingException("The mid score threshold must be a whole number, or blank for none.");
@@ -291,7 +295,8 @@ public class ValidateSettings {
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.valueOf(scoreMid),
                 scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.valueOf(scoreHigh),
                 scoreLog != null, "on".equals(scoreLog),
-                maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.valueOf(maxOpen)));
+                maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.valueOf(maxOpen),
+                pendingSla != null, pendingSla == null || pendingSla.isEmpty() ? null : Integer.valueOf(pendingSla)));
     }
 
     /** The proof kinds as stored: each listed kind trimmed, in the order given, without repeats, joined by commas ('':

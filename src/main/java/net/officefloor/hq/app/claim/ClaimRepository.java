@@ -298,8 +298,10 @@ public class ClaimRepository {
             String openedBy) {
         return kept(claim, jdbc.update(
                 "UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ?, review_on = CASE WHEN ? "
-                        + "THEN (SELECT today FROM sheet WHERE id = ?) ELSE review_on END WHERE sheet_id = ? AND id = ? AND status = ?",
-                to.name(), number, settledDue, openedBy, to == ClaimStatus.REVIEW, claim.sheetId(), claim.sheetId(),
+                        + "THEN (SELECT today FROM sheet WHERE id = ?) ELSE review_on END, pending_on = CASE WHEN ? "
+                        + "THEN (SELECT today FROM sheet WHERE id = ?) ELSE pending_on END WHERE sheet_id = ? AND id = ? AND status = ?",
+                to.name(), number, settledDue, openedBy, to == ClaimStatus.REVIEW, claim.sheetId(),
+                to == ClaimStatus.PENDING, claim.sheetId(), claim.sheetId(),
                 claim.id(), claim.status().name()) == 1);
     }
 
@@ -307,6 +309,14 @@ public class ClaimRepository {
     public Map<Long, LocalDate> reviewDays(String sheetId) {
         Map<Long, LocalDate> days = new HashMap<>();
         jdbc.query("SELECT id, review_on FROM claim WHERE sheet_id = ? AND review_on IS NOT NULL",
+                rs -> { days.put(rs.getLong(1), rs.getObject(2, LocalDate.class)); }, sheetId);
+        return days;
+    }
+
+    /** The pending day of each of the sheet's claims that went to PENDING, by claim id: the sheet's today when it last did. */
+    public Map<Long, LocalDate> pendingDays(String sheetId) {
+        Map<Long, LocalDate> days = new HashMap<>();
+        jdbc.query("SELECT id, pending_on FROM claim WHERE sheet_id = ? AND pending_on IS NOT NULL",
                 rs -> { days.put(rs.getLong(1), rs.getObject(2, LocalDate.class)); }, sheetId);
         return days;
     }

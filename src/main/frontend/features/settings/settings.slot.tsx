@@ -26,7 +26,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string; scoreLog?: string; maxOpen?: string };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string; scoreLog?: string; maxOpen?: string;
+  pendingSla?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -82,6 +83,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentAlertThreshold = settings.data?.alertThreshold ?? '';
   const currentEscalateAfter = settings.data?.escalateAfter ?? '';
   const currentReviewSla = settings.data?.reviewSla ?? '';
+  const currentPendingSla = settings.data?.pendingSla ?? '';
   const currentScoreMid = settings.data?.scoreMid ?? '';
   const currentScoreHigh = settings.data?.scoreHigh ?? '';
   const currentScoreLog = settings.data?.scoreLog ?? '';
@@ -109,6 +111,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedAlertThreshold, setTypedAlertThreshold] = useState<string | null>(null);
   const [typedEscalateAfter, setTypedEscalateAfter] = useState<string | null>(null);
   const [typedReviewSla, setTypedReviewSla] = useState<string | null>(null);
+  const [typedPendingSla, setTypedPendingSla] = useState<string | null>(null);
   const [typedScoreMid, setTypedScoreMid] = useState<string | null>(null);
   const [typedScoreHigh, setTypedScoreHigh] = useState<string | null>(null);
   const [typedScoreLog, setTypedScoreLog] = useState<string | null>(null);
@@ -155,6 +158,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedAlertThreshold(null);
       setTypedEscalateAfter(null);
       setTypedReviewSla(null);
+      setTypedPendingSla(null);
       setTypedScoreMid(null);
       setTypedScoreHigh(null);
       setTypedScoreLog(null);
@@ -309,6 +313,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.reviewSla = reviewSla;
+    }
+    if (typedPendingSla !== null) {
+      const pendingSla = typedPendingSla.trim();
+      if (pendingSla !== '' && !DAYS.test(pendingSla)) {
+        setError('The pending SLA must be a whole number of days, 0 or more, or blank for none.');
+        return;
+      }
+      changes.pendingSla = pendingSla;
     }
     if (typedScoreMid !== null) {
       const scoreMid = typedScoreMid.trim();
@@ -534,6 +546,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Alert threshold <strong data-testid="setting-alert-threshold-current">{currentAlertThreshold}</strong>{' '}
         Escalate after <strong data-testid="setting-escalate-after-current">{currentEscalateAfter}</strong>{' '}
         Review SLA <strong data-testid="setting-review-sla-current">{currentReviewSla}</strong>{' '}
+        Pending SLA <strong data-testid="setting-pending-sla-current">{currentPendingSla}</strong>{' '}
         Score mid <strong data-testid="setting-score-mid-current">{currentScoreMid}</strong>{' '}
         Score high <strong data-testid="setting-score-high-current">{currentScoreHigh}</strong>{' '}
         Score log <strong data-testid="setting-score-log-current">{currentScoreLog}</strong>{' '}
@@ -796,6 +809,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedReviewSla)}
             onChange={typed(setTypedReviewSla)}
             onFocus={() => setTypedReviewSla((v) => v ?? currentReviewSla)}
+          />{' '}
+          days
+        </label>{' '}
+        <label>
+          Pending SLA{' '}
+          <input
+            data-testid="setting-pending-sla"
+            placeholder="none"
+            value={typedPendingSla ?? currentPendingSla}
+            onInput={typed(setTypedPendingSla)}
+            onChange={typed(setTypedPendingSla)}
+            onFocus={() => setTypedPendingSla((v) => v ?? currentPendingSla)}
           />{' '}
           days
         </label>{' '}

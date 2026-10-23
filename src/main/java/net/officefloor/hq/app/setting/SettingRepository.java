@@ -86,7 +86,8 @@ public class SettingRepository {
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
                 history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
+                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
+                pendingSla(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -265,6 +266,16 @@ public class SettingRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's pending SLA in days: null when blank (none). */
+    public Integer pendingSla(String sheetId) {
+        return jdbc.query("SELECT pending_sla FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, Integer.class) : null, sheetId);
+    }
+
+    public void setPendingSla(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET pending_sla = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's mid score threshold: null when blank (none). */

@@ -96,6 +96,9 @@ public class AuditSettingChanged {
         if (input.setsMaxOpen()) {
             audit.record(head + "max-open value=" + (input.maxOpen() != null ? input.maxOpen() : ""));
         }
+        if (input.setsPendingSla()) {
+            audit.record(head + "pending-sla value=" + (input.pendingSla() != null ? input.pendingSla() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

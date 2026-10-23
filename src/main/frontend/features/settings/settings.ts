@@ -42,13 +42,15 @@ import { useSheetToday } from '../sheet/sheet';
  *  dated; '' when none): while both are set, each person shows a band (see scoreBand). `scoreLog` is the score log switch (on, or ''
  *  when off; not dated): while on, changing the sheet's today records each person's score on the day being left. `maxOpen` is the maximum of OPEN or
  *  PENDING claims per person, a whole number (not dated; '' when none): opening a claim of a person already at it is
- *  refused (the server refuses it). */
+ *  refused (the server refuses it). `pendingSla` is the pending SLA in days (not dated; '' when none): a PENDING claim whose
+ *  pending day plus it is before the sheet's today is pending-late (see pendingLate). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string; scoreLog?: string; maxOpen?: string };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string; scoreLog?: string; maxOpen?: string;
+  pendingSla?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -119,6 +121,11 @@ export function useFloor(sheetId: string): DatedValue {
 /** The sheet's review SLA in days ('' when there is none, or while the settings load). */
 export function useReviewSla(sheetId: string): string {
   return useSettings(sheetId).data?.reviewSla ?? '';
+}
+
+/** The sheet's pending SLA in days ('' when there is none, or while the settings load). */
+export function usePendingSla(sheetId: string): string {
+  return useSettings(sheetId).data?.pendingSla ?? '';
 }
 
 /** The sheet's score thresholds, mid and high ('' when there is none, or while the settings load). */

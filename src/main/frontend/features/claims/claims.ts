@@ -42,7 +42,8 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  each listed kind before it can be settled or approved — the server refuses it), and whether it is held (only an
  *  OPEN or PENDING claim is held or released: a held claim is left out of the live totals as a held person's are), and
  *  its shares, in the order added (see ClaimShare), and the user a steward assigned to review it (null when none:
- *  only a REVIEW claim is assigned; it keeps the user once it leaves REVIEW). */
+ *  only a REVIEW claim is assigned; it keeps the user once it leaves REVIEW), and its pending day (yyyy-mm-dd): the
+ *  sheet's today when it last went to PENDING (null when it never did). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
@@ -50,7 +51,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
   comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null;
   waived: boolean; proofKinds?: Record<string, number>; held: boolean; shares?: ClaimShare[];
-  reviewer?: string | null };
+  reviewer?: string | null; pendingOn?: string | null };
 
 /** A share of a claim: another person on the sheet (by id) holding their share (a percent, two decimals, above
  *  0.00) of the claim's due; it counts in their due-total and comes out of the claim's own person's. A claim's shares
@@ -149,6 +150,16 @@ export function overdue(claim: Claim, today: string, grace = 0): boolean {
 export function reviewLate(claim: Claim, today: string, sla: string): boolean {
   if (claim.status !== 'REVIEW' || !claim.reviewOn || today === '' || sla === '') return false;
   const due = new Date(Date.parse(`${claim.reviewOn}T00:00:00Z`) + Number(sla) * 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  return due < today;
+}
+
+/** Whether a claim is pending-late on the sheet's today (yyyy-mm-dd; '' while loading: not late) under the sheet's
+ *  pending SLA (days; '' when none: never late): it is PENDING and its pending day (the sheet's today when it last went
+ *  to PENDING) plus the SLA days is before today. */
+export function pendingLate(claim: Claim, today: string, sla: string): boolean {
+  if (claim.status !== 'PENDING' || !claim.pendingOn || today === '' || sla === '') return false;
+  const due = new Date(Date.parse(`${claim.pendingOn}T00:00:00Z`) + Number(sla) * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
   return due < today;
 }

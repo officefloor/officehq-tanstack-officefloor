@@ -9,7 +9,7 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The sheet's claims, newest first, each with its status log and its comments and its lines and whether it is deferred on the sheet's today and the settle batch that settled it and its review day and its shares and the user assigned to review it; given
+/** The sheet's claims, newest first, each with its status log and its comments and its lines and whether it is deferred on the sheet's today and the settle batch that settled it and its review day and its shares and the user assigned to review it and its pending day; given
  *  an as-of date, as they stood at the end of it, with their logs and comments then and deferred on it; given a preview
  *  date, as they are now, deferred on it. */
 public class RespondWithClaims {
@@ -27,6 +27,7 @@ public class RespondWithClaims {
         Map<Long, Integer> settledBy = batches.byClaim(id);
         Map<Long, LocalDate> reviewDays = repository.reviewDays(id);
         Map<Long, String> reviewers = repository.reviewers(id);
+        Map<Long, LocalDate> pendingDays = repository.pendingDays(id);
         LocalDate on = AsOf.figuredOn(end, preview);
         var today = on != null ? on : sheets.today(id);
         List<Claim> claims = end != null ? repository.listAsOf(id, end) : repository.list(id);
@@ -35,7 +36,8 @@ public class RespondWithClaims {
                         said.getOrDefault(c.id(), List.of()), batchOf(c, settledBy),
                         lined.getOrDefault(c.id(), List.of()), reviewDays.get(c.id()))
                         .withShares(shared.getOrDefault(c.id(), List.of()))
-                        .withReviewer(reviewers.get(c.id()))).toList());
+                        .withReviewer(reviewers.get(c.id()))
+                        .withPendingOn(pendingDays.get(c.id()))).toList());
     }
 
     /** The batch that settled the claim, shown while it is PENDING or SETTLED; null otherwise. */

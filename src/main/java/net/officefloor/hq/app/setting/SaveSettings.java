@@ -98,6 +98,9 @@ public class SaveSettings {
         if (input.setsMaxOpen()) {
             repository.setMaxOpen(id, input.maxOpen());
         }
+        if (input.setsPendingSla()) {
+            repository.setPendingSla(id, input.pendingSla());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }
