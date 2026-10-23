@@ -11,12 +11,15 @@ import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, usePatrons } from './patrons';
 import type { Patron } from './patrons';
+import { useColumnShown } from '../people/columns';
 
 /** A person's patrons, each as <name> <share> sorted by name — 100.00 split equally in the order they were named, the
  *  first-named taking the remainder (see patronShares) — their backing — each patron's settled figures over their
  *  SETTLED claims dated within the 90 days up to and including the sheet's today (see recentSettledSum) times their
  *  share / 100, added up and rounded half to even (see sharedSum); 0.00 with none — and the picker that names one more. */
 function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const showPatrons = useColumnShown('patrons');
+  const showBacking = useColumnShown('backing');
   const queryClient = useQueryClient();
   const people = usePeople(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
@@ -55,8 +58,16 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
 
   return (
     <td>
-      Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
-      Backing <span data-testid="person-backing">{backing}</span>{' '}
+      {showPatrons && (
+        <>
+          Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
+        </>
+      )}
+      {showBacking && (
+        <>
+          Backing <span data-testid="person-backing">{backing}</span>{' '}
+        </>
+      )}
       <select
         data-testid="person-patron-select"
         value={chosen}

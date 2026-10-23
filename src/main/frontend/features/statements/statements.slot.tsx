@@ -6,6 +6,7 @@ import { claimsKey } from '../claims/claims';
 import { peopleKey } from '../people/people';
 import { usePersonError } from '../people/rowError';
 import type { Person } from '../people/people';
+import { useColumnShown } from '../people/columns';
 
 /** A person's statements: how many have been taken, the last one's due-total and date, and the button that
  *  takes one (recording their due-total now and binding their claims that count to the figures they show; or, with a
@@ -45,11 +46,26 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
   });
 
   const taken = person.statementCount > 0;
+  const showCount = useColumnShown('statement-count');
+  const showTotal = useColumnShown('stated-total');
+  const showDate = useColumnShown('statement-date');
   return (
     <td>
-      Statements <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
-      last <span data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</span>{' '}
-      on <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+      {showCount && (
+        <>
+          Statements <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+        </>
+      )}
+      {showTotal && (
+        <>
+          last <span data-testid="person-stated-total">{taken ? (person.statedTotal ?? 'n/a') : ''}</span>{' '}
+        </>
+      )}
+      {showDate && (
+        <>
+          on <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+        </>
+      )}
       <input
         type="date"
         aria-label="Statement as of"

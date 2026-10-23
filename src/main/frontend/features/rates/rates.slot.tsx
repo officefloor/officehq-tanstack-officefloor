@@ -13,6 +13,7 @@ import { useCap, useFloor, useLate } from '../settings/settings';
 import { capped, excess, OPEN_STATUSES, ownRates, personDueSum, personStatusSum, rateOn, ratePreview, ratesKey, SETTLED_STATUSES,
   sheetDueTotal, sheetStatusSum, useRates } from './rates';
 import type { Rate } from './rates';
+import { useColumnShown } from '../people/columns';
 
 const PCT = /^\d{1,5}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -235,23 +236,27 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
 /** A person's due-total: the figures of their claims that count added up, at most the sheet's cap (see
  *  personDueTotal). */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useColumnShown('due-total');
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  if (!shown) return null;
   return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late), cap)}</td>;
 }
 
 /** A person's excess: how far their figures added up are above the sheet's cap; 0.00 when not above it. */
 function PersonExcess({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+  const shown = useColumnShown('excess');
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  if (!shown) return null;
   return (
     <td>
       Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late), cap)}</span>

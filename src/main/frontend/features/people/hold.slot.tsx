@@ -9,11 +9,13 @@ import { poolsKey } from '../pools/pools';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
 import type { Person } from './people';
+import { useColumnShown } from './columns';
 
 /** Whether the person has any hold, their holds, and the form that adds one from a from-date (blank: the sheet's
  *  today) to an optional to-date (blank: open-ended). Only their OPEN claims dated within a hold, and not bound by
  *  a statement, count in no live total; a hold ends on its to-date. */
 function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const showHold = useColumnShown('hold');
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
   const [from, setFrom] = useState('');
@@ -50,7 +52,11 @@ function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; 
 
   return (
     <td>
-      Hold <span data-testid="person-hold">{person.holds.length > 0 ? 'yes' : 'no'}</span>
+      {showHold && (
+        <>
+          Hold <span data-testid="person-hold">{person.holds.length > 0 ? 'yes' : 'no'}</span>
+        </>
+      )}
       <ul>
         {person.holds.map((h, i) => (
           <li key={i} data-testid="person-hold-line">

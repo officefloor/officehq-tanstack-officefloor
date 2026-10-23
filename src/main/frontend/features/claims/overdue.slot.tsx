@@ -6,6 +6,7 @@ import { overdueDues, sheetOverdueTotal, sumDue, useRates } from '../rates/rates
 import { useFloor, useLate } from '../settings/settings';
 import { useClaims } from './claims';
 import type { Claim } from './claims';
+import { useColumnShown } from '../people/columns';
 
 function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
   const rates = useRates(sheetId).data ?? [];
@@ -20,10 +21,12 @@ function useOverdue(sheetId: string, people: Person[], claims: Claim[]) {
 function PersonOverdue({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const { count, total } = useOverdue(sheetId, [person], claims);
+  const showCount = useColumnShown('overdue-count');
+  const showTotal = useColumnShown('overdue-total');
   return (
     <>
-      <td data-testid="person-overdue-count">{count}</td>
-      <td data-testid="person-overdue-total">{total}</td>
+      {showCount && <td data-testid="person-overdue-count">{count}</td>}
+      {showTotal && <td data-testid="person-overdue-total">{total}</td>}
     </>
   );
 }

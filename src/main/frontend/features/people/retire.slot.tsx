@@ -9,11 +9,13 @@ import { useSheetToday } from '../sheet/sheet';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
 import type { Person } from './people';
+import { useColumnShown } from './columns';
 
 /** Whether the person is retired and from when, their past retirements, the form that retires them from a date
  *  (blank: the sheet's today) and the button that unretires them on the sheet's today. A claim dated after the
  *  retirement date, or after the from and before the to of a past retirement, is refused. */
 function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const showRetired = useColumnShown('retired');
   const queryClient = useQueryClient();
   const today = useSheetToday(sheetId);
   const [from, setFrom] = useState('');
@@ -56,7 +58,11 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <td>
-      Retired <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
+      {showRetired && (
+        <>
+          Retired <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
+        </>
+      )}
       from <span data-testid="person-retired-from">{person.retiredFrom ?? ''}</span>{' '}
       <form onSubmit={submit} style={{ display: 'inline' }}>
         <input

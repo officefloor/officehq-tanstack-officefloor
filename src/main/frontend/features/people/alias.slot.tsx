@@ -7,11 +7,13 @@ import { PersonRow } from '../../slots/defs/personRow';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
 import type { Person } from './people';
+import { useColumnShown } from './columns';
 
 /** The person's aliases, sorted as names are compared, and the form that gives them another. An alias shares the
  *  names' uniqueness: it must not equal, as names are compared, any name or alias on the sheet. The quick-add bar and
  *  the paste box find a person by an alias as well as by their name. */
 function PersonAliases({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
+  const showAliases = useColumnShown('aliases');
   const queryClient = useQueryClient();
   const [alias, setAlias] = useState('');
   const { error, setError, begin } = usePersonError(sheetId, person.id);
@@ -42,7 +44,11 @@ function PersonAliases({ sheetId, user, person }: { sheetId: string; user: strin
 
   return (
     <td>
-      Aliases <span data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</span>
+      {showAliases && (
+        <>
+          Aliases <span data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</span>
+        </>
+      )}
       <form onSubmit={submit} style={{ display: 'inline' }}>
         {' '}
         <input

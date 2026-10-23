@@ -16,6 +16,7 @@ import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
 import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
+import { useColumnShown } from '../people/columns';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
@@ -742,12 +743,13 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
   const [editingId] = useEditingClaim();
   const editing = claims.find((c) => String(c.id) === editingId);
   const [added, setAdded] = useState(0);
+  const showClaimed = useColumnShown('claimed');
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(live(claims, [person], today))}</td>
+      {showClaimed && <td data-testid="person-claimed">{sumAmounts(live(claims, [person], today))}</td>}
       <td>
         {/* Keyed by the claim being edited (and each add), so the form fills with its values or starts blank. */}
         <ClaimForm

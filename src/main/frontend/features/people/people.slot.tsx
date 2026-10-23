@@ -10,6 +10,7 @@ import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
 import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
+import { useColumnShown } from './columns';
 
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
@@ -339,6 +340,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired, setShowRetired] = useShowRetired();
   const [carried, setCarried] = useState('');
   const [sortBy, setSortBy] = useSortBy();
+  const showTerms = useColumnShown('terms');
+  const showContact = useColumnShown('contact');
   const listed = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
 
   return (
@@ -373,8 +376,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-terms">{p.terms ?? ''}</td>
-              <td data-testid="person-contact">{p.contact ?? ''}</td>
+              {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+              {showContact && <td data-testid="person-contact">{p.contact ?? ''}</td>}
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => {
