@@ -1,0 +1,135 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/DueBy.java b/src/main/java/net/officefloor/hq/app/claim/DueBy.java
+index 42bc732..431b64b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/DueBy.java
++++ b/src/main/java/net/officefloor/hq/app/claim/DueBy.java
+@@ -4,6 +4,7 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ 
+ /** The terms a new claim is fixed with when it is created, and the due-by they give; a claim belongs to the period
+  *  holding its due-by. */
+@@ -12,16 +13,19 @@ public final class DueBy {
+     private DueBy() {
+     }
+ 
+-    /** The terms (business days) a new claim of the person dated on the date is fixed with: the person's own terms
+-     *  in force on the date, else the terms of their grade in force on it (else the sheet's terms in force on it). */
+-    public static int terms(Person person, LocalDate date, SettingRepository settings) {
+-        Integer own = person.terms().on(date);
+-        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(date), date);
++    /** The terms (business days) a new claim of the person is fixed with: those in force on the day it is created
++     *  (the sheet's today), not on its date — the person's own terms in force on that day, else the terms of their
++     *  grade then in force on it (else the sheet's terms in force on it). */
++    public static int terms(Person person, SettingRepository settings, SheetRepository sheets) {
++        var today = sheets.today(person.sheetId());
++        Integer own = person.terms().on(today);
++        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(today), today);
+     }
+ 
+     /** The due-by of a new claim of the person dated on the date: the terms-th business day after the date, skipping
+      *  Saturdays, Sundays and the sheet's holidays as they are now. */
+-    public static LocalDate of(Person person, LocalDate date, SettingRepository settings, HolidayRepository holidays) {
+-        return holidays.dueBy(person.sheetId(), date, terms(person, date, settings));
++    public static LocalDate of(Person person, LocalDate date, SettingRepository settings, SheetRepository sheets,
++            HolidayRepository holidays) {
++        return holidays.dueBy(person.sheetId(), date, terms(person, settings, sheets));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java b/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java
+index 282d03f..daca811 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/PasteClaims.java
+@@ -57,7 +57,7 @@ public class PasteClaims {
+             } catch (RetiredPersonException e) {
+                 throw new InvalidClaimException("Line " + line.number() + ": " + e.getMessage());
+             }
+-            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings, holidays));
++            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings, sheets, holidays));
+             if (closed != null) {
+                 throw new InvalidClaimException("Line " + line.number() + ": " + new ClosedPeriodException(closed).getMessage());
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java
+index 4882827..c2f4702 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveNewClaim.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Store the new claim under the person; with no date given it is dated the sheet's entry date, else its today. Its terms are fixed now:
+- *  the person's own terms (else the terms of the person's grade in force on its date (else the sheet's terms in force on its date)); its due-by is
++ *  the terms in force on the sheet's today (the person's own, else their grade's, else the sheet's); its due-by is
+  *  the terms-th business day after its date, skipping Saturdays, Sundays and the sheet's holidays. Its DRAFT line starts its status log. Due by inside a soft-closed period, it is a late entry. */
+ public class SaveNewClaim {
+     public void save(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
+@@ -21,7 +21,7 @@ public class SaveNewClaim {
+     static Claim insert(ClaimInput input, Person person, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
+             PeriodRepository periods, ClaimRepository repository, ClaimLogRepository log) {
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+-        int terms = DueBy.terms(person, date, settings);
++        int terms = DueBy.terms(person, settings, sheets);
+         var dueBy = holidays.dueBy(person.sheetId(), date, terms);
+         Claim added = repository.insert(terms, new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
+                 ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0, null,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index e075ad6..36b13fb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Split an amount off the loaded claim: only an OPEN claim not deferred on the sheet's today, and only an amount
+  *  less than the claim's. The claim keeps the rest of its amount and loses any figure a statement bound it to; a new
+  *  OPEN claim with the split-off amount, the same person, date and note, the next number, opened by the user, its
+- *  terms fixed now from the terms in force on its date (as a new claim's is) and the claim's number as its
++ *  terms fixed now from the terms in force on the sheet's today (as a new claim's is) and the claim's number as its
+  *  split-from is stored (a late entry when that due-by is inside a soft-closed period), its OPEN line starting its status log. A split another user's change got to first is
+  *  refused. */
+ public class SaveSplit {
+@@ -37,7 +37,7 @@ public class SaveSplit {
+             throw new ClaimStatusNotAllowedException("The claim changed meanwhile; load the sheet again.");
+         }
+         var person = people.find(loaded.sheetId(), loaded.personId());
+-        int terms = DueBy.terms(person, loaded.date(), settings);
++        int terms = DueBy.terms(person, settings, sheets);
+         var dueBy = holidays.dueBy(loaded.sheetId(), loaded.date(), terms);
+         Claim inserted = repository.insert(terms, new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
+                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+index 5c1a256..76d7905 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+@@ -18,7 +18,7 @@ public class RefuseClosedNewClaim {
+             throws ClosedPeriodException {
+         periods.lockSheet(person.sheetId());
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+-        var dueBy = DueBy.of(person, date, settings, holidays);
++        var dueBy = DueBy.of(person, date, settings, sheets, holidays);
+         Period closed = periods.closedByHandFor(person.sheetId(), date, dueBy);
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+index fc12042..73fe440 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+@@ -25,7 +25,7 @@ public class RefuseClosedQuickAdd {
+         periods.lockSheet(id);
+         var date = sheets.newClaimDate(id);
+         Person found = people.findByName(id, request.name());
+-        int terms = found != null ? DueBy.terms(found, date, settings) : settings.termsFor(id, request.grade(), date);
++        int terms = found != null ? DueBy.terms(found, settings, sheets) : settings.termsFor(id, request.grade(), sheets.today(id));
+         Period closed = periods.closedByHandFor(id, date, holidays.dueBy(id, date, terms));
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+diff --git a/src/main/java/net/officefloor/hq/app/template/RefuseClosedTemplateClaim.java b/src/main/java/net/officefloor/hq/app/template/RefuseClosedTemplateClaim.java
+index e774565..9df9f42 100644
+--- a/src/main/java/net/officefloor/hq/app/template/RefuseClosedTemplateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/template/RefuseClosedTemplateClaim.java
+@@ -18,7 +18,7 @@ public class RefuseClosedTemplateClaim {
+             HolidayRepository holidays, PeriodRepository periods) throws ClosedPeriodException {
+         periods.lockSheet(person.sheetId());
+         var date = sheets.newClaimDate(person.sheetId());
+-        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
++        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, sheets, holidays));
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
