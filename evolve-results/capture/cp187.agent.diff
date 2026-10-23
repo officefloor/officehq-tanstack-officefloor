@@ -1,0 +1,120 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 3d4d213..cf0fac4 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -5,7 +5,7 @@ import { HttpError, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { usePeople } from '../people/people';
+-import { poolsKey, usePools } from './pools';
++import { cutThen, poolsKey, usePeriodCuts, usePools } from './pools';
+ import type { Pool, PoolMember } from './pools';
+ 
+ /** A share as typed: a percent of at most two decimals, more than 0.00 and at most 100.00. */
+@@ -22,7 +22,8 @@ function memberKey(m: PoolMember): string {
+ 
+ /** One pool: its total share, whether balanced, each member's share, and the entry a member (a person, or another
+  *  pool chosen as pool:<name>) is added with — none for a crew's pool, whose members are the crew's. */
+-function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string; pool: Pool; pools: Pool[] }) {
++function PoolRow({ sheetId, user, pool, pools, periodCuts }: { sheetId: string; user: string; pool: Pool; pools: Pool[];
++    periodCuts: { period: string; pools: Pool[] }[] }) {
+   const queryClient = useQueryClient();
+   const people = usePeople(sheetId).data ?? [];
+   // the chosen member: a person's id, or pool:<id>
+@@ -90,6 +91,11 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
+         {pool.members.map((m) => (
+           <li key={memberKey(m)} data-testid={`pool-member-${pool.name}-${memberKey(m)}`}>
+             {m.poolId !== null ? `pool ${m.name}` : m.name}: <span data-testid="pool-share">{m.share}</span>, cut <span data-testid="pool-cut">{m.cut}</span>
++            {periodCuts.map((pc) => (
++              <span key={pc.period}>
++                , {pc.period} <span data-testid={`pool-cut-${pc.period}`}>{cutThen(pc.pools, pool.id, m)}</span>
++              </span>
++            ))}
+             {(m.from || m.to) && ` (${m.from || '…'} to ${m.to || '…'})`}
+             {m.retired && ' (retired)'}
+             {m.outside && ' (not a member today)'}
+@@ -217,13 +223,14 @@ function PoolForm({ sheetId, user }: { sheetId: string; user: string }) {
+  *  today counts their share as given) and whether it is balanced, and the entry a pool is added with. */
+ function Pools({ sheetId, user }: { sheetId: string; user: string }) {
+   const pools = usePools(sheetId).data ?? [];
++  const periodCuts = usePeriodCuts(sheetId);
+   return (
+     <section data-testid="pools">
+       <h2>Pools</h2>
+       <PoolForm sheetId={sheetId} user={user} />
+       <ul>
+         {pools.map((p) => (
+-          <PoolRow key={p.id} sheetId={sheetId} user={user} pool={p} pools={pools} />
++          <PoolRow key={p.id} sheetId={sheetId} user={user} pool={p} pools={pools} periodCuts={periodCuts} />
+         ))}
+       </ul>
+     </section>
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index d43d672..0683cea 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -1,5 +1,7 @@
+-import { useQuery } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
++import { useQueries, useQuery } from '@tanstack/react-query';
++import { getJson, getJsonNow } from '../../api/http';
++import { usePeriods } from '../periods/periods';
++import { useSheetToday } from '../sheet/sheet';
+ 
+ /** A member of a pool — a person, or another pool (poolId; personId then null) — with their share percent, whether
+  *  they are retired by the sheet's today (their share still counts toward the pool's total but they cut 0.00, their
+@@ -41,6 +43,28 @@ export function usePools(sheetId: string) {
+   });
+ }
+ 
++/** The cuts at the end of each period whose to-date is on or before the sheet's today: by period name, the sheet's
++ *  pools as they stood at the end of its to-date (that day as the sheet's today). Keyed under the sheet, so a load
++ *  of the sheet re-reads them. */
++export function usePeriodCuts(sheetId: string): { period: string; pools: Pool[] }[] {
++  const today = useSheetToday(sheetId);
++  const periods = (usePeriods(sheetId).data ?? []).filter((p) => today !== '' && p.to <= today);
++  const results = useQueries({
++    queries: periods.map((p) => ({
++      queryKey: [...poolsKey(sheetId), 'asOf', p.to] as const,
++      queryFn: () => getJsonNow<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools?asOf=${encodeURIComponent(p.to)}`),
++    })),
++  });
++  return periods.map((p, i) => ({ period: p.name, pools: results[i]?.data ?? [] }));
++}
++
++/** A member's cut in a pool as it stood in an earlier read of the pools ('' when there was none). */
++export function cutThen(pools: Pool[], poolId: number, member: PoolMember): string {
++  const pool = pools.find((p) => p.id === poolId);
++  const m = pool?.members.find((x) => x.poolId !== null ? x.poolId === member.poolId : x.personId === member.personId);
++  return m?.cut ?? '';
++}
++
+ function cents(amount: string): number {
+   return Math.round(Number(amount) * 100);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index ae16716..591e6c1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -7,8 +7,8 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Apply the edit to the loaded person and store it, refused when the person has been saved since
+  *  the version the edit was made from. The grade is recorded from the edit's from-date (the sheet's today
+- *  when none was given), keeping the grades already recorded from other dates; an edit leaving the grade as it is
+- *  in force on that date records none (so it does not shadow a grade given later from an earlier date). The person's own terms are recorded when the edit gives
++ *  when none was given), keeping the grades already recorded from other dates, even when it leaves the grade as it
++ *  is in force on that date (so it shadows a grade given later from an earlier date). The person's own terms are recorded when the edit gives
+  *  them (cleared when given blank): from the terms' from-date when one is given, replacing those recorded from that same
+  *  date and keeping the rest; else from the beginning of time, and so are their contact and tags. */
+ public class SavePerson {
+@@ -24,9 +24,7 @@ public class SavePerson {
+         }
+         LocalDate gradeFrom = request.gradeFrom() != null ? LocalDate.parse(request.gradeFrom())
+                 : sheets.today(loaded.sheetId());
+-        if (!request.grade().equals(loaded.grades().on(gradeFrom))) {
+-            repository.grade(person, request.grade(), gradeFrom);
+-        }
++        repository.grade(person, request.grade(), gradeFrom);
+         if (request.terms() != null) {
+             Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
+             if (request.termsFrom() != null) {
