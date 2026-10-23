@@ -5,8 +5,10 @@ import java.time.LocalDate;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import net.officefloor.hq.app.holiday.BusinessDays;
@@ -278,8 +280,18 @@ public class ClaimRepository {
     public boolean changeStatus(Claim claim, ClaimStatus to, String number, BigDecimal settledDue,
             String openedBy) {
         return kept(claim, jdbc.update(
-                "UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                to.name(), number, settledDue, openedBy, claim.sheetId(), claim.id(), claim.status().name()) == 1);
+                "UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ?, review_on = CASE WHEN ? "
+                        + "THEN (SELECT today FROM sheet WHERE id = ?) ELSE review_on END WHERE sheet_id = ? AND id = ? AND status = ?",
+                to.name(), number, settledDue, openedBy, to == ClaimStatus.REVIEW, claim.sheetId(), claim.sheetId(),
+                claim.id(), claim.status().name()) == 1);
+    }
+
+    /** The review day of each of the sheet's claims that went to REVIEW, by claim id: the sheet's today when it did. */
+    public Map<Long, LocalDate> reviewDays(String sheetId) {
+        Map<Long, LocalDate> days = new HashMap<>();
+        jdbc.query("SELECT id, review_on FROM claim WHERE sheet_id = ? AND review_on IS NOT NULL",
+                rs -> { days.put(rs.getLong(1), rs.getObject(2, LocalDate.class)); }, sheetId);
+        return days;
     }
 
     /** Re-date the claim with its number (a new one when its period changed): false when it no longer has the

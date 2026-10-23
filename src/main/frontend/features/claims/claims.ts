@@ -35,13 +35,14 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  (the date being the sheet's today when it was written), and the number of the settle batch that settled it (null when
  *  none did: it was settled one at a time, or is not settled), and its lines, in the order added, as
  *  <label> <qty> x <unit> (only a DRAFT takes a line; a claim with lines has their total as its amount — the server
- *  refuses an edit typing another). */
+ *  refuses an edit typing another), and its review day (yyyy-mm-dd): the sheet's today when it went to REVIEW (null
+ *  when it never did). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
-  comments: string[]; batch: number | null; lines: string[] };
+  comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */
@@ -119,6 +120,15 @@ export function lateFrom(claim: Claim, grace = 0): string {
  *  the sheet's today. */
 export function overdue(claim: Claim, today: string, grace = 0): boolean {
   return unsettled(claim) && !claim.deferred && today !== '' && lateFrom(claim, grace) < today;
+}
+
+/** Whether a claim is review-late on the sheet's today (yyyy-mm-dd; '' while loading: not late) under the sheet's
+ *  review SLA (days; '' when none: never late): it is REVIEW and its review day plus the SLA days is before today. */
+export function reviewLate(claim: Claim, today: string, sla: string): boolean {
+  if (claim.status !== 'REVIEW' || !claim.reviewOn || today === '' || sla === '') return false;
+  const due = new Date(Date.parse(`${claim.reviewOn}T00:00:00Z`) + Number(sla) * 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  return due < today;
 }
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;

@@ -89,6 +89,10 @@ public class ValidateSettings {
         if (escalate != null && !escalate.isEmpty() && !escalate.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The escalation gap must be a whole number of days, 0 or more, or blank for off.");
         }
+        String reviewSla = request.reviewSla() == null ? null : request.reviewSla().trim();
+        if (reviewSla != null && !reviewSla.isEmpty() && !reviewSla.matches("\\d{1,4}")) {
+            throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank for none.");
+        }
         String entered = request.entryDate() == null ? null : request.entryDate().trim();
         LocalDate entryDate = null;
         if (entered != null && !entered.isEmpty()) {
@@ -238,6 +242,7 @@ public class ValidateSettings {
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
                 reviewThreshold != null,
                 reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
-                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.valueOf(escalate)));
+                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.valueOf(escalate),
+                reviewSla != null, reviewSla == null || reviewSla.isEmpty() ? null : Integer.valueOf(reviewSla)));
     }
 }

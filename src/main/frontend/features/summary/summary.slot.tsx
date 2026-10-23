@@ -1,15 +1,15 @@
 import { SheetBody } from '../../slots/defs/sheet';
-import { STATUSES, active as isActive, useClaims } from '../claims/claims';
+import { STATUSES, active as isActive, reviewLate, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { diffDue, personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { useCap, useFloor, useLate, useReviewSla } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
  *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
- *  due-total and its change from the period before it by start date (none for the earliest), how many of them are active (see claims' active), and per status how many of the sheet's claims have it, and per void reason on the list how many VOID claims were
+ *  due-total and its change from the period before it by start date (none for the earliest), how many of them are active (see claims' active), and per status how many of the sheet's claims have it, and how many REVIEW claims are review-late (see reviewLate), and per void reason on the list how many VOID claims were
  *  voided with it. */
 function Summary({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
@@ -20,6 +20,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const reviewSla = useReviewSla(sheetId);
   const voidReasons = useVoidReasons(sheetId).data ?? [];
   const active = people.filter((p) => p.retiredFrom === null);
   const periodTotals = new Map(periods.map((p) => [p.name, periodDueTotal(p, claims, people, rates, floor, late)]));
@@ -77,6 +78,15 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
               </td>
             </tr>
           ))}
+          <tr data-testid="summary-review-late">
+            <th>Review late</th>
+            <td>
+              Claims{' '}
+              <span data-testid="summary-review-late-count">
+                {claims.filter((c) => reviewLate(c, today, reviewSla)).length}
+              </span>
+            </td>
+          </tr>
           {voidReasons.map((r) => (
             <tr key={r.id} data-testid={`summary-void-${r.reason}`}>
               <th>Voided: {r.reason}</th>

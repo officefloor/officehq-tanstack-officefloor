@@ -75,6 +75,9 @@ public class SaveSettings {
         if (input.setsEscalateAfter()) {
             repository.setEscalateAfter(id, input.escalateAfter());
         }
+        if (input.setsReviewSla()) {
+            repository.setReviewSla(id, input.reviewSla());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

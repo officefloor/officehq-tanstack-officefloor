@@ -6,11 +6,11 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { useFloor, useLate, useSettings } from '../settings/settings';
+import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { claimsKey, dueBy, live, overdue, sumAmounts, useClaims, useEditingClaim } from './claims';
+import { claimsKey, dueBy, live, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
@@ -226,6 +226,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
+  const reviewSla = useReviewSla(sheetId);
   const selected = useSelectedClaims(sheetId).has(claim.id);
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
   const [moveTo, setMoveTo] = useState('');
@@ -397,6 +398,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       <span data-testid="claim-due">{claimDue(claim, rate, floor, late)}</span>{' '}
       Due by <span data-testid="claim-due-by">{dueBy(claim)}</span>{' '}
       Overdue <span data-testid="claim-overdue">{overdue(claim, today, late.grace(claim)) ? 'yes' : 'no'}</span>{' '}
+      Review late <span data-testid="claim-review-late">{reviewLate(claim, today, reviewSla) ? 'yes' : 'no'}</span>{' '}
       Period <span data-testid="claim-period">{period?.name ?? ''}</span>{' '}
       Late entry <span data-testid="claim-late-entry">{claim.lateEntry ? 'yes' : 'no'}</span>{' '}
       Stated <span data-testid="claim-stated">{claim.stated ? 'yes' : 'no'}</span>{' '}

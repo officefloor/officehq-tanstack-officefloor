@@ -69,7 +69,7 @@ public class SettingRepository {
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
-                history.reviewThresholdOn(today), escalateAfter(sheetId));
+                history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -232,6 +232,16 @@ public class SettingRepository {
 
     public void setEscalateAfter(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's review SLA in days: null when blank (none). */
+    public Integer reviewSla(String sheetId) {
+        return jdbc.query("SELECT review_sla FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, Integer.class) : null, sheetId);
+    }
+
+    public void setReviewSla(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's alert threshold: null when blank (off). */

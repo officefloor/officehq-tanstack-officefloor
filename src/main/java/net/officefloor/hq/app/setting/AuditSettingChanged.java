@@ -73,6 +73,9 @@ public class AuditSettingChanged {
         if (input.setsEscalateAfter()) {
             audit.record(head + "escalate-after value=" + (input.escalateAfter() != null ? input.escalateAfter() : ""));
         }
+        if (input.setsReviewSla()) {
+            audit.record(head + "review-sla value=" + (input.reviewSla() != null ? input.reviewSla() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 
