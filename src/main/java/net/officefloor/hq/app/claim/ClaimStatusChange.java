@@ -47,7 +47,7 @@ final class ClaimStatusChange {
         log.record(loaded, input.user());
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived()));
+                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos()));
     }
 
     /** The status the claim would move to by the change as {@link SaveClaimStatus} describes (PENDING for a clerk's
@@ -125,12 +125,18 @@ final class ClaimStatusChange {
         if (input.action().equals("settle") && input.user().equals(repository.editedBy(loaded))) {
             throw new ClaimStatusNotAllowedException("The user who last edited a claim cannot settle it.");
         }
-        if ((input.action().equals("settle") || input.action().equals("approve")) && loaded.proofs() == 0) {
+        if ((input.action().equals("settle") || input.action().equals("approve"))
+                && (loaded.proofs() == 0 || !missingKinds(loaded, settings).isEmpty())) {
             var person = people.find(loaded.sheetId(), loaded.personId());
             String grade = person != null ? person.grades().on(loaded.date()) : null;
             BigDecimal threshold = settings.proofThresholdFor(loaded.sheetId(), grade, loaded.date());
             BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
             if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                if (loaded.proofs() > 0) {
+                    throw new ClaimStatusNotAllowedException("This claim's due " + due + " is above the proof threshold "
+                            + threshold + "; add a proof of each kind (" + String.join(", ", missingKinds(loaded, settings))
+                            + ") before it is " + input.action() + "d.");
+                }
                 throw new ClaimStatusNotAllowedException("This claim's due " + due + " is above the proof threshold "
                         + threshold + "; add a proof before it is " + input.action() + "d.");
             }
@@ -197,9 +203,18 @@ final class ClaimStatusChange {
 
     /** The claim as an OPEN claim bound by no statement and not yet settled, for re-settling it at today's
      *  figure. */
+    /** The sheet's proof kinds (in the order listed) the claim has no proof of yet: empty when the sheet lists none. */
+    private static java.util.List<String> missingKinds(Claim claim, SettingRepository settings) {
+        String kinds = settings.proofKinds(claim.sheetId());
+        if (kinds == null || kinds.isEmpty()) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(kinds.split(",")).filter(k -> claim.proofsOf(k) == 0).toList();
+    }
+
     private static Claim asOpenUnstated(Claim c) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), ClaimStatus.OPEN,
-                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs(), c.splitFrom(), c.lateEntry(), c.reminded(), c.ref(), c.tags(), c.waived());
+                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs(), c.splitFrom(), c.lateEntry(), c.reminded(), c.ref(), c.tags(), c.waived(), c.photos());
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its

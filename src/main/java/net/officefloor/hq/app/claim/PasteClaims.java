@@ -127,7 +127,7 @@ public class PasteClaims {
                         claim.note(), claim.status(), claim.number(), claim.settledDue(), claim.openedBy(),
                         claim.stated(), claim.statedDue(), claim.corrects(), claim.dueBy(), claim.deferredUntil(),
                         claim.proofs(), claim.splitFrom(), claim.lateEntry(), claim.reminded(),
-                        line.ref() != null ? line.ref() : claim.ref(), claim.tags(), claim.waived());
+                        line.ref() != null ? line.ref() : claim.ref(), claim.tags(), claim.waived(), claim.photos());
                 claims.update(edited, user);
                 claim = claims.find(sheet, claim.id());
                 ClaimResponse shown = ClaimResponse.from(claim);

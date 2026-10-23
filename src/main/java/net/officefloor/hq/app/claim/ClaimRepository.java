@@ -35,7 +35,7 @@ public class ClaimRepository {
                         rs.getInt("terms_days"), holidays),
                 rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
                 rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class), rs.getString("ref"), rs.getString("tags"),
-                rs.getBoolean("waived"));
+                rs.getBoolean("waived"), rs.getInt("proof_photos"));
     }
 
     private static LocalDate dueBy(LocalDate fixed, LocalDate from, int terms, Set<LocalDate> holidays) {
@@ -121,7 +121,7 @@ public class ClaimRepository {
         used(claim.sheetId(), claim.tags());
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null, claim.ref(), claim.tags(), false);
+                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null, claim.ref(), claim.tags(), false, 0);
     }
 
     /** The person's claims, newest first. */
@@ -247,11 +247,11 @@ public class ClaimRepository {
                 rest, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), claim.amount()) == 1);
     }
 
-    /** Raise the claim's proofs count by one: false when it no longer has the status it was loaded with (another user
+    /** Raise the claim's proofs count by one, of the kind (a photo, or a receipt): false when it no longer has the status it was loaded with (another user
      *  changed it first), and nothing is written. */
-    public boolean addProof(Claim claim) {
-        return kept(claim, jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.sheetId(), claim.id(), claim.status().name()) == 1);
+    public boolean addProof(Claim claim, String kind) {
+        return kept(claim, jdbc.update("UPDATE claim SET proofs = proofs + 1, proof_photos = proof_photos + ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                "photo".equals(kind) ? 1 : 0, claim.sheetId(), claim.id(), claim.status().name()) == 1);
     }
 
     /** Store the user's edit of the claim, releasing its editor lock and recording them as its last editor. */
@@ -432,9 +432,9 @@ public class ClaimRepository {
     private void kept(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                 + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, deferred_until, proofs, "
-                + "split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
+                + "split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived, proof_photos) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
                 + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_from, c.terms_days, "
-                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today, c.waived FROM claim c JOIN sheet s ON s.id = "
+                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today, c.waived, c.proof_photos FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 

@@ -41,13 +41,13 @@ public class SaveSplit {
         var dueBy = holidays.dueBy(loaded.sheetId(), loaded.date(), terms);
         Claim inserted = repository.insert(terms, new Claim(0, loaded.sheetId(), loaded.personId(), input.amount(),
                 loaded.date(), loaded.note(), ClaimStatus.DRAFT, null, null, null, false, null, null, dueBy, null, 0,
-                loaded.number(), periods.softClosedOn(loaded.sheetId(), dueBy) != null, null, null, loaded.tags(), false));
+                loaded.number(), periods.softClosedOn(loaded.sheetId(), dueBy) != null, null, null, loaded.tags(), false, 0));
         String number = repository.nextNumber(loaded.sheetId(), dueBy);
         repository.changeStatus(inserted, ClaimStatus.OPEN, number, null, input.user());
         log.record(inserted, input.user());
         Claim original = new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), rest, loaded.date(),
                 loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(), loaded.openedBy(), false, null,
-                loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived());
+                loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos());
         Claim added = repository.find(loaded.sheetId(), inserted.id());
         split.set(new Split(original, added));
         saved.set(ClaimResponse.from(added, List.of(), today));

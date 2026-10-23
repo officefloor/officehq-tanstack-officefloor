@@ -17,12 +17,20 @@ import java.time.LocalDate;
  *  late entry: added while its period was soft-closed (fixed when it was added); and the last sheet-today a reminder was
  *  written for it (null: never reminded); and its external reference (null: none), unique on the sheet without regard to case;
  *  and its tags (null: none): trimmed, lower-cased, without repeats, sorted and joined by commas; and whether a steward waived its late charge
- *  (it then bears none, overdue or not). */
+ *  (it then bears none, overdue or not); and how many of its proofs are photos (the rest are receipts). */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
         BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
         String splitFrom, boolean lateEntry, LocalDate reminded, String ref,
-        String tags, boolean waived) {
+        String tags, boolean waived, int photos) {
+
+    /** The proof kinds a proof can be: a receipt (when none is chosen) or a photo. */
+    public static final java.util.List<String> PROOF_KINDS = java.util.List.of("receipt", "photo");
+
+    /** How many of its proofs are of the kind: photos, or receipts (the rest). */
+    public int proofsOf(String kind) {
+        return "photo".equals(kind) ? photos : "receipt".equals(kind) ? proofs - photos : 0;
+    }
 
     /** Whether the claim is deferred on the sheet's today: it is OPEN and deferred until a date after today (null:
      *  no today, nothing is deferred). Deferred, it counts in no total, is not overdue, cannot be settled and is

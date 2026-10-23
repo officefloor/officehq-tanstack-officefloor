@@ -34,7 +34,7 @@ public class SheetCloner {
 
     public void copy(String from, String to, String user) {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, "
-                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla "
+                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds "
                 + "FROM sheet WHERE id = ?", to, user, from);
         copyRows("rate", "grade, pct, from_date, to_date, version, after_claim", null, from, to);
         copyRows("rate_log", "grade, pct, from_date, to_date, made_on, version, after_claim", "id", from, to);
@@ -175,13 +175,13 @@ public class SheetCloner {
             }
             long copy = insert("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, "
                     + "settled_due, opened_by, corrects, due_from, terms_days, deferred_until, proofs, split_from, "
-                    + "late_entry, reminded_on, ref, tags, edited_by, due_by, escalated, review_on, waived) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, person, c.get("amount"),
+                    + "late_entry, reminded_on, ref, tags, edited_by, due_by, escalated, review_on, waived, proof_photos) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, person, c.get("amount"),
                     c.get("claim_date"), c.get("note"), c.get("status"), numberOf.get(idOf(c)), c.get("settled_due"),
                     c.get("opened_by"), renumbered(numbers, c.get("corrects")), c.get("due_from"), c.get("terms_days"),
                     c.get("deferred_until"), c.get("proofs"), renumbered(numbers, c.get("split_from")),
                     c.get("late_entry"), c.get("reminded_on"), c.get("ref"), c.get("tags"), c.get("edited_by"),
-                    c.get("due_by"), c.get("escalated"), c.get("review_on"), c.get("waived"));
+                    c.get("due_by"), c.get("escalated"), c.get("review_on"), c.get("waived"), c.get("proof_photos"));
             ids.put(idOf(c), copy);
         }
         for (var e : ids.entrySet()) {
@@ -217,20 +217,20 @@ public class SheetCloner {
                             numberOf.get(((Number) h.get("claim_id")).longValue()));
             jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                     + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, "
-                    + "deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, claim,
+                    + "deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived, proof_photos) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, claim,
                     person, h.get("amount"), h.get("claim_date"), h.get("note"), h.get("status"), number,
                     h.get("settled_due"), h.get("opened_by"), renumbered(numbers, h.get("corrects")), h.get("due_from"),
                     h.get("terms_days"), h.get("deferred_until"), h.get("proofs"), renumbered(numbers, h.get("split_from")),
                     h.get("late_entry"), h.get("reminded_on"), h.get("ref"), h.get("tags"), h.get("due_by"),
-                    h.get("made_on"), h.get("waived"));
+                    h.get("made_on"), h.get("waived"), h.get("proof_photos"));
         }
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                 + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, deferred_until, "
-                + "proofs, split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived) SELECT c.sheet_id, c.id, "
+                + "proofs, split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived, proof_photos) SELECT c.sheet_id, c.id, "
                 + "c.person_id, c.amount, c.claim_date, c.note, c.status, c.claim_number, c.settled_due, c.opened_by, "
                 + "c.stated, c.stated_due, c.corrects, c.due_from, c.terms_days, c.deferred_until, c.proofs, c.split_from, "
-                + "c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today, c.waived FROM claim c JOIN sheet s ON s.id = "
+                + "c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today, c.waived, c.proof_photos FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? ORDER BY c.listed", to);
     }
 

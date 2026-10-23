@@ -14,7 +14,7 @@ public class SaveClaim {
                 loaded.stated(), loaded.statedDue(), input.corrects(), loaded.dueBy(), loaded.deferredUntil(),
                 loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), input.ref(),
                 input.tags() == null ? loaded.tags() : input.tags().isEmpty() ? null : input.tags(),
-                loaded.waived());
+                loaded.waived(), loaded.photos());
         repository.update(claim, input.user());
         saved.set(ClaimResponse.from(claim));
     }

@@ -69,7 +69,7 @@ public class SettingRepository {
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
-                history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId));
+                history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -242,6 +242,16 @@ public class SettingRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's proof kinds, comma separated: null when blank (none). While set, a claim above the proof threshold
+     *  needs at least one proof of each listed kind before it can be settled or approved. */
+    public String proofKinds(String sheetId) {
+        return jdbc.query("SELECT proof_kinds FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
+    }
+
+    public void setProofKinds(String sheetId, String kinds) {
+        jdbc.update("UPDATE sheet SET proof_kinds = ? WHERE id = ?", kinds, sheetId);
     }
 
     /** The sheet's alert threshold: null when blank (off). */

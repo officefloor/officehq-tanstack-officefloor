@@ -76,6 +76,9 @@ public class AuditSettingChanged {
         if (input.setsReviewSla()) {
             audit.record(head + "review-sla value=" + (input.reviewSla() != null ? input.reviewSla() : ""));
         }
+        if (input.setsProofKinds()) {
+            audit.record(head + "proof-kinds value=" + (input.proofKinds() != null ? input.proofKinds() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

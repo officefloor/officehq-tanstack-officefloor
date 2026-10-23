@@ -37,14 +37,19 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  <label> <qty> x <unit> (only a DRAFT takes a line; a claim with lines has their total as its amount — the server
  *  refuses an edit typing another), and its review day (yyyy-mm-dd): the sheet's today when it went to REVIEW (null
  *  when it never did), and whether a steward waived its late charge (only an OPEN or PENDING claim, once: it then
- *  bears no late charge, overdue or not). */
+ *  bears no late charge, overdue or not), and how many of its proofs are of each kind (receipt, photo: a proof added
+ *  with no kind chosen is a receipt; while the sheet lists proof kinds, one above the proof threshold needs a proof of
+ *  each listed kind before it can be settled or approved — the server refuses it). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
   comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null;
-  waived: boolean };
+  waived: boolean; proofKinds?: Record<string, number> };
+
+/** The kinds a proof can be, in the order shown: a proof added with none chosen is a receipt. */
+export const PROOF_KINDS = ['receipt', 'photo'] as const;
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */

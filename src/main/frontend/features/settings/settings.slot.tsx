@@ -24,7 +24,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
-  rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string };
+  rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -78,6 +78,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentAlertThreshold = settings.data?.alertThreshold ?? '';
   const currentEscalateAfter = settings.data?.escalateAfter ?? '';
   const currentReviewSla = settings.data?.reviewSla ?? '';
+  const currentProofKinds = settings.data?.proofKinds ?? '';
   const currentRounding = settings.data?.rounding ?? '';
   const currentParent = settings.data?.parent ?? '';
   const currentFiscalStartMonth = settings.data?.fiscalStartMonth ?? '1';
@@ -99,6 +100,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedAlertThreshold, setTypedAlertThreshold] = useState<string | null>(null);
   const [typedEscalateAfter, setTypedEscalateAfter] = useState<string | null>(null);
   const [typedReviewSla, setTypedReviewSla] = useState<string | null>(null);
+  const [typedProofKinds, setTypedProofKinds] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
   const [typedFiscalStartMonth, setTypedFiscalStartMonth] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
@@ -137,6 +139,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedAlertThreshold(null);
       setTypedEscalateAfter(null);
       setTypedReviewSla(null);
+      setTypedProofKinds(null);
       setTypedRounding(null);
       setTypedParent(null);
       setTypedFiscalStartMonth(null);
@@ -284,6 +287,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.reviewSla = reviewSla;
+    }
+    if (typedProofKinds !== null) {
+      const proofKinds = typedProofKinds.trim();
+      if (proofKinds !== '' && !proofKinds.split(',').every((k) => k.trim() === 'receipt' || k.trim() === 'photo')) {
+        setError('The proof kinds must be a comma separated list of receipt and photo, or blank for none.');
+        return;
+      }
+      changes.proofKinds = proofKinds;
     }
     if (typedRounding !== null) {
       const rounding = typedRounding.trim();
@@ -441,6 +452,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Alert threshold <strong data-testid="setting-alert-threshold-current">{currentAlertThreshold}</strong>{' '}
         Escalate after <strong data-testid="setting-escalate-after-current">{currentEscalateAfter}</strong>{' '}
         Review SLA <strong data-testid="setting-review-sla-current">{currentReviewSla}</strong>{' '}
+        Proof kinds <strong data-testid="setting-proof-kinds-current">{currentProofKinds}</strong>{' '}
         Rounding <strong data-testid="setting-rounding-current">{currentRounding}</strong>{' '}
         Parent <strong data-testid="setting-parent-current">{currentParent}</strong>{' '}
         Fiscal year start month <strong data-testid="setting-fiscal-start-month-current">{currentFiscalStartMonth}</strong>
@@ -683,6 +695,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onFocus={() => setTypedReviewSla((v) => v ?? currentReviewSla)}
           />{' '}
           days
+        </label>{' '}
+        <label>
+          Proof kinds{' '}
+          <input
+            data-testid="setting-proof-kinds"
+            placeholder="none (receipt,photo)"
+            value={typedProofKinds ?? currentProofKinds}
+            onInput={typed(setTypedProofKinds)}
+            onChange={typed(setTypedProofKinds)}
+            onFocus={() => setTypedProofKinds((v) => v ?? currentProofKinds)}
+          />
         </label>{' '}
         <label>
           Rounding{' '}

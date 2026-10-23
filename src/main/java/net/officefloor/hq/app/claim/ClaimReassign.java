@@ -45,7 +45,7 @@ final class ClaimReassign {
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), to.id(), loaded.amount(),
                 loaded.date(), loaded.note(), loaded.status(), number, loaded.settledDue(),
                 loaded.openedBy(), false, null, loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
-                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived()));
+                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos()));
     }
 
     /** The CLAIM_REASSIGNED line: the claim like every claim line (with its new person), then the person it moved

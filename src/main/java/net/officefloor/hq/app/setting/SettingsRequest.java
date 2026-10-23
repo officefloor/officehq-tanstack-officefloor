@@ -11,5 +11,5 @@ public record SettingsRequest(String user, String clerkLimit, String floor, Stri
         String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String cap,
         Map<String, String> from, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold, String pot, String parent,
-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
+        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
 }

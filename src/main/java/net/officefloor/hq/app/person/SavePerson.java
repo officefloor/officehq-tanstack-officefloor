@@ -7,7 +7,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Apply the edit to the loaded person and store it, refused when the person has been saved since
  *  the version the edit was made from. The grade is recorded from the edit's from-date (the sheet's today
- *  when none was given), keeping the grades already recorded from other dates. The person's own terms are recorded when the edit gives
+ *  when none was given), keeping the grades already recorded from other dates; an edit leaving the grade as it is
+ *  in force on that date records none (so it does not shadow a grade given later from an earlier date). The person's own terms are recorded when the edit gives
  *  them (cleared when given blank): from the terms' from-date when one is given, replacing those recorded from that same
  *  date and keeping the rest; else from the beginning of time, and so are their contact and tags. */
 public class SavePerson {
@@ -23,7 +24,9 @@ public class SavePerson {
         }
         LocalDate gradeFrom = request.gradeFrom() != null ? LocalDate.parse(request.gradeFrom())
                 : sheets.today(loaded.sheetId());
-        repository.grade(person, request.grade(), gradeFrom);
+        if (!request.grade().equals(loaded.grades().on(gradeFrom))) {
+            repository.grade(person, request.grade(), gradeFrom);
+        }
         if (request.terms() != null) {
             Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
             if (request.termsFrom() != null) {

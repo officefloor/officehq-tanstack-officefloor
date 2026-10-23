@@ -13,7 +13,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String policyDate, String periodNumberingFrom, Map<String, String> gradeTerms, String cap,
         Map<String, List<Dated>> dated, String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold, String pot, String parent,
-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
+        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
 
     /** A dated setting's value ('' when blank) and the date (yyyy-mm-dd) it is in force from. */
     public record Dated(String from, String value) {
@@ -32,7 +32,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 String.valueOf(s.fiscalStartMonth()), SettingsResponse.text(s.alertThreshold()),
                 s.rounding() != null ? s.rounding() : "", SettingsResponse.text(s.reviewThreshold()),
                 s.escalateAfter() != null ? String.valueOf(s.escalateAfter()) : "",
-                s.reviewSla() != null ? String.valueOf(s.reviewSla()) : "");
+                s.reviewSla() != null ? String.valueOf(s.reviewSla()) : "", s.proofKinds() != null ? s.proofKinds() : "");
     }
 
     private static Map<String, List<Dated>> dated(Settings s) {

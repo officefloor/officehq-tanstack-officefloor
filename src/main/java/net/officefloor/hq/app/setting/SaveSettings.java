@@ -78,6 +78,9 @@ public class SaveSettings {
         if (input.setsReviewSla()) {
             repository.setReviewSla(id, input.reviewSla());
         }
+        if (input.setsProofKinds()) {
+            repository.setProofKinds(id, input.proofKinds());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

@@ -10,7 +10,7 @@ import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settin
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { claimsKey, dueBy, live, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
+import { claimsKey, dueBy, PROOF_KINDS, live, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
@@ -230,6 +230,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const selected = useSelectedClaims(sheetId).has(claim.id);
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
   const [moveTo, setMoveTo] = useState('');
+  const [proofKind, setProofKind] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const [redateTo, setRedateTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
@@ -268,9 +269,11 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   });
 
   const proof = useMutation({
-    mutationFn: () =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`, { user }),
+    mutationFn: (kind: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`,
+        kind === '' ? { user } : { user, kind }),
     onSuccess: async () => {
+      setProofKind('');
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
     onError: (e) =>
@@ -416,6 +419,11 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
       until <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
       Proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+      {PROOF_KINDS.map((kind) => (
+        <span key={kind}>
+          {kind} <span data-testid={`claim-proofs-${kind}`}>{claim.proofKinds?.[kind] ?? 0}</span>{' '}
+        </span>
+      ))}
       Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
       Reminded <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
       Waived <span data-testid="claim-waived">{claim.waived ? 'yes' : 'no'}</span>{' '}
@@ -650,13 +658,26 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       >
         Move
       </button>{' '}
+      <select
+        data-testid="claim-proof-kind"
+        value={proofKind}
+        onChange={(e) => {
+          clearError();
+          setProofKind(e.target.value);
+        }}
+      >
+        <option value="">Proof kind (receipt)</option>
+        {PROOF_KINDS.map((kind) => (
+          <option key={kind} value={kind}>{kind}</option>
+        ))}
+      </select>{' '}
       <button
         type="button"
         data-testid="claim-proof"
         disabled={proof.isPending}
         onClick={() => {
           clearError();
-          proof.mutate();
+          proof.mutate(proofKind);
         }}
       >
         Add proof

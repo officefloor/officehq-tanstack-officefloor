@@ -33,12 +33,14 @@ import { useSheetToday } from '../sheet/sheet';
  *  review-threshold): a claim whose due is above the one in force on its date goes to REVIEW when opened. `escalateAfter` is the escalation gap in days (not dated; '' when off): reminding a
  *  claim whose previous reminder was at least that many days before the sheet's today escalates it, once ever.
  *  `reviewSla` is the review SLA in days (not dated; '' when none): a REVIEW claim whose review day plus it is before
- *  the sheet's today is review-late (see reviewLate). */
+ *  the sheet's today is review-late (see reviewLate). `proofKinds` is the proof kinds, comma separated (not dated; '' when
+ *  none): while set, a claim above the proof threshold needs a proof of each listed kind before it can be settled or
+ *  approved (the server refuses it). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
-  rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string };
+  rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
