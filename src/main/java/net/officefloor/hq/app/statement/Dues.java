@@ -67,6 +67,12 @@ public final class Dues {
                 && !retiredOut(claim, retiredFrom, today);
     }
 
+    /** Whether a claim counts toward claimed and the claimed-total: as it counts (see counts), except a hold (the
+     *  claim's own or its person's) does not take it out — only its due leaves the totals while held. */
+    public static boolean countsClaimed(Claim claim, LocalDate retiredFrom, LocalDate today) {
+        return claim.status().counts() && !claim.deferredOn(today) && !retiredOut(claim, retiredFrom, today);
+    }
+
     /** Whether a claim leaves the live totals because its person is retired: the sheet's today is on or after their
      *  retirement date (null: not retired) and it is OPEN or PENDING and not bound by a statement. */
     private static boolean retiredOut(Claim claim, LocalDate retiredFrom, LocalDate today) {

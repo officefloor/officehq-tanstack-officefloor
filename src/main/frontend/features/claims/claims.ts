@@ -80,6 +80,13 @@ export function live(claims: Claim[], people: Person[], today: string): Claim[] 
   return claims.filter((c) => counts(c) && !leftOut(c, byId, today));
 }
 
+/** The claims that count toward claimed among these on the sheet's today (yyyy-mm-dd): as live, except a hold (the
+ *  claim's own or its person's) does not take a claim out of claimed — only its due leaves the totals while held. */
+export function claimedLive(claims: Claim[], people: Person[], today: string): Claim[] {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return claims.filter((c) => counts(c) && !(!c.stated && unsettled(c) && retiredOn(byId.get(c.personId), today)));
+}
+
 /** Whether a person is active on the sheet's today (yyyy-mm-dd; '' while loading: not active): they have an OPEN or
  *  PENDING claim that counts in the live totals (see live) dated within the 30 days up to and including it. */
 export function active(person: Person, claims: Claim[], today: string): boolean {

@@ -10,7 +10,7 @@ import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settin
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { claimsKey, dueBy, PROOF_KINDS, live, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
+import { claimsKey, dueBy, PROOF_KINDS, claimedLive, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
 import { setLockRefused, useLockRefused } from './lock';
@@ -820,7 +820,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
 
   return (
     <>
-      {showClaimed && <td data-testid="person-claimed">{sumAmounts(live(claims, [person], today))}</td>}
+      {showClaimed && <td data-testid="person-claimed">{sumAmounts(claimedLive(claims, [person], today))}</td>}
       <td>
         {/* Keyed by the claim being edited (and each add), so the form fills with its values or starts blank. */}
         <ClaimForm
