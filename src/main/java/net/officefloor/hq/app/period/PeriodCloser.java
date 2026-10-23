@@ -66,6 +66,6 @@ public final class PeriodCloser {
         if (soft ? !periods.softClose(period, total, personTotals) : !periods.close(period, total, personTotals)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
-        return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft, total, soft);
+        return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft, total, soft, period.cap());
     }
 }

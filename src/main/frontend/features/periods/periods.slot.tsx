@@ -16,7 +16,7 @@ import type { Period } from './periods';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** One period with its due-total (see periodDueTotal), whether it is closed (yes, soft or no), the fiscal year its
- *  from-date falls in (see fiscalYearOf), and the buttons that close it, soft-close it and (a steward only) reopen it. */
+ *  from-date falls in (see fiscalYearOf), its cap on each person's open claims (blank: none), and the buttons that close it, soft-close it and (a steward only) reopen it. */
 function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: string; user: string; period: Period;
     dueTotal: string; fiscalYear: string }) {
   const queryClient = useQueryClient();
@@ -62,6 +62,9 @@ function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: s
       </td>
       <td>
         Fiscal year <span data-testid="period-fy">{fiscalYear}</span>
+      </td>
+      <td>
+        Cap <span data-testid="period-cap">{period.cap ?? ''}</span>
       </td>
       <td>
         <button
@@ -211,17 +214,19 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const add = useMutation({
-    mutationFn: (body: { name: string; from: string; to: string }) =>
+    mutationFn: (body: { name: string; from: string; to: string; cap: string }) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, { user, ...body }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
     },
     onError: (e) =>
       setError(e instanceof HttpError && e.body ? e.body : 'Could not add this period.'),
@@ -243,8 +248,12 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
       setError('The from-date must be on or before the to-date.');
       return;
     }
+    if (cap.trim() !== '' && (!/^\d+$/.test(cap.trim()) || Number(cap.trim()) < 1)) {
+      setError('The cap must be a whole number of at least 1, or blank for none.');
+      return;
+    }
     if (!once.start()) return;
-    add.mutate({ name: name.trim(), from: from.trim(), to: to.trim() });
+    add.mutate({ name: name.trim(), from: from.trim(), to: to.trim(), cap: cap.trim() });
   };
 
   const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -264,6 +273,9 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         </label>{' '}
         <label>
           To <input data-testid="period-form-to" placeholder="yyyy-mm-dd" value={to} onChange={change(setTo)} />
+        </label>{' '}
+        <label>
+          Cap <input data-testid="period-form-cap" placeholder="open claims per person" value={cap} onChange={change(setCap)} />
         </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={add.isPending}>
           Add period

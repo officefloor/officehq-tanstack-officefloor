@@ -24,6 +24,6 @@ public class ReopenPeriod {
         if (!(period.closed() || period.soft()) || !periods.reopen(period)) {
             throw new InvalidPeriodException("The period " + period.name() + " is not closed.");
         }
-        reopened.set(new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, false));
+        reopened.set(new Period(period.sheetId(), period.name(), period.from(), period.to(), false, null, false, period.cap()));
     }
 }

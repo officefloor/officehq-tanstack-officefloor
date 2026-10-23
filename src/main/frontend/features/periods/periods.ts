@@ -8,9 +8,10 @@ import type { DatedValue } from '../settings/settings';
 /** A period on the sheet: a name unique on the sheet and an inclusive from and to date (yyyy-mm-dd). No two
  *  periods overlap. A closed period keeps the due-total fixed when it was closed (null while open), and each
  *  person's due-total fixed then, by person id (empty while open). A soft-closed period keeps them fixed the same
- *  way, while its claims can still be added and changed. */
+ *  way, while its claims can still be added and changed. A period may cap the OPEN or PENDING claims each person has in
+ *  it (null: no cap); opening one past the cap is refused. */
 export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>; soft: boolean };
+  personTotals: Record<string, string>; soft: boolean; cap: number | null };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
 

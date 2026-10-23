@@ -16,7 +16,8 @@ public class PeriodRepository {
 
     private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), rs.getBoolean("soft"));
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), rs.getBoolean("soft"),
+            (Integer) rs.getObject("open_cap", Integer.class));
 
     private final JdbcTemplate jdbc;
 
@@ -34,9 +35,19 @@ public class PeriodRepository {
     }
 
     public Period insert(String sheetId, String name, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?, "
-                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, name, Date.valueOf(from), Date.valueOf(to), sheetId);
-        return new Period(sheetId, name, from, to, false, null, false);
+        return insert(sheetId, name, from, to, null);
+    }
+
+    /** Store a new open period with the cap on its people's OPEN or PENDING claims (null: none). */
+    public Period insert(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, open_cap, added_on) VALUES (?, ?, ?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, name, Date.valueOf(from), Date.valueOf(to), cap, sheetId);
+        return new Period(sheetId, name, from, to, false, null, false, cap);
+    }
+
+    /** The period on the sheet whose dates contain the date, or null when none does. */
+    public Period on(String sheetId, LocalDate date) {
+        return list(sheetId).stream().filter(p -> p.contains(date)).findFirst().orElse(null);
     }
 
     /** The period on the sheet with this name (without regard to case or surrounding spaces), or null. */
@@ -145,7 +156,7 @@ public class PeriodRepository {
                             + "WHERE sheet_id = ? AND period_name = ? AND (made_on IS NULL OR made_on <= ?) "
                             + "ORDER BY id DESC LIMIT 1", sheetId, p.name(), end);
                     if (last.isEmpty()) {
-                        return new PeriodThen(new Period(sheetId, p.name(), p.from(), p.to(), false, null, false), Map.of());
+                        return new PeriodThen(new Period(sheetId, p.name(), p.from(), p.to(), false, null, false, p.cap()), Map.of());
                     }
                     var row = last.get(0);
                     Map<Long, BigDecimal> totals = new HashMap<>();
@@ -153,7 +164,7 @@ public class PeriodRepository {
                         totals.put(rs.getLong(1), rs.getBigDecimal(2));
                     }, row.get("id"));
                     return new PeriodThen(new Period(sheetId, p.name(), p.from(), p.to(), Boolean.TRUE.equals(row.get("closed")),
-                            (BigDecimal) row.get("closed_total"), Boolean.TRUE.equals(row.get("soft"))), totals);
+                            (BigDecimal) row.get("closed_total"), Boolean.TRUE.equals(row.get("soft")), p.cap()), totals);
                 }).toList();
     }
 }
