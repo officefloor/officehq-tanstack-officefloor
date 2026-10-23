@@ -40,6 +40,11 @@ public class SettingRepository {
         return of(sheetId, history(sheetId), today(sheetId));
     }
 
+    /** The sheet's settings as they are now, in force on the day (a preview of the sheet's today). */
+    public Settings on(String sheetId, LocalDate day) {
+        return of(sheetId, history(sheetId), day);
+    }
+
     /** The sheet's settings as they stood at the end of the day, in force on it: its dated settings then (see
      *  historyAsOf); the ones that are not dated as they are now. */
     public Settings asOf(String sheetId, LocalDate end) {

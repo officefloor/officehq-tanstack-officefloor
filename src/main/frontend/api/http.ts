@@ -20,8 +20,21 @@ export function setRequestAsOf(date: string): void {
   asOf = date;
 }
 
+/** The date this screen previews the sheet's today as ('' when none): every read asks for the sheet's current records
+ *  figured on it (?preview=); changes are sent unmarked, made on the sheet's real today. Kept in step with the URL's
+ *  preview by features/sheet/preview; read from the URL at start-up so the first reads already carry it. */
+let preview = typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('preview') ?? '';
+
+export function setRequestPreview(date: string): void {
+  preview = date;
+}
+
+function withParam(path: string, key: string, value: string): string {
+  return value === '' ? path : `${path}${path.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(value)}`;
+}
+
 function withAsOf(path: string): string {
-  return asOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
+  return withParam(withParam(path, 'asOf', asOf), 'preview', preview);
 }
 
 function changeHeaders(): Record<string, string> {

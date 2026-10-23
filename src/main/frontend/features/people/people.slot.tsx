@@ -9,7 +9,7 @@ import { GRADES, nameWithGrade, peopleKey, savedTermsKey, useCloseEditor, useEdi
   useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
-import { useSheetToday } from '../sheet/sheet';
+import { useSheetToday, useChangeToday } from '../sheet/sheet';
 import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
 import { useColumnShown } from './columns';
 import { useCrews } from '../crews/crews';
@@ -46,7 +46,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
   const isRetired = useIsGradeRetired(sheetId);
   const closeEditor = useCloseEditor();
   const [version, setVersion] = useState(editing?.version);
-  const today = useSheetToday(sheetId);
+  const today = useChangeToday(sheetId);
   const [gradeFromEntered, setGradeFrom] = useState<string>();
   const [termsFrom, setTermsFrom] = useState('');
   const gradeFrom = gradeFromEntered ?? today;

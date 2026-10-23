@@ -28,11 +28,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class RespondWithPools {
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf,
+            @RequestParam(name = "preview", required = false) String preview,
             @RequestParam(name = "period", required = false) String periodName, PoolRepository repository,
             CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings,
             PeriodRepository periods, ObjectResponse<List<PoolResponse>> response) {
         String id = sheetId.trim();
-        List<PoolResponse> all = ShownPools.list(id, AsOf.parse(asOf), repository, crews, people, sheets, settings);
+        List<PoolResponse> all = ShownPools.list(id, AsOf.parse(asOf), AsOf.parse(preview), repository, crews, people, sheets, settings);
         Period period = periodName != null ? periods.find(id, periodName) : null;
         if (period != null && (period.closed() || period.soft())) {
             Map<String, String> fixed = repository.fixedCuts(id, period.name());

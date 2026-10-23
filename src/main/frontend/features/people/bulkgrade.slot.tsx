@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { claimsKey } from '../claims/claims';
-import { useSheetToday } from '../sheet/sheet';
+import { useChangeToday } from '../sheet/sheet';
 import { GRADES, peopleKey, usePeople, useShowRetired } from './people';
 import { clearSelectedPeople, useSelectedPeople } from './selection';
 
@@ -19,7 +19,7 @@ function BulkGrade({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired] = useShowRetired();
   const chosen = useSelectedPeople(sheetId);
   const ids = people.filter((p) => (showRetired || p.retiredFrom === null) && chosen.has(p.id)).map((p) => p.id);
-  const today = useSheetToday(sheetId);
+  const today = useChangeToday(sheetId);
   const [grade, setGrade] = useState('A');
   const [fromEntered, setFrom] = useState<string>();
   const from = fromEntered ?? today;

@@ -31,6 +31,16 @@ public class FlagRepository {
 
     /** The flags in force on the sheet's today, by person id. */
     public List<FlagResponse> allInForce(String sheetId) {
+        return allInForce(sheetId, null);
+    }
+
+    /** The flags in force on the date (null: the sheet's today). */
+    public List<FlagResponse> allInForce(String sheetId, LocalDate on) {
+        if (on != null) {
+            return jdbc.query("SELECT f.* FROM person_flag f WHERE f.sheet_id = ? AND ? <= f.until_date ORDER BY f.person_id",
+                    (rs, i) -> new FlagResponse(rs.getLong("person_id"), rs.getString("reason"),
+                            rs.getObject("until_date", LocalDate.class).toString()), sheetId, on);
+        }
         return jdbc.query("SELECT f.* FROM person_flag f JOIN sheet s ON s.id = f.sheet_id "
                 + "WHERE f.sheet_id = ? AND s.today <= f.until_date ORDER BY f.person_id",
                 (rs, i) -> new FlagResponse(rs.getLong("person_id"), rs.getString("reason"),

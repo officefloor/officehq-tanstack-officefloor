@@ -6,13 +6,15 @@ import type { Person } from '../people/people';
 import { overdueDues, type Rate } from '../rates/rates';
 import { useActingRole } from '../roles/roles.slot';
 import { floorOf, lateOf, type Settings } from '../settings/settings';
-import { useAsOf, type Sheet } from '../sheet/sheet';
+import { useAsOf, usePreview, type Sheet } from '../sheet/sheet';
 
-/** One read of a sheet as the store holds it now. Keyed under the sheet, so a load of that sheet re-reads it. */
-function useNow<T>(sheetId: string, part: string) {
+/** One read of a sheet as the store holds it now (given a preview date, figured on it). Keyed under the sheet, so a
+ *  load of that sheet re-reads it. */
+function useNow<T>(sheetId: string, part: string, preview = '') {
   return useQuery({
-    queryKey: ['sheet', sheetId, 'now', part, ''],
-    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`),
+    queryKey: ['sheet', sheetId, 'now', part, '', preview],
+    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`
+      + (preview === '' ? '' : `?preview=${encodeURIComponent(preview)}`)),
   });
 }
 
@@ -23,27 +25,32 @@ const NONE: Counts = { pending: 0, review: 0, overdue: 0 };
 
 /** Adds the counts of sheets[at] to `sum`, then goes on to the next sheet; past the last, shows the counts added
  *  up. One component per sheet keeps each sheet's reads in hooks of its own. */
-function Accumulate({ sheets, at, sum, steward }: { sheets: string[]; at: number; sum: Counts; steward: boolean }) {
+function Accumulate({ sheets, at, sum, steward, preview }: {
+  sheets: string[]; at: number; sum: Counts; steward: boolean; preview: string;
+}) {
   if (at >= sheets.length) return <Shown counts={sum} steward={steward} />;
-  return <SheetCounts key={sheets[at]} sheets={sheets} at={at} sum={sum} steward={steward} />;
+  return <SheetCounts key={sheets[at]} sheets={sheets} at={at} sum={sum} steward={steward} preview={preview} />;
 }
 
 /** A sheet's counts as it shows them now: its PENDING claims, its REVIEW claims, and its overdue claims that count
- *  (as its overdue rollup counts them, with its own today and settings). */
-function SheetCounts({ sheets, at, sum, steward }: { sheets: string[]; at: number; sum: Counts; steward: boolean }) {
+ *  (as its overdue rollup counts them, with its own today and settings; the preview date instead, given one). */
+function SheetCounts({ sheets, at, sum, steward, preview }: {
+  sheets: string[]; at: number; sum: Counts; steward: boolean; preview: string;
+}) {
   const sheetId = sheets[at];
   const people = useNow<Person[]>(sheetId, 'people').data ?? [];
-  const claims = useNow<Claim[]>(sheetId, 'claims').data ?? [];
+  const claims = useNow<Claim[]>(sheetId, 'claims', preview).data ?? [];
   const rates = useNow<Rate[]>(sheetId, 'rates').data ?? [];
   const settings = useNow<Settings>(sheetId, 'settings').data;
-  const today = useNow<Sheet>(sheetId, '').data?.today ?? '';
+  const sheetToday = useNow<Sheet>(sheetId, '').data?.today ?? '';
+  const today = preview !== '' && sheetToday !== '' ? preview : sheetToday;
   const late = lateOf(settings, today, claims, people);
   const next: Counts = {
     pending: sum.pending + claims.filter((c) => c.status === 'PENDING').length,
     review: sum.review + claims.filter((c) => c.status === 'REVIEW').length,
     overdue: sum.overdue + overdueDues(claims, people, rates, late, floorOf(settings)).length,
   };
-  return <Accumulate sheets={sheets} at={at + 1} sum={next} steward={steward} />;
+  return <Accumulate sheets={sheets} at={at + 1} sum={next} steward={steward} preview={preview} />;
 }
 
 function Shown({ counts, steward }: { counts: Counts; steward: boolean }) {
@@ -77,9 +84,10 @@ function Shown({ counts, steward }: { counts: Counts; steward: boolean }) {
  *  cells empty, and so does everyone while the screen shows the sheet as of a date. */
 function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
   const [asOf] = useAsOf();
+  const [preview] = usePreview();
   const steward = useActingRole(sheetId, user) === 'steward' && !asOf;
   const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
-  return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE} steward={steward} />;
+  return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE} steward={steward} preview={preview} />;
 }
 
 export const contribution = SheetBody.fill({ order: 21, Component: Dashboard });

@@ -9,7 +9,7 @@ import type { Person } from '../people/people';
 import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settings';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useSheetToday } from '../sheet/sheet';
+import { useSheetToday, useChangeToday } from '../sheet/sheet';
 import { claimsKey, dueBy, PROOF_KINDS, claimedLive, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
 import type { Claim } from './claims';
 import { setSelected, useSelectedClaims } from './selection';
@@ -40,7 +40,7 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
   sheetId: string; user: string; person: Person; editing?: Claim; onAdded: () => void;
 }) {
   const queryClient = useQueryClient();
-  const today = useSheetToday(sheetId);
+  const today = useChangeToday(sheetId);
   const entryDate = useSettings(sheetId).data?.entryDate ?? '';
   const blankDate = editing ? today : entryDate || today;
   const [, setEditing] = useEditingClaim();

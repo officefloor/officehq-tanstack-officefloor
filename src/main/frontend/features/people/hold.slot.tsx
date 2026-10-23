@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
-import { useSheetToday } from '../sheet/sheet';
+import { useChangeToday } from '../sheet/sheet';
 import { poolsKey } from '../pools/pools';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
@@ -17,7 +17,7 @@ import { useColumnShown } from './columns';
 function PersonHold({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const showHold = useColumnShown('hold');
   const queryClient = useQueryClient();
-  const today = useSheetToday(sheetId);
+  const today = useChangeToday(sheetId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const { error, setError, begin } = usePersonError(sheetId, person.id);

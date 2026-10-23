@@ -61,7 +61,12 @@ public class PersonRepository {
     }
 
     public List<Person> list(String sheetId) {
-        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId));
+        return list(sheetId, null);
+    }
+
+    /** The people as they are now, their grade and terms those in force on the day (null: the sheet's today). */
+    public List<Person> list(String sheetId, LocalDate on) {
+        return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId), on);
     }
 
     /** The person's approver (who may approve or reject their PENDING claims as a steward may), or null when none. */
@@ -86,10 +91,15 @@ public class PersonRepository {
 
     /** The people with their dated grades, the grade in force on the sheet's today, their holds and their aliases. */
     private List<Person> graded(String sheetId, List<Person> people) {
+        return graded(sheetId, people, null);
+    }
+
+    /** As graded, the grade and terms in force on the day instead (null: the sheet's today). */
+    private List<Person> graded(String sheetId, List<Person> people, LocalDate on) {
         if (people.isEmpty()) {
             return people;
         }
-        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
+        LocalDate today = on != null ? on : jdbc.query("SELECT today FROM sheet WHERE id = ?",
                 rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
         Map<Long, List<Grades.Grade>> byPerson = jdbc.query(
                 "SELECT * FROM person_grade WHERE sheet_id = ? ORDER BY person_id, from_date NULLS FIRST", GRADE_ROW,

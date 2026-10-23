@@ -11,6 +11,12 @@ public final class AsOf {
     private AsOf() {
     }
 
+    /** The date a read is figured on: the as-of date when one is given, else the preview date (?preview=: the sheet's
+     *  current records figured as if its today were that date), else the sheet's today (null). */
+    public static LocalDate figuredOn(LocalDate end, String preview) {
+        return end != null ? end : parse(preview);
+    }
+
     /** The as-of date given (null: blank or not a date, the sheet as it is now). */
     public static LocalDate parse(String raw) {
         if (raw == null || raw.isBlank()) {

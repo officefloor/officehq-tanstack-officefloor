@@ -5,15 +5,16 @@ import { STATUSES, type Claim } from '../claims/claims';
 import { GRADES, gradeOn, type Person } from '../people/people';
 import { overdueDues, personDueTotal, sumDue, trimmedSum, type Rate } from '../rates/rates';
 import { floorOf, lateOf, type Settings } from '../settings/settings';
-import { useAsOf, type Sheet } from '../sheet/sheet';
+import { useAsOf, usePreview, type Sheet } from '../sheet/sheet';
 
 /** One read of a sheet as the store holds it now, or (asOf given, yyyy-mm-dd) as it stood at the end of that day,
- *  whatever date this screen shows its own sheet as of. Keyed under the sheet, so a load of that sheet re-reads it. */
-function useNow<T>(sheetId: string, part: string, asOf = '') {
+ *  whatever date this screen shows its own sheet as of; given a preview date (and no asOf), its current records
+ *  figured on that date. Keyed under the sheet, so a load of that sheet re-reads it. */
+function useNow<T>(sheetId: string, part: string, asOf = '', preview = '') {
+  const query = asOf !== '' ? `?asOf=${encodeURIComponent(asOf)}` : preview !== '' ? `?preview=${encodeURIComponent(preview)}` : '';
   return useQuery({
-    queryKey: ['sheet', sheetId, 'now', part, asOf],
-    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}`
-      + (asOf === '' ? '' : `?asOf=${encodeURIComponent(asOf)}`)),
+    queryKey: ['sheet', sheetId, 'now', part, asOf, preview],
+    queryFn: () => getJsonNow<T>(`/api/sheets/${encodeURIComponent(sheetId)}${part === '' ? '' : `/${part}`}${query}`),
   });
 }
 
@@ -30,23 +31,29 @@ const NONE: Figures = {
 
 /** Adds the figures of sheets[at] to `sum`, then goes on to the next sheet; past the last, shows the figures added
  *  up. One component per sheet keeps each sheet's reads in hooks of its own. */
-function Accumulate({ sheets, at, sum, asOf }: { sheets: string[]; at: number; sum: Figures; asOf: string }) {
+function Accumulate({ sheets, at, sum, asOf, preview }: {
+  sheets: string[]; at: number; sum: Figures; asOf: string; preview: string;
+}) {
   if (at >= sheets.length) return <Shown figures={sum} />;
-  return <SheetFigures key={sheets[at]} sheets={sheets} at={at} sum={sum} asOf={asOf} />;
+  return <SheetFigures key={sheets[at]} sheets={sheets} at={at} sum={sum} asOf={asOf} preview={preview} />;
 }
 
 /** A sheet's figures as it shows them now (or, asOf given, as it showed them at the end of that day, with that day
  *  as its today): its people (retired ones included), its due-total and its overdue-total (as its header shows
  *  them), per grade the due-totals of its people on that grade today (retired ones left out, as its summary shows
- *  them), and per status how many of its claims have it. */
-function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number; sum: Figures; asOf: string }) {
+ *  them), and per status how many of its claims have it. Given a preview date (and no asOf), its current records with
+ *  that date as its today. */
+function SheetFigures({ sheets, at, sum, asOf, preview }: {
+  sheets: string[]; at: number; sum: Figures; asOf: string; preview: string;
+}) {
   const sheetId = sheets[at];
   const people = useNow<Person[]>(sheetId, 'people', asOf).data ?? [];
-  const claims = useNow<Claim[]>(sheetId, 'claims', asOf).data ?? [];
+  const claims = useNow<Claim[]>(sheetId, 'claims', asOf, preview).data ?? [];
   const rates = useNow<Rate[]>(sheetId, 'rates', asOf).data ?? [];
   const settings = useNow<Settings>(sheetId, 'settings', asOf).data;
   const sheetToday = useNow<Sheet>(sheetId, '', asOf).data?.today ?? '';
-  const today = asOf !== '' && sheetToday !== '' ? asOf : sheetToday;
+  const shownOn = asOf !== '' ? asOf : preview;
+  const today = shownOn !== '' && sheetToday !== '' ? shownOn : sheetToday;
   const floor = floorOf(settings);
   const late = lateOf(settings, today, claims, people);
   const next: Figures = {
@@ -60,7 +67,7 @@ function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number;
     statuses: Object.fromEntries(STATUSES.map((s) => [s,
       sum.statuses[s] + claims.filter((c) => c.status === s).length])),
   };
-  return <Accumulate sheets={sheets} at={at + 1} sum={next} asOf={asOf} />;
+  return <Accumulate sheets={sheets} at={at + 1} sum={next} asOf={asOf} preview={preview} />;
 }
 
 /** A name as names are compared: without regard to case, ignoring surrounding spaces. */
@@ -103,15 +110,17 @@ function Shown({ figures }: { figures: Figures }) {
 
 /** Consolidated figures over the sheet and all its descendants (its children — the sheets naming it as their
  *  parent — theirs, and so on), as the store holds them now (while this screen shows the sheet as of a date: every
- *  sheet of the tree as it stood at the end of that day, with that date as its today): the people (those whose names or
+ *  sheet of the tree as it stood at the end of that day, with that date as its today; while it previews a date: every
+ *  sheet of the tree as the store holds it now, with that date as its today): the people (those whose names or
  *  aliases match, as names are compared, counted once), the due-total and overdue-total over every person of the tree
  *  (each as their sheet shows it), trimmed once over the whole tree (see trimmedSum), per grade its people's due-totals and per status its claims
  *  counted. A sheet with no children shows its own. */
 function Consolidated({ sheetId }: { sheetId: string; user: string }) {
   const [asOf] = useAsOf();
+  const [preview] = usePreview();
   const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
   return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE}
-    asOf={asOf ?? ''} />;
+    asOf={asOf ?? ''} preview={asOf ? '' : preview} />;
 }
 
 export const contribution = SheetBody.fill({ order: -1, Component: Consolidated });

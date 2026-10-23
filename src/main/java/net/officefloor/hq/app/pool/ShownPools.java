@@ -25,7 +25,14 @@ public final class ShownPools {
     /** The sheet's pools and crews as shown on the sheet's today (or as of the end of the day, when one is given). */
     public static List<PoolResponse> list(String id, LocalDate end, PoolRepository repository, CrewRepository crews,
             PersonRepository people, SheetRepository sheets, SettingRepository settings) {
-        LocalDate on = end != null ? end : sheets.today(id);
+        return list(id, end, null, repository, crews, people, sheets, settings);
+    }
+
+    /** As list, the sheet's current records shown on the preview date instead of its today (when one is given and no
+     *  as-of date is). */
+    public static List<PoolResponse> list(String id, LocalDate end, LocalDate preview, PoolRepository repository,
+            CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings) {
+        LocalDate on = end != null ? end : preview != null ? preview : sheets.today(id);
         List<Person> persons = end != null ? people.listAsOf(id, end) : people.list(id);
         Map<Long, LocalDate> retiredFrom = new HashMap<>();
         Map<Long, String> names = new HashMap<>();

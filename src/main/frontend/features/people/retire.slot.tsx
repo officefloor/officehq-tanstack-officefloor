@@ -5,7 +5,7 @@ import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { poolsKey } from '../pools/pools';
-import { useSheetToday } from '../sheet/sheet';
+import { useChangeToday } from '../sheet/sheet';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
 import type { Person } from './people';
@@ -17,7 +17,7 @@ import { useColumnShown } from './columns';
 function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const showRetired = useColumnShown('retired');
   const queryClient = useQueryClient();
-  const today = useSheetToday(sheetId);
+  const today = useChangeToday(sheetId);
   const [from, setFrom] = useState('');
   const { error, setError, begin } = usePersonError(sheetId, person.id);
   const once = useSubmitOnce();
