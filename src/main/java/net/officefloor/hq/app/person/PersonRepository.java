@@ -274,8 +274,9 @@ public class PersonRepository {
     }
 
     /** Merge the person (their claims, patrons, pools and watchers already dealt with) into another: their aliases
-     *  and then their name become the other's aliases, their figures in closed periods are added to the other's, and
-     *  they leave the sheet with their grades, holds, statements, retirement and contact. */
+     *  and then their name become the other's aliases, their figures in closed periods are added to the other's,
+     *  their statements are added to the other's count (the other's last statement stays theirs or, having none,
+     *  becomes theirs, with its history), and they leave the sheet with their grades, holds, retirement and contact. */
     public void merge(Person from, Person into) {
         String sheetId = from.sheetId();
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(), sheetId,
@@ -290,6 +291,7 @@ public class PersonRepository {
                 + "AND t.person_id = ?)", sheetId, from.id(), into.id());
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
                 sheetId, from.id());
+        joinStatements(from, into);
         for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement",
                 "person_retire_log", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.id());
@@ -298,20 +300,52 @@ public class PersonRepository {
         alias(into, from.name());
     }
 
+    /** Add the person's statements to another's count (on this sheet or another): the other's last statement stays
+     *  theirs or, when they have none, becomes the person's, whose statements (with their history) go to them. */
+    private void joinStatements(Person from, Person into) {
+        if (into.statementCount() == 0) {
+            jdbc.update("UPDATE person SET statement_count = statement_count + ?, stated_total = ?, statement_date = ? "
+                    + "WHERE sheet_id = ? AND id = ?", from.statementCount(), from.statedTotal(), from.statementDate(),
+                    into.sheetId(), into.id());
+            jdbc.update("UPDATE person_statement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                    into.sheetId(), into.id(), from.sheetId(), from.id());
+        } else {
+            jdbc.update("UPDATE person SET statement_count = statement_count + ? WHERE sheet_id = ? AND id = ?",
+                    from.statementCount(), into.sheetId(), into.id());
+        }
+    }
+
+    /** Transfer the person (their claims, patrons, pools and watchers already dealt with) into another on another
+     *  sheet, as merge merges them there: their aliases and then their name become the other's aliases, their
+     *  statements join the other's, and they leave this sheet with their grades, holds, retirement, contact and
+     *  figures in closed periods. */
+    public void transferInto(Person person, Person into) {
+        String sheetId = person.sheetId();
+        jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                into.sheetId(), into.id(), sheetId, person.id());
+        joinStatements(person, into);
+        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement",
+                "person_retire_log", "person_retirement", "period_person_total")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
+        }
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.id());
+        alias(into, person.name());
+    }
+
     /** Transfer the person (their claims, patrons, pools and watchers already dealt with) to another sheet: their
-     *  grades (with their log) and aliases go with them; their holds, statements, retirement and figures in closed
-     *  periods are dropped; they arrive with no statement taken, added on the other sheet's today. */
+     *  grades (with their log), aliases and statements go with them; their holds, retirement and figures in closed
+     *  periods are dropped; they arrive added on the other sheet's today. */
     public void transfer(Person person, String toSheet) {
         String sheetId = person.sheetId();
-        for (String table : List.of("person_hold", "person_statement", "person_retire_log", "person_retirement",
+        for (String table : List.of("person_hold", "person_retire_log", "person_retirement",
                 "period_person_total")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
-        for (String table : List.of("person_grade", "person_grade_log", "person_alias")) {
+        for (String table : List.of("person_grade", "person_grade_log", "person_alias", "person_statement")) {
             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", toSheet, sheetId,
                     person.id());
         }
-        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
+        jdbc.update("UPDATE person SET sheet_id = ?, "
                 + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_position = " + END_POSITION
                 + ", origin = ? WHERE sheet_id = ? AND id = ?", toSheet, toSheet, toSheet, sheetId, sheetId, person.id());
     }

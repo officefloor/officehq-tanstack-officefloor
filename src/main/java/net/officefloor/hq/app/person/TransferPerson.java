@@ -14,12 +14,13 @@ import net.officefloor.plugin.variable.Val;
 /** Transfer the loaded person to another sheet: only a steward may, a person not retired, to a sheet other than this
  *  one (created when never loaded) that is not archived. When one person there has their name or one of their aliases (as names are compared; more
  *  than one is refused), they are merged into that person as MergePerson merges (not retired; their claims after
- *  theirs, their name and aliases joined to theirs, their contact and figures bound to statements dropped);
+ *  theirs, keeping the figures statements bound them to, their name and aliases joined to theirs, their statements
+ *  added to that person's count, their contact dropped);
  *  otherwise the other sheet must not have their contact. They arrive
  *  with every grade they were given (and its from-date), their terms, contact and aliases, and their claims (status,
  *  dates, notes, settled dues and logs kept; each claim that had a number takes the next number of the other sheet,
- *  in the order the claims were added; unbound from any statement; references dropped), with no statement taken.
- *  They leave this sheet entirely: their patron links, pool memberships, holds, statements and watchers are dropped. */
+ *  in the order the claims were added; keeping the figure a statement bound them to; references dropped) and their
+ *  statements. They leave this sheet entirely: their patron links, pool memberships, holds and watchers are dropped. */
 public class TransferPerson {
     public void transfer(@Val TransferInput input, @Val Person loaded, PersonRepository people, ClaimRepository claims,
             PatronRepository patrons, PoolRepository pools, WatchRepository watches, RoleRepository roles,
@@ -74,10 +75,11 @@ public class TransferPerson {
         pools.drop(from, person.id());
         watches.drop(from, person.id());
         claims.transfer(from, person.id(), to);
-        people.transfer(person, to);
         if (into != null) {
             claims.moveAll(to, person.id(), into.id());
-            people.merge(people.find(to, person.id()), into);
+            people.transferInto(person, into);
+        } else {
+            people.transfer(person, to);
         }
         transfer.set(new Transfer(from, to, person.name(), toBefore, into != null ? into.name() : null));
         saved.set(PersonResponse.from(people.find(to, into != null ? into.id() : person.id())));

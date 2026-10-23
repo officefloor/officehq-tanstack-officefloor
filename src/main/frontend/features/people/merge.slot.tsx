@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
+import { claimsKey } from '../claims/claims';
 import { PersonRow } from '../../slots/defs/personRow';
 import { usePeople } from './people';
 import { usePersonError } from './rowError';
@@ -20,7 +21,9 @@ function PersonMerge({ sheetId, user, person }: { sheetId: string; user: string;
     mutationFn: (intoId: number) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/merge`, { user, intoId }),
     onSuccess: async () => {
-      // the merge moves claims, aliases, patrons and pool members: everything shown of the sheet follows
+      // the merge moves claims, aliases, patrons and pool members: everything shown of the sheet follows, the
+      // claims first so the merged person leaves the list only once the other shows the claims they took
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
       await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
     },
     onError: (e) =>

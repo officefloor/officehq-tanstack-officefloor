@@ -11,10 +11,12 @@ import net.officefloor.plugin.variable.Val;
 
 /** Merge the loaded person into another: only a steward may, into another person on the sheet, neither of them
  *  retired. The merged person's claims move to the other (numbers and dates kept, listed after the other's in the
- *  order they were added, each unbound from any statement); their name and aliases become aliases of the other;
+ *  order they were added, each keeping the figure a statement bound it to); their name and aliases become aliases
+ *  of the other;
  *  their patrons are added to the other's (not the other themselves, no repeats), and anyone naming them as patron
  *  names the other instead (no repeats); their pool memberships move to the other (shares added when the other is
- *  already a member); their statements, holds, watchers and contact are dropped, and they leave the sheet. */
+ *  already a member); their statements are added to the other's count (the other's last statement stays theirs or,
+ *  having none, becomes the merged person's); their holds, watchers and contact are dropped, and they leave the sheet. */
 public class MergePerson {
     public void merge(@Val MergeInput input, @Val Person loaded, PersonRepository people, ClaimRepository claims,
             PatronRepository patrons, PoolRepository pools, WatchRepository watches, RoleRepository roles,
