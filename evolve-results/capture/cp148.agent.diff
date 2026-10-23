@@ -1,0 +1,33 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index c2b60ce..ca2c47a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -152,10 +152,10 @@ export function useEditingClaim() {
+   return useSearchParam('editClaim', asString);
+ }
+ 
+-/** The amounts of the claims that count (OPEN, PENDING and SETTLED) added up exactly (in cents) and shown
+- *  with two decimals. */
++/** The amounts of the claims that count (OPEN, PENDING and SETTLED), leaving out those that correct another,
++ *  added up exactly (in cents) and shown with two decimals: the claimed figure. */
+ export function sumAmounts(claims: Claim[]): string {
+-  const cents = claims.filter(counts).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => counts(c) && !c.corrects).reduce((total, c) => total + Math.round(Number(c.amount) * 100), 0);
+   const abs = Math.abs(cents);
+   return `${cents < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+index 6580b05..d838765 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+@@ -58,7 +58,9 @@ public class Rollups {
+         List<BigDecimal> overdues = new ArrayList<>();
+         for (Person p : people.list(sheetId)) {
+             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
+-            BigDecimal claimed = theirs.stream().filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today))
++            // claimed: the amounts of their claims that count, leaving out corrections of another claim
++            BigDecimal claimed = theirs.stream()
++                    .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && c.corrects() == null)
+                     .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
+             BigDecimal due = Dues.capped(
+                     Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late), cap);
