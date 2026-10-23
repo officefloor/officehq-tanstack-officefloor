@@ -71,8 +71,10 @@ final class ClaimStatusChange {
                 throw new ClaimStatusNotAllowedException("Only a PENDING claim can be " + input.action()
                         + "d; this one is " + loaded.status() + ".");
             }
-            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
-                throw new ClaimStatusNotAllowedException("Only a steward can " + input.action() + " a PENDING claim.");
+            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))
+                    && !input.user().equals(people.approver(loaded.sheetId(), loaded.personId()))) {
+                throw new ClaimStatusNotAllowedException("Only a steward or the person's approver can "
+                        + input.action() + " a PENDING claim.");
             }
             if (input.action().equals("approve") && input.user().equals(loaded.openedBy())) {
                 throw new ClaimStatusNotAllowedException("The user who opened a claim cannot approve it.");

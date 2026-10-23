@@ -64,6 +64,13 @@ public class PersonRepository {
         return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId));
     }
 
+    /** The person's approver (who may approve or reject their PENDING claims as a steward may), or null when none. */
+    public String approver(String sheetId, long personId) {
+        List<String> found = jdbc.queryForList("SELECT user_name FROM person_approver WHERE sheet_id = ? "
+                + "AND person_id = ?", String.class, sheetId, personId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The person on this sheet, or null when absent. */
     public Person find(String sheetId, long id) {
         return graded(sheetId, jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))
@@ -312,7 +319,7 @@ public class PersonRepository {
         jdbc.update("UPDATE period_person_opening SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
                 sheetId, from.id());
         joinStatements(from, into);
-        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_flag", "person_statement", "person_terms",
+        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_flag", "person_approver", "person_statement", "person_terms",
                 "person_retire_log", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.id());
         }
@@ -344,7 +351,7 @@ public class PersonRepository {
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?",
                 into.sheetId(), into.id(), sheetId, person.id());
         joinStatements(person, into);
-        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_flag", "person_statement", "person_terms",
+        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_flag", "person_approver", "person_statement", "person_terms",
                 "person_retire_log", "person_retirement", "period_person_total", "period_person_opening")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
@@ -357,7 +364,7 @@ public class PersonRepository {
      *  periods are dropped; they arrive added on the other sheet's today. */
     public void transfer(Person person, String toSheet) {
         String sheetId = person.sheetId();
-        for (String table : List.of("person_hold", "person_flag", "person_retire_log", "person_retirement",
+        for (String table : List.of("person_hold", "person_flag", "person_approver", "person_retire_log", "person_retirement",
                 "period_person_total", "period_person_opening")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
