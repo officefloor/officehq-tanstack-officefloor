@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
+import { poolsKey } from '../pools/pools';
 import { useSheetToday } from '../sheet/sheet';
 import { peopleKey } from './people';
 import { usePersonError } from './rowError';
@@ -23,7 +24,10 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
     mutationFn: (body: { user: string; from: string }) =>
       putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/retire`, body),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]);
       setFrom('');
     },
     onError: (e) =>
@@ -34,7 +38,11 @@ function PersonRetire({ sheetId, user, person }: { sheetId: string; user: string
   const unretire = useMutation({
     mutationFn: (body: { user: string }) =>
       putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/unretire`, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]),
     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : `Could not unretire ${person.name}.`),
     onSettled: once.done,
   });
