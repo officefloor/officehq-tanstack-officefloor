@@ -14,6 +14,7 @@ import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
 import { useColumnShown } from './columns';
 import { useCrews } from '../crews/crews';
 import { useActingRole } from '../roles/roles.slot';
+import { retiredGradeMessage, useIsGradeRetired } from '../grades/grades';
 
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
@@ -28,7 +29,8 @@ import { useActingRole } from '../roles/roles.slot';
  *  version it remembers brought up to date, so saving again is from the person as now stored). The
  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
  *  refused and the form is refilled with the person as now stored (so saving again is from that). Any other refused
- *  edit closes the editor, leaving the person as stored and the refusal showing on the form (now adding). */
+ *  edit closes the editor, leaving the person as stored and the refusal showing on the form (now adding). A grade
+ *  retired on the sheet is refused at once, keeping the editor open. */
 function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: string; user: string; editing?: Person;
   carried: string; onRefused: (error: string) => void }) {
   const queryClient = useQueryClient();
@@ -41,6 +43,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
   const [termsGiven, setTermsGiven] = useState(false);
   const [contactGiven, setContactGiven] = useState(false);
   const people = usePeople(sheetId);
+  const isRetired = useIsGradeRetired(sheetId);
   const closeEditor = useCloseEditor();
   const [version, setVersion] = useState(editing?.version);
   const today = useSheetToday(sheetId);
@@ -132,6 +135,11 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
     }
     if (!/^\d{0,4}$/.test(terms.trim())) {
       refuse('The terms must be a whole number of days, 0 or more, or blank for none.');
+      return;
+    }
+    // A retired grade cannot be chosen for a new person or in an edit: refused at once, keeping the editor open.
+    if (isRetired(grade)) {
+      setError(retiredGradeMessage(grade));
       return;
     }
     const key = contact.trim().toLowerCase();

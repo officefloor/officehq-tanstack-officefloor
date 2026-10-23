@@ -6,6 +6,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.grade.GradeRepository;
+import net.officefloor.hq.app.grade.RetiredGradeException;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.Rollups;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -19,12 +21,12 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  name and aliases not on another sheet of its tree, the line's contact not another person's, and no two lines naming
  *  the same person. Any other line adds a person, checked as the form's add is: the name not on another sheet of its
  *  tree, the contact not another person's. Any failure refuses the whole import, naming the line, and nothing is
- *  written. A line with a blank grade takes the sheet's default grade. Otherwise each line is applied in order just as the form would: an update records the grade from the
+ *  written. A line with a blank grade takes the sheet's default grade (A when it is retired); a line giving a retired grade is refused. Otherwise each line is applied in order just as the form would: an update records the grade from the
  *  sheet's today and sets the terms and contact when the line gives them (blank: left as they are), writing
  *  PERSON_EDITED; an add writes PERSON_ADDED; each then how the sheet's figures moved over it. */
 public class ImportPeople {
     public void importPeople(@PathVariable("sheetId") String sheetId, @Val ImportInput input,
-            PersonRepository repository, SheetRepository sheets, SettingRepository settings, Rollups rollups, Audit audit,
+            PersonRepository repository, SheetRepository sheets, SettingRepository settings, GradeRepository grades, Rollups rollups, Audit audit,
             Out<ImportResponse> result) throws InvalidPersonException {
         String sheet = sheetId.trim();
         List<Person> matches = new ArrayList<>();
@@ -44,11 +46,12 @@ public class ImportPeople {
                 } else {
                     DuplicatePersonNameException.refuseInTree(sheet, request.name(), repository);
                 }
+                grades.refuseRetired(sheet, request.grade());
                 if (!request.contact().isEmpty() && repository.contactInUse(sheet, request.contact(),
                         match == null ? null : match.id())) {
                     throw new DuplicatePersonContactException(request.contact());
                 }
-            } catch (DuplicatePersonNameException | DuplicatePersonContactException e) {
+            } catch (DuplicatePersonNameException | DuplicatePersonContactException | RetiredGradeException e) {
                 throw new InvalidPersonException("Line " + line.number() + ": " + e.getMessage());
             }
             matches.add(match);

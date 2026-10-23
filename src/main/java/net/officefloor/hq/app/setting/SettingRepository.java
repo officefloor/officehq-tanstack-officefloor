@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+import net.officefloor.hq.app.grade.GradeRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -27,8 +28,11 @@ public class SettingRepository {
 
     private final JdbcTemplate jdbc;
 
-    public SettingRepository(JdbcTemplate jdbc) {
+    private final GradeRepository grades;
+
+    public SettingRepository(JdbcTemplate jdbc, GradeRepository grades) {
         this.jdbc = jdbc;
+        this.grades = grades;
     }
 
     /** The sheet's settings in force on its today. */
@@ -313,10 +317,10 @@ public class SettingRepository {
         return jdbc.query("SELECT default_grade FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
     }
 
-    /** The grade a new person given none takes: the sheet's default grade, or A when it is blank. */
+    /** The grade a new person given none takes: the sheet's default grade, or A when it is blank or retired. */
     public String gradeForNew(String sheetId) {
         String grade = defaultGrade(sheetId);
-        return grade != null ? grade : "A";
+        return grade != null && !grades.isRetired(sheetId, grade) ? grade : "A";
     }
 
     public void setDefaultGrade(String sheetId, String grade) {

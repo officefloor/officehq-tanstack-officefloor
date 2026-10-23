@@ -7,16 +7,18 @@ import { claimsKey } from '../claims/claims';
 import { poolsKey } from '../pools/pools';
 import { GRADES, peopleKey } from './people';
 import { usePersonError } from './rowError';
+import { retiredGradeMessage, useIsGradeRetired } from '../grades/grades';
 import type { Person } from './people';
 
 /** A grade select and save button on the person's row: saves the chosen grade from the sheet's today exactly as
  *  the person form's edit would (name, terms and contact kept), refused when the person has been saved since the
- *  version the row shows. */
+ *  version the row shows, or when the grade is retired on the sheet. */
 function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
   const queryClient = useQueryClient();
   const [grade, setGrade] = useState(person.grade);
   const { error, setError, begin } = usePersonError(sheetId, person.id);
   const once = useSubmitOnce();
+  const isRetired = useIsGradeRetired(sheetId);
 
   // follow the grade the row shows once it changes (a save here, or another's re-loaded)
   useEffect(() => setGrade(person.grade), [person.grade, person.version]);
@@ -57,6 +59,10 @@ function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: s
         disabled={save.isPending}
         onClick={() => {
           begin();
+          if (isRetired(grade)) {
+            setError(retiredGradeMessage(grade));
+            return;
+          }
           if (!once.start()) return;
           save.mutate({ user, grade, version: person.version });
         }}
