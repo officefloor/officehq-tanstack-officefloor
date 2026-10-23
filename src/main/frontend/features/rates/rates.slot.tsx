@@ -14,7 +14,7 @@ import { capped, excess, OPEN_STATUSES, ownRates, personDueSum, personStatusSum,
   sheetDueTotal, sheetStatusSum, useRates } from './rates';
 import type { Rate } from './rates';
 
-const PCT = /^\d{1,3}(\.\d{1,2})?$/;
+const PCT = /^\d{1,5}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The sheet's rates — per grade the one in force on the sheet's today, then each rate with its
@@ -46,7 +46,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       setTo('');
     },
     onError: () =>
-      refuse('Could not set this rate: it must be a percent, 0.00 to 999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
+      refuse('Could not set this rate: it must be a percent, 0.00 to 99999.99, with up to two decimals, from a date yyyy-mm-dd or none, to a date not before it or none.'),
     onSettled: once.done,
   });
 
@@ -61,7 +61,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
     e.preventDefault();
     setError('');
     if (!PCT.test(pct.trim())) {
-      refuse('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
+      refuse('The rate must be a percent, 0.00 to 99999.99, with up to two decimals.');
       return;
     }
     if (from.trim() !== '' && !DATE.test(from.trim())) {
@@ -176,7 +176,7 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
     setError('');
     setResult(null);
     if (!PCT.test(pct.trim())) {
-      setError('The rate must be a percent, 0.00 to 999.99, with up to two decimals.');
+      setError('The rate must be a percent, 0.00 to 99999.99, with up to two decimals.');
       return;
     }
     setBusy(true);

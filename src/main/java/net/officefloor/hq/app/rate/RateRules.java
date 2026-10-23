@@ -22,8 +22,8 @@ public final class RateRules {
             throw new InvalidRateException("The grade must be A, B or C.");
         }
         String rate = request.rate() == null ? "" : request.rate().trim();
-        if (!rate.matches("\\d{1,3}(\\.\\d{1,2})?")) {
-            throw new InvalidRateException("The rate must be a percent, 0.00 to 999.99, with up to two decimals.");
+        if (!rate.matches("\\d{1,5}(\\.\\d{1,2})?")) {
+            throw new InvalidRateException("The rate must be a percent, 0.00 to 99999.99, with up to two decimals.");
         }
         String fromText = request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
