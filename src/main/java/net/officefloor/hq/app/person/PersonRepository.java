@@ -367,7 +367,14 @@ public class PersonRepository {
         }
         jdbc.update("UPDATE person SET sheet_id = ?, "
                 + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_position = " + END_POSITION
-                + ", origin = ? WHERE sheet_id = ? AND id = ?", toSheet, toSheet, toSheet, sheetId, sheetId, person.id());
+                + ", origin = ?, arrived_on = (SELECT today FROM sheet WHERE id = ?) WHERE sheet_id = ? AND id = ?",
+                toSheet, toSheet, toSheet, sheetId, toSheet, sheetId, person.id());
+    }
+
+    /** The sheet's today on which the person arrived on their sheet by transfer: null when they did not. */
+    public LocalDate arrivedOn(String sheetId, long id) {
+        return jdbc.query("SELECT arrived_on FROM person WHERE sheet_id = ? AND id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId, id);
     }
 
     /** Swap the person with the one above (up) or below (down) them in the list: their new position, counting from
