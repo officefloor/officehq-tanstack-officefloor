@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
  *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
  *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
  *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
- *  refused for a viewer or on an archived sheet, and so is a bulk reassign or bulk re-date; so is a viewer's bulk grade or bulk retire, which changes nobody, and a viewer's generating of the plans' claims, which makes none; so is a bulk settle or bulk void by a viewer or on an archived sheet, which counts every selected claim refused. Every change sent from a
+ *  refused for a viewer or on an archived sheet, and so is a bulk reassign or bulk re-date; so is a viewer's bulk grade, bulk retire or bulk hold, which changes nobody, and a viewer's generating of the plans' claims, which makes none; so is a bulk settle or bulk void by a viewer or on an archived sheet, which counts every selected claim refused. Every change sent from a
  *  screen showing the sheet as of a date (the X-As-Of header), a bulk one included, is answered 403 the same way. */
 @Component
 public class RefuseViewerChanges extends OncePerRequestFilter {
@@ -37,9 +37,9 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
      *  answers how many it opened and refused, writing nothing. */
     private static final Pattern BULK_OPEN = Pattern.compile("^/api/sheets/[^/]+/bulk-(open|reassign|redate)$");
 
-    /** A bulk grade or retire, or generating the plans' claims, left to the endpoint for a viewer: it changes nothing
+    /** A bulk grade, retire or hold, or generating the plans' claims, left to the endpoint for a viewer: it changes nothing
      *  and answers that none was changed (none generated). */
-    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/(bulk-(grade|retire)|plans/generate)$");
+    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/(bulk-(grade|retire|hold)|plans/generate)$");
 
     /** A bulk settle or void, left to the endpoint for a viewer or on an archived sheet: it counts every selected claim
      *  refused. */
