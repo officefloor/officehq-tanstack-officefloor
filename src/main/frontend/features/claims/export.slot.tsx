@@ -31,7 +31,7 @@ function ExportClaims({ sheetId }: { sheetId: string; user: string }) {
         c.number ?? '',
         c.date,
         c.amount,
-        claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late),
+        claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date, c.id), floor, late),
         c.status,
         periodOf(periods, dueBy(c))?.name ?? '',
       ])),

@@ -37,7 +37,7 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
   return sumDue(
     countedAt(claims.filter((c) => c.personId === person.id), people, period.to, late.today)
       .filter((c) => periodOf([period], dueBy(c)))
-      .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)),
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date, c.id), floor, late)),
   );
 }
 
@@ -55,5 +55,5 @@ export function classicPeriodDueTotal(period: Period, claims: Claim[], people: P
   if (period.closed || period.soft) return periodDueTotal(period, claims, people, rates, floor, late);
   return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id), [p], late.today)
     .filter((c) => periodOf([period], dueBy(c)))
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date, c.id), floor, late))));
 }

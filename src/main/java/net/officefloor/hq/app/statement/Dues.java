@@ -44,10 +44,11 @@ public final class Dues {
         return figure.add(late.on(claim, figure)).max(floor.on(claim.date()));
     }
 
-    /** A claim's live figure: its amount times its person's rate in force on its date for their grade then, divided
-     *  by 100, rounded to two decimals as the claim rounds (see Rounding); null (n/a) when no rate applies. */
+    /** A claim's live figure: its amount times its person's rate in force on its date for their grade then (of the
+     *  rates that reach it: a forward-only rate only reaches claims added after it), divided by 100, rounded to two
+     *  decimals as the claim rounds (see Rounding); null (n/a) when no rate applies. */
     public static BigDecimal live(Claim claim, Grades grades, Rates rates, Rounding rounding) {
-        return rates.on(claim.sheetId(), grades.on(claim.date()), claim.date())
+        return rates.on(claim.sheetId(), grades.on(claim.date()), claim.date(), claim.id())
                 .map(r -> claim.amount().multiply(r.pct()).divide(BigDecimal.valueOf(100), 2, rounding.of(claim)))
                 .orElse(null);
     }

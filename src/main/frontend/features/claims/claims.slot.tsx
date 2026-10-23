@@ -220,8 +220,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [voidReason, setVoidReason] = useState('');
   const periods = usePeriods(sheetId).data ?? [];
   const period = periodOf(periods, dueBy(claim));
-  // The editor opens for a claim dated outside a closed period; saving it is refused when its due-by is inside one.
-  const datedIn = periodOf(periods, claim.date);
+  // The editor opens, and saves, for a claim whose due-by is outside a closed period.
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
@@ -505,8 +504,8 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
             setError(`A ${claim.status} claim cannot be edited; only a DRAFT can. Void it and add a new one.`);
             return;
           }
-          if (datedIn?.closed) {
-            setError(`This claim is dated in the closed period ${datedIn.name}; it cannot be edited.`);
+          if (period?.closed) {
+            setError(`This claim is due in the closed period ${period.name}; it cannot be edited.`);
             return;
           }
           clearError();
@@ -761,7 +760,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
         />
         <ul>
           {claims.map((c) => (
-            <ClaimRow key={c.id} sheetId={sheetId} user={user} claim={c} rate={rateOn(rates, gradeOn(person, c.date), c.date)} />
+            <ClaimRow key={c.id} sheetId={sheetId} user={user} claim={c} rate={rateOn(rates, gradeOn(person, c.date), c.date, c.id)} />
           ))}
         </ul>
       </td>

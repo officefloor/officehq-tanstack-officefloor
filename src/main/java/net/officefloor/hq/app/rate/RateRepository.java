@@ -4,9 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -21,7 +19,8 @@ public class RateRepository implements Rates {
 
     private static final RowMapper<Rate> ROW = (rs, i) -> new Rate(rs.getString("sheet_id"),
             rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class),
-            rs.getObject("to_date", LocalDate.class), version(rs.getObject("version", Integer.class)));
+            rs.getObject("to_date", LocalDate.class), version(rs.getObject("version", Integer.class)),
+            rs.getObject("after_claim", Long.class));
 
     private static int version(Integer version) {
         return version != null ? version : 1;
@@ -44,17 +43,24 @@ public class RateRepository implements Rates {
                 + "ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
-    /** The grade's rate in force on the date: the one whose from-date is the latest on or before it (no
-     *  from-date counting as the beginning of time); empty when none applies, or that one's to-date is before the
-     *  date; then the same of the sheet's parents, nearest first. */
+    /** Every version of the sheet's rates, each grade and from-date's oldest first. */
+    public List<Rate> versions(String sheetId) {
+        return jdbc.query("SELECT * FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST, version", ROW,
+                sheetId);
+    }
+
+    /** The grade's rate in force on the date for the claim (0: without regard to any claim): of the versions that
+     *  reach it (see Rate.reaches), the one whose from-date is the latest on or before it (no from-date counting as
+     *  the beginning of time); empty when none applies, or that one's to-date is before the date; then the same of
+     *  the sheet's parents, nearest first. */
     @Override
-    public Optional<Rate> on(String sheetId, String grade, LocalDate date) {
-        Optional<Rate> rate = Rates.on(list(sheetId), grade, date);
+    public Optional<Rate> on(String sheetId, String grade, LocalDate date, long claimId) {
+        Optional<Rate> rate = Rates.on(Rates.forClaim(versions(sheetId), claimId), grade, date);
         for (String parent : parents(sheetId)) {
             if (rate.isPresent()) {
                 break;
             }
-            rate = Rates.on(list(parent), grade, date);
+            rate = Rates.on(Rates.forClaim(versions(parent), claimId), grade, date);
         }
         return rate;
     }
@@ -63,11 +69,12 @@ public class RateRepository implements Rates {
      *  it for the grade from that same date; with its parents' rates as they stood then, nearest first. */
     public Rates asOf(String sheetId, LocalDate end) {
         List<List<Rate>> levels = new ArrayList<>();
-        levels.add(listAsOf(sheetId, end));
+        levels.add(versionsAsOf(sheetId, end));
         for (String parent : parents(sheetId)) {
-            levels.add(listAsOf(parent, end));
+            levels.add(versionsAsOf(parent, end));
         }
-        return (sheet, grade, date) -> levels.stream().map(rates -> Rates.on(rates, grade, date))
+        return (sheet, grade, date, claimId) -> levels.stream()
+                .map(versions -> Rates.on(Rates.forClaim(versions, claimId), grade, date))
                 .flatMap(Optional::stream).findFirst();
     }
 
@@ -91,31 +98,36 @@ public class RateRepository implements Rates {
 
     /** The sheet's rates as they stood at the end of the day, by grade, each grade's earliest first (see asOf). */
     public List<Rate> listAsOf(String sheetId, LocalDate end) {
-        Map<String, Rate> byGradeFrom = new LinkedHashMap<>();
-        jdbc.query("SELECT * FROM rate_log WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?) ORDER BY id",
-                rs -> {
-                    Rate r = ROW.mapRow(rs, 0);
-                    byGradeFrom.put(r.grade() + "|" + r.from(), r);
-                }, sheetId, end);
-        return byGradeFrom.values().stream().sorted(java.util.Comparator.comparing(Rate::grade)
-                .thenComparing(Rate::from, java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
-                .toList();
+        return Rates.forClaim(versionsAsOf(sheetId, end), 0);
+    }
+
+    /** Every rate set on the sheet by the end of the day, in the order set (each set from a from-date the next
+     *  version of the one set before it for the grade from that same date). */
+    public List<Rate> versionsAsOf(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT * FROM rate_log WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?) ORDER BY id",
+                ROW, sheetId, end);
     }
 
     /** Set the grade's rate from the from-date (null: from the beginning of time) through the to-date (null:
      *  with no end) as the next version of the grade's rate from that same date, keeping any it replaces as an older
-     *  version. */
+     *  version. One with a from-date on or after the sheet's today is forward-only: it reaches only claims added after
+     *  it (see Rate.reaches). */
     public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
         Date fromDate = from != null ? Date.valueOf(from) : null;
         Date toDate = to != null ? Date.valueOf(to) : null;
+        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+        Long after = from != null && today != null && !from.isBefore(today)
+                ? jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM claim", Long.class)
+                : null;
         Integer latest = jdbc.queryForObject("SELECT MAX(version) FROM rate WHERE sheet_id = ? AND grade = ? "
                 + "AND from_date IS NOT DISTINCT FROM ?", Integer.class, sheetId, grade, fromDate);
         int version = latest != null ? latest + 1 : 1;
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
-                sheetId, grade, pct, fromDate, toDate, version);
-        jdbc.update("INSERT INTO rate_log (sheet_id, grade, pct, from_date, to_date, made_on, version) VALUES (?, ?, ?, "
-                + "?, ?, (SELECT today FROM sheet WHERE id = ?), ?)", sheetId, grade, pct, fromDate, toDate, sheetId,
-                version);
-        return new Rate(sheetId, grade, pct, from, to, version);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, after_claim) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, grade, pct, fromDate, toDate, version, after);
+        jdbc.update("INSERT INTO rate_log (sheet_id, grade, pct, from_date, to_date, made_on, version, after_claim) "
+                + "VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?, ?)", sheetId, grade, pct, fromDate,
+                toDate, sheetId, version, after);
+        return new Rate(sheetId, grade, pct, from, to, version, after);
     }
 }

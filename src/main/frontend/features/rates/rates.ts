@@ -8,8 +8,31 @@ import type { DatedValue } from '../settings/settings';
  *  null: from the beginning of time) through its to-date (null: with no end). A grade may have several, one
  *  per from-date; none when it has no rate. `level` is where it comes from: 0 the sheet's own, 1 its parent
  *  sheet's, 2 the parent's parent's, 3 the one above that. `version` is how many have been set for the grade from
- *  that from-date (this the newest, the one in force). */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number };
+ *  that from-date (this the newest, the one in force). A forward-only rate (saved with a from-date on or after the
+ *  sheet's today) carries `after`, the highest claim id when it was saved: it reaches only claims added after it (a
+ *  higher id); null or absent: every claim. `older` are the grade's older versions from that from-date, newest first:
+ *  a claim the rate does not reach uses the newest of them that does. */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number;
+  after?: number | null; older?: OlderRate[] };
+
+/** An older version of a rate (see Rate). */
+export type OlderRate = { rate: string; to: string | null; after?: number | null };
+
+/** Whether a rate (or an older version of one) reaches the claim (see Rate); every one does without a claim. */
+function reaches(r: { after?: number | null }, claimId: number | undefined): boolean {
+  return claimId === undefined || r.after == null || claimId > r.after;
+}
+
+/** Of one sheet's rates, the ones in force for the claim: each grade and from-date's newest version that reaches it
+ *  (see Rate); all of them as they are without a claim. */
+function reaching(rates: Rate[], claimId: number | undefined): Rate[] {
+  if (claimId === undefined) return rates;
+  return rates.flatMap((r) => {
+    if (reaches(r, claimId)) return [r];
+    const older = (r.older ?? []).find((o) => reaches(o, claimId));
+    return older ? [{ ...r, rate: older.rate, to: older.to, after: older.after }] : [];
+  });
+}
 
 /** Of the rates, the sheet's own (not its parents'). */
 export function ownRates(rates: Rate[]): Rate[] {
@@ -26,13 +49,14 @@ export function useRates(sheetId: string) {
   });
 }
 
-/** A grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or before
- *  it, a rate with no from-date applying from the beginning of time; undefined when none applies, or that
- *  one's to-date is before the date. When the sheet's own has none, the nearest parent's that has one. */
-export function rateOn(rates: Rate[], grade: string, date: string): string | undefined {
+/** A grade's rate in force on a date (yyyy-mm-dd), for the claim with the id when one is given (of the rates that
+ *  reach it, see Rate): the one whose from-date is the latest on or before it, a rate with no from-date applying from
+ *  the beginning of time; undefined when none applies, or that one's to-date is before the date. When the sheet's own
+ *  has none, the nearest parent's that has one. */
+export function rateOn(rates: Rate[], grade: string, date: string, claimId?: number): string | undefined {
   const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
   for (const level of levels) {
-    const rate = levelRateOn(rates.filter((r) => (r.level ?? 0) === level), grade, date);
+    const rate = levelRateOn(reaching(rates.filter((r) => (r.level ?? 0) === level), claimId), grade, date);
     if (rate !== undefined) return rate;
   }
   return undefined;
@@ -94,10 +118,10 @@ export function sumDue(dues: string[]): string {
 /** A person's due-total: the figures of their claims that count (each as shown on its row) added up;
  *  'n/a' when their grade today has no rate today (rateToday undefined), unless a claim that counts has a
  *  figure (settled, stated, or live at the grade in force on its date), then the figures there are added up. */
-export function personDue(claims: Claim[], rateOnDate: (date: string) => string | undefined,
+export function personDue(claims: Claim[], rateFor: (claim: Claim) => string | undefined,
     rateToday: string | undefined, floor: DatedValue, late: Late): string {
   const counted = claims.filter(counts);
-  const dues = counted.map((c) => claimDue(c, rateOnDate(c.date), floor, late));
+  const dues = counted.map((c) => claimDue(c, rateFor(c), floor, late));
   if (rateToday === undefined && dues.every((d) => d === 'n/a')) return 'n/a';
   return sumDue(dues);
 }
@@ -107,7 +131,7 @@ export function personDue(claims: Claim[], rateOnDate: (date: string) => string 
 export function personDueSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late): string {
   return personDue(live(claims.filter((c) => c.personId === person.id), [person], today),
-    (d) => rateOn(rates, gradeOn(person, d), d), rateOn(rates, gradeOn(person, today), today), floor, late);
+    (c) => rateOn(rates, gradeOn(person, c.date), c.date, c.id), rateOn(rates, gradeOn(person, today), today), floor, late);
 }
 
 /** A person's dues of one kind: the due (as shown on its row; a SETTLED one's frozen) of each of their claims that
@@ -117,7 +141,7 @@ export function personStatusSum(person: Person, claims: Claim[], rates: Rate[], 
     late: Late, statuses: Claim['status'][]): string {
   return sumDue(live(claims.filter((c) => c.personId === person.id), [person], today)
     .filter((c) => statuses.includes(c.status))
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)));
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date, c.id), floor, late)));
 }
 
 /** The sheet's due-total for a tag: the due (as shown on its row) of each claim that counts in the live totals
@@ -125,7 +149,7 @@ export function personStatusSum(person: Person, claims: Claim[], rates: Rate[], 
 export function sheetTagSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, tag: string): string {
   return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id && (c.tags.includes(tag) || p.tags.includes(tag))), [p], today)
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date, c.id), floor, late))));
 }
 
 /** The sheet's due-total for a calendar month (yyyy-mm): the due (as shown on its row) of each claim dated in it that
@@ -133,7 +157,7 @@ export function sheetTagSum(people: Person[], claims: Claim[], rates: Rate[], to
 export function sheetMonthSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, month: string): string {
   return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id && c.date.slice(0, 7) === month), [p], today)
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date, c.id), floor, late))));
 }
 
 export const SETTLED_STATUSES: Claim['status'][] = ['SETTLED'];
@@ -162,7 +186,7 @@ export function recentSettledSum(people: Person[], claims: Claim[], rates: Rate[
   const byId = new Map(people.map((p) => [p.id, p]));
   return sumDue(claims
     .filter((c) => byId.has(c.personId) && c.status === 'SETTLED' && counts(c) && c.date >= since && c.date <= today)
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late)));
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date, c.id), floor, late)));
 }
 
 /** 100.00 split equally among n patrons in the order named: each share 100.00 / n rounded to two decimals half to
@@ -225,7 +249,7 @@ export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], la
   const byId = new Map(people.map((p) => [p.id, p]));
   return live(claims, people, late.today)
     .filter((c) => overdue(c, late.today, late.grace(c)))
-    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date), floor, late));
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(byId.get(c.personId), c.date), c.date, c.id), floor, late));
 }
 
 /** What the late charge follows: the sheet's late percent by date (two decimals; a claim gains the one in force
@@ -299,7 +323,7 @@ export function ratePreview(people: Person[], claims: Claim[], rates: Rate[], gr
   for (const c of claims) {
     const person = byId.get(c.personId);
     if (!person || (c.status !== 'OPEN' && c.status !== 'PENDING') || gradeOn(person, c.date) !== grade) continue;
-    const was = claimDue(c, rateOn(rates, grade, c.date), floor, late);
+    const was = claimDue(c, rateOn(rates, grade, c.date, c.id), floor, late);
     const now = claimDue(c, pct, floor, late);
     if (was === now) continue;
     count++;

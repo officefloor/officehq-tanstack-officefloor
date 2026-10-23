@@ -26,7 +26,7 @@ function PersonAged({ sheetId, person }: { sheetId: string; user: string; person
   if (today !== '') {
     for (const c of live(claims, [person], today).filter(unsettled)) {
       const age = ageOf(c.date, today);
-      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late);
+      const due = claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date, c.id), floor, late);
       buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(due);
     }
   }

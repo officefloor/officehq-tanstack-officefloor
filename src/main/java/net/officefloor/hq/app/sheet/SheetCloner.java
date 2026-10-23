@@ -35,8 +35,8 @@ public class SheetCloner {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, "
                 + "pot, parent, fiscal_start_month, alert_threshold) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold "
                 + "FROM sheet WHERE id = ?", to, user, from);
-        copyRows("rate", "grade, pct, from_date, to_date", null, from, to);
-        copyRows("rate_log", "grade, pct, from_date, to_date, made_on", "id", from, to);
+        copyRows("rate", "grade, pct, from_date, to_date, version, after_claim", null, from, to);
+        copyRows("rate_log", "grade, pct, from_date, to_date, made_on, version, after_claim", "id", from, to);
         copyRows("sheet_role", "user_name, role", "user_name", from, to);
         copyRows("sheet_permission", "action, roles", "action", from, to);
         copyRows("setting_value", "setting_key, from_date, val", "setting_key, from_date", from, to);
@@ -49,7 +49,22 @@ public class SheetCloner {
                 + "added_on FROM period WHERE sheet_id = ? ORDER BY from_date, name", to, from);
         Map<Long, Long> people = copyPeople(from, to);
         copyPools(from, to, people);
-        copyClaims(from, to, people);
+        markForwardRates(to, copyClaims(from, to, people));
+    }
+
+    /** Re-mark the clone's forward-only rates by the copies of the claims: each reaches the copies of the claims added
+     *  after it (the highest copy of a claim it did not reach; 0 when it reached every claim). */
+    private void markForwardRates(String to, Map<Long, Long> ids) {
+        for (String table : List.of("rate", "rate_log")) {
+            for (Long after : jdbc.queryForList("SELECT DISTINCT after_claim FROM " + table
+                    + " WHERE sheet_id = ? AND after_claim IS NOT NULL", Long.class, to)) {
+                long marked = ids.entrySet().stream().filter(e -> e.getKey() <= after).mapToLong(Map.Entry::getValue)
+                        .max().orElse(0);
+                jdbc.update("UPDATE " + table + " SET after_claim = ? WHERE sheet_id = ? AND after_claim = ?", -marked,
+                        to, after);
+            }
+            jdbc.update("UPDATE " + table + " SET after_claim = -after_claim WHERE sheet_id = ? AND after_claim < 0", to);
+        }
     }
 
     /** Copy the sheet's rows of a table, the given columns as they are, to the clone. */
@@ -129,8 +144,8 @@ public class SheetCloner {
     }
 
     /** Copy every claim (newest still newest), numbering afresh each that had a number, with its comments, void reason,
-     *  log and history. */
-    private void copyClaims(String from, String to, Map<Long, Long> people) {
+     *  log and history; the copy of each claim by its id. */
+    private Map<Long, Long> copyClaims(String from, String to, Map<Long, Long> people) {
         List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM claim WHERE sheet_id = ? ORDER BY listed", from);
         Map<Long, Long> positions = new HashMap<>();
         long place = 0;
@@ -181,6 +196,7 @@ public class SheetCloner {
                     + "claim_void_reason WHERE sheet_id = ? AND claim_id = ?", to, copy, from, id);
         }
         copyHistory(from, to, people, ids, numbers, numberOf);
+        return ids;
     }
 
     /** Copy each claim's history as the clone's own: its person, number and the numbers it names as on the clone, and

@@ -2,14 +2,16 @@ package net.officefloor.hq.app.rate;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import net.officefloor.hq.app.sheet.AsOf;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's rate for each grade that has one (as they stood at the end of the as-of date, when one is given),
- *  then its parents' rates, nearest first, each marked with its level. */
+ *  then its parents' rates, nearest first, each marked with its level and carrying its older versions. */
 public class RespondWithRates {
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, RateRepository repository,
@@ -21,9 +23,13 @@ public class RespondWithRates {
         sheets.addAll(repository.parents(id));
         List<RateResponse> shown = new ArrayList<>();
         for (int level = 0; level < sheets.size(); level++) {
-            List<Rate> rates = end != null ? repository.listAsOf(sheets.get(level), end) : repository.list(sheets.get(level));
-            for (Rate r : rates) {
-                shown.add(RateResponse.from(r, level));
+            List<Rate> versions = end != null ? repository.versionsAsOf(sheets.get(level), end)
+                    : repository.versions(sheets.get(level));
+            for (Rate r : Rates.forClaim(versions, 0)) {
+                List<Rate> older = new ArrayList<>(versions.stream().filter(v -> v != r && v.grade().equals(r.grade())
+                        && Objects.equals(v.from(), r.from())).toList());
+                Collections.reverse(older);
+                shown.add(RateResponse.from(r, level, older));
             }
         }
         response.send(shown);
