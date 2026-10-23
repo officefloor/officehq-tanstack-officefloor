@@ -1,0 +1,128 @@
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 2525fba..ef55d93 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { countedAt, dueBy, type Claim } from '../claims/claims';
++import { countedAt, dueBy, live, type Claim } from '../claims/claims';
+ import { gradeOn, type Person } from '../people/people';
+ import { claimDue, rateOn, sumDue, type Late, type Rate } from '../rates/rates';
+ import type { DatedValue } from '../settings/settings';
+@@ -46,3 +46,14 @@ export function periodDueTotal(period: Period, claims: Claim[], people: Person[]
+     late: Late): string {
+   return sumDue(people.map((p) => personPeriodDueTotal(period, p, claims, people, rates, floor, late)));
+ }
++
++/** A period's classic due-total: while it is open, the dues (as shown on their rows now) of every person's claims that
++ *  count by their status now (see live) whose due-by falls in it, added up; once closed or soft-closed, the figure
++ *  fixed then (see personPeriodDueTotal). */
++export function classicPeriodDueTotal(period: Period, claims: Claim[], people: Person[], rates: Rate[],
++    floor: DatedValue, late: Late): string {
++  if (period.closed || period.soft) return periodDueTotal(period, claims, people, rates, floor, late);
++  return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id), [p], late.today)
++    .filter((c) => periodOf([period], dueBy(c)))
++    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
++}
+diff --git a/src/main/frontend/features/summary/classic.slot.tsx b/src/main/frontend/features/summary/classic.slot.tsx
+new file mode 100644
+index 0000000..2e8f0aa
+--- /dev/null
++++ b/src/main/frontend/features/summary/classic.slot.tsx
+@@ -0,0 +1,53 @@
++import { SheetBody } from '../../slots/defs/sheet';
++import { useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { classicPeriodDueTotal, usePeriods } from '../periods/periods';
++import { personDueTotal, sumDue, useRates } from '../rates/rates';
++import { useCap, useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++
++/** The classic summary, shown beside the summary: per period its classic due-total (each claim counted by its status
++ *  now; see classicPeriodDueTotal), and the sheet's due-total untrimmed: every person's due-total (as shown on their
++ *  row) added up, skipping n/a. */
++function ClassicSummary({ sheetId }: { sheetId: string; user: string }) {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const periods = usePeriods(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const cap = useCap(sheetId);
++
++  return (
++    <section data-testid="classic">
++      <h2>Classic summary</h2>
++      <table>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name} data-testid={`classic-period-${p.name}`}>
++              <th>Period {p.name}</th>
++              <td>
++                Due total{' '}
++                <span data-testid={`classic-period-${p.name}-due-total`}>
++                  {classicPeriodDueTotal(p, claims, people, rates, floor, late)}
++                </span>
++              </td>
++            </tr>
++          ))}
++          <tr>
++            <th>Sheet</th>
++            <td>
++              Due total{' '}
++              <span data-testid="classic-due-total">
++                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)))}
++              </span>
++            </td>
++          </tr>
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 24, Component: ClassicSummary });
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 320e087..63d0714 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -61,6 +61,11 @@ public class PeriodRepository {
+         return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
+     }
+ 
++    /** The closed period on the sheet whose dates overlap from..to (both included), or null when none does. */
++    public Period closedBetween(String sheetId, LocalDate from, LocalDate to) {
++        return list(sheetId).stream().filter(p -> p.closed() && p.overlaps(from, to)).findFirst().orElse(null);
++    }
++
+     /** The soft-closed period on the sheet whose dates contain the date, or null when none does. */
+     public Period softClosedOn(String sheetId, LocalDate date) {
+         return list(sheetId).stream().filter(p -> p.soft() && p.contains(date)).findFirst().orElse(null);
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+index 547d65a..b172402 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+@@ -10,14 +10,19 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Refuse a new claim whose due-by (its date — a blank date being the sheet's entry date, else its today — plus the
+  *  terms it would get) falls inside a closed period: a claim belongs to the period holding its due-by, as a pasted or
+- *  template claim does. */
++ *  template claim does. A claim whose date and due-by straddle a closed period (it would run across it) is refused
++ *  too. */
+ public class RefuseClosedNewClaim {
+     public void refuse(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
+             HolidayRepository holidays, PeriodRepository periods)
+             throws ClosedPeriodException {
+         periods.lockSheet(person.sheetId());
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+-        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
++        var dueBy = DueBy.of(person, date, settings, holidays);
++        Period closed = periods.closedOn(person.sheetId(), dueBy);
++        if (closed == null && date.isBefore(dueBy)) {
++            closed = periods.closedBetween(person.sheetId(), date, dueBy);
++        }
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
