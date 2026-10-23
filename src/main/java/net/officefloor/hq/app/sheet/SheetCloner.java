@@ -13,7 +13,8 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 /** Copies a sheet to an id never used. The clone gets the sheet's today and settings (dated ones, their log, the
- *  permissions and the sheet-wide ones; never archived), roles, rates (and their log), holidays, void reasons,
+ *  permissions and the sheet-wide ones, the pot and its log; never archived), roles, rates (and their log), holidays,
+ *  void reasons,
  *  templates and tags used, its people (in their place in the list, with their grades, terms, contact, aliases, holds,
  *  retirements and patrons), its pools and their members, its periods (all open) and its claims (status, settled dues,
  *  due-bys, dates, notes, tags, references, comments, void reasons, logs and history; each numbered claim takes a new
@@ -41,6 +42,7 @@ public class SheetCloner {
         copyRows("sheet_permission", "action, roles", "action", from, to);
         copyRows("setting_value", "setting_key, from_date, val", "setting_key, from_date", from, to);
         copyRows("setting_log", "setting_key, from_date, val, made_on", "id", from, to);
+        copyRows("pot_log", "val, made_on", "id", from, to);
         copyRows("sheet_holiday", "holiday_date, added_by", "id", from, to);
         copyRows("sheet_void_reason", "reason, added_by", "id", from, to);
         copyRows("claim_template", "name, amount, note, saved_by", "name", from, to);

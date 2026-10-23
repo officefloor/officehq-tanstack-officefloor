@@ -210,8 +210,18 @@ public class SettingRepository {
                 rs -> rs.next() && rs.getBigDecimal(1) != null ? rs.getBigDecimal(1).setScale(2) : null, sheetId);
     }
 
+    /** The sheet's pot as it stood at the end of the day: the last one set while its today was on or before it;
+     *  null when none was (or it was blank). */
+    public BigDecimal potAsOf(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT val FROM pot_log WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?) "
+                + "ORDER BY id DESC LIMIT 1",
+                rs -> rs.next() && rs.getBigDecimal(1) != null ? rs.getBigDecimal(1).setScale(2) : null, sheetId, end);
+    }
+
     public void setPot(String sheetId, BigDecimal pot) {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+        jdbc.update("INSERT INTO pot_log (sheet_id, val, made_on) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, pot, sheetId);
     }
 
     /** The sheet's alert threshold: null when blank (off). */

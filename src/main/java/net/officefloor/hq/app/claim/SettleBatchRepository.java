@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,11 +24,19 @@ public class SettleBatchRepository {
                 rs -> rs.next() ? (Integer) rs.getObject(1, Integer.class) : null, sheetId);
     }
 
-    /** Start the sheet's next batch: its number. */
+    /** The number of the sheet's last batch as it stood at the end of the day: the last one made while the sheet's
+     *  today was on or before it; null when there had been none. */
+    public Integer lastAsOf(String sheetId, LocalDate end) {
+        return jdbc.query("SELECT MAX(batch) FROM settle_batch WHERE sheet_id = ? AND (made_on IS NULL OR made_on <= ?)",
+                rs -> rs.next() ? (Integer) rs.getObject(1, Integer.class) : null, sheetId, end);
+    }
+
+    /** Start the sheet's next batch, made on the sheet's today: its number. */
     public int start(String sheetId) {
         Integer last = last(sheetId);
         int next = last != null ? last + 1 : 1;
-        jdbc.update("INSERT INTO settle_batch (sheet_id, batch) VALUES (?, ?)", sheetId, next);
+        jdbc.update("INSERT INTO settle_batch (sheet_id, batch, made_on) VALUES (?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, next, sheetId);
         return next;
     }
 

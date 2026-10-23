@@ -19,7 +19,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** The sheet's pools in the order they were added, with their members, total share and whether balanced; a member
  *  retired by the sheet's today (or the as-of date, when one is given) cuts 0.00, their share still counted toward the total
  *  and spread over the members with a cut (no cuts at all when every member is retired); each member of a balanced pool
- *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot; a pool
+ *  shows their cut of the pool's pot (when there is one). A pool that is a member of none has the sheet's pot (as it stood
+ *  then, given an as-of date); a pool
  *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
  *  dates do not include that date is left out: no share in the total and no cut. */
@@ -35,7 +36,7 @@ public class RespondWithPools {
         Map<Long, LocalDate> retiredFrom = new HashMap<>();
         Map<Long, String> names = new HashMap<>();
         Set<Long> held = new HashSet<>();
-        BigDecimal pot = settings.pot(id);
+        BigDecimal pot = end != null ? settings.potAsOf(id, end) : settings.pot(id);
         for (Person p : persons) {
             names.put(p.id(), p.name());
             if (p.retiredFrom() != null) {

@@ -17,7 +17,8 @@ import { useColumnShown } from './columns';
  *  today unless changed), keeping the grades already recorded from other dates. The person's own terms (days; blank
  *  for none) are set by an add when given, and by an edit whose terms field was entered (blank clears them); so is
  *  their contact, stored trimmed and lower-cased. Their tags (comma separated; stored trimmed, lower-cased, without
- *  repeats and sorted) are set by every add and edit, the editor filled with those stored. A contact another person on the sheet already has is refused at once
+ *  repeats and sorted) are set by every add and edit, the editor filled with those stored. An add the server refuses
+ *  starts the next add with no terms, no contact and no tags. A contact another person on the sheet already has is refused at once
  *  (an add's contact field is then cleared), keeping the editor open (the
  *  version it remembers brought up to date, so saving again is from the person as now stored). The
  *  editor remembers the version it loaded: when someone else has saved the person since, the save is
@@ -84,10 +85,11 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
           setVersion(current.version);
         }
       }
-      // An add the server refused starts the next add with no terms and no contact.
+      // An add the server refused starts the next add with no terms, no contact and no tags.
       if (!editing) {
         setTerms('');
         setContact('');
+        setTags('');
       }
       refuse(
         e instanceof HttpError && (e.status === 409 || e.status === 412) && e.body
