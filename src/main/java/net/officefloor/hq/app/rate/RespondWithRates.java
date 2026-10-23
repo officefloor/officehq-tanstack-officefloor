@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's rate for each grade that has one (as they stood at the end of the as-of date, when one is given),
- *  then its parents' rates, nearest first, each marked with its level and carrying its older versions. */
+ *  then its lineage's rates (its parents', then those of the sheet it was cloned from and so on), nearest first, each marked with its level and carrying its older versions. */
 public class RespondWithRates {
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, RateRepository repository,
@@ -20,7 +20,7 @@ public class RespondWithRates {
         LocalDate end = AsOf.parse(asOf);
         List<String> sheets = new ArrayList<>();
         sheets.add(id);
-        sheets.addAll(repository.parents(id));
+        sheets.addAll(repository.lineage(id));
         List<RateResponse> shown = new ArrayList<>();
         for (int level = 0; level < sheets.size(); level++) {
             List<Rate> versions = end != null ? repository.versionsAsOf(sheets.get(level), end)

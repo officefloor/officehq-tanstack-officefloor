@@ -4,8 +4,10 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -13,7 +15,8 @@ import org.springframework.stereotype.Repository;
 /** Rates by sheet: per grade, at most one in force per from-date (and at most one with no from-date) — the newest of
  *  the versions set for it, the older ones kept. A grade with no rate in
  *  force on a date on a sheet takes its parent sheet's rate on that date, then the parent's parent's, up to
- *  {@link #LEVELS} levels up. */
+ *  {@link #LEVELS} levels up; then, on a sheet that was cloned, the sheet it was cloned from and its parents, then
+ *  that sheet's source and its parents, and so on (see {@link #lineage}). */
 @Repository
 public class RateRepository implements Rates {
 
@@ -52,11 +55,11 @@ public class RateRepository implements Rates {
     /** The grade's rate in force on the date for the claim (0: without regard to any claim): of the versions that
      *  reach it (see Rate.reaches), the one whose from-date is the latest on or before it (no from-date counting as
      *  the beginning of time); empty when none applies, or that one's to-date is before the date; then the same of
-     *  the sheet's parents, nearest first. */
+     *  the sheet's lineage, nearest first. */
     @Override
     public Optional<Rate> on(String sheetId, String grade, LocalDate date, long claimId) {
         Optional<Rate> rate = Rates.on(Rates.forClaim(versions(sheetId), claimId), grade, date);
-        for (String parent : parents(sheetId)) {
+        for (String parent : lineage(sheetId)) {
             if (rate.isPresent()) {
                 break;
             }
@@ -66,11 +69,11 @@ public class RateRepository implements Rates {
     }
 
     /** The sheet's rates as they stood at the end of the day: each set from a from-date replaces the one set before
-     *  it for the grade from that same date; with its parents' rates as they stood then, nearest first. */
+     *  it for the grade from that same date; with its lineage's rates as they stood then, nearest first. */
     public Rates asOf(String sheetId, LocalDate end) {
         List<List<Rate>> levels = new ArrayList<>();
         levels.add(versionsAsOf(sheetId, end));
-        for (String parent : parents(sheetId)) {
+        for (String parent : lineage(sheetId)) {
             levels.add(versionsAsOf(parent, end));
         }
         return (sheet, grade, date, claimId) -> levels.stream()
@@ -90,6 +93,34 @@ public class RateRepository implements Rates {
             parents.add(at);
         }
         return parents;
+    }
+
+    /** The sheets a grade with no rate of the sheet's own takes one from, nearest first: its parents (see parents),
+     *  then, when it was cloned, the sheet it was cloned from followed by that sheet's own lineage; each sheet at most
+     *  once, never the sheet itself. */
+    public List<String> lineage(String sheetId) {
+        List<String> lineage = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        seen.add(sheetId);
+        String at = sheetId;
+        while (at != null) {
+            for (String parent : parents(at)) {
+                if (seen.add(parent)) {
+                    lineage.add(parent);
+                }
+            }
+            at = clonedFrom(at);
+            if (at == null || !seen.add(at)) {
+                break;
+            }
+            lineage.add(at);
+        }
+        return lineage;
+    }
+
+    private String clonedFrom(String sheetId) {
+        return jdbc.query("SELECT cloned_from FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null,
+                sheetId);
     }
 
     private String parent(String sheetId) {

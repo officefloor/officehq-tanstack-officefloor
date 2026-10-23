@@ -7,7 +7,8 @@ import type { DatedValue } from '../settings/settings';
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
  *  null: from the beginning of time) through its to-date (null: with no end). A grade may have several, one
  *  per from-date; none when it has no rate. `level` is where it comes from: 0 the sheet's own, 1 its parent
- *  sheet's, 2 the parent's parent's, 3 the one above that. `version` is how many have been set for the grade from
+ *  sheet's, 2 the parent's parent's, 3 the one above that; after them, on a cloned sheet, the sheet it was cloned from,
+ *  its parents, its own source and so on. `version` is how many have been set for the grade from
  *  that from-date (this the newest, the one in force). A forward-only rate (saved with a from-date on or after the
  *  sheet's today) carries `after`, the highest claim id when it was saved: it reaches only claims added after it (a
  *  higher id); null or absent: every claim. `older` are the grade's older versions from that from-date, newest first:
@@ -41,7 +42,8 @@ export function ownRates(rates: Rate[]): Rate[] {
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
-/** The sheet's rates, every grade's every from-date, then its parents' (up to three levels up). */
+/** The sheet's rates, every grade's every from-date, then its parents' (up to three levels up), then, on a clone,
+ *  those of the sheet it was cloned from and its parents and source. */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -52,7 +54,7 @@ export function useRates(sheetId: string) {
 /** A grade's rate in force on a date (yyyy-mm-dd), for the claim with the id when one is given (of the rates that
  *  reach it, see Rate): the one whose from-date is the latest on or before it, a rate with no from-date applying from
  *  the beginning of time; undefined when none applies, or that one's to-date is before the date. When the sheet's own
- *  has none, the nearest parent's that has one. */
+ *  has none, the nearest level's (parent, or a clone's source) that has one. */
 export function rateOn(rates: Rate[], grade: string, date: string, claimId?: number): string | undefined {
   const levels = [...new Set(rates.map((r) => r.level ?? 0))].sort((a, b) => a - b);
   for (const level of levels) {

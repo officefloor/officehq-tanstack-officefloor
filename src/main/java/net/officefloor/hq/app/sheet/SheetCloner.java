@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** Copies a sheet to an id never used. The clone gets the sheet's today and settings (dated ones, their log, the
+/** Copies a sheet to an id never used, the clone recording the sheet it was cloned from. The clone gets the sheet's today and settings (dated ones, their log, the
  *  permissions and the sheet-wide ones, the pot and its log; never archived), roles, rates (and their log), holidays,
  *  void reasons,
  *  templates and tags used, its people (in their place in the list, with their grades, terms, contact, aliases, holds,
@@ -34,7 +34,7 @@ public class SheetCloner {
 
     public void copy(String from, String to, String user) {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, "
-                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds "
+                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, cloned_from) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, id "
                 + "FROM sheet WHERE id = ?", to, user, from);
         copyRows("rate", "grade, pct, from_date, to_date, version, after_claim", null, from, to);
         copyRows("rate_log", "grade, pct, from_date, to_date, made_on, version, after_claim", "id", from, to);
