@@ -18,10 +18,10 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Open each selected claim that can be opened, in list order (people in list order, newest
- *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
+ *  claim first within a person), leaving each unnumbered (a claim is numbered when settled). Each is opened as a single open would be,
  *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
  *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, dated in a closed period, its person already at its period's cap of OPEN or PENDING claims, or with an empty note and a due above the note threshold in force on its date, or its person flagged in force and the user not a steward) is left as it is and counted as refused. One whose due is above the review threshold in force on
- *  its date goes to REVIEW instead, unnumbered, with a CLAIM_REVIEW line, and is counted as opened. */
+ *  its date goes to REVIEW instead, with a CLAIM_REVIEW line, and is counted as opened. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims, ClaimLogRepository log,
             PersonRepository people, PeriodRepository periods, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
@@ -47,13 +47,12 @@ public class BulkOpenClaims {
                         && !flagged(claim, input.user(), roles, flags)) {
                     Rollup before = rollups.take(sheet);
                     boolean review = ClaimStatusChange.reviewRequired(claim, claims, people, rates, settings, sheets);
-                    String number = review ? null : claims.nextNumber(sheet, claim.dueBy());
-                    claims.changeStatus(claim, review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, number,
+                    claims.changeStatus(claim, review ? ClaimStatus.REVIEW : ClaimStatus.OPEN, claim.number(),
                             claim.settledDue(), input.user());
                     log.record(claim, input.user());
                     audit.record((review ? "CLAIM_REVIEW" : "CLAIM_OPENED") + " sheet=" + sheet + " by=" + input.user()
                             + " person=" + person.name() + " amount=" + claim.amount().toPlainString()
-                            + " date=" + claim.date() + (review ? "" : " number=" + number));
+                            + " date=" + claim.date() + (claim.number() != null ? " number=" + claim.number() : ""));
                     rollups.record(sheet, input.user(), before);
                     opened++;
                 }

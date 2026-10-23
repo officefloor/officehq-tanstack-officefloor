@@ -327,7 +327,7 @@ public class ClaimRepository {
                 rs -> rs.next() ? rs.getBoolean(1) : false, sheetId));
     }
 
-    /** Take the next number for a claim due by the date, as it is opened. While the sheet's period numbering from
+    /** Take the next number for a claim due by the date, as it is settled. While the sheet's period numbering from
      *  is a date and the sheet's today is on or after it, that is the next in the claim's period (the one holding its due-by: <period name>-<n>),
      *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the next number of the
      *  sheet's tree (the sheet's root, reached through its parents, and every descendant of the root) within the

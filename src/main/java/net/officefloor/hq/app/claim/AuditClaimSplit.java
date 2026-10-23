@@ -14,9 +14,9 @@ public class AuditClaimSplit {
         audit.record("CLAIM_SPLIT sheet=" + split.original().sheetId() + " by=" + input.user()
                 + " person=" + person.name() + " amount=" + original.amount() + " date=" + original.date()
                 + (original.number() != null ? " number=" + original.number() : "")
-                + " into=" + added.number());
+                + " into=" + (added.number() != null ? added.number() : ""));
         audit.record("CLAIM_OPENED sheet=" + split.added().sheetId() + " by=" + input.user()
                 + " person=" + person.name() + " amount=" + added.amount() + " date=" + added.date()
-                + " number=" + added.number());
+                + (added.number() != null ? " number=" + added.number() : ""));
     }
 }

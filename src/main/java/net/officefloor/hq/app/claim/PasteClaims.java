@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  is written. Otherwise each line, in order, is added just as the claim form adds one (its CLAIM_ADDED line) — or, when
  *  the person has a claim of the line's date and note, that claim is updated: a DRAFT is edited to the line's amount
  *  (CLAIM_EDITED when it changes), a claim of any other status refuses the paste — and then opened by the user as the
- *  open button would open it (numbered in paste order, its CLAIM_OPENED line, then how the sheet's figures moved over
+ *  open button would open it (its CLAIM_OPENED line, then how the sheet's figures moved over
  *  the line). Any refusal the open button would give refuses the whole paste: nothing stored is kept and no audit line
  *  is written. */
 public class PasteClaims {

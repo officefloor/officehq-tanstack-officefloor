@@ -13,19 +13,19 @@ public final class DueBy {
     private DueBy() {
     }
 
-    /** The terms (business days) a new claim of the person is fixed with: those in force on the day it is created
-     *  (the sheet's today), not on its date — the person's own terms in force on that day, else the terms of their
-     *  grade then in force on it (else the sheet's terms in force on it). */
-    public static int terms(Person person, SettingRepository settings, SheetRepository sheets) {
+    /** The terms (business days) a new claim of the person dated on the date is fixed with: those in force on the day
+     *  it is created (the sheet's today) — the person's own terms in force on that day, else the terms in force on it
+     *  of their grade on the claim's date (else the sheet's terms in force on it). */
+    public static int terms(Person person, LocalDate date, SettingRepository settings, SheetRepository sheets) {
         var today = sheets.today(person.sheetId());
         Integer own = person.terms().on(today);
-        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(today), today);
+        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(date), today);
     }
 
     /** The due-by of a new claim of the person dated on the date: the terms-th business day after the date, skipping
      *  Saturdays, Sundays and the sheet's holidays as they are now. */
     public static LocalDate of(Person person, LocalDate date, SettingRepository settings, SheetRepository sheets,
             HolidayRepository holidays) {
-        return holidays.dueBy(person.sheetId(), date, terms(person, settings, sheets));
+        return holidays.dueBy(person.sheetId(), date, terms(person, date, settings, sheets));
     }
 }

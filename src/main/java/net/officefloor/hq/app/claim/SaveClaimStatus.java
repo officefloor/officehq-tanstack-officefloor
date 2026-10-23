@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Move the loaded claim to its new status, refusing a change its status does not allow (or one
- *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
+ *  another user's change got to first). Settling (or approving) gives an unnumbered claim the next number in its sequence, by its due-by then; voiding
  *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it; nor may the user who last edited it (SaveClaim records them). Settling fixes its due
  *  as its row shows it now: the bound figure, else live at the person's grade rate now in force on the claim's date,
  *  floored to at least the sheet's floor in force on its date, with the late charge as of today on that, frozen in. A claim whose due (as shown) is above the sheet's proof threshold in force

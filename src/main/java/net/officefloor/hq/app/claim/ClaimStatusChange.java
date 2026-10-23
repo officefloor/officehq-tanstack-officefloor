@@ -35,8 +35,8 @@ final class ClaimStatusChange {
         ClaimStatus to = check(input, loaded, repository, people, rates, roles, settings, sheets, log);
         boolean opening = input.action().equals("open");
         String openedBy = opening ? input.user() : loaded.openedBy();
-        // a claim gone to REVIEW is numbered only once a steward reviews it OPEN
-        String number = (opening && to == ClaimStatus.OPEN) || input.action().equals("review")
+        // a claim is numbered only once it is settled (or approved); one numbered already keeps its number
+        String number = to == ClaimStatus.SETTLED && loaded.number() == null
                 ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
         BigDecimal settledDue = input.action().equals("resettle")
                 ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)

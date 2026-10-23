@@ -34,7 +34,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  A claim's live due is at least the floor; its due-by is the terms-th business day after its date (skipping Saturdays, Sundays and holidays); once overdue it gains, for every full 30
  *  days, the late percent in force on that boundary date of its figure. A claim dated before the policy date (blank: the sheet's today)
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
- *  on or before the sheet's today, a claim opened is numbered within its period (<period>-<n>, X-<n> in none).
+ *  on or before the sheet's today, a claim settled is numbered within its period (<period>-<n>, X-<n> in none).
  *  A grade may have terms of its own (blank: the sheet's terms); a claim's terms are fixed when it is created, from
  *  the terms of its person's grade on its date. A grade may have grace days (blank: none); a claim whose person's grade
  *  on its date has a grace in force on that date is overdue only past its due-by plus them, and its late charge's

@@ -21,7 +21,7 @@ public class SaveNewClaim {
     static Claim insert(ClaimInput input, Person person, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
             PeriodRepository periods, ClaimRepository repository, ClaimLogRepository log) {
         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
-        int terms = DueBy.terms(person, settings, sheets);
+        int terms = DueBy.terms(person, date, settings, sheets);
         var dueBy = holidays.dueBy(person.sheetId(), date, terms);
         Claim added = repository.insert(terms, new Claim(0, person.sheetId(), person.id(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null, false, null, input.corrects(), dueBy, null, 0, null,
