@@ -1,0 +1,467 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 00cbbea5..41c97789 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -7,8 +7,9 @@ import { SheetBody } from '../../slots/defs/sheet';
+ import { useClaims } from '../claims/claims';
+ import { nameWithGrade, usePeople } from '../people/people';
+ import { personDueTotal, useRates } from '../rates/rates';
++import { usePersonCap } from '../pools/pools';
+ import { useSheetToday } from '../sheet/sheet';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { useFloor, useLate } from '../settings/settings';
+ import { crewDueTotal, crewsKey, useCrews } from './crews';
+ import type { Crew } from './crews';
+ 
+@@ -20,8 +21,8 @@ function useCrewDueTotal(sheetId: string, crew: Crew): string {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
+-  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, cap, people));
++  const capOf = usePersonCap(sheetId);
++  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people));
+ }
+ 
+ /** One crew: its lead, its due-total, its members, and the entry a member is added with. */
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index f79dfabe..6755bce8 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -3,7 +3,8 @@ import { crewDueTotal, useCrews } from '../crews/crews';
+ import { STATUSES, useClaims } from '../claims/claims';
+ import { usePeople, type Person } from '../people/people';
+ import { overdueDues, personDueTotal, sheetDueTotal, sheetOverdueTotal, sumDue, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useWatches } from '../watch/watch';
+ 
+@@ -21,10 +22,10 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   const crews = useCrews(sheetId).data ?? [];
+   const me = personNamed(people, user);
+-  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, cap, people);
++  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people);
+   const watched = new Set(useWatches(sheetId, user).data ?? []);
+   const led = me ? crews.filter((c) => c.leadId === me.id) : [];
+ 
+@@ -40,7 +41,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+         </span>
+       ))}{' '}
+       <span>
+-        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, cap)}</strong>
++        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, capOf)}</strong>
+       </span>{' '}
+       <span>
+         Overdue total <strong data-testid="header-overdue-total">{sheetOverdueTotal(people, claims, rates, late, floor)}</strong>
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index a39a805a..3672bf53 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -1,7 +1,8 @@
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { useClaims } from '../claims/claims';
+ import { personDueTotal, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
+ import { useSheetToday } from '../sheet/sheet';
+ import { gradeOn, usePeople } from './people';
+ 
+@@ -21,7 +22,7 @@ function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+ 
+   const download = () => {
+     const lines = [
+@@ -30,7 +31,7 @@ function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
+         p.name,
+         gradeOn(p, today),
+         p.retiredFrom ?? '',
+-        personDueTotal(p, claims, rates, today, floor, late, cap, people),
++        personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people),
+       ]),
+     ];
+     const csv = lines.map((values) => values.map(csvValue).join(',') + '\n').join('');
+diff --git a/src/main/frontend/features/people/sort.ts b/src/main/frontend/features/people/sort.ts
+index fb1ade90..4567f9f6 100644
+--- a/src/main/frontend/features/people/sort.ts
++++ b/src/main/frontend/features/people/sort.ts
+@@ -1,6 +1,7 @@
+ import { useClaims } from '../claims/claims';
+ import { capped, personDueSum, toCents, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
++import { useFloor, useLate } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { gradeOn, type Person } from './people';
+@@ -29,13 +30,13 @@ export function useSortedPeople(sheetId: string, people: Person[]): Person[] {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   if (sortBy === 'added') return people;
+   const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+   const keyed = people.map((p, i) => {
+     if (sortBy === 'name') return { p, i, key: nameKey(p.name) };
+     if (sortBy === 'grade') return { p, i, key: (today !== '' && gradeOn(p, today)) || p.grade };
+-    const due = capped(personDueSum(p, claims, rates, today, floor, late, people), cap);
++    const due = capped(personDueSum(p, claims, rates, today, floor, late, people), capOf(p.id));
+     return { p, i, key: due, cents: due === 'n/a' ? null : toCents(due) };
+   });
+   return keyed
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 9b49729e..113ef00d 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -1,6 +1,7 @@
+ import { useQueries, useQuery } from '@tanstack/react-query';
+ import { getJson, getJsonNow } from '../../api/http';
+ import { usePeriods } from '../periods/periods';
++import { useCap } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ 
+ /** A member of a pool — a person, or another pool (poolId; personId then null) — with their share percent, whether
+@@ -92,6 +93,19 @@ export function personCutTotal(pools: Pool[], personId: number): string {
+   return formatCents(personCutCents(pools, personId));
+ }
+ 
++/** The cap as it holds a person's due-total: the sheet's cap less their cut total, not below 0.00 ('' when there is
++ *  no cap). */
++export function capLessCut(cap: string, pools: Pool[], personId: number): string {
++  return cap === '' ? '' : formatCents(Math.max(0, cents(cap) - personCutCents(pools, personId)));
++}
++
++/** Each person's cap (see capLessCut), by person id, on the sheet's cap and pools. */
++export function usePersonCap(sheetId: string): (personId: number) => string {
++  const cap = useCap(sheetId);
++  const pools = usePools(sheetId).data ?? [];
++  return (personId) => capLessCut(cap, pools, personId);
++}
++
+ /** The sheet's cut total: every listed person's cut total added up. */
+ export function sheetCutTotal(pools: Pool[], personIds: number[]): string {
+   return formatCents(personIds.reduce((total, id) => total + personCutCents(pools, id), 0));
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index d180399f..f9181330 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -9,7 +9,8 @@ import { useClaims } from '../claims/claims';
+ import { GRADES, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
++import { useFloor, useLate } from '../settings/settings';
+ import { capped, excess, OPEN_STATUSES, ownRates, personDueSum, personStatusSum, rateOn, ratePreview, ratesKey, SETTLED_STATUSES,
+   sheetDueTotal, sheetStatusSum, useRates } from './rates';
+ import type { Rate } from './rates';
+@@ -267,8 +268,8 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
+   );
+ }
+ 
+-/** A person's due-total: the figures of their claims that count added up, at most the sheet's cap (see
+- *  personDueTotal). */
++/** A person's due-total: the figures of their claims that count added up, at most the sheet's cap less their cut
++ *  total (see personDueTotal). */
+ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+   const shown = useColumnShown('due-total');
+   const people = usePeople(sheetId).data ?? [];
+@@ -277,12 +278,13 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; pe
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   if (!shown) return null;
+-  return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late, people), cap)}</td>;
++  return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late, people), capOf(person.id))}</td>;
+ }
+ 
+-/** A person's excess: how far their figures added up are above the sheet's cap; 0.00 when not above it. */
++/** A person's excess: how far their figures added up are above the sheet's cap less their cut total (not below
++ *  0.00); 0.00 when not above it. */
+ function PersonExcess({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
+   const shown = useColumnShown('excess');
+   const people = usePeople(sheetId).data ?? [];
+@@ -291,11 +293,11 @@ function PersonExcess({ sheetId, person }: { sheetId: string; user: string; pers
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   if (!shown) return null;
+   return (
+     <td>
+-      Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late, people), cap)}</span>
++      Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late, people), capOf(person.id))}</span>
+     </td>
+   );
+ }
+@@ -308,10 +310,10 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   return (
+     <p>
+-      Due total <strong data-testid="rollup-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, cap)}</strong>
++      Due total <strong data-testid="rollup-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, capOf)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 2bd315fe..e9a324a4 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -208,8 +208,8 @@ export function sheetStatusSum(people: Person[], claims: Claim[], rates: Rate[],
+   return sumDue(people.map((p) => personStatusSum(p, claims, rates, today, floor, late, statuses)));
+ }
+ 
+-/** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
+- *  cap ('' when none). */
++/** A person's due-total as shown on their row: their figures added up (see personDueSum), at most their cap: the
++ *  sheet's cap less their cut total ('' when none; see usePersonCap). */
+ export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+     late: Late, cap: string, people: Person[] = []): string {
+   return capped(personDueSum(person, claims, rates, today, floor, late, people), cap);
+@@ -270,10 +270,11 @@ export function trimmedSum(figures: string[]): string {
+   return fromCents(kept.reduce((total, c) => total + c, 0n));
+ }
+ 
+-/** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed (see trimmedSum). */
++/** The sheet's due-total: every person's due-total (at their cap, by person id) added up, skipping n/a, trimmed
++ *  (see trimmedSum). */
+ export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+-    late: Late, cap: string): string {
+-  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)));
++    late: Late, capOf: (personId: number) => string): string {
++  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people)));
+ }
+ 
+ /** The sheet's overdue-total: every person's overdue-total (see overdueDues) added up, trimmed (see trimmedSum). */
+diff --git a/src/main/frontend/features/snapshots/compare.slot.tsx b/src/main/frontend/features/snapshots/compare.slot.tsx
+index b6a9a21a..d47f872f 100644
+--- a/src/main/frontend/features/snapshots/compare.slot.tsx
++++ b/src/main/frontend/features/snapshots/compare.slot.tsx
+@@ -3,7 +3,8 @@ import { SheetBody } from '../../slots/defs/sheet';
+ import { useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+ import { personDueTotal, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
++import { useFloor, useLate } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+ import { type Snapshot, useSnapshots } from './snapshots';
+ 
+@@ -30,7 +31,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   const all = snapshots.data ?? [];
+ 
+   const compare = () => {
+@@ -52,7 +53,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string; user: string }) {
+             const then = snapshotOn(all, p.id, compared.from);
+             const now = compared.to
+               ? snapshotOn(all, p.id, compared.to)
+-              : personDueTotal(p, claims, rates, today, floor, late, cap, people);
++              : personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people);
+             return (
+               <li key={p.id} data-testid="snapshot-line" style={{ whiteSpace: 'pre' }}>
+                 {`${p.name} ${then} ${now}`}
+diff --git a/src/main/frontend/features/summary/classic.slot.tsx b/src/main/frontend/features/summary/classic.slot.tsx
+index 88c9e5cf..f055fdc4 100644
+--- a/src/main/frontend/features/summary/classic.slot.tsx
++++ b/src/main/frontend/features/summary/classic.slot.tsx
+@@ -3,7 +3,8 @@ import { useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+ import { classicPeriodDueTotal, usePeriods } from '../periods/periods';
+ import { personDueTotal, sumDue, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate } from '../settings/settings';
++import { useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
+ import { useSheetToday } from '../sheet/sheet';
+ 
+ /** The classic summary, shown beside the summary: per period its classic due-total (each claim counted by its status
+@@ -17,7 +18,7 @@ function ClassicSummary({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+ 
+   return (
+     <section data-testid="classic">
+@@ -40,7 +41,7 @@ function ClassicSummary({ sheetId }: { sheetId: string; user: string }) {
+             <td>
+               Due total{' '}
+               <span data-testid="classic-due-total">
+-                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)))}
++                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people)))}
+               </span>
+             </td>
+           </tr>
+diff --git a/src/main/frontend/features/summary/othersheet.slot.tsx b/src/main/frontend/features/summary/othersheet.slot.tsx
+index 77615ed9..84d05d69 100644
+--- a/src/main/frontend/features/summary/othersheet.slot.tsx
++++ b/src/main/frontend/features/summary/othersheet.slot.tsx
+@@ -5,7 +5,8 @@ import { SheetBody } from '../../slots/defs/sheet';
+ import { type Claim, useClaims } from '../claims/claims';
+ import { GRADES, gradeOn, type Person, usePeople } from '../people/people';
+ import { personDueTotal, sumDue, type Rate, useRates } from '../rates/rates';
+-import { floorOf, lateOf, type Settings, useCap, useFloor, useLate } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
++import { floorOf, lateOf, type Settings, useFloor, useLate } from '../settings/settings';
+ import { type Sheet, useSheetToday } from '../sheet/sheet';
+ 
+ /** Per grade the due-totals of a sheet's people on it today added up (retired ones left out), as its summary
+@@ -56,10 +57,10 @@ function OtherSheetCompare({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   const other = useOtherGrades(compared.id, compared.run);
+   const mine = gradeTotals(people, today,
+-    (p) => personDueTotal(p, claims, rates, today, floor, late, cap, people));
++    (p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people));
+ 
+   return (
+     <section>
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 1d4cd805..1ac3cf23 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -3,7 +3,8 @@ import { STATUSES, active as isActive, reviewLate, useClaims } from '../claims/c
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+ import { periodDueTotal, usePeriods } from '../periods/periods';
+ import { diffDue, personDueTotal, sumDue, useRates } from '../rates/rates';
+-import { useCap, useFloor, useLate, useReviewSla } from '../settings/settings';
++import { useFloor, useLate, useReviewSla } from '../settings/settings';
++import { usePersonCap } from '../pools/pools';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ 
+@@ -19,7 +20,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
++  const capOf = usePersonCap(sheetId);
+   const reviewSla = useReviewSla(sheetId);
+   const voidReasons = useVoidReasons(sheetId).data ?? [];
+   const active = people.filter((p) => p.retiredFrom === null);
+@@ -44,7 +45,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
+                 <td>
+                   Due total{' '}
+                   <span data-testid={`summary-grade-${g}-due-total`}>
+-                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)))}
++                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people)))}
+                   </span>
+                 </td>
+                 <td>
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+index 08d8e0be..4e02b169 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+@@ -12,8 +12,12 @@ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimShareRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
++import net.officefloor.hq.app.pool.PoolResponse;
++import net.officefloor.hq.app.pool.ShownPools;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -36,10 +40,15 @@ public class Rollups {
+     private final SheetRepository sheets;
+     private final SettingRepository settings;
+     private final ClaimShareRepository shares;
++    private final PoolRepository pools;
++    private final CrewRepository crews;
+     private final Audit audit;
+ 
+     public Rollups(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, ClaimShareRepository shares, Audit audit) {
++            SettingRepository settings, ClaimShareRepository shares, PoolRepository pools, CrewRepository crews,
++            Audit audit) {
++        this.pools = pools;
++        this.crews = crews;
+         this.shares = shares;
+         this.people = people;
+         this.claims = claims;
+@@ -62,6 +71,7 @@ public class Rollups {
+         List<BigDecimal> overdues = new ArrayList<>();
+         List<Person> everyone = people.list(sheetId);
+         Map<Long, BigDecimal> parts = shareParts(sheetId, everyone, all, today, floor, late);
++        Map<Long, BigDecimal> cuts = cap != null ? cutTotals(sheetId) : Map.of();
+         for (Person p : everyone) {
+             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
+             // claimed: the amounts of their claims that count toward claimed (a held one does), leaving out corrections of another claim
+@@ -70,7 +80,9 @@ public class Rollups {
+                     .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
+             BigDecimal own = Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late);
+             BigDecimal part = parts.get(p.id());
+-            BigDecimal due = Dues.capped(part == null ? own : own == null ? part : own.add(part), cap);
++            // the cap covers their due-total and their cut total: their due-total is held to the cap less their cut total
++            BigDecimal due = Dues.capped(part == null ? own : own == null ? part : own.add(part),
++                    Dues.capLess(cap, cuts.get(p.id())));
+             // overdue-total: the dues (as shown, late charge included) of their overdue claims that count, skipping n/a
+             BigDecimal overdue = theirs.stream()
+                     .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && late.overdue(c))
+@@ -119,6 +131,20 @@ public class Rollups {
+         return parts;
+     }
+ 
++    /** Each person's cut total, by person id: their cuts (as the pools show them) across every pool and crew they
++     *  are a member of, added up. A person with no cut has no entry. */
++    private Map<Long, BigDecimal> cutTotals(String sheetId) {
++        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
++        for (PoolResponse pool : ShownPools.list(sheetId, null, pools, crews, people, sheets, settings)) {
++            for (PoolResponse.Member m : pool.members()) {
++                if (m.poolId() == null && m.personId() != null && !m.cut().isEmpty()) {
++                    totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
++                }
++            }
++        }
++        return totals;
++    }
++
+     /** A person's name and score. */
+     public record Score(String name, String score) {
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Dues.java b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+index e5124580..081f7380 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+@@ -109,6 +109,11 @@ public final class Dues {
+         return due.multiply(share).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_EVEN);
+     }
+ 
++    /** The cap less a person's cut total (null: none), not below 0.00; null when there is no cap. */
++    public static BigDecimal capLess(BigDecimal cap, BigDecimal cut) {
++        return cap == null || cut == null ? cap : cap.subtract(cut).max(BigDecimal.ZERO.setScale(2));
++    }
++
+     /** A due-total at most the sheet's cap (null: none); n/a (null) is not capped. */
+     public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
+         return total != null && cap != null ? total.min(cap) : total;
