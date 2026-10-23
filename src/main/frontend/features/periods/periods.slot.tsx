@@ -147,22 +147,21 @@ function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: s
 
 /** The form that generates one yyyy-mm period per calendar month from the from-date's month to the to-date's month
  *  (months already taken are left out), or the twelve months of a fiscal year (FY<yyyy>, from the sheet's fiscal year
- *  start month in yyyy) the same way, and how many it made. */
+ *  start month in yyyy) the same way, or the four calendar quarters of a year (<yyyy>-Q1 to <yyyy>-Q4, a quarter already
+ *  a period or overlapping one left out), and how many it made. */
 function GeneratePeriods({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [fyYear, setFyYear] = useState('');
+  const [quarterYear, setQuarterYear] = useState('');
   const [generated, setGenerated] = useState<number | null>(null);
   const [error, setError] = useState('');
   const once = useSubmitOnce();
 
   const generate = useMutation({
-    mutationFn: (body: { from: string; to: string } | { year: string }) =>
-      postJson<{ generated: number }>(
-        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${'year' in body ? 'generate-fy' : 'generate'}`,
-        { user, ...body },
-      ),
+    mutationFn: ({ path, ...body }: { path: string; from?: string; to?: string; year?: string }) =>
+      postJson<{ generated: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${path}`, { user, ...body }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
       setGenerated(result.generated);
@@ -185,7 +184,7 @@ function GeneratePeriods({ sheetId, user }: { sheetId: string; user: string }) {
       return;
     }
     if (!once.start()) return;
-    generate.mutate({ from: from.trim(), to: to.trim() });
+    generate.mutate({ path: 'generate', from: from.trim(), to: to.trim() });
   };
 
   const generateFy = () => {
@@ -196,7 +195,18 @@ function GeneratePeriods({ sheetId, user }: { sheetId: string; user: string }) {
       return;
     }
     if (!once.start()) return;
-    generate.mutate({ year: fyYear.trim() });
+    generate.mutate({ path: 'generate-fy', year: fyYear.trim() });
+  };
+
+  const generateQuarters = () => {
+    setError('');
+    setGenerated(null);
+    if (!/^\d{4}$/.test(quarterYear.trim())) {
+      setError('The year must be a year, yyyy.');
+      return;
+    }
+    if (!once.start()) return;
+    generate.mutate({ path: 'generate-quarters', year: quarterYear.trim() });
   };
 
   const change = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -221,6 +231,13 @@ function GeneratePeriods({ sheetId, user }: { sheetId: string; user: string }) {
       </label>{' '}
       <button type="button" data-testid="period-generate-fy" disabled={generate.isPending} onClick={generateFy}>
         Generate fiscal year
+      </button>{' '}
+      <label>
+        Year <input data-testid="period-generate-quarters-year" placeholder="yyyy" value={quarterYear}
+          onChange={change(setQuarterYear)} />
+      </label>{' '}
+      <button type="button" data-testid="period-generate-quarters" disabled={generate.isPending} onClick={generateQuarters}>
+        Generate quarters
       </button>
       {generated !== null && (
         <span>
