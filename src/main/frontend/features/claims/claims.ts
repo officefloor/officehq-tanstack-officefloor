@@ -31,13 +31,15 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  (null when none: unique on the sheet without regard to case — the server refuses a repeat), and its tags (trimmed,
  *  lower-cased, without repeats, sorted; empty when none), and its comments, oldest first, as <user> on <date>: <text>
  *  (the date being the sheet's today when it was written), and the number of the settle batch that settled it (null when
- *  none did: it was settled one at a time, or is not settled). */
+ *  none did: it was settled one at a time, or is not settled), and its lines, in the order added, as
+ *  <label> <qty> x <unit> (only a DRAFT takes a line; a claim with lines has their total as its amount — the server
+ *  refuses an edit typing another). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
-  comments: string[]; batch: number | null };
+  comments: string[]; batch: number | null; lines: string[] };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED ones do, except
  *  one deferred on the sheet's today. */

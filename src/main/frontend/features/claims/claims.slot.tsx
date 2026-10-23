@@ -31,7 +31,7 @@ const NUMBER = /^(\d+|.+-\d+)$/;
  *  of the same person it corrects (the server checks that claim). A reference (trimmed; blank: none) must not be
  *  used by another claim on the sheet, compared without regard to case (the server checks that). Tags are separated by
  *  commas (blank: none; the server trims, lower-cases and drops repeats). A new claim the server refuses clears the form,
- *  as one it adds does, leaving its error showing. A new claim may instead be made from a template chosen on the row:
+ *  as one it adds does, leaving its error showing; a refused edit puts the claim's stored values back in the form. A new claim may instead be made from a template chosen on the row:
  *  a DRAFT with the template's amount and note as they are now and no date, added by the server by every rule of this
  *  form; its refusal shows as this form's error. */
 function ClaimForm({ sheetId, user, person, editing, onAdded }: {
@@ -98,6 +98,15 @@ function ClaimForm({ sheetId, user, person, editing, onAdded }: {
         setCorrects('');
         setRef('');
         setTags('');
+      } else {
+        // a refused edit is consumed too: the editor goes back to the claim as stored (a claim with lines keeps
+        // their total as its amount), so the next edit starts from it
+        setAmount(editing.amount);
+        setDate(editing.date);
+        setNote(editing.note);
+        setCorrects(editing.corrects ?? '');
+        setRef(editing.ref ?? '');
+        setTags(editing.tags.join(', '));
       }
     },
     onSettled: once.done,
@@ -223,6 +232,9 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [splitAmount, setSplitAmount] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
   const [comment, setComment] = useState('');
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineQty, setLineQty] = useState('');
+  const [lineUnit, setLineUnit] = useState('');
 
   const change = useMutation({
     mutationFn: (action: string) =>
@@ -296,6 +308,22 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
         ? e.body : `Could not comment this ${claim.status} claim.`),
+  });
+
+  // Adding a line edits the claim: the server refuses it on a claim that is not a DRAFT, locked by another user or
+  // due in a closed period, and makes the claim's amount its lines' total.
+  const addLine = useMutation({
+    mutationFn: (line: { label: string; qty: string; unit: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/lines`, { user, ...line }),
+    onSuccess: async () => {
+      setLineLabel('');
+      setLineQty('');
+      setLineUnit('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
+        ? e.body : `Could not add a line to this ${claim.status} claim.`),
   });
 
   const redate = useMutation({
@@ -409,6 +437,64 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Comment
+      </button>{' '}
+      <ol data-testid="claim-lines">
+        {claim.lines.map((line, i) => (
+          <li key={i} data-testid="claim-lines-line">{line}</li>
+        ))}
+      </ol>{' '}
+      <input
+        data-testid="claim-line-label"
+        placeholder="Line label"
+        value={lineLabel}
+        onChange={(e) => {
+          clearError();
+          setLineLabel(e.target.value);
+        }}
+      />{' '}
+      <input
+        data-testid="claim-line-qty"
+        placeholder="Qty"
+        value={lineQty}
+        onChange={(e) => {
+          clearError();
+          setLineQty(e.target.value);
+        }}
+      />{' '}
+      <input
+        data-testid="claim-line-unit"
+        placeholder="Unit"
+        value={lineUnit}
+        onChange={(e) => {
+          clearError();
+          setLineUnit(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-line-add"
+        disabled={addLine.isPending}
+        onClick={() => {
+          clearError();
+          const label = lineLabel.trim();
+          const qty = lineQty.trim();
+          const unit = lineUnit.trim();
+          if (label === '') {
+            setError('A line needs a label.');
+            return;
+          }
+          if (!/^\d{1,6}$/.test(qty) || Number(qty) < 1) {
+            setError("A line's quantity must be a whole number, at least 1.");
+            return;
+          }
+          if (!/^\d{1,12}(\.\d{1,2})?$/.test(unit)) {
+            setError("A line's unit amount must be a number with up to two decimals.");
+            return;
+          }
+          addLine.mutate({ label, qty, unit });
+        }}
+      >
+        Add line
       </button>{' '}
       <button
         type="button"

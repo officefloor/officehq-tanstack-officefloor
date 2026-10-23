@@ -166,7 +166,7 @@ public class ClaimRepository {
     }
 
     /** Move every claim of the person to another sheet, keeping its place in their list, its status, dates, note,
-     *  settled due, tags, comments and log: each claim that had a number takes the next number of the other sheet,
+     *  settled due, tags, comments, lines and log: each claim that had a number takes the next number of the other sheet,
      *  in the order the claims were added; each keeps the figure a statement bound it to, loses its reference, editor lock and
      *  settle batch, and its history here is dropped (it is kept anew on the other sheet). */
     public void transfer(String sheetId, long personId, String toSheet) {
@@ -177,7 +177,7 @@ public class ClaimRepository {
             jdbc.update("UPDATE claim SET sheet_id = ?, claim_number = ?, due_by = ?, "
                     + "ref = NULL, locked_by = NULL WHERE sheet_id = ? AND id = ?", toSheet, number, c.dueBy(), sheetId,
                     c.id());
-            for (String table : List.of("claim_log", "claim_comment", "claim_void_reason")) {
+            for (String table : List.of("claim_log", "claim_comment", "claim_line", "claim_void_reason")) {
                 jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND claim_id = ?", toSheet,
                         sheetId, c.id());
             }
@@ -226,6 +226,13 @@ public class ClaimRepository {
                 claim.amount(), claim.date(), claim.note(), claim.corrects(), claim.ref(), claim.tags(), user, claim.sheetId(), claim.id());
         kept(claim.sheetId(), claim.id());
         used(claim.sheetId(), claim.tags());
+    }
+
+    /** Store the amount a line gave the claim (its lines' total), recording the user as its last editor. */
+    public void lined(Claim claim, java.math.BigDecimal amount, String user) {
+        jdbc.update("UPDATE claim SET amount = ?, edited_by = ? WHERE sheet_id = ? AND id = ?",
+                amount, user, claim.sheetId(), claim.id());
+        kept(claim.sheetId(), claim.id());
     }
 
     /** Keep each of the tags (joined by commas; null: none) among those ever used on the sheet. */

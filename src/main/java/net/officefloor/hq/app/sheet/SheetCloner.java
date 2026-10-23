@@ -175,6 +175,8 @@ public class SheetCloner {
             jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user, "
                     + "on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, copy, from,
                     id);
+            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit, on_date) SELECT ?, ?, label, qty, "
+                    + "unit, on_date FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, copy, from, id);
             jdbc.update("INSERT INTO claim_void_reason (sheet_id, claim_id, reason) SELECT ?, ?, reason FROM "
                     + "claim_void_reason WHERE sheet_id = ? AND claim_id = ?", to, copy, from, id);
         }
