@@ -1,0 +1,59 @@
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 6694d612..d0b0ac33 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ /** Merge a grade into another: only a steward may, and not into a retired grade. GRADE_MERGED is recorded, then
+  *  every person whose grade in force on the sheet's today is the merged grade is given the other from the sheet's
+  *  today, in list order, exactly as the person form's edit would: a new version, the grade recorded from today
+- *  keeping those from other dates, its PERSON_EDITED line and then how the sheet's figures moved over it; then how the sheet's figures moved over the whole merge. */
++ *  keeping those from other dates, its PERSON_EDITED line and then how the sheet's figures moved over it. The merge is then made retroactive for
++ *  each person it moved: every grade record of theirs on the merged grade becomes the other, so all their claims use
++ *  the other grade's rates, terms and thresholds (frozen and statement-bound figures stay as they are); then how the sheet's figures moved over the whole merge. */
+ public class MergeGrade {
+     public void merge(@PathVariable("sheetId") String sheetId, @Val GradeMergeRequest request, PeriodRepository periods,
+             RoleRepository roles, GradeRepository grades, PersonRepository people, SheetRepository sheets,
+@@ -52,6 +54,7 @@ public class MergeGrade {
+             audit.record("PERSON_EDITED sheet=" + sheet + " by=" + request.user()
+                     + " name=" + saved.name() + " grade=" + saved.grade());
+             rollups.record(sheet, request.user(), before);
++            people.regrade(person, request.from(), request.into());
+             changed++;
+         }
+         rollups.record(sheet, request.user(), start);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 5de3c6e1..d5c14067 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -470,6 +470,16 @@ public class PersonRepository {
+                 person.sheetId());
+     }
+ 
++    /** Retroactively turn every grade record of the person on the one grade into the other, whatever its from-date,
++     *  logged as made on the sheet's today so the sheet as it stood before is kept. */
++    public void regrade(Person person, String from, String into) {
++        for (var row : jdbc.queryForList("SELECT from_date FROM person_grade WHERE sheet_id = ? AND person_id = ? "
++                + "AND grade = ? ORDER BY from_date NULLS FIRST", person.sheetId(), person.id(), from)) {
++            LocalDate fromDate = toDate(row.get("from_date"));
++            grade(person, into, fromDate);
++        }
++    }
++
+     // ---- as of a date: the changes made while the sheet's today was on or before it -------------------------
+ 
+     /** The sheet's people as they stood at the end of the day, in list order: those added by then,
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+index 9bbc3212..2948e086 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -1,7 +1,8 @@
+ # Merge a grade into another: a steward only. Every person whose grade in force on the sheet's today is the merged
+ # grade is given the other from the sheet's today, in list order, each exactly as the person form's edit would (its
+-# PERSON_EDITED line and then how the sheet's figures moved over it), after the GRADE_MERGED line. A refused merge (no
+-# user, a bad grade, the same grade twice, not a steward, into a retired grade) writes nothing.
++# PERSON_EDITED line and then how the sheet's figures moved over it), after the GRADE_MERGED line.
++# Then, for each person moved, every grade record of theirs on the merged grade becomes the other (retroactively).
++# A refused merge (no user, a bad grade, the same grade twice, not a steward, into a retired grade) writes nothing.
+ validate:
+   class: net.officefloor.hq.app.grade.ValidateGradeMerge
+   next: merge
