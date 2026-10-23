@@ -162,6 +162,23 @@ public class PeriodRepository {
         return openings;
     }
 
+    /** The names of the sheet's locked periods. */
+    public java.util.Set<String> lockedNames(String sheetId) {
+        return new java.util.HashSet<>(jdbc.queryForList("SELECT name FROM period WHERE sheet_id = ? AND locked",
+                String.class, sheetId));
+    }
+
+    /** Whether the period is locked. */
+    public boolean locked(Period period) {
+        return lockedNames(period.sheetId()).contains(period.name());
+    }
+
+    /** Lock (or unlock) the period: false when it already was, and nothing is written. */
+    public boolean setLocked(Period period, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ? AND locked <> ?",
+                locked, period.sheetId(), period.name(), locked) == 1;
+    }
+
     /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
      *  is written. */
     public boolean reopen(Period period) {

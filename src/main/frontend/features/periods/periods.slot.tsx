@@ -16,7 +16,8 @@ import type { Period } from './periods';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** One period with its due-total (see periodDueTotal), whether it is closed (yes, soft or no), the fiscal year its
- *  from-date falls in (see fiscalYearOf), its cap on each person's open claims (blank: none), and the buttons that close it, soft-close it and (a steward only) reopen it. */
+ *  from-date falls in (see fiscalYearOf), its cap on each person's open claims (blank: none), and the buttons that close it, soft-close it and (a steward only) reopen it, whether it is locked (yes or no), and the buttons
+ *  that (a steward only) lock and unlock it. */
 function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: string; user: string; period: Period;
     dueTotal: string; fiscalYear: string }) {
   const queryClient = useQueryClient();
@@ -49,6 +50,15 @@ function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: s
     onError: (e) => setError(e instanceof HttpError && e.body ? e.body : 'Could not reopen this period.'),
   });
 
+  const lock = useMutation({
+    mutationFn: (to: 'lock' | 'unlock') =>
+      putJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/${to}`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: (e, to) => setError(e instanceof HttpError && e.body ? e.body : `Could not ${to} this period.`),
+  });
+
   return (
     <tr data-testid={`period-row-${period.name}`}>
       <td data-testid="period-name">{period.name}</td>
@@ -65,6 +75,9 @@ function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: s
       </td>
       <td>
         Cap <span data-testid="period-cap">{period.cap ?? ''}</span>
+      </td>
+      <td>
+        Locked <span data-testid="period-locked">{period.locked ? 'yes' : 'no'}</span>
       </td>
       <td>
         <button
@@ -99,6 +112,28 @@ function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: s
           }}
         >
           Reopen
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-lock"
+          disabled={lock.isPending}
+          onClick={() => {
+            setError('');
+            lock.mutate('lock');
+          }}
+        >
+          Lock
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-unlock"
+          disabled={lock.isPending}
+          onClick={() => {
+            setError('');
+            lock.mutate('unlock');
+          }}
+        >
+          Unlock
         </button>
         {error && (
           <p data-testid="period-error" role="alert">

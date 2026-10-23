@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Reopen the named closed or soft-closed period, dropping its fixed due-total so it is live again. Refused when the user's role may
- *  not reopen (the sheet's permission matrix; by default a steward only), there is no such period, or it is neither closed nor soft-closed. */
+ *  not reopen (the sheet's permission matrix; by default a steward only), there is no such period, it is locked, or it is neither closed nor soft-closed. */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
             @Val PeriodCloseInput input, PeriodRepository periods, RoleRepository roles, SettingRepository settings,
@@ -20,6 +20,9 @@ public class ReopenPeriod {
         Period period = periods.find(id, periodName);
         if (period == null) {
             throw new InvalidPeriodException("There is no period " + periodName.trim() + " on this sheet.");
+        }
+        if (periods.locked(period)) {
+            throw new InvalidPeriodException("The period " + period.name() + " is locked: unlock it before reopening.");
         }
         if (!(period.closed() || period.soft()) || !periods.reopen(period)) {
             throw new InvalidPeriodException("The period " + period.name() + " is not closed.");

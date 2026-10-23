@@ -7,6 +7,6 @@ public class RespondWithPeriod {
     public void respond(@Val Period period, PeriodRepository repository, ObjectResponse<PeriodResponse> response) {
         response.send(PeriodResponse.from(period, repository.personTotals(period.sheetId()).get(period.name()),
                 repository.personCarried(period.sheetId()).get(period.name()),
-                repository.personOpenings(period.sheetId()).get(period.name())));
+                repository.personOpenings(period.sheetId()).get(period.name())).locked(repository.locked(period)));
     }
 }
