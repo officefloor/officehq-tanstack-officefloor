@@ -29,13 +29,17 @@ public final class Dues {
         return live(claim, grades, rates, rounding);
     }
 
-    /** A claim's due as its row shows it: the due fixed when it was settled, else the greater of the floor in force
-     *  on its date and its figure (bound or live) with the late charge on it added (a correction, a negative amount,
-     *  has no floor and no charge); null (n/a) when it has no figure. */
+    /** A claim's due as its row shows it: the due fixed when it was settled, else the one its last statement bound
+     *  it to as shown then (late charge and floor included; n/a included), else the greater of the floor in force on
+     *  its date and its live figure with the late charge on it added (a correction, a negative amount, has no floor
+     *  and no charge); null (n/a) when it has no figure. */
     public static BigDecimal shown(Claim claim, Grades grades, Rates rates, DatedAmount floor,
             LateCharge late) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
+        }
+        if (claim.stated()) {
+            return claim.statedDue();
         }
         BigDecimal figure = figure(claim, grades, rates, late.rounding());
         if (figure == null || claim.amount().signum() < 0) {

@@ -7,7 +7,7 @@ import java.time.LocalDate;
  *  status, its number (sheet-wide digits as given before fiscal-year numbering, FY<yyyy>-<n> within the tree's fiscal year, or <period name>-<n> / X-<n> when numbered within its period; null while a draft; a voided claim keeps the one it had) and, once settled, the due fixed
  *  at settling (null before then, or when the person's grade had no rate then: its due stays live), and
  *  who opened it (null while a draft), whether its person's last statement bound it (it counted then) and the
- *  figure it bound it to (null when not bound, or its figure was n/a then: its due stays live), and for a correction
+ *  due as shown then it bound it to, late charge included (null when not bound, or it was n/a then), and for a correction
  *  (a negative amount) the number of the SETTLED claim of the same person it corrects (null otherwise), and its
  *  due-by: the terms-th business day after the date it had when it was created, with the terms fixed then (its person's
  *  own, else their grade's in force on that date, else the sheet's), skipping Saturdays, Sundays and the sheet's

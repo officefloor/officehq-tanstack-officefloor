@@ -23,13 +23,13 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Take the person's statement: record their due-total now (late charges included, at most the sheet's cap) and the sheet's today, bind
- *  each of their claims that counts to its rate figure now (never the floor or its late charge, which keep following
- *  the sheet's floor and today), and unbind the rest (their due is live again; a claim deferred on today is left unbound). A settled claim's
+ *  each of their claims that counts to its due as shown now (late charge and floor included: while bound it no longer
+ *  follows the sheet's today; one already bound is bound again to the figure it shows), and unbind the rest (their due is live again; a claim deferred on today is left unbound). A settled claim's
  *  fixed due is left as it is.
  *  <p>Taken as of a date (on or before the sheet's today; refused after it, or for a person added after it), the
  *  same is done with the sheet as it stood at the end of that date: every change made while the sheet's today was on
  *  or before it counts, every later one does not, and the date stands in for the sheet's today. Their claims that
- *  counted then are bound to their figures then, the rest are unbound, and the date is recorded as the statement's. */
+ *  counted then are bound to their dues as shown then, the rest are unbound, and the date is recorded as the statement's. */
 public class SaveStatement {
     public void save(@Val StatementRequest request, @Val Person loaded, PersonRepository people,
             ClaimRepository claims, RateRepository rates, SheetRepository sheets, SettingRepository settings,
@@ -86,7 +86,7 @@ public class SaveStatement {
         Map<Long, BigDecimal> bound = new HashMap<>();
         for (Claim c : then) {
             if (Dues.counts(c, holds, retiredFrom, on)) {
-                bound.put(c.id(), Dues.figure(c, grades, ratesThen, late.rounding()));
+                bound.put(c.id(), Dues.shown(c, grades, ratesThen, floor, late));
             }
         }
         for (Claim c : theirs) {
