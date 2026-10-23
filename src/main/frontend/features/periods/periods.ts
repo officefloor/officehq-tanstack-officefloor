@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { countedAt, dueBy, type Claim } from '../claims/claims';
+import { countedAt, dueBy, live, type Claim } from '../claims/claims';
 import { gradeOn, type Person } from '../people/people';
 import { claimDue, rateOn, sumDue, type Late, type Rate } from '../rates/rates';
 import type { DatedValue } from '../settings/settings';
@@ -45,4 +45,15 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
 export function periodDueTotal(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue,
     late: Late): string {
   return sumDue(people.map((p) => personPeriodDueTotal(period, p, claims, people, rates, floor, late)));
+}
+
+/** A period's classic due-total: while it is open, the dues (as shown on their rows now) of every person's claims that
+ *  count by their status now (see live) whose due-by falls in it, added up; once closed or soft-closed, the figure
+ *  fixed then (see personPeriodDueTotal). */
+export function classicPeriodDueTotal(period: Period, claims: Claim[], people: Person[], rates: Rate[],
+    floor: DatedValue, late: Late): string {
+  if (period.closed || period.soft) return periodDueTotal(period, claims, people, rates, floor, late);
+  return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id), [p], late.today)
+    .filter((c) => periodOf([period], dueBy(c)))
+    .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
 }

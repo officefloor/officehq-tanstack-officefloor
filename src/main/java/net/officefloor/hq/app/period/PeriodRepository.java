@@ -61,6 +61,11 @@ public class PeriodRepository {
         return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
     }
 
+    /** The closed period on the sheet whose dates overlap from..to (both included), or null when none does. */
+    public Period closedBetween(String sheetId, LocalDate from, LocalDate to) {
+        return list(sheetId).stream().filter(p -> p.closed() && p.overlaps(from, to)).findFirst().orElse(null);
+    }
+
     /** The soft-closed period on the sheet whose dates contain the date, or null when none does. */
     public Period softClosedOn(String sheetId, LocalDate date) {
         return list(sheetId).stream().filter(p -> p.soft() && p.contains(date)).findFirst().orElse(null);
