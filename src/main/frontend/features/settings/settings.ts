@@ -25,11 +25,12 @@ import { useSheetToday } from '../sheet/sheet';
  *  threshold with two decimals ('' when the grade has none: the sheet's applies), dated (keys proof-threshold-A/B/C). `pot` is the pot
  *  with two decimals (not dated; '' when there is none): each member of a balanced pool is shown their cut of it. `parent` is
  *  the parent sheet's id (not dated; '' when there is none): a grade with no rate in force on a date on this sheet takes
- *  the parent's rate for it on that date, then the parent's parent's, up to three levels up. */
+ *  the parent's rate for it on that date, then the parent's parent's, up to three levels up. `fiscalStartMonth` is the
+ *  month (1 to 12, not dated; 1 unless set) a fiscal year starts on the first day of (see fiscalYearOf). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -75,6 +76,19 @@ export function useSettings(sheetId: string) {
 /** The sheet's parent sheet id ('' when there is none, or while the settings load). */
 export function useParent(sheetId: string): string {
   return useSettings(sheetId).data?.parent ?? '';
+}
+
+/** The sheet's fiscal year start month, 1 to 12 (1 while the settings load). */
+export function useFiscalStartMonth(sheetId: string): number {
+  return Number(useSettings(sheetId).data?.fiscalStartMonth || '1');
+}
+
+/** The fiscal year a date (yyyy-mm-dd) falls in, FY<yyyy>: named by the calendar year of the fiscal year's first day,
+ *  the first of the start month on or before the date. */
+export function fiscalYearOf(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
 }
 
 /** The sheet's floor by date: a claim's live due is at least the one in force on its date (the starting floor

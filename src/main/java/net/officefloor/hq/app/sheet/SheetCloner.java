@@ -33,7 +33,7 @@ public class SheetCloner {
 
     public void copy(String from, String to, String user) {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, "
-                + "pot, parent) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent "
+                + "pot, parent, fiscal_start_month) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month "
                 + "FROM sheet WHERE id = ?", to, user, from);
         copyRows("rate", "grade, pct, from_date, to_date", null, from, to);
         copyRows("rate_log", "grade, pct, from_date, to_date, made_on", "id", from, to);

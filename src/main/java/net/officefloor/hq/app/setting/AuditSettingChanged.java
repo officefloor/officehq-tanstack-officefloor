@@ -56,6 +56,9 @@ public class AuditSettingChanged {
         if (input.setsParent()) {
             audit.record(head + "parent value=" + (input.parent() != null ? input.parent() : ""));
         }
+        if (input.fiscalStartMonth() != null) {
+            audit.record(head + "fiscal-start-month value=" + input.fiscalStartMonth());
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

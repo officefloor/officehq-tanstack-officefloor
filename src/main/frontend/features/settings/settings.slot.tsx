@@ -23,7 +23,7 @@ const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -49,6 +49,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on this sheet takes
  *  the parent's, then its parent's, up to three levels up. The server refuses the sheet itself, a sheet never
  *  loaded, or one that has this sheet as an ancestor.
+ *  The fiscal year start month (1 to 12; 1 unless set; not dated): a fiscal year starts on the first day of it.
  *  The settings that carry a figure are dated: each is saved from a from-date (blank: the sheet's today), keeping
  *  the values already recorded; a claim takes the floor, late percent and terms in force on its date. What is shown
  *  is the value in force on the sheet's today. Typing a from-date alone saves the value shown from it. */
@@ -68,6 +69,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentEntryDate = settings.data?.entryDate ?? '';
   const currentPot = settings.data?.pot ?? '';
   const currentParent = settings.data?.parent ?? '';
+  const currentFiscalStartMonth = settings.data?.fiscalStartMonth ?? '1';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
@@ -82,6 +84,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const [typedPot, setTypedPot] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
+  const [typedFiscalStartMonth, setTypedFiscalStartMonth] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const currentGradeGrace = (grade: string) => settings.data?.gradeGrace?.[grade] ?? '';
@@ -115,6 +118,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedEntryDate(null);
       setTypedPot(null);
       setTypedParent(null);
+      setTypedFiscalStartMonth(null);
       setTypedGradeTerms({});
       setTypedGradeGrace({});
       setTypedGradeProofThreshold({});
@@ -230,6 +234,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
     }
     if (typedParent !== null) {
       changes.parent = typedParent.trim();
+    }
+    if (typedFiscalStartMonth !== null) {
+      const month = typedFiscalStartMonth.trim();
+      if (!/^([1-9]|1[0-2])$/.test(month)) {
+        setError('The fiscal year start month must be a month, 1 to 12.');
+        return;
+      }
+      changes.fiscalStartMonth = month;
     }
     for (const grade of GRADES) {
       const typedTerms = typedGradeTerms[grade];
@@ -362,7 +374,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
         Pot <strong data-testid="setting-pot-current">{currentPot}</strong>{' '}
-        Parent <strong data-testid="setting-parent-current">{currentParent}</strong>
+        Parent <strong data-testid="setting-parent-current">{currentParent}</strong>{' '}
+        Fiscal year start month <strong data-testid="setting-fiscal-start-month-current">{currentFiscalStartMonth}</strong>
       </p>
       <p>
         {PERM_ACTIONS.map((action) => (
@@ -565,6 +578,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedParent)}
             onChange={typed(setTypedParent)}
             onFocus={() => setTypedParent((v) => v ?? currentParent)}
+          />
+        </label>{' '}
+        <label>
+          Fiscal year start month{' '}
+          <input
+            data-testid="setting-fiscal-start-month"
+            placeholder="1 to 12"
+            value={typedFiscalStartMonth ?? currentFiscalStartMonth}
+            onInput={typed(setTypedFiscalStartMonth)}
+            onChange={typed(setTypedFiscalStartMonth)}
+            onFocus={() => setTypedFiscalStartMonth((v) => v ?? currentFiscalStartMonth)}
           />
         </label>{' '}
         {PERM_ACTIONS.map((action) => (

@@ -67,7 +67,8 @@ public class SettingRepository {
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
-                entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId));
+                entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
+                fiscalStartMonth(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -218,6 +219,17 @@ public class SettingRepository {
 
     public void setParent(String sheetId, String parent) {
         jdbc.update("UPDATE sheet SET parent = ? WHERE id = ?", parent, sheetId);
+    }
+
+    /** The sheet's fiscal year start month, 1 to 12 (1 unless set). */
+    public int fiscalStartMonth(String sheetId) {
+        Integer month = jdbc.query("SELECT fiscal_start_month FROM sheet WHERE id = ?",
+                rs -> rs.next() ? (Integer) rs.getObject(1, Integer.class) : null, sheetId);
+        return month != null ? month : 1;
+    }
+
+    public void setFiscalStartMonth(String sheetId, int month) {
+        jdbc.update("UPDATE sheet SET fiscal_start_month = ? WHERE id = ?", month, sheetId);
     }
 
     /** The sheet's grace days: null when blank (off). */
