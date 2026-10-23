@@ -10,7 +10,7 @@ import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/settings';
 import { useRates } from '../rates/rates';
-import { periodDueTotal, periodsKey, personPeriodDueTotal, usePeriods } from './periods';
+import { periodDueTotal, periodsKey, personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
 import type { Period } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -313,6 +313,9 @@ function PersonPeriodDueTotals({ sheetId, person }: { sheetId: string; user: str
         <td key={p.name}>
           {p.name} <span data-testid={`person-period-${p.name}-due-total`}>
             {personPeriodDueTotal(p, person, claims, people, rates, floor, late)}
+          </span>{' '}
+          carried <span data-testid={`person-period-${p.name}-carried`}>
+            {personPeriodCarried(p, periods, person, claims, people, rates, floor, late)}
           </span>
         </td>
       ))}
