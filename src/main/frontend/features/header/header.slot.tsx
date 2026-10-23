@@ -3,7 +3,8 @@ import { crewDueTotal, useCrews } from '../crews/crews';
 import { STATUSES, useClaims } from '../claims/claims';
 import { usePeople, type Person } from '../people/people';
 import { overdueDues, personDueTotal, sheetDueTotal, sheetOverdueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
+import { usePersonCap } from '../pools/pools';
 import { useSheetToday } from '../sheet/sheet';
 import { useWatches } from '../watch/watch';
 
@@ -21,10 +22,10 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capOf = usePersonCap(sheetId);
   const crews = useCrews(sheetId).data ?? [];
   const me = personNamed(people, user);
-  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, cap, people);
+  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people);
   const watched = new Set(useWatches(sheetId, user).data ?? []);
   const led = me ? crews.filter((c) => c.leadId === me.id) : [];
 
@@ -40,7 +41,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
         </span>
       ))}{' '}
       <span>
-        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, cap)}</strong>
+        Due total <strong data-testid="header-due-total">{sheetDueTotal(people, claims, rates, today, floor, late, capOf)}</strong>
       </span>{' '}
       <span>
         Overdue total <strong data-testid="header-overdue-total">{sheetOverdueTotal(people, claims, rates, late, floor)}</strong>

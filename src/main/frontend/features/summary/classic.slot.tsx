@@ -3,7 +3,8 @@ import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { classicPeriodDueTotal, usePeriods } from '../periods/periods';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
+import { usePersonCap } from '../pools/pools';
 import { useSheetToday } from '../sheet/sheet';
 
 /** The classic summary, shown beside the summary: per period its classic due-total (each claim counted by its status
@@ -17,7 +18,7 @@ function ClassicSummary({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capOf = usePersonCap(sheetId);
 
   return (
     <section data-testid="classic">
@@ -40,7 +41,7 @@ function ClassicSummary({ sheetId }: { sheetId: string; user: string }) {
             <td>
               Due total{' '}
               <span data-testid="classic-due-total">
-                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)))}
+                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people)))}
               </span>
             </td>
           </tr>

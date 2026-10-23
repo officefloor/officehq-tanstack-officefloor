@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { getJson, getJsonNow } from '../../api/http';
 import { usePeriods } from '../periods/periods';
+import { useCap } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 
 /** A member of a pool — a person, or another pool (poolId; personId then null) — with their share percent, whether
@@ -90,6 +91,19 @@ function personCutCents(pools: Pool[], personId: number): number {
 /** A person's cut total: their cuts across every pool they are a member of, added up. */
 export function personCutTotal(pools: Pool[], personId: number): string {
   return formatCents(personCutCents(pools, personId));
+}
+
+/** The cap as it holds a person's due-total: the sheet's cap less their cut total, not below 0.00 ('' when there is
+ *  no cap). */
+export function capLessCut(cap: string, pools: Pool[], personId: number): string {
+  return cap === '' ? '' : formatCents(Math.max(0, cents(cap) - personCutCents(pools, personId)));
+}
+
+/** Each person's cap (see capLessCut), by person id, on the sheet's cap and pools. */
+export function usePersonCap(sheetId: string): (personId: number) => string {
+  const cap = useCap(sheetId);
+  const pools = usePools(sheetId).data ?? [];
+  return (personId) => capLessCut(cap, pools, personId);
 }
 
 /** The sheet's cut total: every listed person's cut total added up. */

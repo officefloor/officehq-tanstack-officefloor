@@ -5,7 +5,8 @@ import { SheetBody } from '../../slots/defs/sheet';
 import { type Claim, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, type Person, usePeople } from '../people/people';
 import { personDueTotal, sumDue, type Rate, useRates } from '../rates/rates';
-import { floorOf, lateOf, type Settings, useCap, useFloor, useLate } from '../settings/settings';
+import { usePersonCap } from '../pools/pools';
+import { floorOf, lateOf, type Settings, useFloor, useLate } from '../settings/settings';
 import { type Sheet, useSheetToday } from '../sheet/sheet';
 
 /** Per grade the due-totals of a sheet's people on it today added up (retired ones left out), as its summary
@@ -56,10 +57,10 @@ function OtherSheetCompare({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capOf = usePersonCap(sheetId);
   const other = useOtherGrades(compared.id, compared.run);
   const mine = gradeTotals(people, today,
-    (p) => personDueTotal(p, claims, rates, today, floor, late, cap, people));
+    (p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people));
 
   return (
     <section>

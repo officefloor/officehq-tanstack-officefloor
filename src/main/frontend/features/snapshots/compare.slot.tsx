@@ -3,7 +3,8 @@ import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { personDueTotal, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { usePersonCap } from '../pools/pools';
+import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { type Snapshot, useSnapshots } from './snapshots';
 
@@ -30,7 +31,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capOf = usePersonCap(sheetId);
   const all = snapshots.data ?? [];
 
   const compare = () => {
@@ -52,7 +53,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string; user: string }) {
             const then = snapshotOn(all, p.id, compared.from);
             const now = compared.to
               ? snapshotOn(all, p.id, compared.to)
-              : personDueTotal(p, claims, rates, today, floor, late, cap, people);
+              : personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people);
             return (
               <li key={p.id} data-testid="snapshot-line" style={{ whiteSpace: 'pre' }}>
                 {`${p.name} ${then} ${now}`}

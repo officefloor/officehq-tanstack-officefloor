@@ -3,7 +3,8 @@ import { STATUSES, active as isActive, reviewLate, useClaims } from '../claims/c
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { diffDue, personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate, useReviewSla } from '../settings/settings';
+import { useFloor, useLate, useReviewSla } from '../settings/settings';
+import { usePersonCap } from '../pools/pools';
 import { useSheetToday } from '../sheet/sheet';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
@@ -19,7 +20,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capOf = usePersonCap(sheetId);
   const reviewSla = useReviewSla(sheetId);
   const voidReasons = useVoidReasons(sheetId).data ?? [];
   const active = people.filter((p) => p.retiredFrom === null);
@@ -44,7 +45,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
                 <td>
                   Due total{' '}
                   <span data-testid={`summary-grade-${g}-due-total`}>
-                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)))}
+                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people)))}
                   </span>
                 </td>
                 <td>

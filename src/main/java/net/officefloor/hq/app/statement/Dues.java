@@ -109,6 +109,11 @@ public final class Dues {
         return due.multiply(share).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_EVEN);
     }
 
+    /** The cap less a person's cut total (null: none), not below 0.00; null when there is no cap. */
+    public static BigDecimal capLess(BigDecimal cap, BigDecimal cut) {
+        return cap == null || cut == null ? cap : cap.subtract(cut).max(BigDecimal.ZERO.setScale(2));
+    }
+
     /** A due-total at most the sheet's cap (null: none); n/a (null) is not capped. */
     public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
         return total != null && cap != null ? total.min(cap) : total;

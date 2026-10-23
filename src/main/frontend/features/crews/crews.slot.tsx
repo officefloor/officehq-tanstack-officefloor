@@ -7,8 +7,9 @@ import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
 import { nameWithGrade, usePeople } from '../people/people';
 import { personDueTotal, useRates } from '../rates/rates';
+import { usePersonCap } from '../pools/pools';
 import { useSheetToday } from '../sheet/sheet';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { useFloor, useLate } from '../settings/settings';
 import { crewDueTotal, crewsKey, useCrews } from './crews';
 import type { Crew } from './crews';
 
@@ -20,8 +21,8 @@ function useCrewDueTotal(sheetId: string, crew: Crew): string {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
-  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, cap, people));
+  const capOf = usePersonCap(sheetId);
+  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people));
 }
 
 /** One crew: its lead, its due-total, its members, and the entry a member is added with. */

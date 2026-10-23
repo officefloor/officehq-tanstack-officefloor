@@ -1,6 +1,7 @@
 import { useClaims } from '../claims/claims';
 import { capped, personDueSum, toCents, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../settings/settings';
+import { usePersonCap } from '../pools/pools';
+import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { gradeOn, type Person } from './people';
@@ -29,13 +30,13 @@ export function useSortedPeople(sheetId: string, people: Person[]): Person[] {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const cap = useCap(sheetId);
+  const capOf = usePersonCap(sheetId);
   if (sortBy === 'added') return people;
   const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const keyed = people.map((p, i) => {
     if (sortBy === 'name') return { p, i, key: nameKey(p.name) };
     if (sortBy === 'grade') return { p, i, key: (today !== '' && gradeOn(p, today)) || p.grade };
-    const due = capped(personDueSum(p, claims, rates, today, floor, late, people), cap);
+    const due = capped(personDueSum(p, claims, rates, today, floor, late, people), capOf(p.id));
     return { p, i, key: due, cents: due === 'n/a' ? null : toCents(due) };
   });
   return keyed

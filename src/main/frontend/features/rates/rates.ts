@@ -208,8 +208,8 @@ export function sheetStatusSum(people: Person[], claims: Claim[], rates: Rate[],
   return sumDue(people.map((p) => personStatusSum(p, claims, rates, today, floor, late, statuses)));
 }
 
-/** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
- *  cap ('' when none). */
+/** A person's due-total as shown on their row: their figures added up (see personDueSum), at most their cap: the
+ *  sheet's cap less their cut total ('' when none; see usePersonCap). */
 export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, cap: string, people: Person[] = []): string {
   return capped(personDueSum(person, claims, rates, today, floor, late, people), cap);
@@ -270,10 +270,11 @@ export function trimmedSum(figures: string[]): string {
   return fromCents(kept.reduce((total, c) => total + c, 0n));
 }
 
-/** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed (see trimmedSum). */
+/** The sheet's due-total: every person's due-total (at their cap, by person id) added up, skipping n/a, trimmed
+ *  (see trimmedSum). */
 export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
-    late: Late, cap: string): string {
-  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)));
+    late: Late, capOf: (personId: number) => string): string {
+  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people)));
 }
 
 /** The sheet's overdue-total: every person's overdue-total (see overdueDues) added up, trimmed (see trimmedSum). */

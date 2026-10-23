@@ -12,8 +12,12 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimShareRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
+import net.officefloor.hq.app.pool.PoolResponse;
+import net.officefloor.hq.app.pool.ShownPools;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -36,10 +40,15 @@ public class Rollups {
     private final SheetRepository sheets;
     private final SettingRepository settings;
     private final ClaimShareRepository shares;
+    private final PoolRepository pools;
+    private final CrewRepository crews;
     private final Audit audit;
 
     public Rollups(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, ClaimShareRepository shares, Audit audit) {
+            SettingRepository settings, ClaimShareRepository shares, PoolRepository pools, CrewRepository crews,
+            Audit audit) {
+        this.pools = pools;
+        this.crews = crews;
         this.shares = shares;
         this.people = people;
         this.claims = claims;
@@ -62,6 +71,7 @@ public class Rollups {
         List<BigDecimal> overdues = new ArrayList<>();
         List<Person> everyone = people.list(sheetId);
         Map<Long, BigDecimal> parts = shareParts(sheetId, everyone, all, today, floor, late);
+        Map<Long, BigDecimal> cuts = cap != null ? cutTotals(sheetId) : Map.of();
         for (Person p : everyone) {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             // claimed: the amounts of their claims that count toward claimed (a held one does), leaving out corrections of another claim
@@ -70,7 +80,9 @@ public class Rollups {
                     .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
             BigDecimal own = Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late);
             BigDecimal part = parts.get(p.id());
-            BigDecimal due = Dues.capped(part == null ? own : own == null ? part : own.add(part), cap);
+            // the cap covers their due-total and their cut total: their due-total is held to the cap less their cut total
+            BigDecimal due = Dues.capped(part == null ? own : own == null ? part : own.add(part),
+                    Dues.capLess(cap, cuts.get(p.id())));
             // overdue-total: the dues (as shown, late charge included) of their overdue claims that count, skipping n/a
             BigDecimal overdue = theirs.stream()
                     .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && late.overdue(c))
@@ -117,6 +129,20 @@ public class Rollups {
             }
         }
         return parts;
+    }
+
+    /** Each person's cut total, by person id: their cuts (as the pools show them) across every pool and crew they
+     *  are a member of, added up. A person with no cut has no entry. */
+    private Map<Long, BigDecimal> cutTotals(String sheetId) {
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        for (PoolResponse pool : ShownPools.list(sheetId, null, pools, crews, people, sheets, settings)) {
+            for (PoolResponse.Member m : pool.members()) {
+                if (m.poolId() == null && m.personId() != null && !m.cut().isEmpty()) {
+                    totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
+                }
+            }
+        }
+        return totals;
     }
 
     /** A person's name and score. */
