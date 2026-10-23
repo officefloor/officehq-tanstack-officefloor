@@ -15,6 +15,9 @@ export type Plan = {
   generated: number;
   /** The first five plan dates after the sheet's today and on or before the end, in order. */
   nextDates: string[];
+  /** Whether the plan is paused: a plan date on or after the day it was paused and before the day it is resumed is
+   *  skipped, not postponed. */
+  paused: boolean;
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;

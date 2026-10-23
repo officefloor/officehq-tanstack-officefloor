@@ -9,6 +9,51 @@ import type { Person } from '../people/people';
 import { plansKey, usePlans } from './plans';
 import type { Plan } from './plans';
 
+/** One plan: its dates, how many claims it has made, its next dates, whether it is paused, and the buttons that pause
+ *  and resume it; a refused pause or resume shows in the plan's own error, cleared by the next action on the row. */
+function PlanRow({ sheetId, user, person, plan: p }: { sheetId: string; user: string; person: Person; plan: Plan }) {
+  const queryClient = useQueryClient();
+  const { error, setError, begin } = usePersonError(sheetId, person.id);
+  const once = useSubmitOnce();
+
+  const toggle = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      postJson<Plan>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${p.id}/${action}`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+    },
+    onError: (e, action) =>
+      setError(e instanceof HttpError && e.body ? e.body : `Could not ${action} the plan.`),
+    onSettled: once.done,
+  });
+
+  const act = (action: 'pause' | 'resume') => {
+    begin();
+    if (!once.start()) return;
+    toggle.mutate(action);
+  };
+
+  return (
+    <li data-testid={`plan-row-${p.id}`}>
+      {p.amount} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}; made{' '}
+      <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+      <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>; paused{' '}
+      <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => act('pause')}>
+        Pause
+      </button>{' '}
+      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => act('resume')}>
+        Resume
+      </button>
+      {error && (
+        <p data-testid="plan-error" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
 /** The person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form that adds one: an amount, a start
  *  date, every N days (a whole number, at least 1) or
  *  monthly on a day of the month (1 to 31), and an end date, not before the start. */
@@ -56,11 +101,7 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
       Plans
       <ul>
         {plans.map((p) => (
-          <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            {p.amount} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}; made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
-            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
-          </li>
+          <PlanRow key={p.id} sheetId={sheetId} user={user} person={person} plan={p} />
         ))}
       </ul>
       <form onSubmit={submit} style={{ display: 'inline' }}>

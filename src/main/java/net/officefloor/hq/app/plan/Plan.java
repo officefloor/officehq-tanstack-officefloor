@@ -9,12 +9,22 @@ import java.util.List;
 /** A person's plan: a DRAFT claim of the amount for every plan date — the start, then every `every` days — up to
  *  the end, made when the plans are generated; `generated` is how many claims it has made so far. A monthly plan has
  *  no `every` but a `day` of the month (1 to 31): its plan dates are that day in every month from the start's month, a
- *  day beyond the month's length falling on its last day, dates before the start left out. */
+ *  day beyond the month's length falling on its last day, dates before the start left out. A plan date inside one of
+ *  its `pauses` is skipped, not postponed; the plan is paused while its last pause has not been resumed. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
-        LocalDate end, int generated) {
+        LocalDate end, int generated, List<PlanPause> pauses) {
 
-    /** The plan's dates, in order, up to its end and the given last day. */
+    /** Whether the plan is paused now: its last pause not resumed. */
+    public boolean paused() {
+        return !pauses.isEmpty() && pauses.get(pauses.size() - 1).resumedOn() == null;
+    }
+
+    /** The plan's dates, in order, up to its end and the given last day, those a pause skips left out. */
     public List<LocalDate> dates(LocalDate last) {
+        return allDates(last).stream().filter(date -> pauses.stream().noneMatch(p -> p.skips(date))).toList();
+    }
+
+    private List<LocalDate> allDates(LocalDate last) {
         List<LocalDate> dates = new ArrayList<>();
         if (day == null) {
             for (LocalDate date = start; !date.isAfter(end) && !date.isAfter(last); date = date.plusDays(every)) {
