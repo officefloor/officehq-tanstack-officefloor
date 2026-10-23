@@ -5,7 +5,9 @@ import java.util.Comparator;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -20,7 +22,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class AutoClosePeriods {
     public void close(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val LocalDate today,
             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people,
-            RateRepository rates, SettingRepository settings, SheetRepository sheets, Audit audit)
+            RateRepository rates, SettingRepository settings, SheetRepository sheets, PoolRepository pools,
+            CrewRepository crews, Audit audit)
             throws InvalidPeriodException {
         String id = sheetId.trim();
         Integer grace = settings.graceDays(id);
@@ -33,7 +36,7 @@ public class AutoClosePeriods {
                 .sorted(Comparator.comparing(Period::to))
                 .toList();
         for (Period period : due) {
-            Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets);
+            Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets, pools, crews);
             periods.markAutoClosed(closed);
             // it stands closed from the day after its to-date plus the grace days, as a sheet read as of a date sees
             periods.dateLastKept(period, period.to().plusDays(grace + 1L));

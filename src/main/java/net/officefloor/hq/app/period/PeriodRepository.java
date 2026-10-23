@@ -179,7 +179,7 @@ public class PeriodRepository {
                 locked, period.sheetId(), period.name(), locked) == 1;
     }
 
-    /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
+    /** Reopen the closed or soft-closed period, dropping its fixed due-totals and pool cuts: false when it was neither, and nothing
      *  is written. */
     public boolean reopen(Period period) {
         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, auto_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
@@ -187,6 +187,7 @@ public class PeriodRepository {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
         kept(period);
         return true;
     }

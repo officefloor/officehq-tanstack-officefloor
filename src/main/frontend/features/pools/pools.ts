@@ -43,17 +43,22 @@ export function usePools(sheetId: string) {
   });
 }
 
-/** The cuts at the end of each period whose to-date is on or before the sheet's today: by period name, the sheet's
- *  pools as they stood at the end of its to-date (that day as the sheet's today). Keyed under the sheet, so a load
- *  of the sheet re-reads them. */
+/** The cuts of each period: for each period whose to-date is on or before the sheet's today, or that is closed or
+ *  soft-closed, by period name, the sheet's pools as they stood at the end of its to-date (that day as the sheet's
+ *  today) — with each member's cut, once the period is closed or soft-closed, the one fixed when it was closed. Keyed
+ *  under the sheet, so a load of the sheet re-reads them. */
 export function usePeriodCuts(sheetId: string): { period: string; pools: Pool[] }[] {
   const today = useSheetToday(sheetId);
-  const periods = (usePeriods(sheetId).data ?? []).filter((p) => today !== '' && p.to <= today);
+  const periods = (usePeriods(sheetId).data ?? []).filter((p) => p.closed || p.soft || (today !== '' && p.to <= today));
   const results = useQueries({
-    queries: periods.map((p) => ({
-      queryKey: [...poolsKey(sheetId), 'asOf', p.to] as const,
-      queryFn: () => getJsonNow<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools?asOf=${encodeURIComponent(p.to)}`),
-    })),
+    queries: periods.map((p) => {
+      const fixed = p.closed || p.soft;
+      const query = `asOf=${encodeURIComponent(p.to)}${fixed ? `&period=${encodeURIComponent(p.name)}` : ''}`;
+      return {
+        queryKey: [...poolsKey(sheetId), 'asOf', p.to, fixed ? p.name : ''] as const,
+        queryFn: () => getJsonNow<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools?${query}`),
+      };
+    }),
   });
   return periods.map((p, i) => ({ period: p.name, pools: results[i]?.data ?? [] }));
 }

@@ -76,6 +76,14 @@ public record PoolResponse(long id, String name, List<Member> members, String to
         return new PoolResponse(pool.id(), pool.name(), shown, total.toPlainString(), balanced, null);
     }
 
+    /** The same pool with each member's cut the one fixed for them (see PoolRepository.fixedCuts; '' when none was). */
+    public PoolResponse withCuts(Map<String, String> fixed) {
+        List<Member> shown = members.stream().map(m -> new Member(m.personId(), m.name(), m.share(), m.retired(),
+                fixed.getOrDefault(PoolRepository.fixedKey(id, m.personId(), m.poolId()), ""), m.poolId(), m.from(),
+                m.to(), m.outside())).toList();
+        return new PoolResponse(id, name, shown, totalShare, balanced, crewId);
+    }
+
     /** The same pool shown as this crew's pool. */
     public PoolResponse ofCrew(long crewId) {
         return new PoolResponse(-crewId, name, members, totalShare, balanced, crewId);

@@ -9,10 +9,13 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.person.Grades;
 import net.officefloor.hq.app.person.Holds;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
+import net.officefloor.hq.app.pool.ShownPools;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -28,17 +31,17 @@ public final class PeriodCloser {
     /** Close the open or soft-closed period, fixing its due-total and each person's afresh as they are now (as a close
      *  by hand does): the period as closed. Refused when it is already closed. */
     public static Period fix(String id, Period period, PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs,
-            PersonRepository people, RateRepository rates, SettingRepository settings, SheetRepository sheets)
-            throws InvalidPeriodException {
-        return fix(id, period, false, periods, claims, logs, people, rates, settings, sheets);
+            PersonRepository people, RateRepository rates, SettingRepository settings, SheetRepository sheets,
+            PoolRepository pools, CrewRepository crews) throws InvalidPeriodException {
+        return fix(id, period, false, periods, claims, logs, people, rates, settings, sheets, pools, crews);
     }
 
     /** Close (or, soft, soft-close) the period, fixing its due-total and each person's due-total and carried figure (see the screen's personPeriodCarried)
      *  as they are now: the period
-     *  as closed or soft-closed. Refused when it is already closed (or, soft, already closed or soft-closed). */
+     *  as closed or soft-closed, and each pool member's cut as the pools show it now. Refused when it is already closed (or, soft, already closed or soft-closed). */
     public static Period fix(String id, Period period, boolean soft, PeriodRepository periods, ClaimRepository claims,
             ClaimLogRepository logs, PersonRepository people, RateRepository rates, SettingRepository settings,
-            SheetRepository sheets) throws InvalidPeriodException {
+            SheetRepository sheets, PoolRepository pools, CrewRepository crews) throws InvalidPeriodException {
         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
         var floor = settings.floor(id);
         LateCharge late = LateCharge.of(id, settings, sheets, claims, people);
@@ -84,6 +87,7 @@ public final class PeriodCloser {
                 : !periods.close(period, total, personTotals, personCarried)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
+        pools.fixCuts(id, period.name(), ShownPools.list(id, null, pools, crews, people, sheets, settings));
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft, total, soft, period.cap());
     }
 }

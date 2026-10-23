@@ -1,7 +1,10 @@
 package net.officefloor.hq.app.pool;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.officefloor.hq.app.person.Person;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -108,5 +111,33 @@ public class PoolRepository {
         jdbc.update("DELETE FROM pool_member m WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM pool_member i "
                 + "WHERE i.pool_id = m.pool_id AND i.person_id = ?)", sheetId, fromId, intoId);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+    }
+
+    /** Fix each member's cut in the pools as shown (pools and crews) for the period, afresh. */
+    public void fixCuts(String sheetId, String periodName, List<PoolResponse> pools) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, periodName);
+        for (PoolResponse pool : pools) {
+            for (PoolResponse.Member m : pool.members()) {
+                jdbc.update("INSERT INTO period_pool_cut (sheet_id, period_name, pool_id, person_id, member_pool_id, cut) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, periodName, pool.id(), m.personId(), m.poolId(),
+                        m.cut().isEmpty() ? null : new BigDecimal(m.cut()));
+            }
+        }
+    }
+
+    /** The cuts fixed for the period: by fixedKey of pool and member, the cut ('' when the member had none). */
+    public Map<String, String> fixedCuts(String sheetId, String periodName) {
+        Map<String, String> cuts = new HashMap<>();
+        jdbc.query("SELECT * FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", rs -> {
+            BigDecimal cut = rs.getBigDecimal("cut");
+            cuts.put(fixedKey(rs.getLong("pool_id"), rs.getObject("person_id", Long.class),
+                    rs.getObject("member_pool_id", Long.class)), cut == null ? "" : cut.setScale(2).toPlainString());
+        }, sheetId, periodName);
+        return cuts;
+    }
+
+    /** A member's key among the fixed cuts: its pool, and the person or member pool. */
+    public static String fixedKey(long poolId, Long personId, Long memberPoolId) {
+        return poolId + (memberPoolId != null ? ":pool:" + memberPoolId : ":person:" + personId);
     }
 }

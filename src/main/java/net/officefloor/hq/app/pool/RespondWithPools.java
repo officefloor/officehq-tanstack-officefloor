@@ -1,16 +1,10 @@
 package net.officefloor.hq.app.pool;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import net.officefloor.hq.app.crew.Crew;
 import net.officefloor.hq.app.crew.CrewRepository;
-import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.sheet.AsOf;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -28,76 +22,22 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
  *  dates do not include that date is left out: no share in the total and no cut. After the pools come the crews, each
  *  a pool under its name with its lead and then its members (in the order added) at equal shares (100.00 split as
- *  patrons' shares are, the remainder on the lead), cutting the sheet's pot like any pool. */
+ *  patrons' shares are, the remainder on the lead), cutting the sheet's pot like any pool. Given a period that is
+ *  closed or soft-closed, each member shows instead the cut fixed for them when it was closed ('' when they had none
+ *  then). */
 public class RespondWithPools {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(name = "asOf", required = false) String asOf, PoolRepository repository,
+            @RequestParam(name = "asOf", required = false) String asOf,
+            @RequestParam(name = "period", required = false) String periodName, PoolRepository repository,
             CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings,
-            ObjectResponse<List<PoolResponse>> response) {
+            PeriodRepository periods, ObjectResponse<List<PoolResponse>> response) {
         String id = sheetId.trim();
-        LocalDate end = AsOf.parse(asOf);
-        LocalDate on = end != null ? end : sheets.today(id);
-        List<Person> persons = end != null ? people.listAsOf(id, end) : people.list(id);
-        Map<Long, LocalDate> retiredFrom = new HashMap<>();
-        Map<Long, String> names = new HashMap<>();
-        Set<Long> held = new HashSet<>();
-        BigDecimal pot = end != null ? settings.potAsOf(id, end) : settings.pot(id);
-        for (Person p : persons) {
-            names.put(p.id(), p.name());
-            if (p.retiredFrom() != null) {
-                retiredFrom.put(p.id(), p.retiredFrom());
-            }
-            if (on != null && p.holds().covers(on)) {
-                held.add(p.id());
-            }
-        }
-        List<Pool> pools = repository.list(id, end);
-        Map<Long, String> poolNames = new HashMap<>();
-        pools.forEach(p -> poolNames.put(p.id(), p.name()));
-        Map<Long, List<PoolMember>> members = new HashMap<>();
-        Map<Long, Pool> parents = new HashMap<>();
-        for (Pool pool : pools) {
-            List<PoolMember> named = repository.members(pool, end).stream()
-                    .filter(m -> m.isPool() ? poolNames.containsKey(m.memberPoolId())
-                            : names.containsKey(m.personId()))
-                    .map(m -> m.named(m.isPool() ? poolNames.get(m.memberPoolId()) : names.get(m.personId())))
-                    .toList();
-            members.put(pool.id(), named);
-            named.stream().filter(PoolMember::isPool).forEach(m -> parents.put(m.memberPoolId(), pool));
-        }
-        Map<Long, PoolResponse> shown = new HashMap<>();
-        List<PoolResponse> all = new ArrayList<>(pools.stream()
-                .map(pool -> shown(pool, members, parents, retiredFrom, held, on, pot, shown)).toList());
-        for (Crew crew : crews.list(id)) {
-            List<Long> ids = new ArrayList<>();
-            if (names.containsKey(crew.leadId())) {
-                ids.add(crew.leadId());
-            }
-            crews.members(crew).stream().filter(names::containsKey).forEach(ids::add);
-            List<BigDecimal> shares = PoolResponse.equalShares(ids.size());
-            Pool pool = new Pool(-crew.id(), id, crew.name(), crew.by());
-            List<PoolMember> crewMembers = new ArrayList<>();
-            for (int i = 0; i < ids.size(); i++) {
-                crewMembers.add(new PoolMember(pool.id(), id, pool.name(), ids.get(i), names.get(ids.get(i)),
-                        shares.get(i), crew.by()));
-            }
-            all.add(PoolResponse.from(pool, crewMembers, retiredFrom, held, on, pot).ofCrew(crew.id()));
+        List<PoolResponse> all = ShownPools.list(id, AsOf.parse(asOf), repository, crews, people, sheets, settings);
+        Period period = periodName != null ? periods.find(id, periodName) : null;
+        if (period != null && (period.closed() || period.soft())) {
+            Map<String, String> fixed = repository.fixedCuts(id, period.name());
+            all = all.stream().map(p -> p.withCuts(fixed)).toList();
         }
         response.send(all);
-    }
-
-    /** The pool as shown, its pot the sheet's or its cut in the pool above (worked out first). */
-    private static PoolResponse shown(Pool pool, Map<Long, List<PoolMember>> members, Map<Long, Pool> parents,
-            Map<Long, LocalDate> retiredFrom, Set<Long> held, LocalDate on, BigDecimal sheetPot, Map<Long, PoolResponse> shown) {
-        PoolResponse done = shown.get(pool.id());
-        if (done != null) {
-            return done;
-        }
-        Pool above = parents.get(pool.id());
-        BigDecimal pot = above == null ? sheetPot
-                : shown(above, members, parents, retiredFrom, held, on, sheetPot, shown).cutOf(pool.id());
-        PoolResponse r = PoolResponse.from(pool, members.get(pool.id()), retiredFrom, held, on, pot);
-        shown.put(pool.id(), r);
-        return r;
     }
 }
