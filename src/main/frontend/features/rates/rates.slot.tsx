@@ -18,7 +18,8 @@ const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The sheet's rates — per grade the one in force on the sheet's today, then each rate with its
- *  from-date and to-date — and the form that sets one (for a grade and from-date, replacing any it had). */
+ *  from-date, to-date and version count — and the form that sets one (for a grade and from-date, as its next
+ *  version). */
 function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const rates = useRates(sheetId).data ?? [];
@@ -137,12 +138,14 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
                   <td data-testid="rate-from">from the start</td>
                   <td data-testid="rate-pct">{undated?.rate ?? 'n/a'}</td>
                   <td data-testid="rate-to">{undated?.to ?? ''}</td>
+                  <td data-testid="rate-version">{undated?.version ?? ''}</td>
                 </tr>
                 {dated.map((r) => (
                   <tr key={r.from} data-testid={`rate-row-${g}-${r.from}`}>
                     <td data-testid="rate-from">{r.from}</td>
                     <td data-testid="rate-pct">{r.rate}</td>
                     <td data-testid="rate-to">{r.to ?? ''}</td>
+                    <td data-testid="rate-version">{r.version ?? ''}</td>
                   </tr>
                 ))}
               </Fragment>

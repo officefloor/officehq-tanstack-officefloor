@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Set each imported rate in order just as the rate form would: replacing any the grade had from that same date,
+/** Set each imported rate in order just as the rate form would: as the next version of the grade's rate from that same date,
  *  writing RATE_SET, then how the sheet's figures moved over it. */
 public class ImportRates {
     public void importRates(@PathVariable("sheetId") String sheetId, @Val RateImportInput input,

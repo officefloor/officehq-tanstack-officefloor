@@ -12,7 +12,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/** Rates by sheet: per grade, at most one per from-date (and at most one with no from-date). A grade with no rate in
+/** Rates by sheet: per grade, at most one in force per from-date (and at most one with no from-date) — the newest of
+ *  the versions set for it, the older ones kept. A grade with no rate in
  *  force on a date on a sheet takes its parent sheet's rate on that date, then the parent's parent's, up to
  *  {@link #LEVELS} levels up. */
 @Repository
@@ -20,7 +21,11 @@ public class RateRepository implements Rates {
 
     private static final RowMapper<Rate> ROW = (rs, i) -> new Rate(rs.getString("sheet_id"),
             rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class),
-            rs.getObject("to_date", LocalDate.class));
+            rs.getObject("to_date", LocalDate.class), version(rs.getObject("version", Integer.class)));
+
+    private static int version(Integer version) {
+        return version != null ? version : 1;
+    }
 
     /** How many levels of parent sheets a rate is looked up through. */
     public static final int LEVELS = 3;
@@ -31,9 +36,12 @@ public class RateRepository implements Rates {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's rates by grade, each grade's earliest first (the one with no from-date before all). */
+    /** The sheet's rates in force by grade (each grade and from-date's newest version), each grade's earliest first
+     *  (the one with no from-date before all). */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT * FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+        return jdbc.query("SELECT * FROM rate r WHERE sheet_id = ? AND version = (SELECT MAX(v.version) FROM rate v "
+                + "WHERE v.sheet_id = r.sheet_id AND v.grade = r.grade AND v.from_date IS NOT DISTINCT FROM r.from_date) "
+                + "ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
     /** The grade's rate in force on the date: the one whose from-date is the latest on or before it (no
@@ -95,16 +103,19 @@ public class RateRepository implements Rates {
     }
 
     /** Set the grade's rate from the from-date (null: from the beginning of time) through the to-date (null:
-     *  with no end), replacing any it had from that same date. */
+     *  with no end) as the next version of the grade's rate from that same date, keeping any it replaces as an older
+     *  version. */
     public Rate set(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
         Date fromDate = from != null ? Date.valueOf(from) : null;
         Date toDate = to != null ? Date.valueOf(to) : null;
-        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
-                sheetId, grade, fromDate);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                sheetId, grade, pct, fromDate, toDate);
-        jdbc.update("INSERT INTO rate_log (sheet_id, grade, pct, from_date, to_date, made_on) VALUES (?, ?, ?, ?, ?, "
-                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, grade, pct, fromDate, toDate, sheetId);
-        return new Rate(sheetId, grade, pct, from, to);
+        Integer latest = jdbc.queryForObject("SELECT MAX(version) FROM rate WHERE sheet_id = ? AND grade = ? "
+                + "AND from_date IS NOT DISTINCT FROM ?", Integer.class, sheetId, grade, fromDate);
+        int version = latest != null ? latest + 1 : 1;
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
+                sheetId, grade, pct, fromDate, toDate, version);
+        jdbc.update("INSERT INTO rate_log (sheet_id, grade, pct, from_date, to_date, made_on, version) VALUES (?, ?, ?, "
+                + "?, ?, (SELECT today FROM sheet WHERE id = ?), ?)", sheetId, grade, pct, fromDate, toDate, sheetId,
+                version);
+        return new Rate(sheetId, grade, pct, from, to, version);
     }
 }

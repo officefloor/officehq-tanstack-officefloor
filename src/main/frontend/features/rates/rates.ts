@@ -7,8 +7,9 @@ import type { DatedValue } from '../settings/settings';
 /** A grade's rate on the sheet: a percent with two decimals, in force from its from-date (yyyy-mm-dd, or
  *  null: from the beginning of time) through its to-date (null: with no end). A grade may have several, one
  *  per from-date; none when it has no rate. `level` is where it comes from: 0 the sheet's own, 1 its parent
- *  sheet's, 2 the parent's parent's, 3 the one above that. */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number };
+ *  sheet's, 2 the parent's parent's, 3 the one above that. `version` is how many have been set for the grade from
+ *  that from-date (this the newest, the one in force). */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number };
 
 /** Of the rates, the sheet's own (not its parents'). */
 export function ownRates(rates: Rate[]): Rate[] {
