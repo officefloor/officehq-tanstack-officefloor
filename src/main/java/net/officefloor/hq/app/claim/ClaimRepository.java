@@ -2,8 +2,13 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import net.officefloor.hq.app.holiday.BusinessDays;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -265,18 +270,27 @@ public class ClaimRepository {
 
     /** Take the next number for a claim due by the date, as it is opened. While the sheet's period numbering from
      *  is a date and the sheet's today is on or after it, that is the next in the claim's period (the one holding its due-by: <period name>-<n>),
-     *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the sheet's next number.
-     *  Taking a number locks the sheet's row until the transaction ends, so concurrent openings are numbered one
-     *  after the other; a rolled-back one gives its number back, so there are no gaps. */
+     *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the next number of the
+     *  sheet's tree (the sheet's root, reached through its parents, and every descendant of the root): one after
+     *  the last number given on any sheet of the tree, recorded as the last number of this sheet.
+     *  Taking a number locks the sheet's row (and, for a tree number, every row of the tree, in id order) until the
+     *  transaction ends, so concurrent openings are numbered one after the other; a rolled-back one gives its number
+     *  back, so there are no gaps. */
     public String nextNumber(String sheetId, LocalDate date) {
         jdbc.query("SELECT id FROM sheet WHERE id = ? FOR UPDATE", rs -> null, sheetId);
         Boolean byPeriod = jdbc.query(
                 "SELECT period_numbering_from IS NOT NULL AND today >= period_numbering_from FROM sheet WHERE id = ?",
                 rs -> rs.next() ? rs.getBoolean(1) : false, sheetId);
         if (!Boolean.TRUE.equals(byPeriod)) {
-            jdbc.update("UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?", sheetId);
-            return String.valueOf(jdbc.queryForObject("SELECT last_claim_number FROM sheet WHERE id = ?",
-                    Integer.class, sheetId));
+            Set<String> tree = tree(sheetId);
+            String in = String.join(",", Collections.nCopies(tree.size(), "?"));
+            Object[] ids = tree.toArray();
+            jdbc.query("SELECT id FROM sheet WHERE id IN (" + in + ") ORDER BY id FOR UPDATE", rs -> null, ids);
+            Integer last = jdbc.queryForObject("SELECT MAX(last_claim_number) FROM sheet WHERE id IN (" + in + ")",
+                    Integer.class, ids);
+            int next = (last == null ? 0 : last) + 1;
+            jdbc.update("UPDATE sheet SET last_claim_number = ? WHERE id = ?", next, sheetId);
+            return String.valueOf(next);
         }
         String[] period = jdbc.query(
                 "SELECT name, name_key FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ? ORDER BY from_date",
@@ -290,6 +304,30 @@ public class ClaimRepository {
         int n = jdbc.queryForObject("SELECT last_number FROM period_number WHERE sheet_id = ? AND seq_key = ?",
                 Integer.class, sheetId, key);
         return prefix + "-" + n;
+    }
+
+    /** The sheets of the sheet's tree, in id order: its root (its parent's parent, and so on, up to a sheet with
+     *  none) and every descendant of the root. */
+    private Set<String> tree(String sheetId) {
+        Set<String> up = new LinkedHashSet<>();
+        String root = sheetId;
+        for (String at = sheetId; at != null && up.add(at); at = parentOf(at)) {
+            root = at;
+        }
+        Set<String> tree = new TreeSet<>();
+        Deque<String> todo = new ArrayDeque<>(List.of(root));
+        while (!todo.isEmpty()) {
+            String at = todo.pop();
+            if (tree.add(at)) {
+                todo.addAll(jdbc.queryForList("SELECT id FROM sheet WHERE parent = ?", String.class, at));
+            }
+        }
+        tree.add(sheetId);
+        return tree;
+    }
+
+    private String parentOf(String sheetId) {
+        return jdbc.query("SELECT parent FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
     }
 
     /** Lock the claim's editor for the user: false when another user holds it, and nothing is written. */

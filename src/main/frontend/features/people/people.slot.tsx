@@ -76,6 +76,11 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
           setVersion(current.version);
         }
       }
+      // An add the server refused starts the next add with no terms and no contact.
+      if (!editing) {
+        setTerms('');
+        setContact('');
+      }
       refuse(
         e instanceof HttpError && (e.status === 409 || e.status === 412) && e.body
           ? e.body
