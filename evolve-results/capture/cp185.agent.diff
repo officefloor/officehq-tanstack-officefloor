@@ -1,0 +1,215 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index acad523..be54be1 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -234,6 +234,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+   const [deferUntil, setDeferUntil] = useState('');
+   const [redateTo, setRedateTo] = useState('');
+   const [splitAmount, setSplitAmount] = useState('');
++  const [partAmount, setPartAmount] = useState('');
+   const [inlineAmount, setInlineAmount] = useState('');
+   const [comment, setComment] = useState('');
+   const [lineLabel, setLineLabel] = useState('');
+@@ -388,6 +389,24 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+         ? e.body : `Could not split this ${claim.status} claim.`),
+   });
+ 
++  // A part-settle: the server refuses it, writing nothing, when the split would be refused or the settle button would
++  // refuse this user's settle of the claim; else it splits the amount off as a split does, and the new claim is then
++  // settled as the settle button does (PENDING above the clerk limit for a clerk). A refused settle of the new claim
++  // shows as this claim's error.
++  const settlePart = useMutation({
++    mutationFn: async (amount: string) => {
++      const added = await postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/settle-part`, { user, amount });
++      return putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${added.id}/status`, { user, action: 'settle' });
++    },
++    onSuccess: async () => {
++      setPartAmount('');
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++    onError: (e) =>
++      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
++        ? e.body : `Could not part-settle this ${claim.status} claim.`),
++  });
++
+   // The row's own amount entry: the claim form's edit with only the amount changed (its date, note and the
+   // claim it corrects, its reference and its tags stay as they are), so the server refuses it by the same rules and audits CLAIM_EDITED.
+   const inline = useMutation({
+@@ -799,6 +818,30 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+       >
+         Split
+       </button>
++      <input
++        data-testid="claim-settle-part-amount"
++        placeholder="Part-settle amount"
++        value={partAmount}
++        onChange={(e) => {
++          clearError();
++          setPartAmount(e.target.value);
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="claim-settle-part"
++        disabled={settlePart.isPending}
++        onClick={() => {
++          clearError();
++          if (!/^\d+(\.\d{1,2})?$/.test(partAmount.trim())) {
++            setError('The amount to part-settle must be a number with up to two decimals.');
++            return;
++          }
++          settlePart.mutate(partAmount.trim());
++        }}
++      >
++        Settle part
++      </button>
+       {(error || refused) && (
+         <p data-testid="claim-error" role="alert">
+           {error || refused}
+diff --git a/src/main/frontend/features/flags/flag.slot.tsx b/src/main/frontend/features/flags/flag.slot.tsx
+index 946a3dc..62b47f9 100644
+--- a/src/main/frontend/features/flags/flag.slot.tsx
++++ b/src/main/frontend/features/flags/flag.slot.tsx
+@@ -22,8 +22,10 @@ function PersonFlag({ sheetId, user, person }: { sheetId: string; user: string;
+   const save = useMutation({
+     mutationFn: (body: { user: string; reason: string; until: string }) =>
+       putJson<Flag>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/flag`, body),
+-    onSuccess: async () => {
+-      await queryClient.invalidateQueries({ queryKey: flagsKey(sheetId) });
++    // The row shows the flag just saved, as the server answered it; a reload shows only the flags in force.
++    onSuccess: (saved) => {
++      queryClient.setQueryData<Flag[]>(flagsKey(sheetId), (old) =>
++        [...(old ?? []).filter((f) => f.personId !== saved.personId), saved]);
+       setReason('');
+       setUntil('');
+     },
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseUnsettleablePart.java b/src/main/java/net/officefloor/hq/app/claim/RefuseUnsettleablePart.java
+new file mode 100644
+index 0000000..f44ae79
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseUnsettleablePart.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuse a part-settle, before the split is stored, when the user's settle of the loaded claim would be refused by
++ *  the settle button's rules ({@link ClaimStatusChange}): the user who opened or last edited it, a deferred claim, a
++ *  due above the proof threshold without its proofs, a role that may not settle. Writes nothing. */
++public class RefuseUnsettleablePart {
++    public void refuse(@Val SplitInput input, @Val Claim loaded, ClaimRepository repository, PersonRepository people,
++            RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
++            ClaimLogRepository log) throws ClaimStatusNotAllowedException {
++        ClaimStatusChange.check(new ClaimStatusInput(input.user(), "settle", ClaimStatus.SETTLED, null), loaded,
++                repository, people, rates, roles, settings, sheets, log);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index 141f5d6..0d7526a 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -8,6 +8,7 @@ import net.officefloor.hq.app.claim.ClaimInput;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.DueBy;
+ import net.officefloor.hq.app.claim.InvalidClaimException;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -26,7 +27,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  with an empty note, for every plan date (the start, then every N days; or a monthly plan's day in each month) up to the plan's end and the sheet's today
+  *  that the plan has made none for yet. Each is added as the claim form adds one — its CLAIM_ADDED line and then how
+  *  the sheet's figures moved over it — and a date the claim form would refuse (its rules, or after the person's
+- *  retirement date) is skipped, to be tried again next time. A closed period does not stop a plan's claim. */
++ *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time. */
+ public class GeneratePlanClaims {
+     public void generate(@PathVariable("sheetId") String sheetId, @Val GenerateRequest request, PlanRepository plans,
+             PersonRepository people, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
+@@ -53,6 +54,9 @@ public class GeneratePlanClaims {
+                 } catch (InvalidClaimException | RetiredPersonException e) {
+                     continue;
+                 }
++                if (periods.closedByHandFor(sheet, date, DueBy.of(person, date, settings, sheets, holidays)) != null) {
++                    continue;
++                }
+                 Rollup before = rollups.take(sheet);
+                 Claim added = ClaimFormRules.add(claim, person, sheets, settings, holidays, periods, claims, log, audit);
+                 rollups.record(sheet, request.user(), before);
+diff --git a/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java b/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
+index 43f3480..7d5bea6 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
++++ b/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
+@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
+  *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
+  *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
+  *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
+- *  refused for a viewer or on an archived sheet, and so is a bulk reassign or bulk re-date; so is a viewer's bulk grade or bulk retire, which changes nobody; so is a bulk settle on an archived sheet. Every change sent from a
++ *  refused for a viewer or on an archived sheet, and so is a bulk reassign or bulk re-date; so is a viewer's bulk grade or bulk retire, which changes nobody; so is a bulk settle by a viewer or on an archived sheet, which counts every selected claim refused. Every change sent from a
+  *  screen showing the sheet as of a date (the X-As-Of header), a bulk one included, is answered 403 the same way. */
+ @Component
+ public class RefuseViewerChanges extends OncePerRequestFilter {
+@@ -40,7 +40,7 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
+     /** A bulk grade or retire, left to the endpoint for a viewer: it changes nobody and answers that none was changed. */
+     private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/bulk-(grade|retire)$");
+ 
+-    /** A bulk settle, left to the endpoint on an archived sheet: it counts every selected claim refused. */
++    /** A bulk settle, left to the endpoint for a viewer or on an archived sheet: it counts every selected claim refused. */
+     private static final Pattern BULK_SETTLE = Pattern.compile("^/api/sheets/[^/]+/bulk-settle$");
+ 
+     /** The header a screen showing the sheet as of a date sends every change with: the change is refused. */
+@@ -79,7 +79,8 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
+         byte[] body = request.getInputStream().readAllBytes();
+         String sheetId = URLDecoder.decode(change.group(1), StandardCharsets.UTF_8).trim();
+         String user = user(body);
+-        if (user != null && !BULK_GRADE.matcher(path).matches() && Role.VIEWER.equals(roles.of(sheetId, user))) {
++        if (user != null && !BULK_GRADE.matcher(path).matches() && !BULK_SETTLE.matcher(path).matches()
++                && Role.VIEWER.equals(roles.of(sheetId, user))) {
+             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+             response.setContentType("text/plain;charset=UTF-8");
+             response.getWriter().write("A viewer can change nothing on this sheet.");
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 0000000..49b6d95
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,35 @@
++# Part-settle an OPEN claim, first step: refuse it (writing nothing, not even an audit line) when a split of the amount would be refused, or when the settle button would refuse the user's settle of the claim; else split the amount off exactly as a split does and answer the new claim, which the screen then settles exactly as the settle button does.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateSplit
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++closed:
++  class: net.officefloor.hq.app.period.RefuseClosedClaim
++  govern: [ transaction ]
++  next: settleable
++settleable:
++  class: net.officefloor.hq.app.claim.RefuseUnsettleablePart
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveSplit
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimSplit
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditSplitRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
