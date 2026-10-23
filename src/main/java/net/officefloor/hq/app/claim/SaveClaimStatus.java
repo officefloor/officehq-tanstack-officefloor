@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
  *  another user's change got to first). Opening gives the claim the sheet's next number; voiding
  *  keeps it (a number is never reused). Opening records who opened it, and that user may not settle it; nor may the user who last edited it (SaveClaim records them). Settling fixes its due
  *  as its row shows it now: the bound figure, else live at the person's grade rate now in force on the claim's date,
- *  with the late charge as of today on it, at least the sheet's floor in force on its date, frozen in. A claim whose due (as shown) is above the sheet's proof threshold in force
+ *  floored to at least the sheet's floor in force on its date, with the late charge as of today on that, frozen in. A claim whose due (as shown) is above the sheet's proof threshold in force
  *  on the claim's date cannot be settled or approved while its proofs count is 0 (refused before the clerk limit is
  *  considered; no threshold, or a due of n/a, is within it). When a clerk (any user not made a steward)
  *  settles a claim whose due (as shown: bound by a statement, else live, plus any late charge) is above the

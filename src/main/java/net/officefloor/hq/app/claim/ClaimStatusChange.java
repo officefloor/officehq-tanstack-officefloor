@@ -236,7 +236,7 @@ final class ClaimStatusChange {
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its
      *  person's grade rate in force on the claim's date, divided by 100, rounded to two decimals as the claim rounds), with
-     *  the late charge on it as of the sheet's today added, at least the sheet's floor in force on its date; null
+     *  floored to at least the sheet's floor in force on its date, with the late charge on that as of the sheet's today added; null
      *  when it has no figure. */
     /** Why the claim cannot be opened as it is: its note is empty and its due is above the sheet's note threshold
      *  in force on its date; null when it may be opened. */

@@ -18,7 +18,7 @@ public final class Dues {
     /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to, n/a
      *  included (an OPEN or PENDING one alike), else live: its amount times its person's rate in force on
      *  its date for their grade then, divided by 100, rounded to two decimals as the claim rounds (see Rounding); null
-     *  (n/a) when no rate applies. The floor is not in it: it is applied last (see shown). */
+     *  (n/a) when no rate applies. The floor is not in it: it is applied before the late charge (see shown). */
     public static BigDecimal figure(Claim claim, Grades grades, Rates rates, Rounding rounding) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
@@ -30,9 +30,9 @@ public final class Dues {
     }
 
     /** A claim's due as its row shows it: the due fixed when it was settled, else the one its last statement bound
-     *  it to as shown then (late charge and floor included; n/a included), else the greater of the floor in force on
-     *  its date and its live figure with the late charge on it added (a correction, a negative amount, has no floor
-     *  and no charge); null (n/a) when it has no figure. */
+     *  it to as shown then (late charge and floor included; n/a included), else its floored figure (the greater of the
+     *  floor in force on its date and its live figure) with the late charge worked out on that floored figure added (a
+     *  correction, a negative amount, has no floor and no charge); null (n/a) when it has no figure. */
     public static BigDecimal shown(Claim claim, Grades grades, Rates rates, DatedAmount floor,
             LateCharge late) {
         if (claim.settledDue() != null) {
@@ -45,7 +45,8 @@ public final class Dues {
         if (figure == null || claim.amount().signum() < 0) {
             return figure;
         }
-        return figure.add(late.on(claim, figure)).max(floor.on(claim.date()));
+        BigDecimal floored = figure.max(floor.on(claim.date()));
+        return floored.add(late.on(claim, floored));
     }
 
     /** A claim's live figure: its amount times its person's rate in force on its date for their grade then (of the
