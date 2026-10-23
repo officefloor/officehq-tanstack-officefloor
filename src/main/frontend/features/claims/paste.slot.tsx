@@ -10,8 +10,9 @@ type PasteResult = { added: number };
 
 /** The paste box: one name,amount,date,note line per claim (a blank date is the sheet's entry date while it is set, else its today, the note may be
  *  absent and may hold commas, and a note ending " #<reference>" gives the claim that reference instead). The server checks every line by the claim form's rules first; one failing line
- *  refuses the whole paste and shows why on the box, otherwise each line is added in order as a DRAFT claim for
- *  the named person and the box shows how many were added. */
+ *  (or any refusal the open button would give) refuses the whole paste and shows why on the box, otherwise each line in
+ *  order adds a claim for the named person (or updates their DRAFT of the same date and note to its amount) and opens
+ *  it, and the box shows how many lines went through. */
 function PasteClaims({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -67,7 +68,7 @@ function PasteClaims({ sheetId, user }: { sheetId: string; user: string }) {
       </button>
       {added !== null && (
         <>
-          {' '}Added <span data-testid="paste-added">{added}</span>
+          {' '}Lines through: <span data-testid="paste-added">{added}</span>
         </>
       )}
       {error && (

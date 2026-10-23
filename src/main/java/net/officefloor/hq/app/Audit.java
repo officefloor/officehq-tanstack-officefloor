@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.delegation.DelegationRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,9 @@ public class Audit {
 
     private final DelegationRepository delegations;
 
+    /** The records held back on this thread while a change that may yet be refused is made (null: none held). */
+    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
+
     public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationRepository delegations) {
         this.file = Path.of(path);
         this.delegations = delegations;
@@ -37,6 +41,35 @@ public class Audit {
      *  and TOTALS lines do not. */
     public synchronized void record(String entry) {
         entry = entry + delegatedFor(entry);
+        List<String> holding = held.get();
+        if (holding != null) {
+            holding.add(entry);
+            return;
+        }
+        write(entry);
+    }
+
+    /** Hold back this thread's records from now on until {@link #release()} writes them or {@link #drop()} discards
+     *  them, so a change refused part way through writes no audit line. */
+    public void hold() {
+        held.set(new ArrayList<>());
+    }
+
+    /** Write the records held back, in the order they were made, and stop holding. */
+    public synchronized void release() {
+        List<String> holding = held.get();
+        held.remove();
+        if (holding != null) {
+            holding.forEach(this::write);
+        }
+    }
+
+    /** Discard any records still held back, and stop holding. */
+    public void drop() {
+        held.remove();
+    }
+
+    private synchronized void write(String entry) {
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {

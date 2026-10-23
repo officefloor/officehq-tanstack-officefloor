@@ -122,11 +122,13 @@ export function overdue(claim: Claim, today: string, grace = 0): boolean {
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
 /** Every claim on the sheet, newest first. */
+export const claimsQuery = (sheetId: string) => ({
+  queryKey: claimsKey(sheetId),
+  queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`),
+});
+
 export function useClaims(sheetId: string) {
-  return useQuery({
-    queryKey: claimsKey(sheetId),
-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`),
-  });
+  return useQuery(claimsQuery(sheetId));
 }
 
 /** Every tag ever used on the sheet's claims, sorted (kept even once no claim carries it). Under the claims' key, so
