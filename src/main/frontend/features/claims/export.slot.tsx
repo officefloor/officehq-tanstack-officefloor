@@ -13,7 +13,8 @@ function csvValue(value: string): string {
 
 /** The button that downloads the claims as a CSV file: a header line, then one line per claim, people in list order
  *  (retired people included) and each person's claims oldest first, with its person's name, number (or nothing),
- *  date, amount, due, status and period (or nothing) as its row shows them; each line ends with a line feed. */
+ *  date, amount, due, status and period (or nothing) as its row shows them; each line ends with a line feed. While the
+ *  screen previews a date, the dues are figured on it (late charges included), as the rows show them. */
 function ExportClaims({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];

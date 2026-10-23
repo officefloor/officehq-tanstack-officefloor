@@ -14,7 +14,8 @@ function csvValue(value: string): string {
 
 /** The button that downloads the people as a CSV file: a header line, then one line per person in list order,
  *  retired people included, with their grade in force on the sheet's today, the date they are retired from (or
- *  nothing) and their due-total as shown on their row; each line ends with a line feed. */
+ *  nothing) and their due-total as shown on their row; each line ends with a line feed. While the screen previews a
+ *  date, the sheet's today is that date, so the file carries the preview figures, as the rows do. */
 function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
