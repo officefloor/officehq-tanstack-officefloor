@@ -9,7 +9,7 @@ import type { Person } from '../people/people';
 import { plansKey, usePlans } from './plans';
 import type { Plan } from './plans';
 
-/** The person's plans, each with how many claims it has made so far, and the form that adds one: an amount, a start
+/** The person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form that adds one: an amount, a start
  *  date, every N days (a whole number, at least 1) or
  *  monthly on a day of the month (1 to 31), and an end date, not before the start. */
 function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string; person: Person }) {
@@ -58,7 +58,8 @@ function PersonPlans({ sheetId, user, person }: { sheetId: string; user: string;
         {plans.map((p) => (
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
             {p.amount} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}; made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>
+            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
           </li>
         ))}
       </ul>

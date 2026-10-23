@@ -13,6 +13,8 @@ export type Plan = {
   day: number | null;
   end: string;
   generated: number;
+  /** The first five plan dates after the sheet's today and on or before the end, in order. */
+  nextDates: string[];
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
