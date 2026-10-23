@@ -10,10 +10,10 @@ import type { DatedValue } from '../settings/settings';
  *  person's due-total and carried figure fixed then, by person id (empty while open). A soft-closed period keeps them fixed the same
  *  way, while its claims can still be added and changed. A period may cap the OPEN or PENDING claims each person has in
  *  it (null: no cap); opening one past the cap is refused. A steward may lock a period: a locked one cannot be reopened. Each person's opening balance pasted for the period, by person
- *  id (none: 0.00), adds to their carried figure. */
+ *  id (none: 0.00), adds to their carried figure. Its position in the order the periods were added (0 first) is in added. */
 export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
   personTotals: Record<string, string>; soft: boolean; cap: number | null; personCarried: Record<string, string>;
-  personOpenings?: Record<string, string>; locked?: boolean };
+  personOpenings?: Record<string, string>; locked?: boolean; added?: number | null };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
 

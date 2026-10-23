@@ -49,7 +49,7 @@ public class SheetCloner {
         copyRows("claim_template", "name, amount, note, saved_by", "name", from, to);
         copyRows("claim_tag", "tag", "tag", from, to);
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) SELECT ?, name, from_date, to_date, "
-                + "added_on FROM period WHERE sheet_id = ? ORDER BY from_date, name", to, from);
+                + "added_on FROM period WHERE sheet_id = ? ORDER BY added_seq, from_date, name", to, from);
         Map<Long, Long> people = copyPeople(from, to);
         copyPools(from, to, people);
         markForwardRates(to, copyClaims(from, to, people));

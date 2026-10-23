@@ -16,16 +16,18 @@ public class RespondWithPeriods {
         LocalDate end = AsOf.parse(asOf);
         var openings = repository.personOpenings(id);
         var locked = repository.lockedNames(id);
+        var added = repository.addedOrder(id);
         if (end != null) {
             response.send(repository.listAsOf(id, end).stream()
                     .map(p -> PeriodResponse.from(p.period(), p.personTotals(), p.personCarried(),
-                            openings.get(p.period().name())).locked(locked.contains(p.period().name()))).toList());
+                            openings.get(p.period().name())).locked(locked.contains(p.period().name()))
+                            .added(added.get(p.period().name()))).toList());
             return;
         }
         var totals = repository.personTotals(id);
         var carried = repository.personCarried(id);
         response.send(repository.list(id).stream()
                 .map(p -> PeriodResponse.from(p, totals.get(p.name()), carried.get(p.name()),
-                        openings.get(p.name())).locked(locked.contains(p.name()))).toList());
+                        openings.get(p.name())).locked(locked.contains(p.name())).added(added.get(p.name()))).toList());
     }
 }

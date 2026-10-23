@@ -194,6 +194,16 @@ public class PeriodRepository {
                 String.class, sheetId));
     }
 
+    /** The sheet's period names in the order they were added, each with its position (0 first). */
+    public Map<String, Integer> addedOrder(String sheetId) {
+        Map<String, Integer> order = new HashMap<>();
+        for (String name : jdbc.queryForList("SELECT name FROM period WHERE sheet_id = ? ORDER BY added_seq, from_date",
+                String.class, sheetId)) {
+            order.put(name, order.size());
+        }
+        return order;
+    }
+
     /** Whether the period is locked. */
     public boolean locked(Period period) {
         return lockedNames(period.sheetId()).contains(period.name());
