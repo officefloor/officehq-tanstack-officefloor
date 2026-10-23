@@ -7,7 +7,7 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
  *  statements have been taken of them, and the last one's due-total (null when n/a, or none taken) and date
  *  (the sheet's today then; null when none taken), the date they are retired from (null: not retired), whether
  *  they have any hold, their dated grades, earliest first, and their holds in the order they were put on (their OPEN
- *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), their aliases, sorted as names are compared, and whether their name or an alias is also used on another
+ *  claims dated within one, not bound by a statement, count in no live total), their own terms in days in force on the sheet's today (null: none), their contact (trimmed, lower-cased; null: none), their aliases, sorted as names are compared, and whether their name or an alias is also used on another
  *  sheet of the sheet's tree (its ancestors and descendants), the sheet they were last transferred from (null:
  *  never transferred), and their past retirements, in the order they were unretired, and their tags (trimmed, lower-cased,
  *  without repeats), sorted (empty when none), and their statements still standing (a cancelled one is gone),
@@ -65,6 +65,19 @@ export const peopleQuery = (sheetId: string) => ({
 /** The sheet's people, in list order (by their position; new people go to the end). */
 export function usePeople(sheetId: string) {
   return useQuery(peopleQuery(sheetId));
+}
+
+export const savedTermsKey = (sheetId: string) => ['sheet', sheetId, 'saved-terms'] as const;
+
+/** The terms an edit on this screen has just saved, by person id (null: none): their row shows them until the sheet
+ *  is next loaded, when it shows the terms in force on the sheet's today again. */
+export function useSavedTerms(sheetId: string): Record<number, number | null> {
+  return useQuery({
+    queryKey: savedTermsKey(sheetId),
+    queryFn: () => ({}) as Record<number, number | null>,
+    initialData: {} as Record<number, number | null>,
+    staleTime: Infinity,
+  }).data;
 }
 
 /** The id of the person whose editor is open ('' when the form adds a new person). */

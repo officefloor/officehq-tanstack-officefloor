@@ -8,6 +8,6 @@ import net.officefloor.plugin.variable.Val;
 public class BuildInlineGradeEdit {
     public void build(@Val InlineGradeRequest request, @Val Person loaded, Out<PersonRequest> edit) {
         edit.set(new PersonRequest(request.user(), loaded.name(), request.grade(), request.version(), null, null, null,
-                null));
+                null, null));
     }
 }

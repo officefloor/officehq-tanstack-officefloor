@@ -31,7 +31,7 @@ public class ValidateImport {
             try {
                 PersonRequest person = ValidatePerson.check(new PersonRequest(user, fields[0],
                         fields.length > 1 ? fields[1] : "", null, null, fields.length > 2 ? fields[2] : "",
-                        fields.length > 3 ? fields[3] : "", null));
+                        fields.length > 3 ? fields[3] : "", null, null));
                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
                     throw new DuplicatePersonNameException(person.name());
                 }

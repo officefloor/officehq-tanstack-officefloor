@@ -4,7 +4,8 @@ package net.officefloor.hq.app.person;
  *  names the version of the person it was made from (null: not checked), and the date its grade applies
  *  from (yyyy-mm-dd; null: the sheet's today). An add's grade applies from the beginning of time. The person's own terms are a whole
  *  number of days, "" for none (on an edit: clears them), or null when not given (on an edit: left as they are).
- *  The contact likewise: "" for none (on an edit: clears it), or null when not given. The tags likewise (comma separated): "" for none, or null when not given. */
+ *  The contact likewise: "" for none (on an edit: clears it), or null when not given. The tags likewise (comma separated): "" for none, or null when not given.
+ *  An edit's terms are recorded from the terms' from-date (yyyy-mm-dd; null: from the beginning of time). */
 public record PersonRequest(String user, String name, String grade, Long version, String gradeFrom, String terms, String contact,
-        String tags) {
+        String tags, String termsFrom) {
 }

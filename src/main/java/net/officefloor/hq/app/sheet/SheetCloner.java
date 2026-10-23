@@ -106,6 +106,7 @@ public class SheetCloner {
             ids.put(id, copy);
             copyPersonRows("person_grade", "grade, from_date", null, from, to, id, copy);
             copyPersonRows("person_grade_log", "grade, from_date, made_on", "id", from, to, id, copy);
+            copyPersonRows("person_terms", "from_date, terms_days", null, from, to, id, copy);
             copyPersonRows("person_hold", "from_date, to_date, made_on", "id", from, to, id, copy);
             copyPersonRows("person_retire_log", "from_date, made_on", "id", from, to, id, copy);
             copyPersonRows("person_retirement", "from_date, to_date, made_on", "id", from, to, id, copy);

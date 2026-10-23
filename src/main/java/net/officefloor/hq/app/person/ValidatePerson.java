@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: a name is required, the grade
  *  is one of A, B or C, the grade's from-date (optional) a real yyyy-mm-dd date, the terms (optional)
- *  blank or a whole number of days. Publishes the request with its name trimmed and its contact (optional)
+ *  blank or a whole number of days, the terms' from-date (optional) a real yyyy-mm-dd date. Publishes the request with its name trimmed and its contact (optional)
  *  trimmed and lower-cased, and its tags (optional) normalised as a claim's are (see Tags.normalise). */
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
@@ -47,6 +47,14 @@ public class ValidatePerson {
         if (terms != null && !terms.isEmpty() && !terms.matches("\\d{1,4}")) {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank for none.");
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                LocalDate.parse(termsFrom);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("The terms' from-date must be a date, yyyy-mm-dd.");
+            }
+        }
         String contact = request.contact() == null ? null : request.contact().trim().toLowerCase(Locale.ROOT);
         if (contact != null && contact.length() > 200) {
             throw new InvalidPersonException("A contact is at most 200 characters.");
@@ -57,6 +65,7 @@ public class ValidatePerson {
         }
         return new PersonRequest(request.user().trim(), name, grade, request.version(),
                 gradeFrom.isEmpty() ? null : gradeFrom,
-                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact, tags);
+                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact, tags,
+                termsFrom.isEmpty() ? null : termsFrom);
     }
 }

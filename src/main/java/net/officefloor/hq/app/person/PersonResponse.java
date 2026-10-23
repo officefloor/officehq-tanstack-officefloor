@@ -6,7 +6,7 @@ import java.util.List;
  *  the last statement's due-total (two decimals; null when n/a, or none taken) and date (yyyy-mm-dd; null when none
  *  taken), the date they are retired from (yyyy-mm-dd; null: not retired), whether they have any hold, their dated
  *  grades, earliest first (each from its from-date, yyyy-mm-dd; null: from the beginning of time), and their holds
- *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), their contact (null: none), their aliases, sorted as
+ *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days in force on the sheet's today (null: none), their contact (null: none), their aliases, sorted as
  *  names are compared, whether their name or an alias is also used on another sheet of their sheet's tree, and the
  *  sheet they were last transferred from (null: never transferred), and their past retirements, in the order they
  *  ended, and their tags, sorted (empty when none), and their statements still standing, in the order taken. */
@@ -44,7 +44,7 @@ public record PersonResponse(long id, String name, String grade, long version, i
                 p.grades().history().stream()
                         .map(g -> new GradeResponse(g.grade(), g.from() != null ? g.from().toString() : null)).toList(),
                 p.holds().history().stream().map(h -> new HoldResponse(h.from() != null ? h.from().toString() : null,
-                        h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact(), p.aliases(),
+                        h.to() != null ? h.to().toString() : null)).toList(), p.terms().now(), p.contact(), p.aliases(),
                 clashing, p.origin(), p.retirements().stream()
                         .map(r -> new RetirementResponse(r.from().toString(), r.to().toString())).toList(),
                 p.tags() != null ? List.of(p.tags().split(",")) : List.of(),

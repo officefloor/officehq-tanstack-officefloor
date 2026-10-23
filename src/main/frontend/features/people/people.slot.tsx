@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { GRADES, peopleKey, useCloseEditor, useEditingPerson, usePeople, useShowRetired } from './people';
+import { GRADES, peopleKey, savedTermsKey, useCloseEditor, useEditingPerson, usePeople, useSavedTerms,
+  useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
@@ -15,7 +16,9 @@ import { useColumnShown } from './columns';
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
  *  today unless changed), keeping the grades already recorded from other dates. The person's own terms (days; blank
- *  for none) are set by an add when given, and by an edit whose terms field was entered (blank clears them); so is
+ *  for none) are set by an add when given, and by an edit whose terms field was entered (blank clears them): from the
+ *  edit's terms from-date when one is given (keeping those recorded from other dates), else from the beginning of time;
+ *  the row shows the terms just saved until the sheet's people are next re-read (then those in force on its today); so is
  *  their contact, stored trimmed and lower-cased. Their tags (comma separated; stored trimmed, lower-cased, without
  *  repeats and sorted) are set by every add and edit, the editor filled with those stored. An add the server refuses
  *  starts the next add with no terms, no contact and no tags. A contact another person on the sheet already has is refused at once
@@ -40,6 +43,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
   const [version, setVersion] = useState(editing?.version);
   const today = useSheetToday(sheetId);
   const [gradeFromEntered, setGradeFrom] = useState<string>();
+  const [termsFrom, setTermsFrom] = useState('');
   const gradeFrom = gradeFromEntered ?? today;
   const [own, showError] = useState('');
   /** The refusal of an editor just closed shows on the form (now adding) until the form is changed, submitted or
@@ -55,17 +59,23 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
 
   const save = useMutation({
     mutationFn: (body: { user: string; name: string; grade: string; version?: number; gradeFrom?: string;
-      terms?: string; contact?: string; tags: string }) =>
+      terms?: string; termsFrom?: string; contact?: string; tags: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body),
-    onSuccess: async () => {
+    onSuccess: async (saved, body) => {
+      if (editing && body.terms !== undefined) {
+        // The row shows the terms just saved until the sheet is next loaded (then those in force on its today).
+        queryClient.setQueryData<Record<number, number | null>>(savedTermsKey(sheetId), (prev) =>
+          ({ ...prev, [saved.id]: body.terms === '' ? null : Number(body.terms) }));
+      }
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       // the person's tags join those ever used on the sheet
       void queryClient.invalidateQueries({ queryKey: [...claimsKey(sheetId), 'tags'] });
       setName('');
       setGrade('A');
       setTerms('');
+      setTermsFrom('');
       setContact('');
       setTags('');
       // Only this person's editor: another may have been opened while the save was on its way.
@@ -140,6 +150,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
     save.mutate(
       editing
         ? { user, name, grade, version, gradeFrom: gradeFrom.trim() === '' ? undefined : gradeFrom, terms: termsGiven ? terms.trim() : undefined,
+            termsFrom: termsGiven && termsFrom.trim() !== '' ? termsFrom.trim() : undefined,
             contact: contactGiven ? key : undefined, tags }
         : { user, name, grade, terms: terms.trim() === '' ? undefined : terms.trim(), contact: key === '' ? undefined : key, tags },
     );
@@ -226,6 +237,18 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
               value={gradeFrom}
               onChange={(e) => {
                 setGradeFrom(e.target.value);
+                setError('');
+              }}
+            />
+          </label>{' '}
+          <label>
+            Terms from{' '}
+            <input
+              type="date"
+              data-testid="person-form-terms-from"
+              value={termsFrom}
+              onChange={(e) => {
+                setTermsFrom(e.target.value);
                 setError('');
               }}
             />
@@ -343,6 +366,10 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [carried, setCarried] = useState('');
   const [sortBy, setSortBy] = useSortBy();
   const showTerms = useColumnShown('terms');
+  const savedTerms = useSavedTerms(sheetId);
+  const queryClient = useQueryClient();
+  // Loading another sheet drops the terms this screen just saved on this one.
+  useEffect(() => () => queryClient.removeQueries({ queryKey: savedTermsKey(sheetId) }), [queryClient, sheetId]);
   const showContact = useColumnShown('contact');
   const listed = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
 
@@ -378,7 +405,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              {showTerms && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+              {showTerms && <td data-testid="person-terms">{(p.id in savedTerms ? savedTerms[p.id] : p.terms) ?? ''}</td>}
               {showContact && <td data-testid="person-contact">{p.contact ?? ''}</td>}
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td>

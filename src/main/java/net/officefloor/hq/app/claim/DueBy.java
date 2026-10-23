@@ -12,11 +12,11 @@ public final class DueBy {
     private DueBy() {
     }
 
-    /** The terms (business days) a new claim of the person dated on the date is fixed with: the person's own terms,
-     *  else the terms of their grade in force on the date (else the sheet's terms in force on it). */
+    /** The terms (business days) a new claim of the person dated on the date is fixed with: the person's own terms
+     *  in force on the date, else the terms of their grade in force on it (else the sheet's terms in force on it). */
     public static int terms(Person person, LocalDate date, SettingRepository settings) {
-        return person.terms() != null ? person.terms()
-                : settings.termsFor(person.sheetId(), person.grades().on(date), date);
+        Integer own = person.terms().on(date);
+        return own != null ? own : settings.termsFor(person.sheetId(), person.grades().on(date), date);
     }
 
     /** The due-by of a new claim of the person dated on the date: the terms-th business day after the date, skipping
