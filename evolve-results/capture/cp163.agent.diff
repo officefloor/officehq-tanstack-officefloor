@@ -1,0 +1,251 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index af9d72d..167c18e 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -10,12 +10,16 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
+  *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), their aliases, sorted as names are compared, and whether their name or an alias is also used on another
+  *  sheet of the sheet's tree (its ancestors and descendants), the sheet they were last transferred from (null:
+  *  never transferred), and their past retirements, in the order they were unretired, and their tags (trimmed, lower-cased,
+- *  without repeats), sorted (empty when none). */
++ *  without repeats), sorted (empty when none), and their statements still standing (a cancelled one is gone),
++ *  in the order taken. */
+ export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
+   statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
+   grades: Grade[]; holds: Hold[]; terms: number | null;
+   contact: string | null; aliases: string[]; clashing: boolean; origin: string | null;
+-  retirements: Retirement[]; tags: string[] };
++  retirements: Retirement[]; tags: string[]; statements: StatementLine[] };
++
++/** A statement still standing: its date (yyyy-mm-dd) and due-total (two decimals; null: n/a). */
++export type StatementLine = { date: string | null; dueTotal: string | null };
+ 
+ /** A past retirement, from the date they were retired from to the day they were unretired (yyyy-mm-dd). */
+ export type Retirement = { from: string; to: string };
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index d62ada1..d79d67d 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -8,7 +8,7 @@ import { usePersonError } from '../people/rowError';
+ import type { Person } from '../people/people';
+ import { useColumnShown } from '../people/columns';
+ 
+-/** A person's statements: how many have been taken, the last one's due-total and date, and the button that
++/** A person's statements: one line per statement still standing, oldest first, as its date and due-total; how many have been taken, the last one's due-total and date, and the button that
+  *  takes one (recording their due-total now and binding their claims that count to the figures they show; or, with a
+  *  date in the as-of entry beside it, as they stood at the end of that date), and the
+  *  button that cancels the last one (a steward only: its claims are live again; the row shows the one before it). */
+@@ -51,6 +51,13 @@ function PersonStatement({ sheetId, user, person }: { sheetId: string; user: str
+   const showDate = useColumnShown('statement-date');
+   return (
+     <td>
++      <ul data-testid="person-statement-lines">
++        {(person.statements ?? []).map((s, i) => (
++          <li key={i} data-testid="person-statement-line-line">
++            {`${s.date ?? ''} ${s.dueTotal ?? 'n/a'}`}
++          </li>
++        ))}
++      </ul>
+       {showCount && (
+         <>
+           Statements <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java b/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
+index 1f434e4..8009ef9 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/BulkGradePeople.java
+@@ -34,7 +34,7 @@ public class BulkGradePeople {
+             Person person = new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
+                     loaded.version() + 1, loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(),
+                     loaded.retiredFrom(), loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
+-                loaded.retirements(), loaded.tags());
++                loaded.retirements(), loaded.tags(), loaded.statements());
+             if (!people.update(person, loaded.version())) {
+                 continue;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ImportPeople.java b/src/main/java/net/officefloor/hq/app/person/ImportPeople.java
+index 23e5df7..0d9bf10 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/ImportPeople.java
+@@ -80,7 +80,7 @@ public class ImportPeople {
+         Person person = new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(), loaded.version() + 1,
+                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
+                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
+-                loaded.retirements(), loaded.tags());
++                loaded.retirements(), loaded.tags(), loaded.statements());
+         if (!repository.update(person, loaded.version())) {
+             throw new InvalidPersonException(new StalePersonException(loaded.name()).getMessage());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 65a3985..49dd0ad 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -11,11 +11,16 @@ import java.util.List;
+  *  live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), and their
+  *  aliases, sorted as names are compared, the sheet they were last transferred from (null: never transferred), and
+  *  their past retirements (each ended by unretiring them), in the order they ended, and their tags (null: none):
+- *  trimmed, lower-cased, without repeats, sorted and joined by commas. */
++ *  trimmed, lower-cased, without repeats, sorted and joined by commas, and their statements still standing (not
++ *  cancelled), in the order taken. */
+ public record Person(long id, String sheetId, String name, String grade, long version, int statementCount,
+         BigDecimal statedTotal, LocalDate statementDate, LocalDate retiredFrom, Grades grades,
+         Holds holds, Integer terms, String contact, List<String> aliases,
+-        String origin, List<Person.Retirement> retirements, String tags) {
++        String origin, List<Person.Retirement> retirements, String tags, List<Person.StatementLine> statements) {
++
++    /** A statement still standing: its date and its due-total (null: n/a). */
++    public record StatementLine(LocalDate date, BigDecimal dueTotal) {
++    }
+ 
+     /** A past retirement: from the date they were retired from to the sheet's today when they were unretired. */
+     public record Retirement(LocalDate from, LocalDate to) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 42375b1..462c089 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -19,7 +19,7 @@ public class PersonRepository {
+             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
+             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
+             rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
+-            rs.getString("contact"), List.of(), rs.getString("origin"), List.of(), rs.getString("tags"));
++            rs.getString("contact"), List.of(), rs.getString("origin"), List.of(), rs.getString("tags"), List.of());
+ 
+     private record GradeRow(long personId, Grades.Grade grade) {
+     }
+@@ -39,6 +39,12 @@ public class PersonRepository {
+     private static final RowMapper<RetirementRow> RETIREMENT_ROW = (rs, i) -> new RetirementRow(rs.getLong("person_id"),
+             new Person.Retirement(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+ 
++    private record StatementRow(long personId, Person.StatementLine line) {
++    }
++
++    private static final RowMapper<StatementRow> STATEMENT_ROW = (rs, i) -> new StatementRow(rs.getLong("person_id"),
++            new Person.StatementLine(rs.getObject("statement_date", LocalDate.class), rs.getBigDecimal("due_total")));
++
+     private record AliasRow(long personId, String alias) {
+     }
+ 
+@@ -88,13 +94,19 @@ public class PersonRepository {
+                         Collectors.mapping(HoldRow::hold, Collectors.toList())));
+         Map<Long, List<String>> aliasesByPerson = aliases(sheetId, null);
+         Map<Long, List<Person.Retirement>> retirementsByPerson = retirements(sheetId, null);
++        Map<Long, List<Person.StatementLine>> statementsByPerson = jdbc.query(
++                "SELECT person_id, due_total, statement_date FROM person_statement WHERE sheet_id = ? AND NOT cancelled "
++                        + "ORDER BY person_id, id", STATEMENT_ROW, sheetId).stream()
++                .collect(Collectors.groupingBy(StatementRow::personId,
++                        Collectors.mapping(StatementRow::line, Collectors.toList())));
+         return people.stream().map(p -> {
+             Grades grades = new Grades(byPerson.getOrDefault(p.id(), List.of()));
+             return new Person(p.id(), p.sheetId(), p.name(), grades.on(today), p.version(), p.statementCount(),
+                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
+                     new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
+                     aliasesByPerson.getOrDefault(p.id(), List.of()), p.origin(),
+-                    retirementsByPerson.getOrDefault(p.id(), List.of()), p.tags());
++                    retirementsByPerson.getOrDefault(p.id(), List.of()), p.tags(),
++                    statementsByPerson.getOrDefault(p.id(), List.of()));
+         }).toList();
+     }
+ 
+@@ -212,7 +224,7 @@ public class PersonRepository {
+                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
+         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
+                 new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of(), null,
+-                List.of(), null);
++                List.of(), null, List.of());
+     }
+ 
+     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
+@@ -430,6 +442,7 @@ public class PersonRepository {
+         Long last = null;
+         BigDecimal total = null;
+         LocalDate date = null;
++        List<Person.StatementLine> lines = new java.util.ArrayList<>();
+         for (var row : jdbc.queryForList("SELECT id, due_total, statement_date, made_on, cancelled, cancelled_on "
+                 + "FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY id", p.sheetId(), p.id())) {
+             rows++;
+@@ -447,6 +460,7 @@ public class PersonRepository {
+                 last = ((Number) row.get("id")).longValue();
+                 total = (BigDecimal) row.get("due_total");
+                 date = toDate(row.get("statement_date"));
++                lines.add(new Person.StatementLine(date, total));
+             }
+         }
+         if (rows == 0) { // none kept: the person's last statement, if any, was taken before history was kept
+@@ -455,7 +469,7 @@ public class PersonRepository {
+         }
+         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
+                 retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases, p.origin(),
+-                retirements, p.tags());
++                retirements, p.tags(), lines);
+     }
+ 
+     private static LocalDate toDate(Object value) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 66bad4e..919f23c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -9,11 +9,16 @@ import java.util.List;
+  *  in the order they were put on (from- and to-date, yyyy-mm-dd; null: unbounded on that side), their own terms in days (null: none), their contact (null: none), their aliases, sorted as
+  *  names are compared, whether their name or an alias is also used on another sheet of their sheet's tree, and the
+  *  sheet they were last transferred from (null: never transferred), and their past retirements, in the order they
+- *  ended, and their tags, sorted (empty when none). */
++ *  ended, and their tags, sorted (empty when none), and their statements still standing, in the order taken. */
+ public record PersonResponse(long id, String name, String grade, long version, int statementCount,
+         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeResponse> grades,
+         List<HoldResponse> holds, Integer terms, String contact, List<String> aliases,
+-        boolean clashing, String origin, List<RetirementResponse> retirements, List<String> tags) {
++        boolean clashing, String origin, List<RetirementResponse> retirements, List<String> tags,
++        List<StatementLineResponse> statements) {
++
++    /** A statement still standing: its date (yyyy-mm-dd) and due-total (two decimals; null: n/a). */
++    public record StatementLineResponse(String date, String dueTotal) {
++    }
+ 
+     /** A past retirement from a from-date to the day they were unretired (yyyy-mm-dd). */
+     public record RetirementResponse(String from, String to) {
+@@ -42,6 +47,9 @@ public record PersonResponse(long id, String name, String grade, long version, i
+                         h.to() != null ? h.to().toString() : null)).toList(), p.terms(), p.contact(), p.aliases(),
+                 clashing, p.origin(), p.retirements().stream()
+                         .map(r -> new RetirementResponse(r.from().toString(), r.to().toString())).toList(),
+-                p.tags() != null ? List.of(p.tags().split(",")) : List.of());
++                p.tags() != null ? List.of(p.tags().split(",")) : List.of(),
++                p.statements().stream().map(s -> new StatementLineResponse(
++                        s.date() != null ? s.date().toString() : null,
++                        s.dueTotal() != null ? s.dueTotal().toPlainString() : null)).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index 7afe86c..cbd4b6b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -16,7 +16,7 @@ public class SavePerson {
+         Person person = new Person(loaded.id(), loaded.sheetId(), request.name(), loaded.grade(), from + 1,
+                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
+                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
+-                loaded.retirements(), loaded.tags());
++                loaded.retirements(), loaded.tags(), loaded.statements());
+         if (!repository.update(person, from)) {
+             throw new StalePersonException(loaded.name());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SaveRetire.java b/src/main/java/net/officefloor/hq/app/person/SaveRetire.java
+index 23a9aeb..8295d5e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SaveRetire.java
++++ b/src/main/java/net/officefloor/hq/app/person/SaveRetire.java
+@@ -11,6 +11,6 @@ public class SaveRetire {
+         var from = input.from() != null ? input.from() : sheets.today(loaded.sheetId());
+         repository.retire(loaded, from);
+         saved.set(PersonResponse.from(new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
+-                loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), from, loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(), loaded.retirements(), loaded.tags())));
++                loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), from, loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(), loaded.retirements(), loaded.tags(), loaded.statements())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SaveUnretire.java b/src/main/java/net/officefloor/hq/app/person/SaveUnretire.java
+index 1aa1bd4..4bd5161 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SaveUnretire.java
++++ b/src/main/java/net/officefloor/hq/app/person/SaveUnretire.java
+@@ -16,6 +16,6 @@ public class SaveUnretire {
+         saved.set(PersonResponse.from(new Person(loaded.id(), loaded.sheetId(), loaded.name(), loaded.grade(),
+                 loaded.version(), loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), null,
+                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
+-                retirements, loaded.tags())));
++                retirements, loaded.tags(), loaded.statements())));
+     }
+ }
