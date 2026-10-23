@@ -12,7 +12,7 @@ import java.time.LocalDate;
  *  due-by: the terms-th business day after the date it had when it was created, with the terms fixed then (its person's
  *  own, else their grade's in force on that date, else the sheet's), skipping Saturdays, Sundays and the sheet's
  *  holidays as they are now; it does not change when the terms or its date change later; and the date it is deferred until (null: never
- *  deferred): an OPEN claim deferred past the sheet's today is deferred (see deferredOn); and its proofs count (0 or more,
+ *  deferred): a claim deferred past the sheet's today is deferred (see deferredOn); and its proofs count (0 or more,
  *  raised one at a time); and the number of the claim it was split from (null when it was not split off one); and whether it is a
  *  late entry: added while its period was soft-closed (fixed when it was added); and the last sheet-today a reminder was
  *  written for it (null: never reminded); and its external reference (null: none), unique on the sheet without regard to case;
@@ -34,10 +34,14 @@ public record Claim(long id, String sheetId, long personId, BigDecimal amount, L
         return "photo".equals(kind) ? photos : "receipt".equals(kind) ? proofs - photos : 0;
     }
 
-    /** Whether the claim is deferred on the sheet's today: it is OPEN and deferred until a date after today (null:
-     *  no today, nothing is deferred). Deferred, it counts in no total, is not overdue, cannot be settled and is
-     *  left unbound by a statement; from that date on it is an OPEN claim like any other. */
+    /** Whether the claim is deferred on the sheet's today: it is not bound by a statement and deferred until a date
+     *  after today (null: no today, nothing is deferred), and OPEN, or PENDING or SETTLED after being deferred while
+     *  bound (an unbound deferred claim cannot be settled). Deferred, it counts in no total, is not overdue, cannot be
+     *  settled and is left unbound by a statement; from that date on it is a claim like any other. A bound claim's
+     *  deferral takes effect only once the binding ends (its statement is cancelled, or the next one leaves it
+     *  unbound): until then it counts, can be settled and is bound again by the next statement. */
     public boolean deferredOn(LocalDate today) {
-        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && deferredUntil.isAfter(today);
+        return status.counts() && !stated && deferredUntil != null && today != null
+                && deferredUntil.isAfter(today);
     }
 }
