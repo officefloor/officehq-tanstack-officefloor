@@ -11,7 +11,7 @@ import { useSheetToday } from '../sheet/sheet';
  *  signed-in user's own figures: the due-total and overdue-total of the person whose name or alias is the user's
  *  name (as names are compared), shown on their row; nothing when there is no such person; and the user's crew
  *  total: the due-totals of the crews that person leads (as shown on the crew rows), added up; nothing when they
- *  lead no crew. */
+ *  lead no crew; and the count of REVIEW claims assigned to the user to review. */
 function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -55,6 +55,11 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
       <span>
         My crew due total <strong data-testid="my-crew-due-total">
           {led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, people, due))) : ''}
+        </strong>
+      </span>{' '}
+      <span>
+        My reviews <strong data-testid="my-reviews-count">
+          {claims.filter((c) => c.status === 'REVIEW' && c.reviewer === user).length}
         </strong>
       </span>
     </header>

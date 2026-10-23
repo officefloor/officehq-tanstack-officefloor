@@ -238,6 +238,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [sharePct, setSharePct] = useState('');
   const [proofKind, setProofKind] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
+  const [reviewUser, setReviewUser] = useState('');
   const [redateTo, setRedateTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
   const [partAmount, setPartAmount] = useState('');
@@ -313,6 +314,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
         ? e.body : `Could not defer this ${claim.status} claim.`),
+  });
+
+  const assignReview = useMutation({
+    mutationFn: (reviewer: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/review-assign`, { user, reviewer }),
+    onSuccess: async () => {
+      setReviewUser('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not assign this ${claim.status} claim's review.`),
   });
 
   const remind = useMutation({
@@ -476,6 +489,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         </span>
       ))}
       Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
+      Review assigned <span data-testid="claim-review-assigned">{claim.reviewer ?? ''}</span>{' '}
       Reminded <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
       Waived <span data-testid="claim-waived">{claim.waived ? 'yes' : 'no'}</span>{' '}
       Held <span data-testid="claim-held">{claim.held ? 'yes' : 'no'}</span>{' '}
@@ -812,6 +826,31 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Defer
+      </button>{' '}
+      <input
+        data-testid="claim-review-user"
+        aria-label="Review user"
+        placeholder="Reviewer"
+        value={reviewUser}
+        onChange={(e) => {
+          clearError();
+          setReviewUser(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-review-assign"
+        disabled={assignReview.isPending}
+        onClick={() => {
+          clearError();
+          if (reviewUser.trim() === '') {
+            setError('Give the user to review this claim.');
+            return;
+          }
+          assignReview.mutate(reviewUser.trim());
+        }}
+      >
+        Assign review
       </button>{' '}
       <button
         type="button"

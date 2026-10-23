@@ -14,12 +14,14 @@ import java.util.List;
  *  it was not split off one), and whether it is a late entry, and the last day it was reminded as yyyy-mm-dd (null when never), and its external reference (null when none), and its tags, sorted (empty when none), and its comments, oldest first, as <user> on <date>: <text> (empty when not
  *  loaded with them), and the number of the settle batch that settled it (null when none settled it), and its lines, in the
  *  order added, as <label> <qty> x <unit> (empty when not loaded with them), and its review day as yyyy-mm-dd: the
- *  sheet's today when it went to REVIEW (null when it never did, or not loaded with it), and whether its late charge was waived, and how many of its proofs are of each kind (receipt, photo), and whether it is held, and its shares, in the order added (empty when none, or not loaded with them). */
+ *  sheet's today when it went to REVIEW (null when it never did, or not loaded with it), and whether its late charge was waived, and how many of its proofs are of each kind (receipt, photo), and whether it is held, and its shares, in the order added (empty when none, or not loaded with them), and the user a steward assigned to review it (null when none,
+ *  or not loaded with it). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
         String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
         List<String> log, String deferredUntil, boolean deferred, int proofs, String splitFrom, boolean lateEntry, String reminded, String ref,
         List<String> tags, List<String> comments, Integer batch, List<String> lines, String reviewOn,
-        boolean waived, java.util.Map<String, Integer> proofKinds, boolean held, List<ClaimShareRepository.Share> shares) {
+        boolean waived, java.util.Map<String, Integer> proofKinds, boolean held, List<ClaimShareRepository.Share> shares,
+        String reviewer) {
     public static ClaimResponse from(Claim c) {
         return from(c, List.of(), null);
     }
@@ -51,14 +53,21 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 c.deferredUntil() != null ? c.deferredUntil().toString() : null, c.deferredOn(today), c.proofs(),
                 c.splitFrom(), c.lateEntry(), c.reminded() != null ? c.reminded().toString() : null, c.ref(),
                 c.tags() != null ? List.of(c.tags().split(",")) : List.of(), comments, batch, lines,
-                reviewOn != null ? reviewOn.toString() : null, c.waived(), proofKinds(c), c.held(), List.of());
+                reviewOn != null ? reviewOn.toString() : null, c.waived(), proofKinds(c), c.held(), List.of(), null);
     }
 
     /** This claim as shown with its shares, in the order added. */
     public ClaimResponse withShares(List<ClaimShareRepository.Share> shares) {
         return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
                 statedDue, corrects, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lateEntry, reminded, ref,
-                tags, comments, batch, lines, reviewOn, waived, proofKinds, held, shares);
+                tags, comments, batch, lines, reviewOn, waived, proofKinds, held, shares, reviewer);
+    }
+
+    /** This claim as shown with the user assigned to review it (null when none). */
+    public ClaimResponse withReviewer(String reviewer) {
+        return new ClaimResponse(id, personId, amount, date, note, status, number, settledDue, openedBy, stated,
+                statedDue, corrects, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lateEntry, reminded, ref,
+                tags, comments, batch, lines, reviewOn, waived, proofKinds, held, shares, reviewer);
     }
 
     /** How many of its proofs are of each proof kind, in the order of the kinds. */

@@ -41,14 +41,16 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  with no kind chosen is a receipt; while the sheet lists proof kinds, one above the proof threshold needs a proof of
  *  each listed kind before it can be settled or approved — the server refuses it), and whether it is held (only an
  *  OPEN or PENDING claim is held or released: a held claim is left out of the live totals as a held person's are), and
- *  its shares, in the order added (see ClaimShare). */
+ *  its shares, in the order added (see ClaimShare), and the user a steward assigned to review it (null when none:
+ *  only a REVIEW claim is assigned; it keeps the user once it leaves REVIEW). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
   comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null;
-  waived: boolean; proofKinds?: Record<string, number>; held: boolean; shares?: ClaimShare[] };
+  waived: boolean; proofKinds?: Record<string, number>; held: boolean; shares?: ClaimShare[];
+  reviewer?: string | null };
 
 /** A share of a claim: another person on the sheet (by id) holding their share (a percent, two decimals, above
  *  0.00) of the claim's due; it counts in their due-total and comes out of the claim's own person's. A claim's shares

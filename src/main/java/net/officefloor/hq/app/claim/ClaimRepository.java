@@ -311,6 +311,21 @@ public class ClaimRepository {
         return days;
     }
 
+    /** The user assigned to review each of the sheet's claims that has one, by claim id. */
+    public Map<Long, String> reviewers(String sheetId) {
+        Map<Long, String> users = new HashMap<>();
+        jdbc.query("SELECT id, review_user FROM claim WHERE sheet_id = ? AND review_user IS NOT NULL",
+                rs -> { users.put(rs.getLong(1), rs.getString(2)); }, sheetId);
+        return users;
+    }
+
+    /** Assign the REVIEW claim to the user to review: false when it is no longer REVIEW (another user changed it
+     *  first), and nothing is written. */
+    public boolean assignReview(Claim claim, String user) {
+        return jdbc.update("UPDATE claim SET review_user = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                user, claim.sheetId(), claim.id(), ClaimStatus.REVIEW.name()) == 1;
+    }
+
     /** Re-date the claim with its number (a new one when its period changed): false when it no longer has the
      *  date and status it was loaded with (another user changed it first), and nothing is written. */
     public boolean redate(Claim claim, LocalDate date, String number) {
