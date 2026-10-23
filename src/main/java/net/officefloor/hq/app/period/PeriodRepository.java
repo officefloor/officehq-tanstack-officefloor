@@ -144,6 +144,24 @@ public class PeriodRepository {
         return carried;
     }
 
+    /** Add an opening balance to the person's carried figure for the period. */
+    public void addOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        jdbc.update("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) VALUES (?, ?, ?, ?)",
+                sheetId, periodName, personId, amount);
+    }
+
+    /** The opening balances pasted onto the sheet, added up: by period name, then by person id (none for a person
+     *  with none in the period). */
+    public Map<String, Map<Long, BigDecimal>> personOpenings(String sheetId) {
+        Map<String, Map<Long, BigDecimal>> openings = new HashMap<>();
+        jdbc.query("SELECT period_name, person_id, SUM(amount) AS amount FROM period_person_opening WHERE sheet_id = ? "
+                + "GROUP BY period_name, person_id", rs -> {
+            openings.computeIfAbsent(rs.getString("period_name"), k -> new HashMap<>())
+                    .put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+        }, sheetId);
+        return openings;
+    }
+
     /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
      *  is written. */
     public boolean reopen(Period period) {

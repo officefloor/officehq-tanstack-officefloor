@@ -14,14 +14,17 @@ public class RespondWithPeriods {
             ObjectResponse<List<PeriodResponse>> response) {
         String id = sheetId.trim();
         LocalDate end = AsOf.parse(asOf);
+        var openings = repository.personOpenings(id);
         if (end != null) {
             response.send(repository.listAsOf(id, end).stream()
-                    .map(p -> PeriodResponse.from(p.period(), p.personTotals(), p.personCarried())).toList());
+                    .map(p -> PeriodResponse.from(p.period(), p.personTotals(), p.personCarried(),
+                            openings.get(p.period().name()))).toList());
             return;
         }
         var totals = repository.personTotals(id);
         var carried = repository.personCarried(id);
         response.send(repository.list(id).stream()
-                .map(p -> PeriodResponse.from(p, totals.get(p.name()), carried.get(p.name()))).toList());
+                .map(p -> PeriodResponse.from(p, totals.get(p.name()), carried.get(p.name()),
+                        openings.get(p.name()))).toList());
     }
 }

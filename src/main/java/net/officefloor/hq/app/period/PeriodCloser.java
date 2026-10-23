@@ -75,6 +75,11 @@ public final class PeriodCloser {
                 }
             }
         }
+        periods.personOpenings(id).getOrDefault(period.name(), Map.of()).forEach((personId, amount) -> {
+            if (personCarried.containsKey(personId)) {
+                personCarried.merge(personId, amount, BigDecimal::add);
+            }
+        });
         if (soft ? !periods.softClose(period, total, personTotals, personCarried)
                 : !periods.close(period, total, personTotals, personCarried)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");

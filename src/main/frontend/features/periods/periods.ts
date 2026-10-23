@@ -9,9 +9,11 @@ import type { DatedValue } from '../settings/settings';
  *  periods overlap. A closed period keeps the due-total fixed when it was closed (null while open), and each
  *  person's due-total and carried figure fixed then, by person id (empty while open). A soft-closed period keeps them fixed the same
  *  way, while its claims can still be added and changed. A period may cap the OPEN or PENDING claims each person has in
- *  it (null: no cap); opening one past the cap is refused. */
+ *  it (null: no cap); opening one past the cap is refused. Each person's opening balance pasted for the period, by person
+ *  id (none: 0.00), adds to their carried figure. */
 export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>; soft: boolean; cap: number | null; personCarried: Record<string, string> };
+  personTotals: Record<string, string>; soft: boolean; cap: number | null; personCarried: Record<string, string>;
+  personOpenings?: Record<string, string> };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
 
@@ -43,7 +45,7 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
 
 /** A person's carried figure for a period: the dues (as shown on their rows now) of the person's claims that count
  *  (see countedAt) whose due-by falls in a period ending before this one starts, and whose status at the end of this
- *  period's last day (see statusAt) is OPEN or PENDING, added up; once closed or soft-closed, the figure fixed for
+ *  period's last day (see statusAt) is OPEN or PENDING, added up, with their opening balance for it; once closed or soft-closed, the figure fixed for
  *  them then (0.00 for a person added after). */
 export function personPeriodCarried(period: Period, periods: Period[], person: Person, claims: Claim[],
     people: Person[], rates: Rate[], floor: DatedValue, late: Late): string {
@@ -52,12 +54,13 @@ export function personPeriodCarried(period: Period, periods: Period[], person: P
     if (fixed !== undefined || period.personTotals?.[String(person.id)] === undefined) return fixed ?? '0.00';
   }
   const earlier = periods.filter((p) => p.to < period.from);
-  return sumDue(
-    countedAt(claims.filter((c) => c.personId === person.id), people, period.to, late.today)
+  return sumDue([
+    ...countedAt(claims.filter((c) => c.personId === person.id), people, period.to, late.today)
       .filter((c) => { const at = statusAt(c, period.to); return at === 'OPEN' || at === 'PENDING'; })
       .filter((c) => periodOf(earlier, dueBy(c)))
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date, c.id), floor, late)),
-  );
+    period.personOpenings?.[String(person.id)] ?? '0.00',
+  ]);
 }
 
 /** A period's due-total as shown on its row: the people's due-totals for it (see personPeriodDueTotal) added up. */

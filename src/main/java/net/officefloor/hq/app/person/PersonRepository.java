@@ -309,6 +309,8 @@ public class PersonRepository {
                 + "AND t.person_id = ?)", sheetId, from.id(), into.id());
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
                 sheetId, from.id());
+        jdbc.update("UPDATE period_person_opening SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
+                sheetId, from.id());
         joinStatements(from, into);
         for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement", "person_terms",
                 "person_retire_log", "person_retirement")) {
@@ -343,7 +345,7 @@ public class PersonRepository {
                 into.sheetId(), into.id(), sheetId, person.id());
         joinStatements(person, into);
         for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement", "person_terms",
-                "person_retire_log", "person_retirement", "period_person_total")) {
+                "person_retire_log", "person_retirement", "period_person_total", "period_person_opening")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.id());
@@ -356,7 +358,7 @@ public class PersonRepository {
     public void transfer(Person person, String toSheet) {
         String sheetId = person.sheetId();
         for (String table : List.of("person_hold", "person_retire_log", "person_retirement",
-                "period_person_total")) {
+                "period_person_total", "period_person_opening")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
         for (String table : List.of("person_grade", "person_grade_log", "person_alias", "person_statement", "person_terms")) {
