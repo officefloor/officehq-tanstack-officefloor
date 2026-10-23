@@ -24,7 +24,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
-  rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string };
+  rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
+  defaultGrade?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -79,6 +80,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentEscalateAfter = settings.data?.escalateAfter ?? '';
   const currentReviewSla = settings.data?.reviewSla ?? '';
   const currentProofKinds = settings.data?.proofKinds ?? '';
+  const currentDefaultGrade = settings.data?.defaultGrade ?? '';
   const currentRounding = settings.data?.rounding ?? '';
   const currentParent = settings.data?.parent ?? '';
   const currentFiscalStartMonth = settings.data?.fiscalStartMonth ?? '1';
@@ -101,6 +103,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedEscalateAfter, setTypedEscalateAfter] = useState<string | null>(null);
   const [typedReviewSla, setTypedReviewSla] = useState<string | null>(null);
   const [typedProofKinds, setTypedProofKinds] = useState<string | null>(null);
+  const [typedDefaultGrade, setTypedDefaultGrade] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
   const [typedFiscalStartMonth, setTypedFiscalStartMonth] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
@@ -140,6 +143,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedEscalateAfter(null);
       setTypedReviewSla(null);
       setTypedProofKinds(null);
+      setTypedDefaultGrade(null);
       setTypedRounding(null);
       setTypedParent(null);
       setTypedFiscalStartMonth(null);
@@ -295,6 +299,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.proofKinds = proofKinds;
+    }
+    if (typedDefaultGrade !== null) {
+      const defaultGrade = typedDefaultGrade.trim();
+      if (defaultGrade !== '' && !(GRADES as readonly string[]).includes(defaultGrade)) {
+        setError('The default grade must be A, B or C, or blank for A.');
+        return;
+      }
+      changes.defaultGrade = defaultGrade;
     }
     if (typedRounding !== null) {
       const rounding = typedRounding.trim();
@@ -453,6 +465,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Escalate after <strong data-testid="setting-escalate-after-current">{currentEscalateAfter}</strong>{' '}
         Review SLA <strong data-testid="setting-review-sla-current">{currentReviewSla}</strong>{' '}
         Proof kinds <strong data-testid="setting-proof-kinds-current">{currentProofKinds}</strong>{' '}
+        Default grade <strong data-testid="setting-default-grade-current">{currentDefaultGrade}</strong>{' '}
         Rounding <strong data-testid="setting-rounding-current">{currentRounding}</strong>{' '}
         Parent <strong data-testid="setting-parent-current">{currentParent}</strong>{' '}
         Fiscal year start month <strong data-testid="setting-fiscal-start-month-current">{currentFiscalStartMonth}</strong>
@@ -705,6 +718,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedProofKinds)}
             onChange={typed(setTypedProofKinds)}
             onFocus={() => setTypedProofKinds((v) => v ?? currentProofKinds)}
+          />
+        </label>{' '}
+        <label>
+          Default grade{' '}
+          <input
+            data-testid="setting-default-grade"
+            placeholder="A"
+            value={typedDefaultGrade ?? currentDefaultGrade}
+            onInput={typed(setTypedDefaultGrade)}
+            onChange={typed(setTypedDefaultGrade)}
+            onFocus={() => setTypedDefaultGrade((v) => v ?? currentDefaultGrade)}
           />
         </label>{' '}
         <label>

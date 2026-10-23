@@ -81,6 +81,9 @@ public class SaveSettings {
         if (input.setsProofKinds()) {
             repository.setProofKinds(id, input.proofKinds());
         }
+        if (input.setsDefaultGrade()) {
+            repository.setDefaultGrade(id, input.defaultGrade());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

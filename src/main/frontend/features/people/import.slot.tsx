@@ -9,7 +9,7 @@ import { peopleKey } from './people';
 
 type ImportResult = { added: number; updated: number };
 
-/** The import box: one name,grade,terms,contact line per person (the terms and contact may be absent or blank). The
+/** The import box: one name,grade,terms,contact line per person (the terms and contact may be absent or blank; a blank grade is the sheet's default grade). The
  *  server checks every line by the person form's rules first (and no name or contact repeated within the paste); one
  *  failing line refuses the whole import and shows why on the box, otherwise each line in order updates the person on
  *  the sheet with that name or alias as the form's edit would, or else adds a person as the form would, and the box

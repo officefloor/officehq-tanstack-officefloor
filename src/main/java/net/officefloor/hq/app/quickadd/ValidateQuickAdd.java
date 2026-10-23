@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written, by the rules of the person and claim
  *  forms: a name is required (at most 200 characters); the amount is required, a number 0.00 or more with up
- *  to two decimals. Publishes the person as a grade A add (used only when the name is new to the sheet) and
+ *  to two decimals. Publishes the person as an add (its grade, the
+ *  sheet's default grade, is given by FindOrAddQuickAddPerson) (used only when the name is new to the sheet) and
  *  the claim with no date (the sheet's today) and an empty note. */
 public class ValidateQuickAdd {
     public void validate(@RequestBody QuickAddRequest request, Out<PersonRequest> person, Out<ClaimInput> claim)

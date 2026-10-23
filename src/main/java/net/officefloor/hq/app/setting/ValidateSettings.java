@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an escalation gap (when given) blank (off) or a whole number of days, and proof kinds (when given) blank (none) or a comma separated list of receipt and photo. A rounding mode (when given) is blank (none) or half-up or half-even. A fiscal year start month (when given) is a month 1 to 12. The parent sheet (when given) is
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an escalation gap (when given) blank (off) or a whole number of days, and proof kinds (when given) blank (none) or a comma separated list of receipt and photo, and a default grade (when given) blank (A) or A, B or C. A rounding mode (when given) is blank (none) or half-up or half-even. A fiscal year start month (when given) is a month 1 to 12. The parent sheet (when given) is
  *  checked against the store by ValidateParent. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
@@ -94,6 +94,10 @@ public class ValidateSettings {
             throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank for none.");
         }
         String proofKinds = request.proofKinds() == null ? null : proofKinds(request.proofKinds());
+        String defaultGrade = request.defaultGrade() == null ? null : request.defaultGrade().trim();
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
+            throw new InvalidSettingException("The default grade must be A, B or C, or blank for A.");
+        }
         String entered = request.entryDate() == null ? null : request.entryDate().trim();
         LocalDate entryDate = null;
         if (entered != null && !entered.isEmpty()) {
@@ -245,7 +249,8 @@ public class ValidateSettings {
                 reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.valueOf(escalate),
                 reviewSla != null, reviewSla == null || reviewSla.isEmpty() ? null : Integer.valueOf(reviewSla),
-                proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds));
+                proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
+                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade));
     }
 
     /** The proof kinds as stored: each listed kind trimmed, in the order given, without repeats, joined by commas ('':

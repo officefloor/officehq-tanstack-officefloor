@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written. Each non-blank line is name,grade,terms,contact
- *  — the terms and contact may be absent or blank — and must pass exactly the person form's rules; no two lines may
+ *  — the grade may be absent or blank (the sheet's default grade, published as null), the terms and contact absent or blank — and must pass exactly the person form's rules; no two lines may
  *  give the same name, or the same contact (compared as the sheet compares them). A paste with no lines is refused.
  *  A refusal names the first line that fails. */
 public class ValidateImport {
@@ -29,9 +29,13 @@ public class ValidateImport {
             int number = i + 1;
             String[] fields = rows[i].split(",", 4);
             try {
+                boolean blankGrade = fields.length < 2 || fields[1].isBlank();
                 PersonRequest person = ValidatePerson.check(new PersonRequest(user, fields[0],
-                        fields.length > 1 ? fields[1] : "", null, null, fields.length > 2 ? fields[2] : "",
+                        blankGrade ? "A" : fields[1], null, null, fields.length > 2 ? fields[2] : "",
                         fields.length > 3 ? fields[3] : "", null, null));
+                if (blankGrade) {
+                    person = withGrade(person, null);
+                }
                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
                     throw new DuplicatePersonNameException(person.name());
                 }
@@ -47,5 +51,11 @@ public class ValidateImport {
             throw new InvalidPersonException("Paste at least one line: name,grade,terms,contact.");
         }
         body.set(new ImportInput(user, lines));
+    }
+
+    /** The request with the grade given (null: blank, the sheet's default grade). */
+    static PersonRequest withGrade(PersonRequest p, String grade) {
+        return new PersonRequest(p.user(), p.name(), grade, p.version(), p.gradeFrom(), p.terms(), p.contact(), p.tags(),
+                p.termsFrom());
     }
 }

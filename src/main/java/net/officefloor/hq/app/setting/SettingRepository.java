@@ -69,7 +69,8 @@ public class SettingRepository {
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
-                history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId));
+                history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
+                defaultGrade(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -252,6 +253,21 @@ public class SettingRepository {
 
     public void setProofKinds(String sheetId, String kinds) {
         jdbc.update("UPDATE sheet SET proof_kinds = ? WHERE id = ?", kinds, sheetId);
+    }
+
+    /** The sheet's default grade, as set: null when blank (A). */
+    public String defaultGrade(String sheetId) {
+        return jdbc.query("SELECT default_grade FROM sheet WHERE id = ?", rs -> rs.next() ? rs.getString(1) : null, sheetId);
+    }
+
+    /** The grade a new person given none takes: the sheet's default grade, or A when it is blank. */
+    public String gradeForNew(String sheetId) {
+        String grade = defaultGrade(sheetId);
+        return grade != null ? grade : "A";
+    }
+
+    public void setDefaultGrade(String sheetId, String grade) {
+        jdbc.update("UPDATE sheet SET default_grade = ? WHERE id = ?", grade, sheetId);
     }
 
     /** The sheet's alert threshold: null when blank (off). */

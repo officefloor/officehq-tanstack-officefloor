@@ -276,7 +276,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
 }
 
 /** The quick-add bar: a name and an amount make a DRAFT claim dated the sheet's entry date (while it is set, else its today) with an empty note for
- *  the person of that name, adding them first with grade A when the name is new to the sheet. A refusal adds
+ *  the person of that name, adding them first with the sheet's default grade (A when blank) when the name is new to the sheet. A refusal adds
  *  nothing and shows why on the bar. */
 function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();

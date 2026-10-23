@@ -79,6 +79,9 @@ public class AuditSettingChanged {
         if (input.setsProofKinds()) {
             audit.record(head + "proof-kinds value=" + (input.proofKinds() != null ? input.proofKinds() : ""));
         }
+        if (input.setsDefaultGrade()) {
+            audit.record(head + "default-grade value=" + (input.defaultGrade() != null ? input.defaultGrade() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 
