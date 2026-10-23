@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Save the settings the input sets: each dated one recorded from its from-date (not given: the sheet's today),
  *  keeping the values already recorded (one from that same date is replaced); the policy date and the period
- *  numbering from and the grace days and the pot and the parent sheet and the fiscal year start month and the alert threshold and the permission matrix as
+ *  numbering from and the grace days and the pot and the parent sheet and the fiscal year start month and the alert threshold and the escalation gap and the permission matrix as
  *  they are. */
 public class SaveSettings {
     public void save(@PathVariable("sheetId") String sheetId, @Val SettingsInput input, SettingRepository repository,
@@ -71,6 +71,9 @@ public class SaveSettings {
         }
         if (input.setsReviewThreshold()) {
             repository.setDated(id, "review-threshold", text(input.reviewThreshold()), from(input, "review-threshold", today));
+        }
+        if (input.setsEscalateAfter()) {
+            repository.setEscalateAfter(id, input.escalateAfter());
         }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));

@@ -24,7 +24,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
-  rounding?: string; reviewThreshold?: string };
+  rounding?: string; reviewThreshold?: string; escalateAfter?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -50,6 +50,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  The pot (blank: none; not dated): each member of a balanced pool is shown their cut of it.
  *  The alert threshold (blank: off; not dated): the server alerts, in the audit file, each person whose due-total
  *  crosses above it over a change.
+ *  The escalation gap (days; blank: off; not dated): reminding a claim whose previous reminder was at least that many
+ *  days before the sheet's today escalates it, once per claim ever; the server records it in the audit file.
  *  The parent sheet (a sheet id; blank: none; not dated): a grade with no rate in force on a date on this sheet takes
  *  the parent's, then its parent's, up to three levels up. The server refuses the sheet itself, a sheet never
  *  loaded, or one that has this sheet as an ancestor.
@@ -74,6 +76,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentEntryDate = settings.data?.entryDate ?? '';
   const currentPot = settings.data?.pot ?? '';
   const currentAlertThreshold = settings.data?.alertThreshold ?? '';
+  const currentEscalateAfter = settings.data?.escalateAfter ?? '';
   const currentRounding = settings.data?.rounding ?? '';
   const currentParent = settings.data?.parent ?? '';
   const currentFiscalStartMonth = settings.data?.fiscalStartMonth ?? '1';
@@ -93,6 +96,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const [typedPot, setTypedPot] = useState<string | null>(null);
   const [typedAlertThreshold, setTypedAlertThreshold] = useState<string | null>(null);
+  const [typedEscalateAfter, setTypedEscalateAfter] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
   const [typedFiscalStartMonth, setTypedFiscalStartMonth] = useState<string | null>(null);
   const currentGradeTerms = (grade: string) => settings.data?.gradeTerms?.[grade] ?? '';
@@ -129,6 +133,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedEntryDate(null);
       setTypedPot(null);
       setTypedAlertThreshold(null);
+      setTypedEscalateAfter(null);
       setTypedRounding(null);
       setTypedParent(null);
       setTypedFiscalStartMonth(null);
@@ -260,6 +265,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.alertThreshold = threshold;
+    }
+    if (typedEscalateAfter !== null) {
+      const escalateAfter = typedEscalateAfter.trim();
+      if (escalateAfter !== '' && !DAYS.test(escalateAfter)) {
+        setError('The escalation gap must be a whole number of days, 0 or more, or blank for off.');
+        return;
+      }
+      changes.escalateAfter = escalateAfter;
     }
     if (typedRounding !== null) {
       const rounding = typedRounding.trim();
@@ -415,6 +428,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
         Pot <strong data-testid="setting-pot-current">{currentPot}</strong>{' '}
         Alert threshold <strong data-testid="setting-alert-threshold-current">{currentAlertThreshold}</strong>{' '}
+        Escalate after <strong data-testid="setting-escalate-after-current">{currentEscalateAfter}</strong>{' '}
         Rounding <strong data-testid="setting-rounding-current">{currentRounding}</strong>{' '}
         Parent <strong data-testid="setting-parent-current">{currentParent}</strong>{' '}
         Fiscal year start month <strong data-testid="setting-fiscal-start-month-current">{currentFiscalStartMonth}</strong>
@@ -633,6 +647,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onChange={typed(setTypedAlertThreshold)}
             onFocus={() => setTypedAlertThreshold((v) => v ?? currentAlertThreshold)}
           />
+        </label>{' '}
+        <label>
+          Escalate after{' '}
+          <input
+            data-testid="setting-escalate-after"
+            placeholder="off"
+            value={typedEscalateAfter ?? currentEscalateAfter}
+            onInput={typed(setTypedEscalateAfter)}
+            onChange={typed(setTypedEscalateAfter)}
+            onFocus={() => setTypedEscalateAfter((v) => v ?? currentEscalateAfter)}
+          />{' '}
+          days
         </label>{' '}
         <label>
           Rounding{' '}

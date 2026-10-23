@@ -30,12 +30,13 @@ import { useSheetToday } from '../sheet/sheet';
  *  is the alert threshold with two decimals (not dated; '' when off): a person whose due-total crosses above it over a
  *  change is alerted in the audit file. `rounding` is the rounding mode in force (half-up or half-even; '' when none),
  *  dated (key rounding): a claim whose date has one in force rounds its live figures by it, else by the policy date. `reviewThreshold` is the review threshold with two decimals in force ('' when none), dated (key
- *  review-threshold): a claim whose due is above the one in force on its date goes to REVIEW when opened. */
+ *  review-threshold): a claim whose due is above the one in force on its date goes to REVIEW when opened. `escalateAfter` is the escalation gap in days (not dated; '' when off): reminding a
+ *  claim whose previous reminder was at least that many days before the sheet's today escalates it, once ever. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
-  rounding?: string; reviewThreshold?: string };
+  rounding?: string; reviewThreshold?: string; escalateAfter?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };

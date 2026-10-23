@@ -69,7 +69,7 @@ public class SettingRepository {
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
-                history.reviewThresholdOn(today));
+                history.reviewThresholdOn(today), escalateAfter(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -222,6 +222,16 @@ public class SettingRepository {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
         jdbc.update("INSERT INTO pot_log (sheet_id, val, made_on) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?))",
                 sheetId, pot, sheetId);
+    }
+
+    /** The sheet's escalation gap in days: null when blank (off). */
+    public Integer escalateAfter(String sheetId) {
+        return jdbc.query("SELECT escalate_after FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, Integer.class) : null, sheetId);
+    }
+
+    public void setEscalateAfter(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's alert threshold: null when blank (off). */

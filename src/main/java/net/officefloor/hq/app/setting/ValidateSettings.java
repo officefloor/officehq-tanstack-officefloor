@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals. A rounding mode (when given) is blank (none) or half-up or half-even. A fiscal year start month (when given) is a month 1 to 12. The parent sheet (when given) is
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an escalation gap (when given) blank (off) or a whole number of days. A rounding mode (when given) is blank (none) or half-up or half-even. A fiscal year start month (when given) is a month 1 to 12. The parent sheet (when given) is
  *  checked against the store by ValidateParent. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
@@ -84,6 +84,10 @@ public class ValidateSettings {
         String grace = request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && !grace.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank for off.");
+        }
+        String escalate = request.escalateAfter() == null ? null : request.escalateAfter().trim();
+        if (escalate != null && !escalate.isEmpty() && !escalate.matches("\\d{1,4}")) {
+            throw new InvalidSettingException("The escalation gap must be a whole number of days, 0 or more, or blank for off.");
         }
         String entered = request.entryDate() == null ? null : request.entryDate().trim();
         LocalDate entryDate = null;
@@ -233,6 +237,7 @@ public class ValidateSettings {
                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
                 reviewThreshold != null,
-                reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2)));
+                reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2),
+                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.valueOf(escalate)));
     }
 }

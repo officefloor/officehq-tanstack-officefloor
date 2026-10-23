@@ -70,6 +70,9 @@ public class AuditSettingChanged {
             audit.record(head + "review-threshold value=" + SettingsResponse.text(input.reviewThreshold())
                     + from(input, "review-threshold"));
         }
+        if (input.setsEscalateAfter()) {
+            audit.record(head + "escalate-after value=" + (input.escalateAfter() != null ? input.escalateAfter() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

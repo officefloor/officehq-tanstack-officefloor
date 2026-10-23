@@ -34,7 +34,7 @@ public class SheetCloner {
 
     public void copy(String from, String to, String user) {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, "
-                + "pot, parent, fiscal_start_month, alert_threshold) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold "
+                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after "
                 + "FROM sheet WHERE id = ?", to, user, from);
         copyRows("rate", "grade, pct, from_date, to_date, version, after_claim", null, from, to);
         copyRows("rate_log", "grade, pct, from_date, to_date, made_on, version, after_claim", "id", from, to);
@@ -174,13 +174,13 @@ public class SheetCloner {
             }
             long copy = insert("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, "
                     + "settled_due, opened_by, corrects, due_from, terms_days, deferred_until, proofs, split_from, "
-                    + "late_entry, reminded_on, ref, tags, edited_by, due_by) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, person, c.get("amount"),
+                    + "late_entry, reminded_on, ref, tags, edited_by, due_by, escalated) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, person, c.get("amount"),
                     c.get("claim_date"), c.get("note"), c.get("status"), numberOf.get(idOf(c)), c.get("settled_due"),
                     c.get("opened_by"), renumbered(numbers, c.get("corrects")), c.get("due_from"), c.get("terms_days"),
                     c.get("deferred_until"), c.get("proofs"), renumbered(numbers, c.get("split_from")),
                     c.get("late_entry"), c.get("reminded_on"), c.get("ref"), c.get("tags"), c.get("edited_by"),
-                    c.get("due_by"));
+                    c.get("due_by"), c.get("escalated"));
             ids.put(idOf(c), copy);
         }
         for (var e : ids.entrySet()) {

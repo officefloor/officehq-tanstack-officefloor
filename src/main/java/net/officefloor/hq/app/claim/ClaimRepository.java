@@ -221,6 +221,12 @@ public class ClaimRepository {
                 on, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), on) == 1);
     }
 
+    /** Mark the claim escalated: false when it already was (a claim is escalated once ever), and nothing is written. */
+    public boolean escalate(Claim claim) {
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE sheet_id = ? AND id = ? AND escalated = FALSE",
+                claim.sheetId(), claim.id()) == 1;
+    }
+
     /** Leave the OPEN claim with the rest of its amount after a split, unbinding it from any statement: false when
      *  it is no longer OPEN with the amount it was loaded with (another user changed it first), and nothing is
      *  written. */
