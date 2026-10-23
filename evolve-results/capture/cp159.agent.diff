@@ -1,0 +1,56 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index c975d72..5523238 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -10,7 +10,7 @@ import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/settings';
+ import { useRates } from '../rates/rates';
+-import { periodDueTotal, periodsKey, personPeriodDueTotal, usePeriods } from './periods';
++import { periodDueTotal, periodsKey, personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
+ import type { Period } from './periods';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+@@ -313,6 +313,9 @@ function PersonPeriodDueTotals({ sheetId, person }: { sheetId: string; user: str
+         <td key={p.name}>
+           {p.name} <span data-testid={`person-period-${p.name}-due-total`}>
+             {personPeriodDueTotal(p, person, claims, people, rates, floor, late)}
++          </span>{' '}
++          carried <span data-testid={`person-period-${p.name}-carried`}>
++            {personPeriodCarried(p, periods, person, claims, people, rates, floor, late)}
+           </span>
+         </td>
+       ))}
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 5c09f29..971ff38 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { countedAt, dueBy, live, type Claim } from '../claims/claims';
++import { countedAt, dueBy, live, statusAt, type Claim } from '../claims/claims';
+ import { gradeOn, type Person } from '../people/people';
+ import { claimDue, rateOn, sumDue, type Late, type Rate } from '../rates/rates';
+ import type { DatedValue } from '../settings/settings';
+@@ -41,6 +41,20 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
+   );
+ }
+ 
++/** A person's carried figure for a period: the dues (as shown on their rows now) of the person's claims that count
++ *  (see countedAt) whose due-by falls in a period ending before this one starts, and whose status at the end of this
++ *  period's last day (see statusAt) is OPEN or PENDING, added up. */
++export function personPeriodCarried(period: Period, periods: Period[], person: Person, claims: Claim[],
++    people: Person[], rates: Rate[], floor: DatedValue, late: Late): string {
++  const earlier = periods.filter((p) => p.to < period.from);
++  return sumDue(
++    countedAt(claims.filter((c) => c.personId === person.id), people, period.to, late.today)
++      .filter((c) => { const at = statusAt(c, period.to); return at === 'OPEN' || at === 'PENDING'; })
++      .filter((c) => periodOf(earlier, dueBy(c)))
++      .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date, c.id), floor, late)),
++  );
++}
++
+ /** A period's due-total as shown on its row: the people's due-totals for it (see personPeriodDueTotal) added up. */
+ export function periodDueTotal(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue,
+     late: Late): string {
