@@ -176,14 +176,14 @@ public class SheetCloner {
             }
             long copy = insert("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, "
                     + "settled_due, opened_by, corrects, due_from, terms_days, deferred_until, proofs, split_from, "
-                    + "late_entry, reminded_on, ref, tags, edited_by, due_by, escalated, review_on, waived, proof_photos, held, pending_on) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, person, c.get("amount"),
+                    + "late_entry, reminded_on, ref, tags, edited_by, due_by, escalated, review_on, waived, proof_photos, held, pending_on, due_by_set) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", to, person, c.get("amount"),
                     c.get("claim_date"), c.get("note"), c.get("status"), numberOf.get(idOf(c)), c.get("settled_due"),
                     c.get("opened_by"), renumbered(numbers, c.get("corrects")), c.get("due_from"), c.get("terms_days"),
                     c.get("deferred_until"), c.get("proofs"), renumbered(numbers, c.get("split_from")),
                     c.get("late_entry"), c.get("reminded_on"), c.get("ref"), c.get("tags"), c.get("edited_by"),
                     c.get("due_by"), c.get("escalated"), c.get("review_on"), c.get("waived"), c.get("proof_photos"), c.get("held"),
-                    c.get("pending_on"));
+                    c.get("pending_on"), c.get("due_by_set"));
             ids.put(idOf(c), copy);
         }
         for (var e : ids.entrySet()) {

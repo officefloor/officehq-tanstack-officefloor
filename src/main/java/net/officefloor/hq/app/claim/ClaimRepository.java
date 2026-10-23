@@ -75,14 +75,14 @@ public class ClaimRepository {
         }, sheetId);
     }
 
-    /** Re-fix the due-by of each of the sheet's claims not SETTLED or VOID whose due-by is on or after the holiday:
-     *  worked out again from its date, with the terms it was fixed with, over the sheet's holidays as they are now. */
+    /** Re-fix the due-by of each of the sheet's claims not SETTLED or VOID whose due-by is on or after the holiday
+     *  and was not set directly (one set so stays as set): worked out again from its date, with the terms it was fixed with, over the sheet's holidays as they are now. */
     public void refixDueBys(String sheetId, LocalDate holiday) {
         var dates = holidays.dates(sheetId);
         record Fixed(long id, LocalDate dueBy) {
         }
         List<Fixed> moved = new java.util.ArrayList<>();
-        jdbc.query("SELECT id, due_from, terms_days, due_by FROM claim WHERE sheet_id = ? AND due_by >= ? AND status NOT IN (?, ?)",
+        jdbc.query("SELECT id, due_from, terms_days, due_by FROM claim WHERE sheet_id = ? AND due_by >= ? AND due_by_set = FALSE AND status NOT IN (?, ?)",
                 rs -> {
                     LocalDate now = BusinessDays.after(rs.getObject("due_from", LocalDate.class), rs.getInt("terms_days"), dates);
                     if (!now.equals(rs.getObject("due_by", LocalDate.class))) {
@@ -334,6 +334,14 @@ public class ClaimRepository {
     public boolean assignReview(Claim claim, String user) {
         return jdbc.update("UPDATE claim SET review_user = ? WHERE sheet_id = ? AND id = ? AND status = ?",
                 user, claim.sheetId(), claim.id(), ClaimStatus.REVIEW.name()) == 1;
+    }
+
+    /** Set the claim's due-by directly, to stay as set: false when it no longer has the due-by and status it was
+     *  loaded with (another user changed it first), and nothing is written. */
+    public boolean setDueBy(Claim claim, LocalDate dueBy) {
+        return kept(claim, jdbc.update(
+                "UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE sheet_id = ? AND id = ? AND COALESCE(due_by, ?) = ? AND status = ?",
+                dueBy, claim.sheetId(), claim.id(), claim.dueBy(), claim.dueBy(), claim.status().name()) == 1);
     }
 
     /** Re-date the claim with its number (a new one when its period changed): false when it no longer has the

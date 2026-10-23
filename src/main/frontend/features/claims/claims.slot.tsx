@@ -207,7 +207,8 @@ const ACTIONS = [
  *  so is editing a claim that is no longer a DRAFT, or one whose editor another user holds open (opening the editor locks
  *  the claim until it is saved or cancelled, or the sheet's today changes), or one dated in a closed period (the server refuses those too; it refuses saving
  *  an edit of one whose due-by, its period, falls in a closed period). A steward re-dates an OPEN or PENDING claim; the server refuses anyone else, a date after its person's
- *  retirement, and a claim whose due-by is inside a closed period. */
+ *  retirement, and a claim whose due-by is inside a closed period. A steward sets the due-by of a DRAFT, OPEN or PENDING
+ *  claim directly (it then stays as set); the server refuses anyone else, any other status, and a due-by inside a closed period. */
 function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: string; claim: Claim; rate?: string }) {
   const queryClient = useQueryClient();
   const [editingId, setEditing] = useEditingClaim();
@@ -241,6 +242,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [deferUntil, setDeferUntil] = useState('');
   const [reviewUser, setReviewUser] = useState('');
   const [redateTo, setRedateTo] = useState('');
+  const [dueByTo, setDueByTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
   const [partAmount, setPartAmount] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
@@ -400,6 +402,18 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
         ? e.body : `Could not re-date this ${claim.status} claim.`),
+  });
+
+  const setDueBy = useMutation({
+    mutationFn: (dueBy: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/due-by`, { user, dueBy }),
+    onSuccess: async () => {
+      setDueByTo('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not set the due-by of this ${claim.status} claim.`),
   });
 
   // Opening the editor locks the claim for other users until it is saved or cancelled (or the sheet's today
@@ -910,6 +924,30 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Re-date
+      </button>{' '}
+      <input
+        data-testid="claim-due-by-new"
+        placeholder="Due by yyyy-mm-dd"
+        value={dueByTo}
+        onChange={(e) => {
+          clearError();
+          setDueByTo(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-set-due-by"
+        disabled={setDueBy.isPending}
+        onClick={() => {
+          clearError();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dueByTo.trim())) {
+            setError('Give the new due-by of this claim as yyyy-mm-dd.');
+            return;
+          }
+          setDueBy.mutate(dueByTo.trim());
+        }}
+      >
+        Set due-by
       </button>{' '}
       <input
         data-testid="claim-split-amount"
