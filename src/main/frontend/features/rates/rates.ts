@@ -119,11 +119,11 @@ export function personStatusSum(person: Person, claims: Claim[], rates: Rate[], 
     .map((c) => claimDue(c, rateOn(rates, gradeOn(person, c.date), c.date), floor, late)));
 }
 
-/** The sheet's due-total for a tag: the due (as shown on its row) of each claim carrying the tag that counts in the
- *  live totals (see live), every person's added up, skipping n/a; not capped or trimmed. */
+/** The sheet's due-total for a tag: the due (as shown on its row) of each claim that counts in the live totals
+ *  carrying the tag, or whose person carries it (once either way) (see live), every person's added up, skipping n/a; not capped or trimmed. */
 export function sheetTagSum(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, tag: string): string {
-  return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id && c.tags.includes(tag)), [p], today)
+  return sumDue(people.flatMap((p) => live(claims.filter((c) => c.personId === p.id && (c.tags.includes(tag) || p.tags.includes(tag))), [p], today)
     .map((c) => claimDue(c, rateOn(rates, gradeOn(p, c.date), c.date), floor, late))));
 }
 

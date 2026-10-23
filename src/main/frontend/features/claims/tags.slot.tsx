@@ -5,7 +5,8 @@ import { useFloor, useLate } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { useClaims, useTagsUsed } from './claims';
 
-/** The sheet's due-total per tag, for every tag ever used on it: the dues of the claims that count which carry it
+/** The sheet's due-total per tag, for every tag ever used on it (on a claim or a person): the dues of the claims that count which
+ *  carry it or whose person carries it
  *  (a claim with two tags counts in both; see sheetTagSum). */
 function TagTotals({ sheetId }: { sheetId: string; user: string }) {
   const tags = useTagsUsed(sheetId).data ?? [];

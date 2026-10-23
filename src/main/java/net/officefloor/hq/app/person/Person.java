@@ -10,11 +10,12 @@ import java.util.List;
  *  dated grades and their dated holds (their OPEN claims dated within one, not bound by a statement, count in no
  *  live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), and their
  *  aliases, sorted as names are compared, the sheet they were last transferred from (null: never transferred), and
- *  their past retirements (each ended by unretiring them), in the order they ended. */
+ *  their past retirements (each ended by unretiring them), in the order they ended, and their tags (null: none):
+ *  trimmed, lower-cased, without repeats, sorted and joined by commas. */
 public record Person(long id, String sheetId, String name, String grade, long version, int statementCount,
         BigDecimal statedTotal, LocalDate statementDate, LocalDate retiredFrom, Grades grades,
         Holds holds, Integer terms, String contact, List<String> aliases,
-        String origin, List<Person.Retirement> retirements) {
+        String origin, List<Person.Retirement> retirements, String tags) {
 
     /** A past retirement: from the date they were retired from to the sheet's today when they were unretired. */
     public record Retirement(LocalDate from, LocalDate to) {

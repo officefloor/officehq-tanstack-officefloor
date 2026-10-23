@@ -9,12 +9,13 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
  *  they have any hold, their dated grades, earliest first, and their holds in the order they were put on (their OPEN
  *  claims dated within one, not bound by a statement, count in no live total), their own terms in days (null: none), their contact (trimmed, lower-cased; null: none), their aliases, sorted as names are compared, and whether their name or an alias is also used on another
  *  sheet of the sheet's tree (its ancestors and descendants), the sheet they were last transferred from (null:
- *  never transferred), and their past retirements, in the order they were unretired. */
+ *  never transferred), and their past retirements, in the order they were unretired, and their tags (trimmed, lower-cased,
+ *  without repeats), sorted (empty when none). */
 export type Person = { id: number; name: string; grade: string; version: number; statementCount: number;
   statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   grades: Grade[]; holds: Hold[]; terms: number | null;
   contact: string | null; aliases: string[]; clashing: boolean; origin: string | null;
-  retirements: Retirement[] };
+  retirements: Retirement[]; tags: string[] };
 
 /** A past retirement, from the date they were retired from to the day they were unretired (yyyy-mm-dd). */
 export type Retirement = { from: string; to: string };

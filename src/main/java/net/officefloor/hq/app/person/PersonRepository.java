@@ -19,7 +19,7 @@ public class PersonRepository {
             rs.getString("sheet_id"), rs.getString("name"), null, rs.getLong("version"),
             rs.getInt("statement_count"), rs.getBigDecimal("stated_total"), rs.getObject("statement_date", LocalDate.class),
             rs.getObject("retired_from", LocalDate.class), Grades.NONE, Holds.NONE, (Integer) rs.getObject("terms"),
-            rs.getString("contact"), List.of(), rs.getString("origin"), List.of());
+            rs.getString("contact"), List.of(), rs.getString("origin"), List.of(), rs.getString("tags"));
 
     private record GradeRow(long personId, Grades.Grade grade) {
     }
@@ -94,8 +94,18 @@ public class PersonRepository {
                     p.statedTotal(), p.statementDate(), p.retiredFrom(), grades,
                     new Holds(holdsByPerson.getOrDefault(p.id(), List.of())), p.terms(), p.contact(),
                     aliasesByPerson.getOrDefault(p.id(), List.of()), p.origin(),
-                    retirementsByPerson.getOrDefault(p.id(), List.of()));
+                    retirementsByPerson.getOrDefault(p.id(), List.of()), p.tags());
         }).toList();
+    }
+
+    /** Set the person's tags (joined by commas; null: none), keeping each among the tags ever used on the sheet. */
+    public void tags(Person person, String tags) {
+        jdbc.update("UPDATE person SET tags = ? WHERE sheet_id = ? AND id = ?", tags, person.sheetId(), person.id());
+        if (tags != null) {
+            for (String tag : tags.split(",")) {
+                jdbc.update("MERGE INTO claim_tag KEY (sheet_id, tag) VALUES (?, ?)", person.sheetId(), tag);
+            }
+        }
     }
 
     /** Whether another person on this sheet (other than exceptId, when given) has this name, or anyone on the sheet
@@ -202,7 +212,7 @@ public class PersonRepository {
                 + "(SELECT today FROM sheet WHERE id = ?))", sheetId, id, grade, sheetId);
         return new Person(id, sheetId, name, grade, 0, 0, null, null, null,
                 new Grades(List.of(new Grades.Grade(grade, null))), Holds.NONE, terms, contact, List.of(), null,
-                List.of());
+                List.of(), null);
     }
 
     /** Lock the person's row until the transaction ends, so concurrent statements of them go one after the other. */
@@ -408,7 +418,7 @@ public class PersonRepository {
         }
         return new Person(p.id(), p.sheetId(), p.name(), grades.on(end), p.version(), Math.max(count, 0), total, date,
                 retiredFromAsOf(p, end), grades, holdsAsOf(p, end), p.terms(), p.contact(), aliases, p.origin(),
-                retirements);
+                retirements, p.tags());
     }
 
     private static LocalDate toDate(Object value) {

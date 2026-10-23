@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 /** Apply the edit to the loaded person and store it, refused when the person has been saved since
  *  the version the edit was made from. The grade is recorded from the edit's from-date (the sheet's today
  *  when none was given), keeping the grades already recorded from other dates. The person's own terms are set when the edit gives
- *  them (cleared when given blank), and so is their contact. */
+ *  them (cleared when given blank), and so are their contact and tags. */
 public class SavePerson {
     public void save(@Val PersonRequest request, @Val Person loaded, PersonRepository repository,
             SheetRepository sheets, Out<PersonResponse> saved) throws StalePersonException {
@@ -16,7 +16,7 @@ public class SavePerson {
         Person person = new Person(loaded.id(), loaded.sheetId(), request.name(), loaded.grade(), from + 1,
                 loaded.statementCount(), loaded.statedTotal(), loaded.statementDate(), loaded.retiredFrom(),
                 loaded.grades(), loaded.holds(), loaded.terms(), loaded.contact(), loaded.aliases(), loaded.origin(),
-                loaded.retirements());
+                loaded.retirements(), loaded.tags());
         if (!repository.update(person, from)) {
             throw new StalePersonException(loaded.name());
         }
@@ -28,6 +28,9 @@ public class SavePerson {
         }
         if (request.contact() != null) {
             repository.contact(person, request.contact().isEmpty() ? null : request.contact());
+        }
+        if (request.tags() != null) {
+            repository.tags(person, request.tags().isEmpty() ? null : request.tags());
         }
         saved.set(PersonResponse.from(repository.find(loaded.sheetId(), loaded.id())));
     }

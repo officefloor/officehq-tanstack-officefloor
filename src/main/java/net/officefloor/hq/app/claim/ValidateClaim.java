@@ -3,9 +3,6 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Arrays;
-import java.util.Locale;
-import java.util.stream.Collectors;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -80,7 +77,6 @@ public class ValidateClaim {
     /** Tags as typed, separated by commas: each trimmed and lower-cased, blanks and repeats dropped, sorted and joined
      *  by commas ("" when none). */
     static String tags(String typed) {
-        return Arrays.stream(typed.split(",")).map(t -> t.trim().toLowerCase(Locale.ROOT)).filter(t -> !t.isEmpty())
-                .distinct().sorted().collect(Collectors.joining(","));
+        return Tags.normalise(typed);
     }
 }

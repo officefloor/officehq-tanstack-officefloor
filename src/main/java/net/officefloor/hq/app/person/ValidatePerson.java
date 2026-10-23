@@ -4,13 +4,14 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
 import java.util.Set;
+import net.officefloor.hq.app.claim.Tags;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: a name is required, the grade
  *  is one of A, B or C, the grade's from-date (optional) a real yyyy-mm-dd date, the terms (optional)
  *  blank or a whole number of days. Publishes the request with its name trimmed and its contact (optional)
- *  trimmed and lower-cased. */
+ *  trimmed and lower-cased, and its tags (optional) normalised as a claim's are (see Tags.normalise). */
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
@@ -50,8 +51,12 @@ public class ValidatePerson {
         if (contact != null && contact.length() > 200) {
             throw new InvalidPersonException("A contact is at most 200 characters.");
         }
+        String tags = request.tags() == null ? null : Tags.normalise(request.tags());
+        if (tags != null && tags.length() > 1000) {
+            throw new InvalidPersonException("Tags are at most 1000 characters.");
+        }
         return new PersonRequest(request.user().trim(), name, grade, request.version(),
                 gradeFrom.isEmpty() ? null : gradeFrom,
-                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact);
+                terms == null || terms.isEmpty() ? terms : String.valueOf(Integer.parseInt(terms)), contact, tags);
     }
 }
