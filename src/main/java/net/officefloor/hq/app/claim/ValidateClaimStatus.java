@@ -30,6 +30,14 @@ public class ValidateClaimStatus {
         } else if (action.equals("void") && request.reason() != null && !request.reason().isBlank()) {
             reason = request.reason().trim();
         }
-        body.set(new ClaimStatusInput(request.user().trim(), action, to, reason));
+        java.time.LocalDate on = null;
+        if (action.equals("settle") && request.on() != null && !request.on().isBlank()) {
+            try {
+                on = java.time.LocalDate.parse(request.on().trim());
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new InvalidClaimException("Give the settle date as yyyy-mm-dd.");
+            }
+        }
+        body.set(new ClaimStatusInput(request.user().trim(), action, to, reason, on));
     }
 }

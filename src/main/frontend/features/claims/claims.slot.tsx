@@ -220,6 +220,9 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [reason, setReason] = useState('');
   const voidReasons = useVoidReasons(sheetId).data ?? [];
   const [voidReason, setVoidReason] = useState('');
+  // The date a settle is taken as of (blank: today): the server freezes the due as the as-of view shows it then,
+  // refusing a date after the sheet's today or one before the claim existed.
+  const [settleOn, setSettleOn] = useState('');
   const periods = usePeriods(sheetId).data ?? [];
   const period = periodOf(periods, dueBy(claim));
   // The editor opens, and saves, for a claim whose due-by is outside a closed period.
@@ -244,9 +247,11 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const change = useMutation({
     mutationFn: (action: string) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, action === 'reject' ? { user, action, reason }
-        : action === 'void' && voidReason !== '' ? { user, action, reason: voidReason } : { user, action }),
+        : action === 'void' && voidReason !== '' ? { user, action, reason: voidReason }
+        : action === 'settle' && settleOn.trim() !== '' ? { user, action, on: settleOn.trim() } : { user, action }),
     onSuccess: async (_, action) => {
       if (action === 'reject') setReason('');
+      if (action === 'settle') setSettleOn('');
       if (action === 'void') {
         setVoidReason('');
         await queryClient.invalidateQueries({ queryKey: voidReasonsKey(sheetId) });
@@ -645,6 +650,15 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
           ))}
         </select>
       )}{' '}
+      <input
+        data-testid="claim-settle-date"
+        placeholder="Settle as of yyyy-mm-dd"
+        value={settleOn}
+        onChange={(e) => {
+          clearError();
+          setSettleOn(e.target.value);
+        }}
+      />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
           key={action}

@@ -13,6 +13,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.hq.app.statement.Dues;
 import net.officefloor.hq.app.statement.LateCharge;
+import net.officefloor.hq.app.statement.Rounding;
+import net.officefloor.hq.app.setting.SettingHistory;
 
 /** The rules of a claim's status change and its audit line, shared by a single change ({@link SaveClaimStatus},
  *  {@link AuditClaimStatus}) and a bulk settle ({@link BulkSettleClaims}). */
@@ -38,6 +40,8 @@ final class ClaimStatusChange {
                 ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
         BigDecimal settledDue = input.action().equals("resettle")
                 ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
+                : to == ClaimStatus.SETTLED && input.action().equals("settle") && input.on() != null
+                        ? dueAsOf(then(loaded, input.on(), repository), input.on(), repository, people, rates, settings, sheets)
                 : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets)
                 : to == ClaimStatus.VOID && loaded.status() == ClaimStatus.SETTLED ? loaded.settledDue() : null;
         if (!repository.changeStatus(loaded, to, number, settledDue, openedBy)) {
@@ -114,6 +118,16 @@ final class ClaimStatusChange {
             }
         } else if (!loaded.status().canBecome(to)) {
             throw new ClaimStatusNotAllowedException(loaded.status(), to);
+        }
+        if (input.action().equals("settle") && input.on() != null) {
+            LocalDate today = sheets.today(loaded.sheetId());
+            if (today == null || input.on().isAfter(today)) {
+                throw new ClaimStatusNotAllowedException("A claim cannot be settled as of a date after the sheet's today"
+                        + (today != null ? " (" + today + ")" : "") + ".");
+            }
+            if (then(loaded, input.on(), repository) == null) {
+                throw new ClaimStatusNotAllowedException("This claim did not exist on " + input.on() + ".");
+            }
         }
         if (input.action().equals("settle") && loaded.deferredOn(sheets.today(loaded.sheetId()))) {
             throw new ClaimStatusNotAllowedException("This claim is deferred until " + loaded.deferredUntil()
@@ -194,7 +208,8 @@ final class ClaimStatusChange {
                 + (resettled ? " old=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a")
                         + " new=" + (saved.settledDue() != null ? saved.settledDue() : "n/a") : "")
                 + (reversed ? " reversed=" + (loaded.settledDue() != null ? loaded.settledDue() : "n/a") : "")
-                + (input.reason() != null && input.action().equals("void") ? " reason=" + input.reason() : ""));
+                + (input.reason() != null && input.action().equals("void") ? " reason=" + input.reason() : "")
+                + (settled && input.on() != null ? " on=" + input.on() : ""));
         if (event.equals("CLAIM_SETTLED") || event.equals("CLAIM_APPROVED") || event.equals("CLAIM_RESETTLED")) {
             for (String watcher : watches.watchers(loaded.sheetId(), loaded.personId())) {
                 audit.record("NOTIFY sheet=" + loaded.sheetId() + " by=" + input.user() + " user=" + watcher
@@ -252,6 +267,28 @@ final class ClaimStatusChange {
         }
         BigDecimal due = dueNow(claim, claims, people, rates, settings, sheets);
         return due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** The claim as it stood at the end of the day (see ClaimRepository.listAsOf); null when it did not exist then. */
+    private static Claim then(Claim claim, LocalDate end, ClaimRepository claims) {
+        return claims.listAsOf(claim.sheetId(), end).stream().filter(c -> c.id() == claim.id()).findFirst()
+                .orElse(null);
+    }
+
+    /** The claim's due as its row showed it at the end of the day, as the as-of view works it out: the sheet as it
+     *  stood then (its person's grades, the rates, floor, late percents, grace and rounding), the date standing in
+     *  for the sheet's today. */
+    private static BigDecimal dueAsOf(Claim then, LocalDate end, ClaimRepository claims, PersonRepository people,
+            RateRepository rates, SettingRepository settings, SheetRepository sheets) {
+        var person = people.find(then.sheetId(), then.personId());
+        var grades = people.gradesAsOf(person, end);
+        var history = settings.historyAsOf(then.sheetId(), end);
+        LocalDate policy = settings.policyDate(then.sheetId());
+        Rounding now = Rounding.of(then.sheetId(), settings, sheets, claims);
+        LateCharge late = new LateCharge(history::latePctOn, end, new Rounding(policy != null ? policy : end,
+                now.numbered(), history.of(SettingHistory.ROUNDING)),
+                LateCharge.Grace.of(history, java.util.Map.of(person.id(), grades)));
+        return Dues.shown(then, grades, rates.asOf(then.sheetId(), end), history::floorOn, late);
     }
 
     private static BigDecimal dueNow(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
