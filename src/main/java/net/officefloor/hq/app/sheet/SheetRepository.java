@@ -1,6 +1,11 @@
 package net.officefloor.hq.app.sheet;
 
 import java.time.LocalDate;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -65,5 +70,20 @@ public class SheetRepository {
         Boolean archived = jdbc.query("SELECT archived AND (archived_on IS NULL OR archived_on <= ?) FROM sheet WHERE id = ?",
                 rs -> rs.next() ? rs.getBoolean(1) : null, end, id);
         return Boolean.TRUE.equals(archived);
+    }
+
+    /** The sheet's descendants (the sheets naming it as their parent, their children, and so on), by id; never the
+     *  sheet itself, even when the parents run in a loop. */
+    public List<String> descendants(String id) {
+        Set<String> found = new TreeSet<>();
+        Deque<String> todo = new ArrayDeque<>(List.of(id));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent = ?", String.class, todo.pop())) {
+                if (!child.equals(id) && found.add(child)) {
+                    todo.add(child);
+                }
+            }
+        }
+        return List.copyOf(found);
     }
 }

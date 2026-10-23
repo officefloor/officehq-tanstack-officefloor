@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.watch;
 
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -20,10 +21,12 @@ public class WatchRepository {
                 String.class, sheetId, personId);
     }
 
-    /** The ids of the people on the sheet this user watches. */
-    public List<Long> watchedBy(String sheetId, String user) {
-        return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ? ORDER BY person_id",
-                Long.class, sheetId, user);
+    /** The ids of the people on the sheet this user watches; only those watched since the sheet's today was on or
+     *  before `end`, when one is given. */
+    public List<Long> watchedBy(String sheetId, String user, LocalDate end) {
+        return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ? "
+                + "AND (CAST(? AS DATE) IS NULL OR made_on IS NULL OR made_on <= ?) ORDER BY person_id",
+                Long.class, sheetId, user, end, end);
     }
 
     public boolean watching(String sheetId, long personId, String user) {
@@ -34,7 +37,8 @@ public class WatchRepository {
     }
 
     public void watch(String sheetId, long personId, String user) {
-        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)", sheetId, personId, user);
+        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name, made_on) VALUES (?, ?, ?, "
+                + "(SELECT today FROM sheet WHERE id = ?))", sheetId, personId, user, sheetId);
     }
 
     public void unwatch(String sheetId, long personId, String user) {
