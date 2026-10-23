@@ -103,6 +103,12 @@ public final class Dues {
         return figures.stream().reduce(new BigDecimal("0.00"), BigDecimal::add);
     }
 
+    /** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even to two
+     *  decimals. */
+    public static BigDecimal part(BigDecimal due, BigDecimal share) {
+        return due.multiply(share).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_EVEN);
+    }
+
     /** A due-total at most the sheet's cap (null: none); n/a (null) is not capped. */
     public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
         return total != null && cap != null ? total.min(cap) : total;

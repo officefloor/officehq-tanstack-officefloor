@@ -41,7 +41,7 @@ function useOtherGrades(otherId: string, run: number): Record<string, string> | 
   const floor = floorOf(settings);
   const late = lateOf(settings, today, claims, people);
   return gradeTotals(people, today,
-    (p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? ''));
+    (p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? '', people));
 }
 
 /** Compares this sheet with another, named by id: per grade of this sheet, <grade> <this sheet's summary
@@ -59,7 +59,7 @@ function OtherSheetCompare({ sheetId }: { sheetId: string; user: string }) {
   const cap = useCap(sheetId);
   const other = useOtherGrades(compared.id, compared.run);
   const mine = gradeTotals(people, today,
-    (p) => personDueTotal(p, claims, rates, today, floor, late, cap));
+    (p) => personDueTotal(p, claims, rates, today, floor, late, cap, people));
 
   return (
     <section>

@@ -129,11 +129,48 @@ export function personDue(claims: Claim[], rateFor: (claim: Claim) => string | u
 }
 
 /** A person's figures added up, before the cap: their live claims among these (see live) through personDue, at
- *  the grade in force on each claim's date and on the sheet's today. */
+ *  the grade in force on each claim's date and on the sheet's today, with their parts of shared claims (see
+ *  shareParts; the people give each claim's person, none given: no parts) added and the parts others hold of theirs
+ *  taken off. */
 export function personDueSum(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
-    late: Late): string {
-  return personDue(live(claims.filter((c) => c.personId === person.id), [person], today),
+    late: Late, people: Person[] = []): string {
+  const own = personDue(live(claims.filter((c) => c.personId === person.id), [person], today),
     (c) => rateOn(rates, gradeOn(person, c.date), c.date, c.id), rateOn(rates, gradeOn(person, today), today), floor, late);
+  const parts = shareParts(person, claims, rates, today, floor, late, people);
+  if (parts === undefined) return own;
+  return fromCents((own === 'n/a' ? 0n : toCents(own)) + parts);
+}
+
+/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even to two decimals;
+ *  'n/a' when the due is. */
+export function sharePart(due: string, share: string): string {
+  return due === 'n/a' ? 'n/a' : dueOn(due, share);
+}
+
+/** How the shared claims move a person's due-total, in cents: for each claim that counts in the live totals for its
+ *  person (among the people given) and has a figure (its due as shown on its row), each holder's part (see
+ *  sharePart) is added to the holder's and taken from the claim's person's; undefined when the person has a part in
+ *  no such claim. */
+export function shareParts(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+    late: Late, people: Person[]): bigint | undefined {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  let total: bigint | undefined;
+  for (const c of claims) {
+    const shares = c.shares ?? [];
+    if (shares.length === 0) continue;
+    const mine = c.personId === person.id;
+    if (!mine && !shares.some((s) => s.personId === person.id)) continue;
+    const owner = mine ? person : byId.get(c.personId);
+    if (!owner || live([c], [owner], today).length === 0) continue;
+    const due = claimDue(c, rateOn(rates, gradeOn(owner, c.date), c.date, c.id), floor, late);
+    if (due === 'n/a') continue;
+    for (const s of shares) {
+      if (!mine && s.personId !== person.id) continue;
+      const part = toCents(sharePart(due, s.share));
+      total = (total ?? 0n) + (mine ? -part : part);
+    }
+  }
+  return total;
 }
 
 /** A person's dues of one kind: the due (as shown on its row; a SETTLED one's frozen) of each of their claims that
@@ -174,8 +211,8 @@ export function sheetStatusSum(people: Person[], claims: Claim[], rates: Rate[],
 /** A person's due-total as shown on their row: their figures added up (see personDueSum), at most the sheet's
  *  cap ('' when none). */
 export function personDueTotal(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
-    late: Late, cap: string): string {
-  return capped(personDueSum(person, claims, rates, today, floor, late), cap);
+    late: Late, cap: string, people: Person[] = []): string {
+  return capped(personDueSum(person, claims, rates, today, floor, late, people), cap);
 }
 
 /** These people's settled figures (each SETTLED claim's due as shown on its row: the one frozen when it was settled)
@@ -236,7 +273,7 @@ export function trimmedSum(figures: string[]): string {
 /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed (see trimmedSum). */
 export function sheetDueTotal(people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, cap: string): string {
-  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
+  return trimmedSum(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)));
 }
 
 /** The sheet's overdue-total: every person's overdue-total (see overdueDues) added up, trimmed (see trimmedSum). */

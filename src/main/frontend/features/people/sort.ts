@@ -35,7 +35,7 @@ export function useSortedPeople(sheetId: string, people: Person[]): Person[] {
   const keyed = people.map((p, i) => {
     if (sortBy === 'name') return { p, i, key: nameKey(p.name) };
     if (sortBy === 'grade') return { p, i, key: (today !== '' && gradeOn(p, today)) || p.grade };
-    const due = capped(personDueSum(p, claims, rates, today, floor, late), cap);
+    const due = capped(personDueSum(p, claims, rates, today, floor, late, people), cap);
     return { p, i, key: due, cents: due === 'n/a' ? null : toCents(due) };
   });
   return keyed

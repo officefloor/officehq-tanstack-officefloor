@@ -40,7 +40,7 @@ function ClassicSummary({ sheetId }: { sheetId: string; user: string }) {
             <td>
               Due total{' '}
               <span data-testid="classic-due-total">
-                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)))}
+                {sumDue(people.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)))}
               </span>
             </td>
           </tr>

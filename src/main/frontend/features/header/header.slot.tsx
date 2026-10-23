@@ -22,7 +22,7 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
   const cap = useCap(sheetId);
   const crews = useCrews(sheetId).data ?? [];
   const me = personNamed(people, user);
-  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, cap);
+  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, cap, people);
   const led = me ? crews.filter((c) => c.leadId === me.id) : [];
 
   return (

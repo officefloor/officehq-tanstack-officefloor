@@ -21,7 +21,7 @@ function useCrewDueTotal(sheetId: string, crew: Crew): string {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, cap));
+  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, cap, people));
 }
 
 /** One crew: its lead, its due-total, its members, and the entry a member is added with. */

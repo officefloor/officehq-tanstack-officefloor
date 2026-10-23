@@ -44,7 +44,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
                 <td>
                   Due total{' '}
                   <span data-testid={`summary-grade-${g}-due-total`}>
-                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)))}
+                    {sumDue(onGrade.map((p) => personDueTotal(p, claims, rates, today, floor, late, cap, people)))}
                   </span>
                 </td>
                 <td>

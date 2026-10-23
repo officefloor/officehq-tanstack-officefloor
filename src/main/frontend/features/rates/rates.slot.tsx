@@ -271,6 +271,7 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
  *  personDueTotal). */
 function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
   const shown = useColumnShown('due-total');
+  const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
@@ -278,12 +279,13 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; user: string; pe
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
   if (!shown) return null;
-  return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late), cap)}</td>;
+  return <td data-testid="person-due-total">{capped(personDueSum(person, claims, rates, today, floor, late, people), cap)}</td>;
 }
 
 /** A person's excess: how far their figures added up are above the sheet's cap; 0.00 when not above it. */
 function PersonExcess({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
   const shown = useColumnShown('excess');
+  const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
@@ -293,7 +295,7 @@ function PersonExcess({ sheetId, person }: { sheetId: string; user: string; pers
   if (!shown) return null;
   return (
     <td>
-      Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late), cap)}</span>
+      Excess <span data-testid="person-excess">{excess(personDueSum(person, claims, rates, today, floor, late, people), cap)}</span>
     </td>
   );
 }

@@ -52,7 +52,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string; user: string }) {
             const then = snapshotOn(all, p.id, compared.from);
             const now = compared.to
               ? snapshotOn(all, p.id, compared.to)
-              : personDueTotal(p, claims, rates, today, floor, late, cap);
+              : personDueTotal(p, claims, rates, today, floor, late, cap, people);
             return (
               <li key={p.id} data-testid="snapshot-line" style={{ whiteSpace: 'pre' }}>
                 {`${p.name} ${then} ${now}`}

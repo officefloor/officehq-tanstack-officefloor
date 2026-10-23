@@ -10,6 +10,7 @@ import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShareRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -34,10 +35,12 @@ public class Rollups {
     private final RateRepository rates;
     private final SheetRepository sheets;
     private final SettingRepository settings;
+    private final ClaimShareRepository shares;
     private final Audit audit;
 
     public Rollups(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, Audit audit) {
+            SettingRepository settings, ClaimShareRepository shares, Audit audit) {
+        this.shares = shares;
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -57,14 +60,17 @@ public class Rollups {
         BigDecimal claimedTotal = new BigDecimal("0.00");
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
-        for (Person p : people.list(sheetId)) {
+        List<Person> everyone = people.list(sheetId);
+        Map<Long, BigDecimal> parts = shareParts(sheetId, everyone, all, today, floor, late);
+        for (Person p : everyone) {
             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
             // claimed: the amounts of their claims that count toward claimed (a held one does), leaving out corrections of another claim
             BigDecimal claimed = theirs.stream()
                     .filter(c -> Dues.countsClaimed(c, p.retiredFrom(), today) && c.corrects() == null)
                     .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
-            BigDecimal due = Dues.capped(
-                    Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late), cap);
+            BigDecimal own = Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late);
+            BigDecimal part = parts.get(p.id());
+            BigDecimal due = Dues.capped(part == null ? own : own == null ? part : own.add(part), cap);
             // overdue-total: the dues (as shown, late charge included) of their overdue claims that count, skipping n/a
             BigDecimal overdue = theirs.stream()
                     .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && late.overdue(c))
@@ -79,6 +85,38 @@ public class Rollups {
                     shown(overdue)));
         }
         return new Rollup(figures, shown(claimedTotal), shown(trimmed(dues)), shown(trimmed(overdues)));
+    }
+
+    /** How the claims' shares move each person's due-total, by person id: for each claim that counts for its person
+     *  and has a figure (its due as shown), each holder's part (the due times their share divided by 100, rounded half to
+     *  even to two decimals) is added to the holder's and taken from the claim's person's. A person with no part in
+     *  any such claim has no entry. */
+    private Map<Long, BigDecimal> shareParts(String sheetId, List<Person> everyone, List<Claim> all,
+            java.time.LocalDate today, net.officefloor.hq.app.setting.DatedAmount floor, LateCharge late) {
+        Map<Long, List<ClaimShareRepository.Share>> shared = shares.shares(sheetId);
+        Map<Long, BigDecimal> parts = new LinkedHashMap<>();
+        if (shared.isEmpty()) {
+            return parts;
+        }
+        Map<Long, Person> byId = new LinkedHashMap<>();
+        everyone.forEach(p -> byId.put(p.id(), p));
+        for (Claim c : all) {
+            List<ClaimShareRepository.Share> theirs = shared.get(c.id());
+            Person owner = byId.get(c.personId());
+            if (theirs == null || owner == null || !Dues.counts(c, owner.holds(), owner.retiredFrom(), today)) {
+                continue;
+            }
+            BigDecimal due = Dues.shown(c, owner.grades(), rates, floor, late);
+            if (due == null) {
+                continue;
+            }
+            for (ClaimShareRepository.Share s : theirs) {
+                BigDecimal part = Dues.part(due, s.pct());
+                parts.merge(s.personId(), part, BigDecimal::add);
+                parts.merge(owner.id(), part.negate(), BigDecimal::add);
+            }
+        }
+        return parts;
     }
 
     /** A person's name and score. */

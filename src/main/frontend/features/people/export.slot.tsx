@@ -30,7 +30,7 @@ function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
         p.name,
         gradeOn(p, today),
         p.retiredFrom ?? '',
-        personDueTotal(p, claims, rates, today, floor, late, cap),
+        personDueTotal(p, claims, rates, today, floor, late, cap, people),
       ]),
     ];
     const csv = lines.map((values) => values.map(csvValue).join(',') + '\n').join('');

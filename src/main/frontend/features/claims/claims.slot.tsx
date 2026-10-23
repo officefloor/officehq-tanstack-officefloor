@@ -231,8 +231,11 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const late = useLate(sheetId);
   const reviewSla = useReviewSla(sheetId);
   const selected = useSelectedClaims(sheetId).has(claim.id);
-  const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== claim.personId);
+  const everyone = usePeople(sheetId).data ?? [];
+  const others = everyone.filter((p) => p.id !== claim.personId);
   const [moveTo, setMoveTo] = useState('');
+  const [shareWith, setShareWith] = useState('');
+  const [sharePct, setSharePct] = useState('');
   const [proofKind, setProofKind] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const [redateTo, setRedateTo] = useState('');
@@ -272,6 +275,19 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
         ? e.body : `Could not move this ${claim.status} claim.`),
+  });
+
+  const share = useMutation({
+    mutationFn: ({ personId, pct }: { personId: string; pct: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/share`, { user, personId, share: pct }),
+    onSuccess: async () => {
+      setShareWith('');
+      setSharePct('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not share this ${claim.status} claim.`),
   });
 
   const proof = useMutation({
@@ -464,6 +480,9 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Waived <span data-testid="claim-waived">{claim.waived ? 'yes' : 'no'}</span>{' '}
       Held <span data-testid="claim-held">{claim.held ? 'yes' : 'no'}</span>{' '}
       Batch <span data-testid="claim-batch">{claim.batch ?? ''}</span>{' '}
+      Shared with <span data-testid="claim-shares">
+        {(claim.shares ?? []).map((s) => `${everyone.find((p) => p.id === s.personId)?.name ?? ''} ${s.share}`).join(', ')}
+      </span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
           <li key={i} data-testid="claim-log-line">{line}</li>
@@ -702,6 +721,49 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Move
+      </button>{' '}
+      <select
+        data-testid="claim-share-select"
+        value={shareWith}
+        onChange={(e) => {
+          clearError();
+          setShareWith(e.target.value);
+        }}
+      >
+        <option value="">Share with…</option>
+        {everyone.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <input
+        data-testid="claim-share-pct"
+        placeholder="Share 0.00"
+        value={sharePct}
+        onChange={(e) => {
+          clearError();
+          setSharePct(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-share-add"
+        disabled={share.isPending}
+        onClick={() => {
+          clearError();
+          if (shareWith === '') {
+            setError('Choose the person to share this claim with.');
+            return;
+          }
+          if (!/^\d+(\.\d{1,2})?$/.test(sharePct.trim())) {
+            setError('The share must be a percent with up to two decimals.');
+            return;
+          }
+          share.mutate({ personId: shareWith, pct: sharePct.trim() });
+        }}
+      >
+        Share
       </button>{' '}
       <select
         data-testid="claim-proof-kind"

@@ -51,12 +51,12 @@ function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number;
   const late = lateOf(settings, today, claims, people);
   const next: Figures = {
     names: [...sum.names, ...people.map((p) => [p.name, ...p.aliases])],
-    dues: [...sum.dues, ...people.map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? ''))],
+    dues: [...sum.dues, ...people.map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? '', people))],
     overdues: [...sum.overdues, ...people.map((p) => sumDue(overdueDues(claims.filter((c) => c.personId === p.id), [p],
       rates, late, floor)))],
     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue([sum.grades[g],
       ...people.filter((p) => p.retiredFrom === null && gradeOn(p, today) === g)
-        .map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? ''))])])),
+        .map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? '', people))])])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s,
       sum.statuses[s] + claims.filter((c) => c.status === s).length])),
   };

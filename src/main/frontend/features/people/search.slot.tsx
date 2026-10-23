@@ -25,7 +25,7 @@ async function sheetLines(sheetId: string, text: string): Promise<string[]> {
   const late = lateOf(settings, today, claims, people);
   return people
     .filter((p) => matches(p, text))
-    .map((p) => `${sheetId} ${nameWithGrade(p, today)} ${personDueTotal(p, claims, rates, today, floor, late, settings.cap ?? '')}`);
+    .map((p) => `${sheetId} ${nameWithGrade(p, today)} ${personDueTotal(p, claims, rates, today, floor, late, settings.cap ?? '', people)}`);
 }
 
 /** A search box and button listing, over this sheet and every other sheet of its tree (its ancestors and its
