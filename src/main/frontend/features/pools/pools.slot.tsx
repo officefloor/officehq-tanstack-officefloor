@@ -5,7 +5,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { usePeople } from '../people/people';
-import { poolsKey, usePools } from './pools';
+import { cutThen, poolsKey, usePeriodCuts, usePools } from './pools';
 import type { Pool, PoolMember } from './pools';
 
 /** A share as typed: a percent of at most two decimals, more than 0.00 and at most 100.00. */
@@ -22,7 +22,8 @@ function memberKey(m: PoolMember): string {
 
 /** One pool: its total share, whether balanced, each member's share, and the entry a member (a person, or another
  *  pool chosen as pool:<name>) is added with — none for a crew's pool, whose members are the crew's. */
-function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string; pool: Pool; pools: Pool[] }) {
+function PoolRow({ sheetId, user, pool, pools, periodCuts }: { sheetId: string; user: string; pool: Pool; pools: Pool[];
+    periodCuts: { period: string; pools: Pool[] }[] }) {
   const queryClient = useQueryClient();
   const people = usePeople(sheetId).data ?? [];
   // the chosen member: a person's id, or pool:<id>
@@ -90,6 +91,11 @@ function PoolRow({ sheetId, user, pool, pools }: { sheetId: string; user: string
         {pool.members.map((m) => (
           <li key={memberKey(m)} data-testid={`pool-member-${pool.name}-${memberKey(m)}`}>
             {m.poolId !== null ? `pool ${m.name}` : m.name}: <span data-testid="pool-share">{m.share}</span>, cut <span data-testid="pool-cut">{m.cut}</span>
+            {periodCuts.map((pc) => (
+              <span key={pc.period}>
+                , {pc.period} <span data-testid={`pool-cut-${pc.period}`}>{cutThen(pc.pools, pool.id, m)}</span>
+              </span>
+            ))}
             {(m.from || m.to) && ` (${m.from || '…'} to ${m.to || '…'})`}
             {m.retired && ' (retired)'}
             {m.outside && ' (not a member today)'}
@@ -217,13 +223,14 @@ function PoolForm({ sheetId, user }: { sheetId: string; user: string }) {
  *  today counts their share as given) and whether it is balanced, and the entry a pool is added with. */
 function Pools({ sheetId, user }: { sheetId: string; user: string }) {
   const pools = usePools(sheetId).data ?? [];
+  const periodCuts = usePeriodCuts(sheetId);
   return (
     <section data-testid="pools">
       <h2>Pools</h2>
       <PoolForm sheetId={sheetId} user={user} />
       <ul>
         {pools.map((p) => (
-          <PoolRow key={p.id} sheetId={sheetId} user={user} pool={p} pools={pools} />
+          <PoolRow key={p.id} sheetId={sheetId} user={user} pool={p} pools={pools} periodCuts={periodCuts} />
         ))}
       </ul>
     </section>

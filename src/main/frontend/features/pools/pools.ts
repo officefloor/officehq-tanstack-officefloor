@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { getJson, getJsonNow } from '../../api/http';
+import { usePeriods } from '../periods/periods';
+import { useSheetToday } from '../sheet/sheet';
 
 /** A member of a pool — a person, or another pool (poolId; personId then null) — with their share percent, whether
  *  they are retired by the sheet's today (their share still counts toward the pool's total but they cut 0.00, their
@@ -39,6 +41,28 @@ export function usePools(sheetId: string) {
     queryKey: poolsKey(sheetId),
     queryFn: () => getJson<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`),
   });
+}
+
+/** The cuts at the end of each period whose to-date is on or before the sheet's today: by period name, the sheet's
+ *  pools as they stood at the end of its to-date (that day as the sheet's today). Keyed under the sheet, so a load
+ *  of the sheet re-reads them. */
+export function usePeriodCuts(sheetId: string): { period: string; pools: Pool[] }[] {
+  const today = useSheetToday(sheetId);
+  const periods = (usePeriods(sheetId).data ?? []).filter((p) => today !== '' && p.to <= today);
+  const results = useQueries({
+    queries: periods.map((p) => ({
+      queryKey: [...poolsKey(sheetId), 'asOf', p.to] as const,
+      queryFn: () => getJsonNow<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools?asOf=${encodeURIComponent(p.to)}`),
+    })),
+  });
+  return periods.map((p, i) => ({ period: p.name, pools: results[i]?.data ?? [] }));
+}
+
+/** A member's cut in a pool as it stood in an earlier read of the pools ('' when there was none). */
+export function cutThen(pools: Pool[], poolId: number, member: PoolMember): string {
+  const pool = pools.find((p) => p.id === poolId);
+  const m = pool?.members.find((x) => x.poolId !== null ? x.poolId === member.poolId : x.personId === member.personId);
+  return m?.cut ?? '';
 }
 
 function cents(amount: string): number {
