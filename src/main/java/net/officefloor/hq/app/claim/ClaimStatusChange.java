@@ -47,7 +47,7 @@ final class ClaimStatusChange {
         log.record(loaded, input.user());
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), to, number, settledDue, openedBy, loaded.stated(),
-                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos()));
+                loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos(), loaded.held()));
     }
 
     /** The status the claim would move to by the change as {@link SaveClaimStatus} describes (PENDING for a clerk's
@@ -214,7 +214,7 @@ final class ClaimStatusChange {
 
     private static Claim asOpenUnstated(Claim c) {
         return new Claim(c.id(), c.sheetId(), c.personId(), c.amount(), c.date(), c.note(), ClaimStatus.OPEN,
-                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs(), c.splitFrom(), c.lateEntry(), c.reminded(), c.ref(), c.tags(), c.waived(), c.photos());
+                c.number(), null, c.openedBy(), false, null, c.corrects(), c.dueBy(), null, c.proofs(), c.splitFrom(), c.lateEntry(), c.reminded(), c.ref(), c.tags(), c.waived(), c.photos(), c.held());
     }
 
     /** The claim's due now, as its row shows it: the figure a statement bound it to, else live (amount times its

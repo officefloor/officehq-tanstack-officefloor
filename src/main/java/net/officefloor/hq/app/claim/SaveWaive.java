@@ -29,6 +29,6 @@ public class SaveWaive {
                 loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
                 loaded.openedBy(), loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(),
                 loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(),
-                loaded.ref(), loaded.tags(), true, loaded.photos()), List.of(), sheets.today(loaded.sheetId())));
+                loaded.ref(), loaded.tags(), true, loaded.photos(), loaded.held()), List.of(), sheets.today(loaded.sheetId())));
     }
 }

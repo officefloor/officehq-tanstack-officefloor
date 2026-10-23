@@ -30,7 +30,7 @@ final class ClaimRedate {
         return ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 input.date(), loaded.note(), loaded.status(), number, loaded.settledDue(), loaded.openedBy(),
                 loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(), loaded.deferredUntil(),
-                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos()));
+                loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), loaded.reminded(), loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos(), loaded.held()));
     }
 
     /** Record the stored re-date in the audit file (see {@link AuditClaimRedated}). */

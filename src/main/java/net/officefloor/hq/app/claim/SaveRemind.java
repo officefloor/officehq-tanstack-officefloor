@@ -33,7 +33,7 @@ public class SaveRemind {
         saved.set(ClaimResponse.from(new Claim(loaded.id(), loaded.sheetId(), loaded.personId(), loaded.amount(),
                 loaded.date(), loaded.note(), loaded.status(), loaded.number(), loaded.settledDue(),
                 loaded.openedBy(), loaded.stated(), loaded.statedDue(), loaded.corrects(), loaded.dueBy(),
-                loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), today, loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos()), List.of(),
+                loaded.deferredUntil(), loaded.proofs(), loaded.splitFrom(), loaded.lateEntry(), today, loaded.ref(), loaded.tags(), loaded.waived(), loaded.photos(), loaded.held()), List.of(),
                 today));
     }
 }

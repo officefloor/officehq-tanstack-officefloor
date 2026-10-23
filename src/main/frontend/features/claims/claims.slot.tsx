@@ -315,6 +315,17 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         ? e.body : `Could not waive this ${claim.status} claim's late charge.`),
   });
 
+  const hold = useMutation({
+    mutationFn: () =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/hold`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
+        ? e.body : `Could not ${claim.held ? 'release' : 'hold'} this ${claim.status} claim.`),
+  });
+
   const addComment = useMutation({
     mutationFn: (text: string) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/comments`, { user, text }),
@@ -427,6 +438,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
       Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
       Reminded <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
       Waived <span data-testid="claim-waived">{claim.waived ? 'yes' : 'no'}</span>{' '}
+      Held <span data-testid="claim-held">{claim.held ? 'yes' : 'no'}</span>{' '}
       Batch <span data-testid="claim-batch">{claim.batch ?? ''}</span>{' '}
       <ol data-testid="claim-log">
         {claim.log.map((line, i) => (
@@ -727,6 +739,17 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Waive late charge
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-hold"
+        disabled={hold.isPending}
+        onClick={() => {
+          clearError();
+          hold.mutate();
+        }}
+      >
+        {claim.held ? 'Release' : 'Hold'}
       </button>{' '}
       <input
         data-testid="claim-date-new"

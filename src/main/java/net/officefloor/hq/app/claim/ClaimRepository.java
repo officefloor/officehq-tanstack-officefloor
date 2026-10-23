@@ -35,7 +35,7 @@ public class ClaimRepository {
                         rs.getInt("terms_days"), holidays),
                 rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"), rs.getString("split_from"),
                 rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class), rs.getString("ref"), rs.getString("tags"),
-                rs.getBoolean("waived"), rs.getInt("proof_photos"));
+                rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"));
     }
 
     private static LocalDate dueBy(LocalDate fixed, LocalDate from, int terms, Set<LocalDate> holidays) {
@@ -121,7 +121,7 @@ public class ClaimRepository {
         used(claim.sheetId(), claim.tags());
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(),
                 claim.date(), claim.note(), ClaimStatus.DRAFT, null, null, null, false, null, claim.corrects(),
-                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null, claim.ref(), claim.tags(), false, 0);
+                claim.dueBy(), null, 0, claim.splitFrom(), claim.lateEntry(), null, claim.ref(), claim.tags(), false, 0, false);
     }
 
     /** The person's claims, newest first. */
@@ -230,6 +230,14 @@ public class ClaimRepository {
         return kept(claim, jdbc.update(
                 "UPDATE claim SET waived = TRUE WHERE sheet_id = ? AND id = ? AND status IN (?, ?) AND waived = FALSE",
                 claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name()) == 1);
+    }
+
+    /** Hold or release the claim: false when it is no longer OPEN or PENDING, or is already so (another user got there
+     *  first), and nothing is written. */
+    public boolean hold(Claim claim, boolean held) {
+        return kept(claim, jdbc.update(
+                "UPDATE claim SET held = ? WHERE sheet_id = ? AND id = ? AND status IN (?, ?) AND held = ?",
+                held, claim.sheetId(), claim.id(), ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), !held) == 1);
     }
 
     /** Mark the claim escalated: false when it already was (a claim is escalated once ever), and nothing is written. */
@@ -432,9 +440,9 @@ public class ClaimRepository {
     private void kept(String sheetId, long id) {
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, person_id, amount, claim_date, note, status, "
                 + "claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms_days, deferred_until, proofs, "
-                + "split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived, proof_photos) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
+                + "split_from, late_entry, reminded_on, ref, tags, due_by, made_on, waived, proof_photos, held) SELECT c.sheet_id, c.id, c.person_id, c.amount, c.claim_date, c.note, "
                 + "c.status, c.claim_number, c.settled_due, c.opened_by, c.stated, c.stated_due, c.corrects, c.due_from, c.terms_days, "
-                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today, c.waived, c.proof_photos FROM claim c JOIN sheet s ON s.id = "
+                + "c.deferred_until, c.proofs, c.split_from, c.late_entry, c.reminded_on, c.ref, c.tags, c.due_by, s.today, c.waived, c.proof_photos, c.held FROM claim c JOIN sheet s ON s.id = "
                 + "c.sheet_id WHERE c.sheet_id = ? AND c.id = ?", sheetId, id);
     }
 

@@ -39,14 +39,15 @@ export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SE
  *  when it never did), and whether a steward waived its late charge (only an OPEN or PENDING claim, once: it then
  *  bears no late charge, overdue or not), and how many of its proofs are of each kind (receipt, photo: a proof added
  *  with no kind chosen is a receipt; while the sheet lists proof kinds, one above the proof threshold needs a proof of
- *  each listed kind before it can be settled or approved — the server refuses it). */
+ *  each listed kind before it can be settled or approved — the server refuses it), and whether it is held (only an
+ *  OPEN or PENDING claim is held or released: a held claim is left out of the live totals as a held person's are). */
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: string | null; settledDue: string | null; openedBy: string | null; stated: boolean;
   statedDue: string | null; corrects: string | null; dueBy: string; log: string[];
   deferredUntil: string | null; deferred: boolean; proofs: number; splitFrom: string | null;
   lateEntry: boolean; reminded: string | null; ref: string | null; tags: string[];
   comments: string[]; batch: number | null; lines: string[]; reviewOn?: string | null;
-  waived: boolean; proofKinds?: Record<string, number> };
+  waived: boolean; proofKinds?: Record<string, number>; held: boolean };
 
 /** The kinds a proof can be, in the order shown: a proof added with none chosen is a receipt. */
 export const PROOF_KINDS = ['receipt', 'photo'] as const;
@@ -62,13 +63,13 @@ export function unsettled(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'PENDING';
 }
 
-/** Whether a claim is left out of the live totals by its person (among those given by id): an OPEN claim dated
- *  within one of their holds, or an OPEN or PENDING one once their retirement date is reached on the sheet's today
+/** Whether a claim is left out of the live totals by its own hold or its person (among those given by id): an OPEN
+ *  claim held itself or dated within one of their holds, or an OPEN or PENDING one once their retirement date is reached on the sheet's today
  *  (yyyy-mm-dd), either not bound by a statement. */
 function leftOut(c: Claim, byId: Map<number, Person>, today: string): boolean {
   if (c.stated) return false;
   const person = byId.get(c.personId);
-  return (c.status === 'OPEN' && heldOn(person, c.date))
+  return (c.status === 'OPEN' && (c.held || heldOn(person, c.date)))
     || (unsettled(c) && retiredOn(person, today));
 }
 

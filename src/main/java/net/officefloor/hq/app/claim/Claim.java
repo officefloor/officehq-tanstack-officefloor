@@ -17,12 +17,14 @@ import java.time.LocalDate;
  *  late entry: added while its period was soft-closed (fixed when it was added); and the last sheet-today a reminder was
  *  written for it (null: never reminded); and its external reference (null: none), unique on the sheet without regard to case;
  *  and its tags (null: none): trimmed, lower-cased, without repeats, sorted and joined by commas; and whether a steward waived its late charge
- *  (it then bears none, overdue or not); and how many of its proofs are photos (the rest are receipts). */
+ *  (it then bears none, overdue or not); and how many of its proofs are photos (the rest are receipts); and whether it is held
+ *  (only an OPEN or PENDING claim is held or released): held, an OPEN one not bound by a statement counts in no live
+ *  total, as one dated within its person's hold does (see Dues.counts). */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
         BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs,
         String splitFrom, boolean lateEntry, LocalDate reminded, String ref,
-        String tags, boolean waived, int photos) {
+        String tags, boolean waived, int photos, boolean held) {
 
     /** The proof kinds a proof can be: a receipt (when none is chosen) or a photo. */
     public static final java.util.List<String> PROOF_KINDS = java.util.List.of("receipt", "photo");
