@@ -8,6 +8,7 @@ import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimRequest;
+import net.officefloor.hq.app.claim.DueBy;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -26,7 +27,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  with an empty note, for every plan date (the start, then every N days; or a monthly plan's day in each month) up to the plan's end and the sheet's today
  *  that the plan has made none for yet. Each is added as the claim form adds one — its CLAIM_ADDED line and then how
  *  the sheet's figures moved over it — and a date the claim form would refuse (its rules, or after the person's
- *  retirement date) is skipped, to be tried again next time. A closed period does not stop a plan's claim. */
+ *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId, @Val GenerateRequest request, PlanRepository plans,
             PersonRepository people, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
@@ -51,6 +52,9 @@ public class GeneratePlanClaims {
                             date.toString(), "", "", "", null));
                     RetiredPersonException.refuse(person, date);
                 } catch (InvalidClaimException | RetiredPersonException e) {
+                    continue;
+                }
+                if (periods.closedByHandFor(sheet, date, DueBy.of(person, date, settings, sheets, holidays)) != null) {
                     continue;
                 }
                 Rollup before = rollups.take(sheet);

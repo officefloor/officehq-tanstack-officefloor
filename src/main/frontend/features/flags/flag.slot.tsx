@@ -22,8 +22,10 @@ function PersonFlag({ sheetId, user, person }: { sheetId: string; user: string; 
   const save = useMutation({
     mutationFn: (body: { user: string; reason: string; until: string }) =>
       putJson<Flag>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/flag`, body),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: flagsKey(sheetId) });
+    // The row shows the flag just saved, as the server answered it; a reload shows only the flags in force.
+    onSuccess: (saved) => {
+      queryClient.setQueryData<Flag[]>(flagsKey(sheetId), (old) =>
+        [...(old ?? []).filter((f) => f.personId !== saved.personId), saved]);
       setReason('');
       setUntil('');
     },

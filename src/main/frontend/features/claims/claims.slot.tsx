@@ -234,6 +234,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
   const [deferUntil, setDeferUntil] = useState('');
   const [redateTo, setRedateTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [partAmount, setPartAmount] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
   const [comment, setComment] = useState('');
   const [lineLabel, setLineLabel] = useState('');
@@ -386,6 +387,24 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
     onError: (e) =>
       setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 404) && e.body
         ? e.body : `Could not split this ${claim.status} claim.`),
+  });
+
+  // A part-settle: the server refuses it, writing nothing, when the split would be refused or the settle button would
+  // refuse this user's settle of the claim; else it splits the amount off as a split does, and the new claim is then
+  // settled as the settle button does (PENDING above the clerk limit for a clerk). A refused settle of the new claim
+  // shows as this claim's error.
+  const settlePart = useMutation({
+    mutationFn: async (amount: string) => {
+      const added = await postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/settle-part`, { user, amount });
+      return putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${added.id}/status`, { user, action: 'settle' });
+    },
+    onSuccess: async () => {
+      setPartAmount('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && (e.status === 409 || e.status === 400 || e.status === 403 || e.status === 404) && e.body
+        ? e.body : `Could not part-settle this ${claim.status} claim.`),
   });
 
   // The row's own amount entry: the claim form's edit with only the amount changed (its date, note and the
@@ -798,6 +817,30 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
         }}
       >
         Split
+      </button>
+      <input
+        data-testid="claim-settle-part-amount"
+        placeholder="Part-settle amount"
+        value={partAmount}
+        onChange={(e) => {
+          clearError();
+          setPartAmount(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-settle-part"
+        disabled={settlePart.isPending}
+        onClick={() => {
+          clearError();
+          if (!/^\d+(\.\d{1,2})?$/.test(partAmount.trim())) {
+            setError('The amount to part-settle must be a number with up to two decimals.');
+            return;
+          }
+          settlePart.mutate(partAmount.trim());
+        }}
+      >
+        Settle part
       </button>
       {(error || refused) && (
         <p data-testid="claim-error" role="alert">
