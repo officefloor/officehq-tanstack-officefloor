@@ -154,7 +154,41 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           })}
         </tbody>
       </table>
+      <RateCalendar rates={rates} today={today} />
     </section>
+  );
+}
+
+const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+
+/** The rate calendar: per grade and each month of the sheet's today's calendar year, the rate in force on the
+ *  first day of that month; n/a when none. */
+function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
+  if (today === '') return null;
+  const year = today.slice(0, 4);
+  return (
+    <table data-testid="rate-calendar">
+      <thead>
+        <tr>
+          <th>{year}</th>
+          {MONTHS.map((m) => (
+            <th key={m}>{m}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {GRADES.map((g) => (
+          <tr key={g}>
+            <th>{g}</th>
+            {MONTHS.map((m) => (
+              <td key={m} data-testid={`rate-month-${g}-${year}-${m}`}>
+                {rateOn(rates, g, `${year}-${m}-01`) ?? 'n/a'}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
