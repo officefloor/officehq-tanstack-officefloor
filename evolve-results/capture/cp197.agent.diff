@@ -1,0 +1,157 @@
+diff --git a/src/main/frontend/features/audit/activity.slot.tsx b/src/main/frontend/features/audit/activity.slot.tsx
+new file mode 100644
+index 0000000..5cb64df
+--- /dev/null
++++ b/src/main/frontend/features/audit/activity.slot.tsx
+@@ -0,0 +1,35 @@
++import { useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheet';
++
++/** The sheet's activity: for every user and every event in the sheet's audit file, "<user> <EVENT> <count>",
++ *  sorted by user then event. Each press of Show re-reads the file. */
++function ActivityViewer({ sheetId }: { sheetId: string; user: string }) {
++  const [shown, setShown] = useState(0);
++  const lines = useQuery({
++    queryKey: ['sheet', sheetId, 'activity', shown],
++    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/activity`),
++    enabled: shown > 0,
++  });
++
++  return (
++    <section>
++      <h2>Activity</h2>
++      <button type="button" data-testid="activity-show" onClick={() => setShown((n) => n + 1)}>
++        Show
++      </button>
++      {shown > 0 && lines.data && (
++        <ol>
++          {lines.data.map((line, i) => (
++            <li key={i} data-testid="activity-line">
++              {line}
++            </li>
++          ))}
++        </ol>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 91, Component: ActivityViewer });
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+new file mode 100644
+index 0000000..735919a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The sheet's activity: one "<user> <EVENT> <count>" line for every user (the by= field) and every event (the
++ *  record's first word) among the sheet's audit lines, sorted by user then event. Reads the file; keeps no copy. */
++public class RespondWithActivity {
++    public void respond(@PathVariable("sheetId") String sheetId, Audit audit, ObjectResponse<List<String>> response) {
++        String sheet = sheetId.trim();
++        Map<String, Map<String, Integer>> counts = new TreeMap<>();
++        for (String line : audit.lines()) {
++            String[] fields = line.split(" ");
++            String onSheet = null;
++            String by = null;
++            for (String field : fields) {
++                if (onSheet == null && field.startsWith("sheet=")) {
++                    onSheet = field.substring("sheet=".length());
++                } else if (by == null && field.startsWith("by=")) {
++                    by = field.substring("by=".length());
++                }
++            }
++            if (sheet.equals(onSheet) && by != null) {
++                counts.computeIfAbsent(by, u -> new TreeMap<>()).merge(fields[0], 1, Integer::sum);
++            }
++        }
++        List<String> lines = new ArrayList<>();
++        counts.forEach((user, events) -> events.forEach((event, n) -> lines.add(user + " " + event + " " + n)));
++        response.send(lines);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index 0d7526a..8be5173 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -15,6 +15,8 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.RetiredPersonException;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.Rollups;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -27,13 +29,18 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  with an empty note, for every plan date (the start, then every N days; or a monthly plan's day in each month) up to the plan's end and the sheet's today
+  *  that the plan has made none for yet. Each is added as the claim form adds one — its CLAIM_ADDED line and then how
+  *  the sheet's figures moved over it — and a date the claim form would refuse (its rules, or after the person's
+- *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time. */
++ *  retirement date, or a due-by inside, or a date and due-by straddling, a period closed by hand) is skipped, to be tried again next time.
++ *  A viewer generates none: nothing is made or audited, and the answer is 0. */
+ public class GeneratePlanClaims {
+     public void generate(@PathVariable("sheetId") String sheetId, @Val GenerateRequest request, PlanRepository plans,
+             PersonRepository people, SheetRepository sheets, SettingRepository settings, HolidayRepository holidays,
+             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository log, Rollups rollups, Audit audit,
+-            Out<GenerateResponse> result) {
++            RoleRepository roles, Out<GenerateResponse> result) {
+         String sheet = sheetId.trim();
++        if (Role.VIEWER.equals(roles.of(sheet, request.user()))) {
++            result.set(new GenerateResponse(0));
++            return;
++        }
+         periods.lockSheet(sheet);
+         LocalDate today = sheets.today(sheet);
+         int made = 0;
+diff --git a/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java b/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
+index 7d5bea6..eb27875 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
++++ b/src/main/java/net/officefloor/hq/app/role/RefuseViewerChanges.java
+@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
+  *  reads or writes anything: each POST or PUT under a sheet (all but loading the sheet itself) whose signed-in user
+  *  (the body's {@code user}) is a viewer on that sheet, or on a sheet that is archived, is answered 403 with the
+  *  reason, and nothing is written or audited. A bulk open is left to its endpoint, which counts every selected claim
+- *  refused for a viewer or on an archived sheet, and so is a bulk reassign or bulk re-date; so is a viewer's bulk grade or bulk retire, which changes nobody; so is a bulk settle by a viewer or on an archived sheet, which counts every selected claim refused. Every change sent from a
++ *  refused for a viewer or on an archived sheet, and so is a bulk reassign or bulk re-date; so is a viewer's bulk grade or bulk retire, which changes nobody, and a viewer's generating of the plans' claims, which makes none; so is a bulk settle by a viewer or on an archived sheet, which counts every selected claim refused. Every change sent from a
+  *  screen showing the sheet as of a date (the X-As-Of header), a bulk one included, is answered 403 the same way. */
+ @Component
+ public class RefuseViewerChanges extends OncePerRequestFilter {
+@@ -37,8 +37,9 @@ public class RefuseViewerChanges extends OncePerRequestFilter {
+      *  answers how many it opened and refused, writing nothing. */
+     private static final Pattern BULK_OPEN = Pattern.compile("^/api/sheets/[^/]+/bulk-(open|reassign|redate)$");
+ 
+-    /** A bulk grade or retire, left to the endpoint for a viewer: it changes nobody and answers that none was changed. */
+-    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/bulk-(grade|retire)$");
++    /** A bulk grade or retire, or generating the plans' claims, left to the endpoint for a viewer: it changes nothing
++     *  and answers that none was changed (none generated). */
++    private static final Pattern BULK_GRADE = Pattern.compile("^/api/sheets/[^/]+/(bulk-(grade|retire)|plans/generate)$");
+ 
+     /** A bulk settle, left to the endpoint for a viewer or on an archived sheet: it counts every selected claim refused. */
+     private static final Pattern BULK_SETTLE = Pattern.compile("^/api/sheets/[^/]+/bulk-settle$");
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+new file mode 100644
+index 0000000..38335f3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+@@ -0,0 +1,9 @@
++# The sheet's activity: for every user (by=) and every event in the sheet's audit lines, "<user> <EVENT> <count>",
++# sorted by user then event. 404 for an id never loaded.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithActivity
++  govern: [ readonly-transaction ]
