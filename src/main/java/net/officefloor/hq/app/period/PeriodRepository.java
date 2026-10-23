@@ -144,10 +144,36 @@ public class PeriodRepository {
         return carried;
     }
 
-    /** Add an opening balance to the person's carried figure for the period. */
-    public void addOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
-        jdbc.update("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) VALUES (?, ?, ?, ?)",
-                sheetId, periodName, personId, amount);
+    /** Add an opening balance to the person's carried figure for the period: the id of the opening added. */
+    public long addOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        var keys = new org.springframework.jdbc.support.GeneratedKeyHolder();
+        jdbc.update(con -> {
+            var ps = con.prepareStatement("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) "
+                    + "VALUES (?, ?, ?, ?)", new String[] { "id" });
+            ps.setString(1, sheetId);
+            ps.setString(2, periodName);
+            ps.setLong(3, personId);
+            ps.setBigDecimal(4, amount);
+            return ps;
+        }, keys);
+        return keys.getKey().longValue();
+    }
+
+    /** Take back the opening balances with these ids. */
+    public void removeOpenings(String sheetId, java.util.Collection<Long> openingIds) {
+        openingIds.forEach(openingId -> jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND id = ?",
+                sheetId, openingId));
+    }
+
+    /** Remove the period and everything kept for it: its fixed due-totals, pool cuts, opening balances and history. */
+    public void remove(String sheetId, String name) {
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period_history_total WHERE history_id IN (SELECT id FROM period_history "
+                + "WHERE sheet_id = ? AND period_name = ?)", sheetId, name);
+        jdbc.update("DELETE FROM period_history WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
     }
 
     /** The opening balances pasted onto the sheet, added up: by period name, then by person id (none for a person

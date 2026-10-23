@@ -11,7 +11,9 @@ type RolloverResult = { made: number };
 /** The year-end rollover (a steward only): the old fiscal year (yyyy, FY<yyyy>) and the button that rolls it over.
  *  The server generates the next fiscal year's twelve periods as the fiscal year generator does and carries each
  *  person's open figure at the old year's end into the new year's first period; the form shows how many periods it
- *  made. A refusal (bad year, not a steward, a year with no periods) shows why. */
+ *  made. A refusal (bad year, not a steward, a year with no periods) shows why. The undo button takes back the last
+ *  rollover (only by whoever made it, on the sheet-day it was made, while no claim belongs to a period it generated):
+ *  its periods are removed and its opening balances taken back; a refusal shows why in the same error. */
 function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const [year, setYear] = useState('');
@@ -30,6 +32,25 @@ function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
       setError(e instanceof HttpError && e.body ? e.body : 'Could not roll the year over.'),
     onSettled: once.done,
   });
+
+  const undo = useMutation({
+    mutationFn: (body: { user: string }) =>
+      postJson<unknown>(`/api/sheets/${encodeURIComponent(sheetId)}/rollover-undo`, body),
+    onSuccess: async () => {
+      setMade(null);
+      // The periods and every figure that reads them (carried figures, period dues) change.
+      await queryClient.invalidateQueries();
+    },
+    onError: (e) =>
+      setError(e instanceof HttpError && e.body ? e.body : 'Could not undo the rollover.'),
+    onSettled: once.done,
+  });
+
+  const undoLast = () => {
+    setError('');
+    if (!once.start()) return;
+    undo.mutate({ user });
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -59,6 +80,10 @@ function Rollover({ sheetId, user }: { sheetId: string; user: string }) {
       </label>{' '}
       <button type="submit" data-testid="rollover" disabled={rollover.isPending}>
         Roll year over
+      </button>
+      {' '}
+      <button type="button" data-testid="rollover-undo" disabled={undo.isPending} onClick={undoLast}>
+        Undo last rollover
       </button>
       {made !== null && (
         <>
