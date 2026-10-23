@@ -93,6 +93,9 @@ public class AuditSettingChanged {
         if (input.setsScoreLog()) {
             audit.record(head + "score-log value=" + (input.scoreLog() ? "on" : ""));
         }
+        if (input.setsMaxOpen()) {
+            audit.record(head + "max-open value=" + (input.maxOpen() != null ? input.maxOpen() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

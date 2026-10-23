@@ -77,7 +77,7 @@ public class SettingRepository {
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
                 history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
+                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -286,6 +286,16 @@ public class SettingRepository {
 
     public void setScoreLog(String sheetId, boolean on) {
         jdbc.update("UPDATE sheet SET score_log = ? WHERE id = ?", on, sheetId);
+    }
+
+    /** The sheet's maximum of OPEN or PENDING claims per person: null when blank (none). */
+    public Integer maxOpen(String sheetId) {
+        return jdbc.query("SELECT max_open FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, Integer.class) : null, sheetId);
+    }
+
+    public void setMaxOpen(String sheetId, Integer max) {
+        jdbc.update("UPDATE sheet SET max_open = ? WHERE id = ?", max, sheetId);
     }
 
     /** The sheet's proof kinds, comma separated: null when blank (none). While set, a claim above the proof threshold

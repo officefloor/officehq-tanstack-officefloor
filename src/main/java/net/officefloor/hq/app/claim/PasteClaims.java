@@ -146,6 +146,7 @@ public class PasteClaims {
             throw new CappedPeriodException(capped);
         }
         RefuseFlaggedOpen.refuse(claim, user, roles, flags);
+        RefuseMaxOpen.refuse(claim, settings, claims);
         ClaimStatusInput open = new ClaimStatusInput(user, "open", ClaimStatus.OPEN, null);
         ClaimResponse saved = ClaimStatusChange.save(open, claim, claims, people, rates, roles, settings, sheets, log);
         ClaimStatusChange.audit(open, claim, saved, people, null, audit);
