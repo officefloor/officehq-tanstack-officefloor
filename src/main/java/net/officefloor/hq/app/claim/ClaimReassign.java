@@ -27,8 +27,8 @@ final class ClaimReassign {
             throw new ClaimStatusNotAllowedException("A " + loaded.status()
                     + " claim cannot move; only a DRAFT, OPEN or PENDING one can.");
         }
-        if (loaded.corrects() != null) {
-            throw new ClaimStatusNotAllowedException("A correction cannot move to another person.");
+        if (loaded.corrects() != null && loaded.status() != ClaimStatus.DRAFT) {
+            throw new ClaimStatusNotAllowedException("A correction cannot move to another person once it is opened.");
         }
         Person to = people.find(loaded.sheetId(), input.personId());
         if (to == null) {

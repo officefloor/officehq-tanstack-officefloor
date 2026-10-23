@@ -8,7 +8,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, grace-A/B/C, clerk-limit, cap,
- *  proof-threshold, note-threshold, proof-threshold-A/B/C, rounding, review-threshold), each value recorded
+ *  proof-threshold, note-threshold, proof-threshold-A/B/C, rounding, review-threshold, clerk-limit-A/B/C), each value recorded
  *  by its from-date (null: blank). The value in force on a date is the one with the latest from-date on or before
  *  it; before every from-date the sheet's starting value applies. */
 public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values) {
@@ -17,7 +17,7 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     public static final List<String> KEYS = List.of("clerk-limit", "floor", "terms", "terms-A",
             "terms-B", "terms-C", "grace-A", "grace-B", "grace-C", "late-pct", "cap", "proof-threshold",
             "note-threshold", "proof-threshold-A", "proof-threshold-B", "proof-threshold-C", "rounding",
-            "review-threshold");
+            "review-threshold", "clerk-limit-A", "clerk-limit-B", "clerk-limit-C");
 
     /** The key of the rounding mode: half-up or half-even (blank: none, the policy date rounds). */
     public static final String ROUNDING = "rounding";
@@ -88,6 +88,19 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     /** The clerk limit in force on the date: two decimals, or null when there is none. */
     public BigDecimal clerkLimitOn(LocalDate date) {
         return amountOn("clerk-limit", date);
+    }
+
+    /** The grade's own clerk limit in force on the date: two decimals, or null when it has none then (it uses the
+     *  sheet's). */
+    public BigDecimal gradeClerkLimitOn(String grade, LocalDate date) {
+        return amountOn("clerk-limit-" + grade, date);
+    }
+
+    /** The clerk limit for the grade on the date: the grade's own in force then when it has one, else the sheet's
+     *  then; null when there is none. */
+    public BigDecimal clerkLimitFor(String grade, LocalDate date) {
+        BigDecimal own = grade != null && !grade.isEmpty() ? gradeClerkLimitOn(grade, date) : null;
+        return own != null ? own : clerkLimitOn(date);
     }
 
     /** The cap in force on the date: two decimals, or null when there is none. */

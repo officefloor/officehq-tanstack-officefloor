@@ -15,7 +15,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 /** The settings that carry a figure, and so are saved from a from-date. */
-const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`),
+const DATED = ['clerk-limit', ...GRADES.map((grade) => `clerk-limit-${grade}`), 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`),
   ...GRADES.map((grade) => `grace-${grade}`), 'late-pct', 'cap', 'proof-threshold',
   ...GRADES.map((grade) => `proof-threshold-${grade}`), 'note-threshold', 'rounding', 'review-threshold'];
 
@@ -25,10 +25,12 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string> };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
+ *  A grade may have a clerk limit of its own (blank: the sheet's); a claim whose person's grade on the sheet's today
+ *  has one in force then takes it instead of the sheet's.
  *  A claim's live due is at least the floor; its due-by is the terms-th business day after its date (skipping Saturdays, Sundays and holidays); once overdue it gains, for every full 30
  *  days, the late percent in force on that boundary date of its figure. A claim dated before the policy date (blank: the sheet's today)
  *  rounds its live figures half up, one on or after it half to even. While the period numbering from is a date
@@ -110,6 +112,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedGradeTerms, setTypedGradeTerms] = useState<Record<string, string>>({});
   const currentGradeGrace = (grade: string) => settings.data?.gradeGrace?.[grade] ?? '';
   const [typedGradeGrace, setTypedGradeGrace] = useState<Record<string, string>>({});
+  const currentGradeClerkLimit = (grade: string) => settings.data?.gradeClerkLimit?.[grade] ?? '';
+  const [typedGradeClerkLimit, setTypedGradeClerkLimit] = useState<Record<string, string>>({});
   const currentGradeProofThreshold = (grade: string) => settings.data?.gradeProofThreshold?.[grade] ?? '';
   const [typedGradeProofThreshold, setTypedGradeProofThreshold] = useState<Record<string, string>>({});
   const currentPerm = (action: string) => settings.data?.perms?.[action] ?? '';
@@ -150,6 +154,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedGradeTerms({});
       setTypedGradeGrace({});
       setTypedGradeProofThreshold({});
+      setTypedGradeClerkLimit({});
       setTypedPerms({});
       setTypedFrom({});
     },
@@ -357,6 +362,16 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.gradeProofThreshold = { ...changes.gradeProofThreshold, [grade]: threshold };
     }
+    for (const grade of GRADES) {
+      const typedGradeLimit = typedGradeClerkLimit[grade];
+      if (typedGradeLimit === undefined) continue;
+      const limit = typedGradeLimit.trim();
+      if (limit !== '' && !LIMIT.test(limit)) {
+        setError(`The clerk limit of grade ${grade} must be an amount, 0.00 or more, with up to two decimals, or blank for the sheet's.`);
+        return;
+      }
+      changes.gradeClerkLimit = { ...changes.gradeClerkLimit, [grade]: limit };
+    }
     for (const action of PERM_ACTIONS) {
       const typedRoles = typedPerms[action];
       if (typedRoles === undefined) continue;
@@ -386,6 +401,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       ...Object.fromEntries(GRADES.map((grade) => [`grace-${grade}`, () => {
         if (changes.gradeGrace?.[grade] === undefined) {
           changes.gradeGrace = { ...changes.gradeGrace, [grade]: currentGradeGrace(grade) };
+        }
+      }])),
+      ...Object.fromEntries(GRADES.map((grade) => [`clerk-limit-${grade}`, () => {
+        if (changes.gradeClerkLimit?.[grade] === undefined) {
+          changes.gradeClerkLimit = { ...changes.gradeClerkLimit, [grade]: currentGradeClerkLimit(grade) };
         }
       }])),
       ...Object.fromEntries(GRADES.map((grade) => [`proof-threshold-${grade}`, () => {
@@ -434,6 +454,11 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       <h2>Settings</h2>
       <p>
         Clerk limit <strong data-testid="setting-clerk-limit-current">{currentLimit}</strong>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            Grade {grade} clerk limit <strong data-testid={`setting-clerk-limit-${grade}-current`}>{currentGradeClerkLimit(grade)}</strong>{' '}
+          </span>
+        ))}
         Floor <strong data-testid="setting-floor-current">{currentFloor}</strong>{' '}
         Terms <strong data-testid="setting-terms-current">{currentTerms}</strong> business days{' '}
         {GRADES.map((grade) => (
@@ -490,6 +515,22 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           />
         </label>
         {fromInput('clerk-limit')}{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Grade {grade} clerk limit{' '}
+              <input
+                data-testid={`setting-clerk-limit-${grade}`}
+                placeholder="sheet's"
+                value={typedGradeClerkLimit[grade] ?? currentGradeClerkLimit(grade)}
+                onInput={typed((v) => setTypedGradeClerkLimit((t) => ({ ...t, [grade]: v })))}
+                onChange={typed((v) => setTypedGradeClerkLimit((t) => ({ ...t, [grade]: v })))}
+                onFocus={() => setTypedGradeClerkLimit((t) => (grade in t ? t : { ...t, [grade]: currentGradeClerkLimit(grade) }))}
+              />
+            </label>
+            {fromInput(`clerk-limit-${grade}`)}{' '}
+          </span>
+        ))}
         <label>
           Floor{' '}
           <input

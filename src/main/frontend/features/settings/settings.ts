@@ -36,13 +36,15 @@ import { useSheetToday } from '../sheet/sheet';
  *  the sheet's today is review-late (see reviewLate). `proofKinds` is the proof kinds, comma separated (not dated; '' when
  *  none): while set, a claim above the proof threshold needs a proof of each listed kind before it can be settled or
  *  approved (the server refuses it). `defaultGrade` is the default grade (A, B or C; not dated; '' when blank, which
- *  means A): the quick-add bar gives a new person it, and an import line with a blank grade uses it. */
+ *  means A): the quick-add bar gives a new person it, and an import line with a blank grade uses it.
+ *  `gradeClerkLimit` is each grade's own clerk limit with two decimals ('' when the grade has none: the sheet's
+ *  applies), dated (keys clerk-limit-A/B/C). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string> };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };

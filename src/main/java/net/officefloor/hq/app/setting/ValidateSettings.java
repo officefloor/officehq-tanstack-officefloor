@@ -183,6 +183,26 @@ public class ValidateSettings {
                 gradeProofThreshold.put(grade, amount.isEmpty() ? null : new BigDecimal(amount).setScale(2));
             }
         }
+        Map<String, BigDecimal> gradeClerkLimit = new LinkedHashMap<>();
+        if (request.gradeClerkLimit() != null) {
+            for (String grade : request.gradeClerkLimit().keySet()) {
+                if (!GRADES.contains(grade)) {
+                    throw new InvalidSettingException("A clerk limit may be set only for grade A, B or C.");
+                }
+            }
+            for (String grade : GRADES) {
+                if (!request.gradeClerkLimit().containsKey(grade)) {
+                    continue;
+                }
+                String amount = request.gradeClerkLimit().get(grade) == null ? ""
+                        : request.gradeClerkLimit().get(grade).trim();
+                if (!amount.isEmpty() && !amount.matches(AMOUNT)) {
+                    throw new InvalidSettingException("The clerk limit of grade " + grade
+                            + " must be an amount, 0.00 or more, with up to two decimals, or blank for the sheet's.");
+                }
+                gradeClerkLimit.put(grade, amount.isEmpty() ? null : new BigDecimal(amount).setScale(2));
+            }
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request.perms() != null) {
             for (String action : request.perms().keySet()) {
@@ -250,7 +270,8 @@ public class ValidateSettings {
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.valueOf(escalate),
                 reviewSla != null, reviewSla == null || reviewSla.isEmpty() ? null : Integer.valueOf(reviewSla),
                 proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
-                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade));
+                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade,
+                gradeClerkLimit));
     }
 
     /** The proof kinds as stored: each listed kind trimmed, in the order given, without repeats, joined by commas ('':

@@ -18,6 +18,8 @@ public class SaveSettings {
         if (input.setsClerkLimit()) {
             repository.setDated(id, "clerk-limit", text(input.clerkLimit()), from(input, "clerk-limit", today));
         }
+        input.gradeClerkLimit().forEach((grade, amount) -> repository.setDated(id, "clerk-limit-" + grade,
+                text(amount), from(input, "clerk-limit-" + grade, today)));
         if (input.floor() != null) {
             repository.setDated(id, "floor", text(input.floor()), from(input, "floor", today));
         }

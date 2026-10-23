@@ -11,6 +11,8 @@ public class AuditSettingChanged {
         if (input.setsClerkLimit()) {
             audit.record(head + "clerk-limit value=" + SettingsResponse.text(input.clerkLimit()) + from(input, "clerk-limit"));
         }
+        input.gradeClerkLimit().forEach((grade, amount) -> audit.record(head + "clerk-limit-" + grade + " value="
+                + SettingsResponse.text(amount) + from(input, "clerk-limit-" + grade)));
         if (input.floor() != null) {
             audit.record(head + "floor value=" + SettingsResponse.text(input.floor()) + from(input, "floor"));
         }

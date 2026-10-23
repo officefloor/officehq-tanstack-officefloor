@@ -64,13 +64,20 @@ public class SettingRepository {
                 gradeProofThreshold.put(grade, amount);
             }
         }
+        Map<String, BigDecimal> gradeClerkLimit = new LinkedHashMap<>();
+        for (String grade : ValidateSettings.GRADES) {
+            BigDecimal amount = history.gradeClerkLimitOn(grade, today);
+            if (amount != null) {
+                gradeClerkLimit.put(grade, amount);
+            }
+        }
         return new Settings(sheetId, history.clerkLimitOn(today), history.floorOn(today), history.termsOn(today),
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
                 history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                defaultGrade(sheetId));
+                defaultGrade(sheetId), gradeClerkLimit);
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -108,6 +115,12 @@ public class SettingRepository {
     /** The sheet's clerk limit in force on its today: two decimals, or null when there is none. */
     public BigDecimal clerkLimit(String sheetId) {
         return history(sheetId).clerkLimitOn(today(sheetId));
+    }
+
+    /** The clerk limit in force on the sheet's today for a person of the grade: the grade's own when it has one,
+     *  else the sheet's; two decimals, or null when there is none. */
+    public BigDecimal clerkLimit(String sheetId, String grade) {
+        return history(sheetId).clerkLimitFor(grade, today(sheetId));
     }
 
     /** The sheet's cap in force on its today: two decimals, or null when there is none; a person's due-total is at

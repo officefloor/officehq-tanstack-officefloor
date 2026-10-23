@@ -151,7 +151,9 @@ final class ClaimStatusChange {
             }
         }
         if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
-            BigDecimal limit = settings.clerkLimit(loaded.sheetId());
+            var owner = people.find(loaded.sheetId(), loaded.personId());
+            String grade = owner != null ? owner.grades().on(sheets.today(loaded.sheetId())) : null;
+            BigDecimal limit = settings.clerkLimit(loaded.sheetId(), grade);
             BigDecimal due = dueNow(loaded, repository, people, rates, settings, sheets);
             if (limit != null && due != null && due.compareTo(limit) > 0) {
                 to = ClaimStatus.PENDING;
