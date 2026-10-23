@@ -16,7 +16,7 @@ import { useSheetToday } from '../sheet/sheet';
  *  above the one in force on its date cannot be settled or approved without a proof), and the note threshold with two decimals ('' when there is none: a
  *  claim whose due is above the one in force on its date cannot be opened with an empty note). A claim's terms are fixed when it is created. Each is the value in force on the sheet's
  *  today; `dated` holds every value recorded for the settings that carry a figure, by key (clerk-limit, floor, terms,
- *  terms-A/B/C, late-pct, cap, proof-threshold, proof-threshold-A/B/C, note-threshold), oldest from-date first. `perms` is the permission matrix (not dated): for
+ *  terms-A/B/C, late-pct, cap, proof-threshold, proof-threshold-A/B/C, note-threshold, rounding), oldest from-date first. `perms` is the permission matrix (not dated): for
  *  each action the roles that may take it, comma separated ('' when blank: the standing rule). `graceDays` is the grace days (not dated; '' when off): when the sheet's
  *  today is changed, each open period whose to-date plus them is before the new today is closed. `entryDate` is the entry date (not dated; '' when off): while it is set, a new claim
  *  given no date is dated it instead of the sheet's today. `gradeGrace` is each grade's grace in days ('' when the grade
@@ -28,11 +28,13 @@ import { useSheetToday } from '../sheet/sheet';
  *  the parent's rate for it on that date, then the parent's parent's, up to three levels up. `fiscalStartMonth` is the
  *  month (1 to 12, not dated; 1 unless set) a fiscal year starts on the first day of (see fiscalYearOf). `alertThreshold`
  *  is the alert threshold with two decimals (not dated; '' when off): a person whose due-total crosses above it over a
- *  change is alerted in the audit file. */
+ *  change is alerted in the audit file. `rounding` is the rounding mode in force (half-up or half-even; '' when none),
+ *  dated (key rounding): a claim whose date has one in force rounds its live figures by it, else by the policy date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
+  rounding?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -130,7 +132,8 @@ export function lateOf(settings: Settings | undefined, today: string, claims: Cl
     const days = valueOn(history?.[`grace-${grade}`], '', claim.date);
     return days === '' ? 0 : Number(days);
   };
-  return { pct, today, grace, policy: settings?.policyDate || today, numbered };
+  const rounding = (date: string) => valueOn(history?.rounding, '', date);
+  return { pct, today, grace, policy: settings?.policyDate || today, numbered, rounding };
 }
 
 /** What the late charge follows now: the late percent by date (a claim gains the one in force on its date) and the sheet's today, and each

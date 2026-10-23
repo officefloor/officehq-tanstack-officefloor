@@ -231,14 +231,18 @@ export function overdueDues(claims: Claim[], people: Person[], rates: Rate[], la
  *  on each 30-day boundary past its due-by plus its grace) and its today; and each claim's grace in days (the grace in
  *  force on its date of its person's grade in force on that date; 0 when none: it is overdue past its due-by plus it); and
  *  how a claim's live figures round: the policy date (the policy-date setting, else the sheet's today; '' while
- *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects). */
+ *  loading) and the dates of the sheet's numbered claims (a correction rounds by the claim it corrects), and the
+ *  rounding mode in force on a date (half-up or half-even; '' when none: the policy date rounds). */
 export type Late = { pct: DatedValue; today: string; policy: string; numbered: Map<string, string>;
-  grace: (claim: Claim) => number };
+  grace: (claim: Claim) => number; rounding: DatedValue };
 
-/** Whether a claim's live figures round half up: it (a correction: the claim it corrects) is dated before the
- *  policy date; else they round half to even. */
+/** Whether a claim's live figures round half up: by the rounding mode in force on its date (a correction: the date
+ *  of the claim it corrects) when there is one; else when it is dated before the policy date; else they round half
+ *  to even. */
 export function roundsUp(claim: Claim, late: Late): boolean {
   const date = claim.corrects !== null ? late.numbered.get(claim.corrects) ?? claim.date : claim.date;
+  const mode = late.rounding(date);
+  if (mode !== '') return mode === 'half-up';
   return late.policy !== '' && date < late.policy;
 }
 

@@ -68,7 +68,7 @@ public class SettingRepository {
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
-                fiscalStartMonth(sheetId), alertThreshold(sheetId));
+                fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */

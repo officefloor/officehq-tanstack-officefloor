@@ -63,4 +63,15 @@ public class VoidReasonRepository {
                 }, sheetId);
         return counts;
     }
+
+    /** Per reason, how many of the given claims (by id) were voided with it. */
+    public Map<String, Integer> voided(String sheetId, java.util.Set<Long> claimIds) {
+        Map<String, Integer> counts = new HashMap<>();
+        jdbc.query("SELECT claim_id, reason FROM claim_void_reason WHERE sheet_id = ?", rs -> {
+            if (claimIds.contains(rs.getLong("claim_id"))) {
+                counts.merge(rs.getString("reason"), 1, Integer::sum);
+            }
+        }, sheetId);
+        return counts;
+    }
 }

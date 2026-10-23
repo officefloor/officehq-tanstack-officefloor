@@ -66,6 +66,9 @@ public class SaveSettings {
         if (input.setsAlertThreshold()) {
             repository.setAlertThreshold(id, input.alertThreshold());
         }
+        if (input.setsRounding()) {
+            repository.setDated(id, SettingHistory.ROUNDING, input.rounding(), from(input, SettingHistory.ROUNDING, today));
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

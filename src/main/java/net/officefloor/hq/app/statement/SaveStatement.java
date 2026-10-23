@@ -77,7 +77,7 @@ public class SaveStatement {
             floor = history::floorOn;
             LocalDate policy = settings.policyDate(sheetId);
             late = new LateCharge(history::latePctOn, asOf, new Rounding(policy != null ? policy : asOf,
-                    now.numbered()), LateCharge.Grace.of(history, Map.of(person.id(), grades)));
+                    now.numbered(), history.of(SettingHistory.ROUNDING)), LateCharge.Grace.of(history, Map.of(person.id(), grades)));
             cap = history.capOn(asOf);
         }
 

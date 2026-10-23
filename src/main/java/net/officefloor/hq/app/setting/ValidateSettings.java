@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  blank (the sheet's today) or a date yyyy-mm-dd, and a period numbering from (when given) that is blank (off) or a date yyyy-mm-dd, and grades' own terms (when given)
  *  only for grades A, B or C, and a cap and a proof threshold (when given) each blank (none) or an amount 0.00 or more with up to two decimals, each blank (none: the sheet's terms) or a whole number of days, and from-dates (when given) only for the dated settings, each blank (the sheet's
  *  today) or a date yyyy-mm-dd, and permission entries (when given) only for open, settle, void, reassign, close or
- *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals. A fiscal year start month (when given) is a month 1 to 12. The parent sheet (when given) is
+ *  reopen, each blank (the standing rule) or a comma separated list of clerk and steward, and grace days (when given) blank (off) or a whole number of days, and a note threshold (when given) blank (none) or an amount 0.00 or more with up to two decimals, and an entry date (when given) blank (off) or a date yyyy-mm-dd, and grades' grace (when given) only for grades A, B or C, each blank (none) or a whole number of days, and a pot (when given) blank (none) or an amount 0.00 or more with up to two decimals. A rounding mode (when given) is blank (none) or half-up or half-even. A fiscal year start month (when given) is a month 1 to 12. The parent sheet (when given) is
  *  checked against the store by ValidateParent. */
 public class ValidateSettings {
     /** The grades that may have terms of their own. */
@@ -97,6 +97,11 @@ public class ValidateSettings {
         String alert = request.alertThreshold() == null ? null : request.alertThreshold().trim();
         if (alert != null && !alert.isEmpty() && !alert.matches(AMOUNT)) {
             throw new InvalidSettingException("The alert threshold must be an amount, 0.00 or more, with up to two decimals, or blank for off.");
+        }
+        String rounding = request.rounding() == null ? null : request.rounding().trim();
+        if (rounding != null && !rounding.isEmpty() && !rounding.equals(SettingHistory.HALF_UP)
+                && !rounding.equals(SettingHistory.HALF_EVEN)) {
+            throw new InvalidSettingException("The rounding mode must be half-up or half-even, or blank for none.");
         }
         String parent = request.parent() == null ? null : request.parent().trim();
         String fiscal = request.fiscalStartMonth() == null ? null : request.fiscalStartMonth().trim();
@@ -221,6 +226,7 @@ public class ValidateSettings {
                 pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2),
                 parent != null, parent == null || parent.isEmpty() ? null : parent,
                 fiscal == null ? null : Integer.valueOf(fiscal),
-                alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2)));
+                alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
+                rounding != null, rounding == null || rounding.isEmpty() ? null : rounding));
     }
 }

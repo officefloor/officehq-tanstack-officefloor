@@ -17,13 +17,14 @@ const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 /** The settings that carry a figure, and so are saved from a from-date. */
 const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`),
   ...GRADES.map((grade) => `grace-${grade}`), 'late-pct', 'cap', 'proof-threshold',
-  ...GRADES.map((grade) => `proof-threshold-${grade}`), 'note-threshold'];
+  ...GRADES.map((grade) => `proof-threshold-${grade}`), 'note-threshold', 'rounding'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
-  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string };
+  gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
+  rounding?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -71,11 +72,13 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentEntryDate = settings.data?.entryDate ?? '';
   const currentPot = settings.data?.pot ?? '';
   const currentAlertThreshold = settings.data?.alertThreshold ?? '';
+  const currentRounding = settings.data?.rounding ?? '';
   const currentParent = settings.data?.parent ?? '';
   const currentFiscalStartMonth = settings.data?.fiscalStartMonth ?? '1';
   // null: not typed in since the last save, so the field shows the setting in force.
   const [typedLimit, setTypedLimit] = useState<string | null>(null);
   const [typedFloor, setTypedFloor] = useState<string | null>(null);
+  const [typedRounding, setTypedRounding] = useState<string | null>(null);
   const [typedTerms, setTypedTerms] = useState<string | null>(null);
   const [typedLatePct, setTypedLatePct] = useState<string | null>(null);
   const [typedPolicyDate, setTypedPolicyDate] = useState<string | null>(null);
@@ -122,6 +125,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedEntryDate(null);
       setTypedPot(null);
       setTypedAlertThreshold(null);
+      setTypedRounding(null);
       setTypedParent(null);
       setTypedFiscalStartMonth(null);
       setTypedGradeTerms({});
@@ -245,6 +249,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       }
       changes.alertThreshold = threshold;
     }
+    if (typedRounding !== null) {
+      const rounding = typedRounding.trim();
+      if (rounding !== '' && rounding !== 'half-up' && rounding !== 'half-even') {
+        setError('The rounding mode must be half-up or half-even, or blank for none.');
+        return;
+      }
+      changes.rounding = rounding;
+    }
     if (typedParent !== null) {
       changes.parent = typedParent.trim();
     }
@@ -305,6 +317,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       cap: () => { changes.cap ??= currentCap; },
       'proof-threshold': () => { changes.proofThreshold ??= currentProofThreshold; },
       'note-threshold': () => { changes.noteThreshold ??= currentNoteThreshold; },
+      rounding: () => { changes.rounding ??= currentRounding; },
       ...Object.fromEntries(GRADES.map((grade) => [`terms-${grade}`, () => {
         if (changes.gradeTerms?.[grade] === undefined) {
           changes.gradeTerms = { ...changes.gradeTerms, [grade]: currentGradeTerms(grade) };
@@ -388,6 +401,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
         Pot <strong data-testid="setting-pot-current">{currentPot}</strong>{' '}
         Alert threshold <strong data-testid="setting-alert-threshold-current">{currentAlertThreshold}</strong>{' '}
+        Rounding <strong data-testid="setting-rounding-current">{currentRounding}</strong>{' '}
         Parent <strong data-testid="setting-parent-current">{currentParent}</strong>{' '}
         Fiscal year start month <strong data-testid="setting-fiscal-start-month-current">{currentFiscalStartMonth}</strong>
       </p>
@@ -594,6 +608,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onFocus={() => setTypedAlertThreshold((v) => v ?? currentAlertThreshold)}
           />
         </label>{' '}
+        <label>
+          Rounding{' '}
+          <input
+            data-testid="setting-rounding"
+            placeholder="none"
+            value={typedRounding ?? currentRounding}
+            onInput={typed(setTypedRounding)}
+            onChange={typed(setTypedRounding)}
+            onFocus={() => setTypedRounding((v) => v ?? currentRounding)}
+          />
+        </label>
+        {fromInput('rounding')}{' '}
         <label>
           Parent sheet{' '}
           <input
