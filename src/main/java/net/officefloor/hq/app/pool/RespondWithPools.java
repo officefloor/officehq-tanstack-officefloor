@@ -2,11 +2,14 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.sheet.AsOf;
@@ -23,11 +26,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  then, given an as-of date); a pool
  *  that is a member of another has its cut there as its pot (none when the pool above has no cuts). A person with a
  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
- *  dates do not include that date is left out: no share in the total and no cut. */
+ *  dates do not include that date is left out: no share in the total and no cut. After the pools come the crews, each
+ *  a pool under its name with its lead and then its members (in the order added) at equal shares (100.00 split as
+ *  patrons' shares are, the remainder on the lead), cutting the sheet's pot like any pool. */
 public class RespondWithPools {
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, PoolRepository repository,
-            PersonRepository people, SheetRepository sheets, SettingRepository settings,
+            CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings,
             ObjectResponse<List<PoolResponse>> response) {
         String id = sheetId.trim();
         LocalDate end = AsOf.parse(asOf);
@@ -61,8 +66,24 @@ public class RespondWithPools {
             named.stream().filter(PoolMember::isPool).forEach(m -> parents.put(m.memberPoolId(), pool));
         }
         Map<Long, PoolResponse> shown = new HashMap<>();
-        response.send(pools.stream()
+        List<PoolResponse> all = new ArrayList<>(pools.stream()
                 .map(pool -> shown(pool, members, parents, retiredFrom, held, on, pot, shown)).toList());
+        for (Crew crew : crews.list(id)) {
+            List<Long> ids = new ArrayList<>();
+            if (names.containsKey(crew.leadId())) {
+                ids.add(crew.leadId());
+            }
+            crews.members(crew).stream().filter(names::containsKey).forEach(ids::add);
+            List<BigDecimal> shares = PoolResponse.equalShares(ids.size());
+            Pool pool = new Pool(-crew.id(), id, crew.name(), crew.by());
+            List<PoolMember> crewMembers = new ArrayList<>();
+            for (int i = 0; i < ids.size(); i++) {
+                crewMembers.add(new PoolMember(pool.id(), id, pool.name(), ids.get(i), names.get(ids.get(i)),
+                        shares.get(i), crew.by()));
+            }
+            all.add(PoolResponse.from(pool, crewMembers, retiredFrom, held, on, pot).ofCrew(crew.id()));
+        }
+        response.send(all);
     }
 
     /** The pool as shown, its pot the sheet's or its cut in the pool above (worked out first). */

@@ -9,8 +9,10 @@ import java.util.Map;
 import java.util.Set;
 
 /** A pool as the screen shows it: its members in the order they were added, the total of their shares (a member
- *  retired by the date counts their share as given) and whether it is balanced (the total is exactly 100.00). */
-public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced) {
+ *  retired by the date counts their share as given) and whether it is balanced (the total is exactly 100.00). A crew
+ *  shown as a pool carries its crew's id (crewId; null for a pool) and the negated crew id as its id. */
+public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced,
+        Long crewId) {
 
     /** A member: the person (or, for a member pool, null and the pool's id in poolId), their name, their share,
      *  whether they are retired by the date, and their cut of the pool's pot ('' when the pool is unbalanced or there
@@ -71,7 +73,27 @@ public record PoolResponse(long id, String name, List<Member> members, String to
                     cuts != null && !outside[i] ? cuts[i].toPlainString() : "", m.memberPoolId(), date(m.from()),
                     date(m.to()), outside[i]));
         }
-        return new PoolResponse(pool.id(), pool.name(), shown, total.toPlainString(), balanced);
+        return new PoolResponse(pool.id(), pool.name(), shown, total.toPlainString(), balanced, null);
+    }
+
+    /** The same pool shown as this crew's pool. */
+    public PoolResponse ofCrew(long crewId) {
+        return new PoolResponse(-crewId, name, members, totalShare, balanced, crewId);
+    }
+
+    /** 100.00 split equally among n members in order, as patrons' shares are: each 100.00 / n rounded half to even to
+     *  two decimals, the first taking the remainder. */
+    public static List<BigDecimal> equalShares(int n) {
+        List<BigDecimal> shares = new ArrayList<>();
+        if (n <= 0) {
+            return shares;
+        }
+        BigDecimal share = FULL.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_EVEN);
+        shares.add(FULL.subtract(share.multiply(BigDecimal.valueOf(n - 1))));
+        for (int i = 1; i < n; i++) {
+            shares.add(share);
+        }
+        return shares;
     }
 
     public static PoolResponse from(Pool pool, List<PoolMember> members, LocalDate on) {

@@ -20,8 +20,16 @@ export type PoolMember = {
 };
 
 /** A pool on the sheet: its members in the order they were added, the total of their shares and whether it is
- *  balanced (the total is exactly 100.00). */
-export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+ *  balanced (the total is exactly 100.00). A crew is also listed as a pool, after the pools: crewId is its crew's id
+ *  (null for a pool), its members the lead and the crew's members at equal shares. */
+export type Pool = {
+  id: number;
+  name: string;
+  members: PoolMember[];
+  totalShare: string;
+  balanced: boolean;
+  crewId: number | null;
+};
 
 export const poolsKey = (sheetId: string) => ['sheet', sheetId, 'pools'] as const;
 
