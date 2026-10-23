@@ -5,19 +5,23 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { GRADES } from '../people/people';
-import { gradesKey, useGrades } from './grades';
+import { gradesKey, useGradeCodes, useGrades } from './grades';
 import type { Grade } from './grades';
 
 /** A grade merge done: the grade merged, the grade its people were given and how many were given it. */
 type GradeMerge = { from: string; into: string; changed: number };
 
-/** The grades, each with whether it is retired, the select and button a grade is retired with, and the two selects
+/** The grades, each with whether it is retired, the entry and button a grade is added with (a code of one to three
+ *  capital letters, trimmed, not yet a grade; anything else is refused), the select and button a grade is retired with, and the two selects
  *  and button a steward merges a grade into another with (the same grade twice is refused). People on a
  *  retired grade keep it, but it cannot be chosen for a new person or in an edit; retiring one already retired is
  *  refused. */
 function Grades({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const grades = useGrades(sheetId).data ?? [];
+  const codes = useGradeCodes(sheetId);
+  const [code, setCode] = useState('');
+  const addOnce = useSubmitOnce();
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [error, setError] = useState('');
   const once = useSubmitOnce();
@@ -48,6 +52,33 @@ function Grades({ sheetId, user }: { sheetId: string; user: string }) {
     merge.mutate({ from, into });
   };
 
+  const add = useMutation({
+    mutationFn: (g: string) =>
+      postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades`, { user, grade: g }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(gradesKey(sheetId), saved);
+      setCode('');
+    },
+    onError: (e) => setError(e instanceof HttpError && e.body ? e.body : `Could not add the grade ${code.trim()}.`),
+    onSettled: addOnce.done,
+  });
+
+  const submitAdd = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const g = code.trim();
+    if (!/^[A-Z]{1,3}$/.test(g)) {
+      setError('A grade is one to three capital letters.');
+      return;
+    }
+    if (codes.includes(g)) {
+      setError(`The grade ${g} is already a grade.`);
+      return;
+    }
+    if (!addOnce.start()) return;
+    add.mutate(g);
+  };
+
   const retire = useMutation({
     mutationFn: (g: string) =>
       postJson<Grade[]>(`/api/sheets/${encodeURIComponent(sheetId)}/grades/retire`, { user, grade: g }),
@@ -70,6 +101,20 @@ function Grades({ sheetId, user }: { sheetId: string; user: string }) {
   return (
     <section data-testid="grades">
       <h2>Grades</h2>
+      <form onSubmit={submitAdd}>
+        <input
+          data-testid="grade-add-code"
+          placeholder="Code, e.g. D"
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <button type="submit" data-testid="grade-add" disabled={add.isPending}>
+          Add grade
+        </button>
+      </form>
       <form onSubmit={submit}>
         <select
           data-testid="grade-retire-select"
@@ -79,7 +124,7 @@ function Grades({ sheetId, user }: { sheetId: string; user: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -99,7 +144,7 @@ function Grades({ sheetId, user }: { sheetId: string; user: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -114,7 +159,7 @@ function Grades({ sheetId, user }: { sheetId: string; user: string }) {
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {codes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

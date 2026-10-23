@@ -1,6 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheet';
 import { STATUSES, active as isActive, reviewLate, useClaims } from '../claims/claims';
-import { GRADES, gradeOn, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
+import { gradeOn, usePeople } from '../people/people';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { diffDue, personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate, useReviewSla } from '../settings/settings';
@@ -8,7 +9,7 @@ import { usePersonCap } from '../pools/pools';
 import { useSheetToday } from '../sheet/sheet';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
-/** The sheet's summary, every figure as the list shows it: per grade the people on it today (those retired left
+/** The sheet's summary, every figure as the list shows it: per grade of the sheet the people on it today (those retired left
  *  out, whatever their retire date) and their due-totals added up (skipping n/a), per period its
  *  due-total and its change from the period before it by start date (none for the earliest), how many of them are active (see claims' active), and per status how many of the sheet's claims have it, and how many REVIEW claims are review-late (see reviewLate), and per void reason on the list how many VOID claims were
  *  voided with it. */
@@ -23,6 +24,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
   const capOf = usePersonCap(sheetId);
   const reviewSla = useReviewSla(sheetId);
   const voidReasons = useVoidReasons(sheetId).data ?? [];
+  const grades = useGradeCodes(sheetId);
   const active = people.filter((p) => p.retiredFrom === null);
   const periodTotals = new Map(periods.map((p) => [p.name, periodDueTotal(p, claims, people, rates, floor, late)]));
   const byStart = [...periods].sort((a, b) => a.from.localeCompare(b.from));
@@ -34,7 +36,7 @@ function Summary({ sheetId }: { sheetId: string; user: string }) {
       <h2>Summary</h2>
       <table>
         <tbody>
-          {GRADES.map((g) => {
+          {grades.map((g) => {
             const onGrade = active.filter((p) => gradeOn(p, today) === g);
             return (
               <tr key={g} data-testid={`summary-grade-${g}`}>

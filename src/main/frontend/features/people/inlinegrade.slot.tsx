@@ -5,9 +5,9 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/claims';
 import { poolsKey } from '../pools/pools';
-import { GRADES, peopleKey } from './people';
+import { peopleKey } from './people';
 import { usePersonError } from './rowError';
-import { retiredGradeMessage, useIsGradeRetired } from '../grades/grades';
+import { retiredGradeMessage, useGradeCodes, useIsGradeRetired } from '../grades/grades';
 import type { Person } from './people';
 
 /** A grade select and save button on the person's row: saves the chosen grade from the sheet's today exactly as
@@ -19,6 +19,7 @@ function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: s
   const { error, setError, begin } = usePersonError(sheetId, person.id);
   const once = useSubmitOnce();
   const isRetired = useIsGradeRetired(sheetId);
+  const grades = useGradeCodes(sheetId);
 
   // follow the grade the row shows once it changes (a save here, or another's re-loaded)
   useEffect(() => setGrade(person.grade), [person.grade, person.version]);
@@ -47,7 +48,7 @@ function PersonInlineGrade({ sheetId, user, person }: { sheetId: string; user: s
           setError('');
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

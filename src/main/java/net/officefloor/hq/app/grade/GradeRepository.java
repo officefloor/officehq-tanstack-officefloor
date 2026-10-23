@@ -1,21 +1,40 @@
 package net.officefloor.hq.app.grade;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The sheet's grades (A, B and C) and which of them are retired. */
+/** The sheet's grades (A, B and C, then those added to the sheet in the order added) and which of them are retired. */
 @Repository
 public class GradeRepository {
 
-    /** Every grade, in order. */
+    /** The grades every sheet has, in order. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 
     private final JdbcTemplate jdbc;
 
     public GradeRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+    }
+
+    /** The sheet's grades, in order: A, B and C, then those added to it in the order added. */
+    public List<String> grades(String sheetId) {
+        List<String> all = new ArrayList<>(GRADES);
+        all.addAll(jdbc.queryForList("SELECT grade FROM sheet_grade WHERE sheet_id = ? ORDER BY id", String.class,
+                sheetId));
+        return all;
+    }
+
+    /** Whether the grade is one of the sheet's grades. */
+    public boolean isGrade(String sheetId, String grade) {
+        return grade != null && grades(sheetId).contains(grade);
+    }
+
+    /** Add a grade to the sheet. */
+    public void add(String sheetId, String grade, String by) {
+        jdbc.update("INSERT INTO sheet_grade (sheet_id, grade, added_by) VALUES (?, ?, ?)", sheetId, grade, by);
     }
 
     /** The sheet's retired grades. */

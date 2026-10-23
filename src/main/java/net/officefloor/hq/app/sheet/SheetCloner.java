@@ -45,6 +45,7 @@ public class SheetCloner {
         copyRows("pot_log", "val, made_on", "id", from, to);
         copyRows("sheet_holiday", "holiday_date, added_by", "id", from, to);
         copyRows("sheet_void_reason", "reason, added_by", "id", from, to);
+        copyRows("sheet_grade", "grade, added_by", "id", from, to);
         copyRows("claim_template", "name, amount, note, saved_by", "name", from, to);
         copyRows("claim_tag", "tag", "tag", from, to);
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) SELECT ?, name, from_date, to_date, "

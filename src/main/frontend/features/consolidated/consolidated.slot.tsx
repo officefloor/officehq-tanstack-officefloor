@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJsonNow } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheet';
 import { STATUSES, type Claim } from '../claims/claims';
+import type { Grade } from '../grades/grades';
 import { GRADES, gradeOn, type Person } from '../people/people';
 import { overdueDues, personDueTotal, sumDue, trimmedSum, type Rate } from '../rates/rates';
 import { floorOf, lateOf, type Settings } from '../settings/settings';
@@ -19,7 +20,8 @@ function useNow<T>(sheetId: string, part: string, asOf = '', preview = '') {
 }
 
 /** The tree's figures gathered so far: per person (in sheet order) their names (name and aliases), due-total and
- *  overdue-total, and the per-grade and per-status figures added up. */
+ *  overdue-total, and the per-grade (every grade of a sheet of the tree, in the order first met) and per-status
+ *  figures added up. */
 type Figures = { names: string[][]; dues: string[]; overdues: string[]; grades: Record<string, string>;
   statuses: Record<string, number> };
 
@@ -52,6 +54,7 @@ function SheetFigures({ sheets, at, sum, asOf, preview }: {
   const rates = useNow<Rate[]>(sheetId, 'rates', asOf).data ?? [];
   const settings = useNow<Settings>(sheetId, 'settings', asOf).data;
   const sheetToday = useNow<Sheet>(sheetId, '', asOf).data?.today ?? '';
+  const grades = useNow<Grade[]>(sheetId, 'grades').data?.map((g) => g.grade) ?? GRADES;
   const shownOn = asOf !== '' ? asOf : preview;
   const today = shownOn !== '' && sheetToday !== '' ? shownOn : sheetToday;
   const floor = floorOf(settings);
@@ -61,7 +64,7 @@ function SheetFigures({ sheets, at, sum, asOf, preview }: {
     dues: [...sum.dues, ...people.map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? '', people))],
     overdues: [...sum.overdues, ...people.map((p) => sumDue(overdueDues(claims.filter((c) => c.personId === p.id), [p],
       rates, late, floor)))],
-    grades: Object.fromEntries(GRADES.map((g) => [g, sumDue([sum.grades[g],
+    grades: Object.fromEntries([...new Set([...Object.keys(sum.grades), ...grades])].map((g) => [g, sumDue([sum.grades[g] ?? '0.00',
       ...people.filter((p) => p.retiredFrom === null && gradeOn(p, today) === g)
         .map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? '', people))])])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s,
@@ -94,7 +97,7 @@ function Shown({ figures }: { figures: Figures }) {
       Consolidated: people <strong data-testid="consolidated-people-count">{distinctPeople(figures.names)}</strong>{' '}
       due total <strong data-testid="consolidated-due-total">{trimmedSum(figures.dues)}</strong>{' '}
       overdue total <strong data-testid="consolidated-overdue-total">{trimmedSum(figures.overdues)}</strong>
-      {GRADES.map((g) => (
+      {Object.keys(figures.grades).map((g) => (
         <span key={g}>
           {' '}grade {g} due total <strong data-testid={`consolidated-grade-${g}-due-total`}>{figures.grades[g]}</strong>
         </span>

@@ -5,7 +5,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { GRADES, nameWithGrade, peopleKey, savedTermsKey, useCloseEditor, useEditingPerson, usePeople, useSavedTerms,
+import { nameWithGrade, peopleKey, savedTermsKey, useCloseEditor, useEditingPerson, usePeople, useSavedTerms,
   useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
@@ -14,7 +14,7 @@ import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
 import { useColumnShown } from './columns';
 import { useCrews } from '../crews/crews';
 import { useActingRole } from '../roles/roles.slot';
-import { retiredGradeMessage, useIsGradeRetired } from '../grades/grades';
+import { retiredGradeMessage, useGradeCodes, useIsGradeRetired } from '../grades/grades';
 
 /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
@@ -44,6 +44,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
   const [contactGiven, setContactGiven] = useState(false);
   const people = usePeople(sheetId);
   const isRetired = useIsGradeRetired(sheetId);
+  const grades = useGradeCodes(sheetId);
   const closeEditor = useCloseEditor();
   const [version, setVersion] = useState(editing?.version);
   const today = useChangeToday(sheetId);
@@ -189,7 +190,7 @@ function PersonForm({ sheetId, user, editing, carried, onRefused }: { sheetId: s
             setError('');
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

@@ -3,23 +3,24 @@ import { useState } from 'react';
 import { getJsonNow } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheet';
 import { type Claim, useClaims } from '../claims/claims';
-import { GRADES, gradeOn, type Person, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
+import { gradeOn, type Person, usePeople } from '../people/people';
 import { personDueTotal, sumDue, type Rate, useRates } from '../rates/rates';
 import { usePersonCap } from '../pools/pools';
 import { floorOf, lateOf, type Settings, useFloor, useLate } from '../settings/settings';
 import { type Sheet, useSheetToday } from '../sheet/sheet';
 
-/** Per grade the due-totals of a sheet's people on it today added up (retired ones left out), as its summary
+/** Per grade (of those given) the due-totals of a sheet's people on it today added up (retired ones left out), as its summary
  *  shows them. */
-function gradeTotals(people: Person[], today: string, due: (p: Person) => string): Record<string, string> {
+function gradeTotals(grades: string[], people: Person[], today: string, due: (p: Person) => string): Record<string, string> {
   const active = people.filter((p) => p.retiredFrom === null);
-  return Object.fromEntries(GRADES.map((g) => [g,
+  return Object.fromEntries(grades.map((g) => [g,
     sumDue(active.filter((p) => gradeOn(p, today) === g).map(due))]));
 }
 
 /** Reads another sheet as the store holds it now, fresh at each compare: its per-grade summary due-totals, or
  *  null while they load, or 'missing' for a sheet that does not exist. */
-function useOtherGrades(otherId: string, run: number): Record<string, string> | null | 'missing' {
+function useOtherGrades(grades: string[], otherId: string, run: number): Record<string, string> | null | 'missing' {
   const base = `/api/sheets/${encodeURIComponent(otherId)}`;
   const parts = ['', '/people', '/claims', '/rates', '/settings'];
   const results = useQueries({
@@ -41,7 +42,7 @@ function useOtherGrades(otherId: string, run: number): Record<string, string> | 
   const today = sheet.today;
   const floor = floorOf(settings);
   const late = lateOf(settings, today, claims, people);
-  return gradeTotals(people, today,
+  return gradeTotals(grades, people, today,
     (p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? '', people));
 }
 
@@ -58,8 +59,9 @@ function OtherSheetCompare({ sheetId }: { sheetId: string; user: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const capOf = usePersonCap(sheetId);
-  const other = useOtherGrades(compared.id, compared.run);
-  const mine = gradeTotals(people, today,
+  const grades = useGradeCodes(sheetId);
+  const other = useOtherGrades(grades, compared.id, compared.run);
+  const mine = gradeTotals(grades, people, today,
     (p) => personDueTotal(p, claims, rates, today, floor, late, capOf(p.id), people));
 
   return (
@@ -72,7 +74,7 @@ function OtherSheetCompare({ sheetId }: { sheetId: string; user: string }) {
       </button>
       {other !== null && other !== 'missing' && (
         <ul>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <li key={g} data-testid="compare-line" style={{ whiteSpace: 'pre' }}>
               {`${g} ${mine[g]} ${other[g]}`}
             </li>

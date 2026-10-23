@@ -5,7 +5,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written. Each non-blank line is name,grade,terms,contact
@@ -13,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  give the same name, or the same contact (compared as the sheet compares them). A paste with no lines is refused.
  *  A refusal names the first line that fails. */
 public class ValidateImport {
-    public void validate(@RequestBody ImportRequest request, Out<ImportInput> body) throws InvalidPersonException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportRequest request,
+            GradeRepository grades, Out<ImportInput> body) throws InvalidPersonException {
+        List<String> sheetGrades = grades.grades(sheetId.trim());
         if (request == null || request.user() == null || request.user().isBlank()) {
             throw new InvalidPersonException("Sign in before changing people.");
         }
@@ -32,7 +36,7 @@ public class ValidateImport {
                 boolean blankGrade = fields.length < 2 || fields[1].isBlank();
                 PersonRequest person = ValidatePerson.check(new PersonRequest(user, fields[0],
                         blankGrade ? "A" : fields[1], null, null, fields.length > 2 ? fields[2] : "",
-                        fields.length > 3 ? fields[3] : "", null, null));
+                        fields.length > 3 ? fields[3] : "", null, null), sheetGrades);
                 if (blankGrade) {
                     person = withGrade(person, null);
                 }

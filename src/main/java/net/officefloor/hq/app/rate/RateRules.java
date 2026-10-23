@@ -3,23 +3,21 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 
-/** The rate form's rules and its RATE_SET line, shared by the form's set and the rate import: the grade is one of A, B
- *  or C, the rate a percent 0.00 or more with up to two decimals, the from-date and to-date (each optional) real
+/** The rate form's rules and its RATE_SET line, shared by the form's set and the rate import: the grade is one of the
+ *  sheet's grades, the rate a percent 0.00 or more with up to two decimals, the from-date and to-date (each optional) real
  *  yyyy-mm-dd dates, the to-date not before the from-date. */
 public final class RateRules {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     private RateRules() {
     }
 
     /** The rate set for the grade checked by the rate form's rules: refused when any fails. */
-    public static RateInput check(String user, String grade, RateRequest request) throws InvalidRateException {
+    public static RateInput check(String user, String grade, RateRequest request, List<String> grades) throws InvalidRateException {
         String g = grade == null ? "" : grade.trim();
-        if (!GRADES.contains(g)) {
-            throw new InvalidRateException("The grade must be A, B or C.");
+        if (!grades.contains(g)) {
+            throw new InvalidRateException("The grade must be one of the sheet's grades: " + String.join(", ", grades) + ".");
         }
         String rate = request.rate() == null ? "" : request.rate().trim();
         if (!rate.matches("\\d{1,5}(\\.\\d{1,2})?")) {

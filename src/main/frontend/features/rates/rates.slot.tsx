@@ -6,7 +6,8 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
+import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { usePersonCap } from '../pools/pools';
@@ -26,6 +27,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
+  const grades = useGradeCodes(sheetId);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
@@ -94,7 +96,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
         <label>
           Grade{' '}
           <select data-testid="rate-form-grade" value={grade} onChange={change(setGrade)}>
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -125,7 +127,7 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
       <RatePreview sheetId={sheetId} user={user} />
       <table>
         <tbody>
-          {GRADES.map((g) => {
+          {grades.map((g) => {
             const undated = ownRates(rates).find((r) => r.grade === g && r.from === null);
             const dated = ownRates(rates).filter((r) => r.grade === g && r.from !== null);
             return (
@@ -155,16 +157,16 @@ function Rates({ sheetId, user }: { sheetId: string; user: string }) {
           })}
         </tbody>
       </table>
-      <RateCalendar rates={rates} today={today} />
+      <RateCalendar grades={grades} rates={rates} today={today} />
     </section>
   );
 }
 
 const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
-/** The rate calendar: per grade and each month of the sheet's today's calendar year, the rate in force on the
+/** The rate calendar: per grade of the sheet and each month of the sheet's today's calendar year, the rate in force on the
  *  first day of that month; n/a when none. */
-function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
+function RateCalendar({ grades, rates, today }: { grades: string[]; rates: Rate[]; today: string }) {
   if (today === '') return null;
   const year = today.slice(0, 4);
   return (
@@ -178,7 +180,7 @@ function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
         </tr>
       </thead>
       <tbody>
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <tr key={g}>
             <th>{g}</th>
             {MONTHS.map((m) => (
@@ -202,6 +204,7 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const grades = useGradeCodes(sheetId);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
@@ -239,7 +242,7 @@ function RatePreview({ sheetId }: { sheetId: string; user: string }) {
       <label>
         Preview grade{' '}
         <select data-testid="rate-preview-grade" value={grade} onChange={change(setGrade)}>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

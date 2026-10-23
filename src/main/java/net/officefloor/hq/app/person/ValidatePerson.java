@@ -3,24 +3,25 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
-import java.util.Set;
+import java.util.List;
 import net.officefloor.hq.app.claim.Tags;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.plugin.variable.Out;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: a name is required, the grade
- *  is one of A, B or C, the grade's from-date (optional) a real yyyy-mm-dd date, the terms (optional)
+ *  is one of the sheet's grades, the grade's from-date (optional) a real yyyy-mm-dd date, the terms (optional)
  *  blank or a whole number of days, the terms' from-date (optional) a real yyyy-mm-dd date. Publishes the request with its name trimmed and its contact (optional)
  *  trimmed and lower-cased, and its tags (optional) normalised as a claim's are (see Tags.normalise). */
 public class ValidatePerson {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
-    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidPersonException {
-        body.set(check(request));
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request,
+            GradeRepository grades, Out<PersonRequest> body) throws InvalidPersonException {
+        body.set(check(request, grades.grades(sheetId.trim())));
     }
 
-    /** The request as the person form's rules leave it, or refused by them. */
-    static PersonRequest check(PersonRequest request) throws InvalidPersonException {
+    /** The request as the person form's rules leave it, or refused by them: its grade one of the sheet's grades. */
+    static PersonRequest check(PersonRequest request, List<String> grades) throws InvalidPersonException {
         if (request == null || request.user() == null || request.user().isBlank()) {
             throw new InvalidPersonException("Sign in before changing people.");
         }
@@ -32,8 +33,8 @@ public class ValidatePerson {
             throw new InvalidPersonException("A name is at most 200 characters.");
         }
         String grade = request.grade() == null ? "" : request.grade().trim();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("The grade must be A, B or C.");
+        if (!grades.contains(grade)) {
+            throw new InvalidPersonException("The grade must be one of the sheet's grades: " + String.join(", ", grades) + ".");
         }
         String gradeFrom = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
         if (!gradeFrom.isEmpty()) {

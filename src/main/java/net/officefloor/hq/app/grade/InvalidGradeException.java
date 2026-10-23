@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.grade;
 
-/** A grade retire with no signed-in user, a grade that is not A, B or C, or a grade already retired. */
+/** A grade add, retire or merge with no signed-in user, a grade not of the sheet (or, added, not one to three capital
+ *  letters or already a grade), or a grade already retired. */
 public class InvalidGradeException extends Exception {
     public InvalidGradeException(String message) {
         super(message);
