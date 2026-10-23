@@ -101,6 +101,10 @@ public class ValidateSettings {
         if (scoreHigh != null && !scoreHigh.isEmpty() && !scoreHigh.matches("-?\\d{1,6}")) {
             throw new InvalidSettingException("The high score threshold must be a whole number, or blank for none.");
         }
+        String scoreLog = request.scoreLog() == null ? null : request.scoreLog().trim();
+        if (scoreLog != null && !scoreLog.isEmpty() && !scoreLog.equals("on")) {
+            throw new InvalidSettingException("The score log must be on, or blank for off.");
+        }
         String proofKinds = request.proofKinds() == null ? null : proofKinds(request.proofKinds());
         String defaultGrade = request.defaultGrade() == null ? null : request.defaultGrade().trim();
         if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
@@ -281,7 +285,8 @@ public class ValidateSettings {
                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade,
                 gradeClerkLimit,
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.valueOf(scoreMid),
-                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.valueOf(scoreHigh)));
+                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.valueOf(scoreHigh),
+                scoreLog != null, "on".equals(scoreLog)));
     }
 
     /** The proof kinds as stored: each listed kind trimmed, in the order given, without repeats, joined by commas ('':

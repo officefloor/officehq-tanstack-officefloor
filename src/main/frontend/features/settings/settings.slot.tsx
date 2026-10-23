@@ -26,7 +26,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string; scoreLog?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -84,6 +84,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentReviewSla = settings.data?.reviewSla ?? '';
   const currentScoreMid = settings.data?.scoreMid ?? '';
   const currentScoreHigh = settings.data?.scoreHigh ?? '';
+  const currentScoreLog = settings.data?.scoreLog ?? '';
   const currentProofKinds = settings.data?.proofKinds ?? '';
   const currentDefaultGrade = settings.data?.defaultGrade ?? '';
   const currentRounding = settings.data?.rounding ?? '';
@@ -109,6 +110,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedReviewSla, setTypedReviewSla] = useState<string | null>(null);
   const [typedScoreMid, setTypedScoreMid] = useState<string | null>(null);
   const [typedScoreHigh, setTypedScoreHigh] = useState<string | null>(null);
+  const [typedScoreLog, setTypedScoreLog] = useState<string | null>(null);
   const [typedProofKinds, setTypedProofKinds] = useState<string | null>(null);
   const [typedDefaultGrade, setTypedDefaultGrade] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
@@ -153,6 +155,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedReviewSla(null);
       setTypedScoreMid(null);
       setTypedScoreHigh(null);
+      setTypedScoreLog(null);
       setTypedProofKinds(null);
       setTypedDefaultGrade(null);
       setTypedRounding(null);
@@ -319,6 +322,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.scoreHigh = scoreHigh;
+    }
+    if (typedScoreLog !== null) {
+      const scoreLog = typedScoreLog.trim();
+      if (scoreLog !== '' && scoreLog !== 'on') {
+        setError('The score log must be on, or blank for off.');
+        return;
+      }
+      changes.scoreLog = scoreLog;
     }
     if (typedProofKinds !== null) {
       const proofKinds = typedProofKinds.trim();
@@ -514,6 +525,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Review SLA <strong data-testid="setting-review-sla-current">{currentReviewSla}</strong>{' '}
         Score mid <strong data-testid="setting-score-mid-current">{currentScoreMid}</strong>{' '}
         Score high <strong data-testid="setting-score-high-current">{currentScoreHigh}</strong>{' '}
+        Score log <strong data-testid="setting-score-log-current">{currentScoreLog}</strong>{' '}
         Proof kinds <strong data-testid="setting-proof-kinds-current">{currentProofKinds}</strong>{' '}
         Default grade <strong data-testid="setting-default-grade-current">{currentDefaultGrade}</strong>{' '}
         Rounding <strong data-testid="setting-rounding-current">{currentRounding}</strong>{' '}
@@ -795,6 +807,17 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onInput={typed(setTypedScoreHigh)}
             onChange={typed(setTypedScoreHigh)}
             onFocus={() => setTypedScoreHigh((v) => v ?? currentScoreHigh)}
+          />
+        </label>{' '}
+        <label>
+          Score log{' '}
+          <input
+            data-testid="setting-score-log"
+            placeholder="off (on)"
+            value={typedScoreLog ?? currentScoreLog}
+            onInput={typed(setTypedScoreLog)}
+            onChange={typed(setTypedScoreLog)}
+            onFocus={() => setTypedScoreLog((v) => v ?? currentScoreLog)}
           />
         </label>{' '}
         <label>

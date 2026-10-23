@@ -92,6 +92,9 @@ public class SaveSettings {
         if (input.setsScoreHigh()) {
             repository.setScoreHigh(id, input.scoreHigh());
         }
+        if (input.setsScoreLog()) {
+            repository.setScoreLog(id, input.scoreLog());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

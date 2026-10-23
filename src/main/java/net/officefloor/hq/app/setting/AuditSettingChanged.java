@@ -90,6 +90,9 @@ public class AuditSettingChanged {
         if (input.setsScoreHigh()) {
             audit.record(head + "score-high value=" + (input.scoreHigh() != null ? input.scoreHigh() : ""));
         }
+        if (input.setsScoreLog()) {
+            audit.record(head + "score-log value=" + (input.scoreLog() ? "on" : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

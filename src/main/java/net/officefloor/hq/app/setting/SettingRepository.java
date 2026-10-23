@@ -77,7 +77,7 @@ public class SettingRepository {
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
                 history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId));
+                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -276,6 +276,16 @@ public class SettingRepository {
 
     public void setScoreHigh(String sheetId, Integer threshold) {
         jdbc.update("UPDATE sheet SET score_high = ? WHERE id = ?", threshold, sheetId);
+    }
+
+    /** Whether the sheet's score log switch is on. */
+    public boolean scoreLog(String sheetId) {
+        return Boolean.TRUE.equals(jdbc.query("SELECT score_log FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getBoolean(1) : null, sheetId));
+    }
+
+    public void setScoreLog(String sheetId, boolean on) {
+        jdbc.update("UPDATE sheet SET score_log = ? WHERE id = ?", on, sheetId);
     }
 
     /** The sheet's proof kinds, comma separated: null when blank (none). While set, a claim above the proof threshold

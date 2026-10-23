@@ -10,6 +10,7 @@ import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -78,6 +79,33 @@ public class Rollups {
                     shown(overdue)));
         }
         return new Rollup(figures, shown(claimedTotal), shown(trimmed(dues)), shown(trimmed(overdues)));
+    }
+
+    /** A person's name and score. */
+    public record Score(String name, String score) {
+    }
+
+    /** Each person's score as it is now, in list order: their settled figures (the due, as shown, of each SETTLED
+     *  claim that counts, skipping n/a) divided by 100, minus 5 for each of their overdue claims that count, rounded
+     *  half to even to a whole number. */
+    public List<Score> scores(String sheetId) {
+        var today = sheets.today(sheetId);
+        var floor = settings.floor(sheetId);
+        LateCharge late = LateCharge.of(sheetId, settings, sheets, claims, people);
+        List<Claim> all = claims.list(sheetId);
+        List<Score> scores = new ArrayList<>();
+        for (Person p : people.list(sheetId)) {
+            List<Claim> counted = all.stream()
+                    .filter(c -> c.personId() == p.id() && Dues.counts(c, p.holds(), p.retiredFrom(), today)).toList();
+            BigDecimal settled = counted.stream().filter(c -> c.status() == ClaimStatus.SETTLED)
+                    .map(c -> Dues.shown(c, p.grades(), rates, floor, late)).filter(Objects::nonNull)
+                    .reduce(new BigDecimal("0.00"), BigDecimal::add);
+            long overdue = counted.stream().filter(late::overdue).count();
+            BigDecimal score = settled.movePointLeft(2).subtract(BigDecimal.valueOf(5 * overdue))
+                    .setScale(0, RoundingMode.HALF_EVEN);
+            scores.add(new Score(p.name(), score.toPlainString()));
+        }
+        return scores;
     }
 
     /** Record how the sheet's figures moved since `before`, as a change made by `user`. */
