@@ -33,7 +33,8 @@ public final class PeriodCloser {
         return fix(id, period, false, periods, claims, logs, people, rates, settings, sheets);
     }
 
-    /** Close (or, soft, soft-close) the period, fixing its due-total and each person's as they are now: the period
+    /** Close (or, soft, soft-close) the period, fixing its due-total and each person's due-total and carried figure (see the screen's personPeriodCarried)
+     *  as they are now: the period
      *  as closed or soft-closed. Refused when it is already closed (or, soft, already closed or soft-closed). */
     public static Period fix(String id, Period period, boolean soft, PeriodRepository periods, ClaimRepository claims,
             ClaimLogRepository logs, PersonRepository people, RateRepository rates, SettingRepository settings,
@@ -45,6 +46,8 @@ public final class PeriodCloser {
         for (Long personId : byId.keySet()) {
             personTotals.put(personId, new BigDecimal("0.00"));
         }
+        Map<Long, BigDecimal> personCarried = new LinkedHashMap<>(personTotals);
+        var earlier = periods.list(id).stream().filter(p -> p.to().isBefore(period.from())).toList();
         Map<Long, ClaimStatus> atEnd = logs.statusesAt(id, period.to());
         BigDecimal total = new BigDecimal("0.00");
         for (Claim c : claims.list(id)) {
@@ -52,7 +55,16 @@ public final class PeriodCloser {
             ClaimStatus status = atEnd.containsKey(c.id()) ? atEnd.get(c.id()) : c.status();
             if (!Dues.countsAtEnd(c, status, person != null ? person.holds() : Holds.NONE,
                     person != null ? person.retiredFrom() : null, late.today())
-                    || !period.contains(c.dueBy())) {
+                    || !(period.contains(c.dueBy()) || earlier.stream().anyMatch(p -> p.contains(c.dueBy())))) {
+                continue;
+            }
+            if (!period.contains(c.dueBy())) {
+                if (person != null && (status == ClaimStatus.OPEN || status == ClaimStatus.PENDING)) {
+                    BigDecimal carried = Dues.shown(c, person.grades(), rates, floor, late);
+                    if (carried != null) {
+                        personCarried.merge(person.id(), carried, BigDecimal::add);
+                    }
+                }
                 continue;
             }
             BigDecimal figure = Dues.shown(c, person != null ? person.grades() : Grades.NONE, rates, floor, late);
@@ -63,7 +75,8 @@ public final class PeriodCloser {
                 }
             }
         }
-        if (soft ? !periods.softClose(period, total, personTotals) : !periods.close(period, total, personTotals)) {
+        if (soft ? !periods.softClose(period, total, personTotals, personCarried)
+                : !periods.close(period, total, personTotals, personCarried)) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft, total, soft, period.cap());

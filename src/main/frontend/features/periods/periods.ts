@@ -7,11 +7,11 @@ import type { DatedValue } from '../settings/settings';
 
 /** A period on the sheet: a name unique on the sheet and an inclusive from and to date (yyyy-mm-dd). No two
  *  periods overlap. A closed period keeps the due-total fixed when it was closed (null while open), and each
- *  person's due-total fixed then, by person id (empty while open). A soft-closed period keeps them fixed the same
+ *  person's due-total and carried figure fixed then, by person id (empty while open). A soft-closed period keeps them fixed the same
  *  way, while its claims can still be added and changed. A period may cap the OPEN or PENDING claims each person has in
  *  it (null: no cap); opening one past the cap is refused. */
 export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>; soft: boolean; cap: number | null };
+  personTotals: Record<string, string>; soft: boolean; cap: number | null; personCarried: Record<string, string> };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
 
@@ -43,9 +43,14 @@ export function personPeriodDueTotal(period: Period, person: Person, claims: Cla
 
 /** A person's carried figure for a period: the dues (as shown on their rows now) of the person's claims that count
  *  (see countedAt) whose due-by falls in a period ending before this one starts, and whose status at the end of this
- *  period's last day (see statusAt) is OPEN or PENDING, added up. */
+ *  period's last day (see statusAt) is OPEN or PENDING, added up; once closed or soft-closed, the figure fixed for
+ *  them then (0.00 for a person added after). */
 export function personPeriodCarried(period: Period, periods: Period[], person: Person, claims: Claim[],
     people: Person[], rates: Rate[], floor: DatedValue, late: Late): string {
+  if ((period.closed || period.soft) && period.personCarried) {
+    const fixed = period.personCarried[String(person.id)];
+    if (fixed !== undefined || period.personTotals?.[String(person.id)] === undefined) return fixed ?? '0.00';
+  }
   const earlier = periods.filter((p) => p.to < period.from);
   return sumDue(
     countedAt(claims.filter((c) => c.personId === person.id), people, period.to, late.today)

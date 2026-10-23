@@ -282,10 +282,13 @@ public class PersonRepository {
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(), sheetId,
                 from.id());
         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f "
-                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?) "
+                + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?), "
+                + "carried = CASE WHEN carried IS NULL THEN NULL ELSE carried + COALESCE((SELECT f.carried FROM "
+                + "period_person_total f WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name "
+                + "AND f.person_id = ?), 0) END "
                 + "WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 FROM period_person_total f "
                 + "WHERE f.sheet_id = t.sheet_id AND f.period_name = t.period_name AND f.person_id = ?)",
-                from.id(), sheetId, into.id(), from.id());
+                from.id(), from.id(), sheetId, into.id(), from.id());
         jdbc.update("DELETE FROM period_person_total f WHERE sheet_id = ? AND person_id = ? AND EXISTS (SELECT 1 "
                 + "FROM period_person_total t WHERE t.sheet_id = f.sheet_id AND t.period_name = f.period_name "
                 + "AND t.person_id = ?)", sheetId, from.id(), into.id());

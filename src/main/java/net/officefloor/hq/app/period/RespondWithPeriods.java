@@ -16,10 +16,12 @@ public class RespondWithPeriods {
         LocalDate end = AsOf.parse(asOf);
         if (end != null) {
             response.send(repository.listAsOf(id, end).stream()
-                    .map(p -> PeriodResponse.from(p.period(), p.personTotals())).toList());
+                    .map(p -> PeriodResponse.from(p.period(), p.personTotals(), p.personCarried())).toList());
             return;
         }
         var totals = repository.personTotals(id);
-        response.send(repository.list(id).stream().map(p -> PeriodResponse.from(p, totals.get(p.name()))).toList());
+        var carried = repository.personCarried(id);
+        response.send(repository.list(id).stream()
+                .map(p -> PeriodResponse.from(p, totals.get(p.name()), carried.get(p.name()))).toList());
     }
 }
