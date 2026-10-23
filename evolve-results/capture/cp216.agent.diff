@@ -1,0 +1,496 @@
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 0683cea..9b49729 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -43,17 +43,22 @@ export function usePools(sheetId: string) {
+   });
+ }
+ 
+-/** The cuts at the end of each period whose to-date is on or before the sheet's today: by period name, the sheet's
+- *  pools as they stood at the end of its to-date (that day as the sheet's today). Keyed under the sheet, so a load
+- *  of the sheet re-reads them. */
++/** The cuts of each period: for each period whose to-date is on or before the sheet's today, or that is closed or
++ *  soft-closed, by period name, the sheet's pools as they stood at the end of its to-date (that day as the sheet's
++ *  today) — with each member's cut, once the period is closed or soft-closed, the one fixed when it was closed. Keyed
++ *  under the sheet, so a load of the sheet re-reads them. */
+ export function usePeriodCuts(sheetId: string): { period: string; pools: Pool[] }[] {
+   const today = useSheetToday(sheetId);
+-  const periods = (usePeriods(sheetId).data ?? []).filter((p) => today !== '' && p.to <= today);
++  const periods = (usePeriods(sheetId).data ?? []).filter((p) => p.closed || p.soft || (today !== '' && p.to <= today));
+   const results = useQueries({
+-    queries: periods.map((p) => ({
+-      queryKey: [...poolsKey(sheetId), 'asOf', p.to] as const,
+-      queryFn: () => getJsonNow<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools?asOf=${encodeURIComponent(p.to)}`),
+-    })),
++    queries: periods.map((p) => {
++      const fixed = p.closed || p.soft;
++      const query = `asOf=${encodeURIComponent(p.to)}${fixed ? `&period=${encodeURIComponent(p.name)}` : ''}`;
++      return {
++        queryKey: [...poolsKey(sheetId), 'asOf', p.to, fixed ? p.name : ''] as const,
++        queryFn: () => getJsonNow<Pool[]>(`/api/sheets/${encodeURIComponent(sheetId)}/pools?${query}`),
++      };
++    }),
+   });
+   return periods.map((p, i) => ({ period: p.name, pools: results[i]?.data ?? [] }));
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index 6b278c0..63b413e 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -5,7 +5,9 @@ import java.util.Comparator;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -20,7 +22,8 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class AutoClosePeriods {
+     public void close(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val LocalDate today,
+             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people,
+-            RateRepository rates, SettingRepository settings, SheetRepository sheets, Audit audit)
++            RateRepository rates, SettingRepository settings, SheetRepository sheets, PoolRepository pools,
++            CrewRepository crews, Audit audit)
+             throws InvalidPeriodException {
+         String id = sheetId.trim();
+         Integer grace = settings.graceDays(id);
+@@ -33,7 +36,7 @@ public class AutoClosePeriods {
+                 .sorted(Comparator.comparing(Period::to))
+                 .toList();
+         for (Period period : due) {
+-            Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets);
++            Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets, pools, crews);
+             periods.markAutoClosed(closed);
+             // it stands closed from the day after its to-date plus the grace days, as a sheet read as of a date sees
+             periods.dateLastKept(period, period.to().plusDays(grace + 1L));
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index edb63a0..6fc6b1b 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -2,7 +2,9 @@ package net.officefloor.hq.app.period;
+ 
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -18,7 +20,8 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class ClosePeriod {
+     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
+             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people, RateRepository rates,
+-            SettingRepository settings, SheetRepository sheets, @Val PeriodCloseInput input, RoleRepository roles,
++            SettingRepository settings, SheetRepository sheets, PoolRepository pools, CrewRepository crews,
++            @Val PeriodCloseInput input, RoleRepository roles,
+             Out<Period> closed) throws InvalidPeriodException {
+         String id = sheetId.trim();
+         periods.lockSheet(id);
+@@ -32,6 +35,6 @@ public class ClosePeriod {
+         if (period.closed()) {
+             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
+         }
+-        closed.set(PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets));
++        closed.set(PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets, pools, crews));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index 346db12..ec34927 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -9,10 +9,13 @@ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import net.officefloor.hq.app.person.Grades;
+ import net.officefloor.hq.app.person.Holds;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
++import net.officefloor.hq.app.pool.ShownPools;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -28,17 +31,17 @@ public final class PeriodCloser {
+     /** Close the open or soft-closed period, fixing its due-total and each person's afresh as they are now (as a close
+      *  by hand does): the period as closed. Refused when it is already closed. */
+     public static Period fix(String id, Period period, PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs,
+-            PersonRepository people, RateRepository rates, SettingRepository settings, SheetRepository sheets)
+-            throws InvalidPeriodException {
+-        return fix(id, period, false, periods, claims, logs, people, rates, settings, sheets);
++            PersonRepository people, RateRepository rates, SettingRepository settings, SheetRepository sheets,
++            PoolRepository pools, CrewRepository crews) throws InvalidPeriodException {
++        return fix(id, period, false, periods, claims, logs, people, rates, settings, sheets, pools, crews);
+     }
+ 
+     /** Close (or, soft, soft-close) the period, fixing its due-total and each person's due-total and carried figure (see the screen's personPeriodCarried)
+      *  as they are now: the period
+-     *  as closed or soft-closed. Refused when it is already closed (or, soft, already closed or soft-closed). */
++     *  as closed or soft-closed, and each pool member's cut as the pools show it now. Refused when it is already closed (or, soft, already closed or soft-closed). */
+     public static Period fix(String id, Period period, boolean soft, PeriodRepository periods, ClaimRepository claims,
+             ClaimLogRepository logs, PersonRepository people, RateRepository rates, SettingRepository settings,
+-            SheetRepository sheets) throws InvalidPeriodException {
++            SheetRepository sheets, PoolRepository pools, CrewRepository crews) throws InvalidPeriodException {
+         Map<Long, Person> byId = people.list(id).stream().collect(Collectors.toMap(Person::id, Function.identity()));
+         var floor = settings.floor(id);
+         LateCharge late = LateCharge.of(id, settings, sheets, claims, people);
+@@ -84,6 +87,7 @@ public final class PeriodCloser {
+                 : !periods.close(period, total, personTotals, personCarried)) {
+             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
+         }
++        pools.fixCuts(id, period.name(), ShownPools.list(id, null, pools, crews, people, sheets, settings));
+         return new Period(period.sheetId(), period.name(), period.from(), period.to(), !soft, total, soft, period.cap());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 4dd8a04..dace5f7 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -179,7 +179,7 @@ public class PeriodRepository {
+                 locked, period.sheetId(), period.name(), locked) == 1;
+     }
+ 
+-    /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
++    /** Reopen the closed or soft-closed period, dropping its fixed due-totals and pool cuts: false when it was neither, and nothing
+      *  is written. */
+     public boolean reopen(Period period) {
+         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, auto_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
+@@ -187,6 +187,7 @@ public class PeriodRepository {
+             return false;
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
+         kept(period);
+         return true;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+index b34a163..4ce95a2 100644
+--- a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+@@ -2,7 +2,9 @@ package net.officefloor.hq.app.period;
+ 
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -17,7 +19,8 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class SoftClosePeriod {
+     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
+             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people, RateRepository rates,
+-            SettingRepository settings, SheetRepository sheets, @Val PeriodCloseInput input, RoleRepository roles,
++            SettingRepository settings, SheetRepository sheets, PoolRepository pools, CrewRepository crews,
++            @Val PeriodCloseInput input, RoleRepository roles,
+             Out<Period> closed) throws InvalidPeriodException {
+         String id = sheetId.trim();
+         periods.lockSheet(id);
+@@ -34,6 +37,6 @@ public class SoftClosePeriod {
+         if (period.soft()) {
+             throw new InvalidPeriodException("The period " + period.name() + " is already soft-closed.");
+         }
+-        closed.set(PeriodCloser.fix(id, period, true, periods, claims, logs, people, rates, settings, sheets));
++        closed.set(PeriodCloser.fix(id, period, true, periods, claims, logs, people, rates, settings, sheets, pools, crews));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 26051a3..74d203d 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -1,7 +1,10 @@
+ package net.officefloor.hq.app.pool;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.hq.app.person.Person;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -109,4 +112,32 @@ public class PoolRepository {
+                 + "WHERE i.pool_id = m.pool_id AND i.person_id = ?)", sheetId, fromId, intoId);
+         jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+     }
++
++    /** Fix each member's cut in the pools as shown (pools and crews) for the period, afresh. */
++    public void fixCuts(String sheetId, String periodName, List<PoolResponse> pools) {
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", sheetId, periodName);
++        for (PoolResponse pool : pools) {
++            for (PoolResponse.Member m : pool.members()) {
++                jdbc.update("INSERT INTO period_pool_cut (sheet_id, period_name, pool_id, person_id, member_pool_id, cut) "
++                        + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, periodName, pool.id(), m.personId(), m.poolId(),
++                        m.cut().isEmpty() ? null : new BigDecimal(m.cut()));
++            }
++        }
++    }
++
++    /** The cuts fixed for the period: by fixedKey of pool and member, the cut ('' when the member had none). */
++    public Map<String, String> fixedCuts(String sheetId, String periodName) {
++        Map<String, String> cuts = new HashMap<>();
++        jdbc.query("SELECT * FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", rs -> {
++            BigDecimal cut = rs.getBigDecimal("cut");
++            cuts.put(fixedKey(rs.getLong("pool_id"), rs.getObject("person_id", Long.class),
++                    rs.getObject("member_pool_id", Long.class)), cut == null ? "" : cut.setScale(2).toPlainString());
++        }, sheetId, periodName);
++        return cuts;
++    }
++
++    /** A member's key among the fixed cuts: its pool, and the person or member pool. */
++    public static String fixedKey(long poolId, Long personId, Long memberPoolId) {
++        return poolId + (memberPoolId != null ? ":pool:" + memberPoolId : ":person:" + personId);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index a1024a1..81b544f 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -76,6 +76,14 @@ public record PoolResponse(long id, String name, List<Member> members, String to
+         return new PoolResponse(pool.id(), pool.name(), shown, total.toPlainString(), balanced, null);
+     }
+ 
++    /** The same pool with each member's cut the one fixed for them (see PoolRepository.fixedCuts; '' when none was). */
++    public PoolResponse withCuts(Map<String, String> fixed) {
++        List<Member> shown = members.stream().map(m -> new Member(m.personId(), m.name(), m.share(), m.retired(),
++                fixed.getOrDefault(PoolRepository.fixedKey(id, m.personId(), m.poolId()), ""), m.poolId(), m.from(),
++                m.to(), m.outside())).toList();
++        return new PoolResponse(id, name, shown, totalShare, balanced, crewId);
++    }
++
+     /** The same pool shown as this crew's pool. */
+     public PoolResponse ofCrew(long crewId) {
+         return new PoolResponse(-crewId, name, members, totalShare, balanced, crewId);
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 9f5a37f..87809ad 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -1,16 +1,10 @@
+ package net.officefloor.hq.app.pool;
+ 
+-import java.math.BigDecimal;
+-import java.time.LocalDate;
+-import java.util.ArrayList;
+-import java.util.HashMap;
+-import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
+-import java.util.Set;
+-import net.officefloor.hq.app.crew.Crew;
+ import net.officefloor.hq.app.crew.CrewRepository;
+-import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.AsOf;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -28,76 +22,22 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  hold in force on that date cuts 0.00, their share spread over the members with a cut. A member whose membership
+  *  dates do not include that date is left out: no share in the total and no cut. After the pools come the crews, each
+  *  a pool under its name with its lead and then its members (in the order added) at equal shares (100.00 split as
+- *  patrons' shares are, the remainder on the lead), cutting the sheet's pot like any pool. */
++ *  patrons' shares are, the remainder on the lead), cutting the sheet's pot like any pool. Given a period that is
++ *  closed or soft-closed, each member shows instead the cut fixed for them when it was closed ('' when they had none
++ *  then). */
+ public class RespondWithPools {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(name = "asOf", required = false) String asOf, PoolRepository repository,
++            @RequestParam(name = "asOf", required = false) String asOf,
++            @RequestParam(name = "period", required = false) String periodName, PoolRepository repository,
+             CrewRepository crews, PersonRepository people, SheetRepository sheets, SettingRepository settings,
+-            ObjectResponse<List<PoolResponse>> response) {
++            PeriodRepository periods, ObjectResponse<List<PoolResponse>> response) {
+         String id = sheetId.trim();
+-        LocalDate end = AsOf.parse(asOf);
+-        LocalDate on = end != null ? end : sheets.today(id);
+-        List<Person> persons = end != null ? people.listAsOf(id, end) : people.list(id);
+-        Map<Long, LocalDate> retiredFrom = new HashMap<>();
+-        Map<Long, String> names = new HashMap<>();
+-        Set<Long> held = new HashSet<>();
+-        BigDecimal pot = end != null ? settings.potAsOf(id, end) : settings.pot(id);
+-        for (Person p : persons) {
+-            names.put(p.id(), p.name());
+-            if (p.retiredFrom() != null) {
+-                retiredFrom.put(p.id(), p.retiredFrom());
+-            }
+-            if (on != null && p.holds().covers(on)) {
+-                held.add(p.id());
+-            }
+-        }
+-        List<Pool> pools = repository.list(id, end);
+-        Map<Long, String> poolNames = new HashMap<>();
+-        pools.forEach(p -> poolNames.put(p.id(), p.name()));
+-        Map<Long, List<PoolMember>> members = new HashMap<>();
+-        Map<Long, Pool> parents = new HashMap<>();
+-        for (Pool pool : pools) {
+-            List<PoolMember> named = repository.members(pool, end).stream()
+-                    .filter(m -> m.isPool() ? poolNames.containsKey(m.memberPoolId())
+-                            : names.containsKey(m.personId()))
+-                    .map(m -> m.named(m.isPool() ? poolNames.get(m.memberPoolId()) : names.get(m.personId())))
+-                    .toList();
+-            members.put(pool.id(), named);
+-            named.stream().filter(PoolMember::isPool).forEach(m -> parents.put(m.memberPoolId(), pool));
+-        }
+-        Map<Long, PoolResponse> shown = new HashMap<>();
+-        List<PoolResponse> all = new ArrayList<>(pools.stream()
+-                .map(pool -> shown(pool, members, parents, retiredFrom, held, on, pot, shown)).toList());
+-        for (Crew crew : crews.list(id)) {
+-            List<Long> ids = new ArrayList<>();
+-            if (names.containsKey(crew.leadId())) {
+-                ids.add(crew.leadId());
+-            }
+-            crews.members(crew).stream().filter(names::containsKey).forEach(ids::add);
+-            List<BigDecimal> shares = PoolResponse.equalShares(ids.size());
+-            Pool pool = new Pool(-crew.id(), id, crew.name(), crew.by());
+-            List<PoolMember> crewMembers = new ArrayList<>();
+-            for (int i = 0; i < ids.size(); i++) {
+-                crewMembers.add(new PoolMember(pool.id(), id, pool.name(), ids.get(i), names.get(ids.get(i)),
+-                        shares.get(i), crew.by()));
+-            }
+-            all.add(PoolResponse.from(pool, crewMembers, retiredFrom, held, on, pot).ofCrew(crew.id()));
++        List<PoolResponse> all = ShownPools.list(id, AsOf.parse(asOf), repository, crews, people, sheets, settings);
++        Period period = periodName != null ? periods.find(id, periodName) : null;
++        if (period != null && (period.closed() || period.soft())) {
++            Map<String, String> fixed = repository.fixedCuts(id, period.name());
++            all = all.stream().map(p -> p.withCuts(fixed)).toList();
+         }
+         response.send(all);
+     }
+-
+-    /** The pool as shown, its pot the sheet's or its cut in the pool above (worked out first). */
+-    private static PoolResponse shown(Pool pool, Map<Long, List<PoolMember>> members, Map<Long, Pool> parents,
+-            Map<Long, LocalDate> retiredFrom, Set<Long> held, LocalDate on, BigDecimal sheetPot, Map<Long, PoolResponse> shown) {
+-        PoolResponse done = shown.get(pool.id());
+-        if (done != null) {
+-            return done;
+-        }
+-        Pool above = parents.get(pool.id());
+-        BigDecimal pot = above == null ? sheetPot
+-                : shown(above, members, parents, retiredFrom, held, on, sheetPot, shown).cutOf(pool.id());
+-        PoolResponse r = PoolResponse.from(pool, members.get(pool.id()), retiredFrom, held, on, pot);
+-        shown.put(pool.id(), r);
+-        return r;
+-    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ShownPools.java b/src/main/java/net/officefloor/hq/app/pool/ShownPools.java
+new file mode 100644
+index 0000000..f50cb42
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/ShownPools.java
+@@ -0,0 +1,92 @@
++package net.officefloor.hq.app.pool;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import net.officefloor.hq.app.crew.Crew;
++import net.officefloor.hq.app.crew.CrewRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++
++/** The sheet's pools and crews as RespondWithPools shows them, worked out for the screen and for fixing a closing
++ *  period's cuts. */
++public final class ShownPools {
++
++    private ShownPools() {
++    }
++
++    /** The sheet's pools and crews as shown on the sheet's today (or as of the end of the day, when one is given). */
++    public static List<PoolResponse> list(String id, LocalDate end, PoolRepository repository, CrewRepository crews,
++            PersonRepository people, SheetRepository sheets, SettingRepository settings) {
++        LocalDate on = end != null ? end : sheets.today(id);
++        List<Person> persons = end != null ? people.listAsOf(id, end) : people.list(id);
++        Map<Long, LocalDate> retiredFrom = new HashMap<>();
++        Map<Long, String> names = new HashMap<>();
++        Set<Long> held = new HashSet<>();
++        BigDecimal pot = end != null ? settings.potAsOf(id, end) : settings.pot(id);
++        for (Person p : persons) {
++            names.put(p.id(), p.name());
++            if (p.retiredFrom() != null) {
++                retiredFrom.put(p.id(), p.retiredFrom());
++            }
++            if (on != null && p.holds().covers(on)) {
++                held.add(p.id());
++            }
++        }
++        List<Pool> pools = repository.list(id, end);
++        Map<Long, String> poolNames = new HashMap<>();
++        pools.forEach(p -> poolNames.put(p.id(), p.name()));
++        Map<Long, List<PoolMember>> members = new HashMap<>();
++        Map<Long, Pool> parents = new HashMap<>();
++        for (Pool pool : pools) {
++            List<PoolMember> named = repository.members(pool, end).stream()
++                    .filter(m -> m.isPool() ? poolNames.containsKey(m.memberPoolId())
++                            : names.containsKey(m.personId()))
++                    .map(m -> m.named(m.isPool() ? poolNames.get(m.memberPoolId()) : names.get(m.personId())))
++                    .toList();
++            members.put(pool.id(), named);
++            named.stream().filter(PoolMember::isPool).forEach(m -> parents.put(m.memberPoolId(), pool));
++        }
++        Map<Long, PoolResponse> shown = new HashMap<>();
++        List<PoolResponse> all = new ArrayList<>(pools.stream()
++                .map(pool -> shown(pool, members, parents, retiredFrom, held, on, pot, shown)).toList());
++        for (Crew crew : crews.list(id)) {
++            List<Long> ids = new ArrayList<>();
++            if (names.containsKey(crew.leadId())) {
++                ids.add(crew.leadId());
++            }
++            crews.members(crew).stream().filter(names::containsKey).forEach(ids::add);
++            List<BigDecimal> shares = PoolResponse.equalShares(ids.size());
++            Pool pool = new Pool(-crew.id(), id, crew.name(), crew.by());
++            List<PoolMember> crewMembers = new ArrayList<>();
++            for (int i = 0; i < ids.size(); i++) {
++                crewMembers.add(new PoolMember(pool.id(), id, pool.name(), ids.get(i), names.get(ids.get(i)),
++                        shares.get(i), crew.by()));
++            }
++            all.add(PoolResponse.from(pool, crewMembers, retiredFrom, held, on, pot).ofCrew(crew.id()));
++        }
++        return all;
++    }
++
++    /** The pool as shown, its pot the sheet's or its cut in the pool above (worked out first). */
++    private static PoolResponse shown(Pool pool, Map<Long, List<PoolMember>> members, Map<Long, Pool> parents,
++            Map<Long, LocalDate> retiredFrom, Set<Long> held, LocalDate on, BigDecimal sheetPot, Map<Long, PoolResponse> shown) {
++        PoolResponse done = shown.get(pool.id());
++        if (done != null) {
++            return done;
++        }
++        Pool above = parents.get(pool.id());
++        BigDecimal pot = above == null ? sheetPot
++                : shown(above, members, parents, retiredFrom, held, on, sheetPot, shown).cutOf(pool.id());
++        PoolResponse r = PoolResponse.from(pool, members.get(pool.id()), retiredFrom, held, on, pot);
++        shown.put(pool.id(), r);
++        return r;
++    }
++}
+diff --git a/src/main/resources/db/migration/V117__period_pool_cut.sql b/src/main/resources/db/migration/V117__period_pool_cut.sql
+new file mode 100644
+index 0000000..e66dcb0
+--- /dev/null
++++ b/src/main/resources/db/migration/V117__period_pool_cut.sql
+@@ -0,0 +1,12 @@
++-- Each pool member's cut in a closed or soft-closed period, fixed as it stood (as the pools show it on the sheet's
++-- today) at the moment the period was closed: a person (person_id) or a member pool (member_pool_id) in a pool (a
++-- crew's pool by its negated crew id); cut NULL when the member had none then. Dropped when the period is reopened.
++CREATE TABLE period_pool_cut (
++    sheet_id       VARCHAR(100)   NOT NULL REFERENCES sheet(id),
++    period_name    VARCHAR(200)   NOT NULL,
++    pool_id        BIGINT         NOT NULL,
++    person_id      BIGINT,
++    member_pool_id BIGINT,
++    cut            DECIMAL(14, 2)
++);
++CREATE INDEX period_pool_cut_period ON period_pool_cut (sheet_id, period_name);
