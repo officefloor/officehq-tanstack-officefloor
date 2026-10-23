@@ -17,14 +17,14 @@ const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 /** The settings that carry a figure, and so are saved from a from-date. */
 const DATED = ['clerk-limit', 'floor', 'terms', ...GRADES.map((grade) => `terms-${grade}`),
   ...GRADES.map((grade) => `grace-${grade}`), 'late-pct', 'cap', 'proof-threshold',
-  ...GRADES.map((grade) => `proof-threshold-${grade}`), 'note-threshold', 'rounding'];
+  ...GRADES.map((grade) => `proof-threshold-${grade}`), 'note-threshold', 'rounding', 'review-threshold'];
 
 /** The settings a save changes: only those typed into since the last save are sent (and recorded). */
 type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string;
   periodNumberingFrom?: string; gradeTerms?: Record<string, string>; cap?: string; proofThreshold?: string; noteThreshold?: string; from?: Record<string, string>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
-  rounding?: string };
+  rounding?: string; reviewThreshold?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -39,7 +39,8 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  A claim whose due is above the proof threshold (blank: none) in force on its date cannot be settled or approved
  *  while it has no proofs; the server enforces it. A grade may have a proof threshold of its own (blank: the sheet's);
  *  a claim whose person's grade on its date has one in force on that date takes it instead of the sheet's. A claim whose due is above the note threshold (blank: none) in
- *  force on its date cannot be opened while its note is empty; the server enforces it.
+ *  force on its date cannot be opened while its note is empty; the server enforces it. A claim whose due is above
+ *  the review threshold (blank: none) in force on its date goes to REVIEW when opened; a steward reviews it to OPEN.
  *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles that may take
  *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
  *  The grace days (blank: off; not dated): when the sheet's today is changed, each open period whose to-date plus
@@ -68,6 +69,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentCap = settings.data?.cap ?? '';
   const currentProofThreshold = settings.data?.proofThreshold ?? '';
   const currentNoteThreshold = settings.data?.noteThreshold ?? '';
+  const currentReviewThreshold = settings.data?.reviewThreshold ?? '';
   const currentGraceDays = settings.data?.graceDays ?? '';
   const currentEntryDate = settings.data?.entryDate ?? '';
   const currentPot = settings.data?.pot ?? '';
@@ -86,6 +88,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedCap, setTypedCap] = useState<string | null>(null);
   const [typedProofThreshold, setTypedProofThreshold] = useState<string | null>(null);
   const [typedNoteThreshold, setTypedNoteThreshold] = useState<string | null>(null);
+  const [typedReviewThreshold, setTypedReviewThreshold] = useState<string | null>(null);
   const [typedGraceDays, setTypedGraceDays] = useState<string | null>(null);
   const [typedEntryDate, setTypedEntryDate] = useState<string | null>(null);
   const [typedPot, setTypedPot] = useState<string | null>(null);
@@ -121,6 +124,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedCap(null);
       setTypedProofThreshold(null);
       setTypedNoteThreshold(null);
+      setTypedReviewThreshold(null);
       setTypedGraceDays(null);
       setTypedEntryDate(null);
       setTypedPot(null);
@@ -216,6 +220,14 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.noteThreshold = threshold;
+    }
+    if (typedReviewThreshold !== null) {
+      const threshold = typedReviewThreshold.trim();
+      if (threshold !== '' && !LIMIT.test(threshold)) {
+        setError('The review threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.');
+        return;
+      }
+      changes.reviewThreshold = threshold;
     }
     if (typedGraceDays !== null) {
       const graceDays = typedGraceDays.trim();
@@ -317,6 +329,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       cap: () => { changes.cap ??= currentCap; },
       'proof-threshold': () => { changes.proofThreshold ??= currentProofThreshold; },
       'note-threshold': () => { changes.noteThreshold ??= currentNoteThreshold; },
+      'review-threshold': () => { changes.reviewThreshold ??= currentReviewThreshold; },
       rounding: () => { changes.rounding ??= currentRounding; },
       ...Object.fromEntries(GRADES.map((grade) => [`terms-${grade}`, () => {
         if (changes.gradeTerms?.[grade] === undefined) {
@@ -397,6 +410,7 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           </span>
         ))}
         Note threshold <strong data-testid="setting-note-threshold-current">{currentNoteThreshold}</strong>{' '}
+        Review threshold <strong data-testid="setting-review-threshold-current">{currentReviewThreshold}</strong>{' '}
         Grace days <strong data-testid="setting-grace-days-current">{currentGraceDays}</strong>{' '}
         Entry date <strong data-testid="setting-entry-date-current">{currentEntryDate}</strong>{' '}
         Pot <strong data-testid="setting-pot-current">{currentPot}</strong>{' '}
@@ -564,6 +578,18 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
           />
         </label>
         {fromInput('note-threshold')}{' '}
+        <label>
+          Review threshold{' '}
+          <input
+            data-testid="setting-review-threshold"
+            placeholder="none"
+            value={typedReviewThreshold ?? currentReviewThreshold}
+            onInput={typed(setTypedReviewThreshold)}
+            onChange={typed(setTypedReviewThreshold)}
+            onFocus={() => setTypedReviewThreshold((v) => v ?? currentReviewThreshold)}
+          />
+        </label>
+        {fromInput('review-threshold')}{' '}
         <label>
           Grace days{' '}
           <input

@@ -6,12 +6,14 @@ import type { Person } from '../people/people';
 
 /** Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a clerk's settle above the clerk limit leaves it
  *  PENDING until a steward approves (SETTLED) or rejects (OPEN) it; a DRAFT, OPEN or PENDING claim may be VOID, and a steward may void a SETTLED one within 7 days of its settlement; a DRAFT may be DELETED (it counts nowhere,
- *  not even in the status counts) and restored to a DRAFT on the sheet-today it was deleted. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ *  not even in the status counts) and restored to a DRAFT on the sheet-today it was deleted. A claim opened with a due
+ *  above the review threshold in force on its date is REVIEW instead of OPEN (unnumbered, counted in no total; it may
+ *  only be voided) until a steward reviews it OPEN. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** Every claim status claims are counted by, in life order, each shown even when no claim has it (not DELETED: a
  *  deleted claim counts nowhere). */
-export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+export const STATUSES: readonly ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
 
 /** A person's claim: the amount with two decimals, the date (yyyy-mm-dd), a note (may be empty), its status,
  *  its number (sheet-wide digits as given before fiscal-year numbering, FY<yyyy>-<n> within the tree's fiscal year, or <period name>-<n> / X-<n> when numbered within its period; null while a draft; a voided claim keeps the one it had) and, the due fixed when it was settled

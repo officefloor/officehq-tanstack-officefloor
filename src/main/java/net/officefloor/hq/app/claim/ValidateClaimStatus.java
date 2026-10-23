@@ -14,7 +14,7 @@ public class ValidateClaimStatus {
         }
         String action = request.action() == null ? "" : request.action().trim();
         ClaimStatus to = switch (action) {
-            case "open", "reject" -> ClaimStatus.OPEN;
+            case "open", "reject", "review" -> ClaimStatus.OPEN;
             case "settle", "approve", "resettle" -> ClaimStatus.SETTLED;
             case "void" -> ClaimStatus.VOID;
             case "delete" -> ClaimStatus.DELETED;

@@ -77,6 +77,10 @@ public class ValidateSettings {
         if (noteThreshold != null && !noteThreshold.isEmpty() && !noteThreshold.matches(AMOUNT)) {
             throw new InvalidSettingException("The note threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
         }
+        String reviewThreshold = request.reviewThreshold() == null ? null : request.reviewThreshold().trim();
+        if (reviewThreshold != null && !reviewThreshold.isEmpty() && !reviewThreshold.matches(AMOUNT)) {
+            throw new InvalidSettingException("The review threshold must be an amount, 0.00 or more, with up to two decimals, or blank for none.");
+        }
         String grace = request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && !grace.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank for off.");
@@ -227,6 +231,8 @@ public class ValidateSettings {
                 parent != null, parent == null || parent.isEmpty() ? null : parent,
                 fiscal == null ? null : Integer.valueOf(fiscal),
                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
-                rounding != null, rounding == null || rounding.isEmpty() ? null : rounding));
+                rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
+                reviewThreshold != null,
+                reviewThreshold == null || reviewThreshold.isEmpty() ? null : new BigDecimal(reviewThreshold).setScale(2)));
     }
 }

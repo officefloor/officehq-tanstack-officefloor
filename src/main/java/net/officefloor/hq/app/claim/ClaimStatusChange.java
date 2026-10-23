@@ -33,7 +33,9 @@ final class ClaimStatusChange {
         ClaimStatus to = check(input, loaded, repository, people, rates, roles, settings, sheets, log);
         boolean opening = input.action().equals("open");
         String openedBy = opening ? input.user() : loaded.openedBy();
-        String number = opening ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
+        // a claim gone to REVIEW is numbered only once a steward reviews it OPEN
+        String number = (opening && to == ClaimStatus.OPEN) || input.action().equals("review")
+                ? repository.nextNumber(loaded.sheetId(), loaded.dueBy()) : loaded.number();
         BigDecimal settledDue = input.action().equals("resettle")
                 ? dueNow(asOpenUnstated(loaded), repository, people, rates, settings, sheets)
                 : to == ClaimStatus.SETTLED ? dueNow(loaded, repository, people, rates, settings, sheets)
@@ -73,6 +75,14 @@ final class ClaimStatusChange {
             }
             if (input.action().equals("approve") && input.user().equals(repository.editedBy(loaded))) {
                 throw new ClaimStatusNotAllowedException("The user who last edited a claim cannot approve it.");
+            }
+        } else if (input.action().equals("review")) {
+            if (loaded.status() != ClaimStatus.REVIEW) {
+                throw new ClaimStatusNotAllowedException("Only a REVIEW claim can be reviewed; this one is "
+                        + loaded.status() + ".");
+            }
+            if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
+                throw new ClaimStatusNotAllowedException("Only a steward can review a claim.");
             }
         } else if (input.action().equals("resettle")) {
             if (loaded.status() != ClaimStatus.SETTLED) {
@@ -130,6 +140,9 @@ final class ClaimStatusChange {
             if (refused != null) {
                 throw new ClaimStatusNotAllowedException(refused);
             }
+            if (reviewRequired(loaded, repository, people, rates, settings, sheets)) {
+                to = ClaimStatus.REVIEW;
+            }
         }
         if (input.action().equals("settle") && Role.CLERK.equals(roles.of(loaded.sheetId(), input.user()))) {
             BigDecimal limit = settings.clerkLimit(loaded.sheetId());
@@ -146,7 +159,8 @@ final class ClaimStatusChange {
             WatchRepository watches, Audit audit) {
         var person = people.find(loaded.sheetId(), loaded.personId());
         String event = switch (input.action()) {
-            case "open" -> "CLAIM_OPENED";
+            case "open" -> "REVIEW".equals(saved.status()) ? "CLAIM_REVIEW" : "CLAIM_OPENED";
+            case "review" -> "CLAIM_OPENED";
             case "settle" -> "PENDING".equals(saved.status()) ? "CLAIM_PENDING" : "CLAIM_SETTLED";
             case "approve" -> "CLAIM_APPROVED";
             case "reject" -> "CLAIM_REJECTED";
@@ -160,6 +174,10 @@ final class ClaimStatusChange {
         boolean reversed = input.action().equals("void") && loaded.status() == ClaimStatus.SETTLED;
         boolean settled = "SETTLED".equals(saved.status()) && !resettled;
         String number = saved.number() != null ? saved.number() : loaded.number();
+        if (input.action().equals("review")) {
+            audit.record("CLAIM_REVIEWED sheet=" + loaded.sheetId() + " by=" + input.user()
+                    + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date());
+        }
         audit.record(event + " sheet=" + loaded.sheetId() + " by=" + input.user()
                 + " person=" + person.name() + " amount=" + saved.amount() + " date=" + saved.date()
                 + (number != null ? " number=" + number : "")
@@ -205,6 +223,18 @@ final class ClaimStatusChange {
         }
         return "This claim's due " + due + " is above the note threshold " + threshold
                 + "; give it a note before it is opened.";
+    }
+
+    /** Whether the claim, opened as it is, goes to REVIEW instead of OPEN: its due is above the sheet's review
+     *  threshold in force on its date (no threshold, or a due of n/a, is within it). */
+    static boolean reviewRequired(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,
+            SettingRepository settings, SheetRepository sheets) {
+        BigDecimal threshold = settings.reviewThreshold(claim.sheetId()).on(claim.date());
+        if (threshold == null) {
+            return false;
+        }
+        BigDecimal due = dueNow(claim, claims, people, rates, settings, sheets);
+        return due != null && due.compareTo(threshold) > 0;
     }
 
     private static BigDecimal dueNow(Claim claim, ClaimRepository claims, PersonRepository people, RateRepository rates,

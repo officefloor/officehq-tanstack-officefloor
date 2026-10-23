@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 public class RefuseCappedOpen {
     public void refuse(@Val ClaimStatusInput input, @Val Claim loaded, PeriodRepository periods, ClaimRepository claims)
             throws CappedPeriodException {
-        if (!input.action().equals("open")) {
+        if (!input.action().equals("open") && !input.action().equals("review")) {
             return;
         }
         Period capped = PeriodCap.reached(loaded, periods, claims);

@@ -68,7 +68,8 @@ public class SettingRepository {
                 history.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), gradeTerms,
                 history.capOn(today), history.proofThresholdOn(today), history.noteThresholdOn(today), history, permissions(sheetId), graceDays(sheetId),
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
-                fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today));
+                fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
+                history.reviewThresholdOn(today));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -130,6 +131,12 @@ public class SettingRepository {
      *  in force on its date cannot be opened while its note is empty. */
     public DatedAmount noteThreshold(String sheetId) {
         return history(sheetId)::noteThresholdOn;
+    }
+
+    /** The sheet's review threshold by date (null on a date when there is none then): a claim whose due is above the
+     *  one in force on its date goes to REVIEW when opened. */
+    public DatedAmount reviewThreshold(String sheetId) {
+        return history(sheetId)::reviewThresholdOn;
     }
 
     /** The sheet's floor by date: a claim's live due is at least the floor in force on its date. */

@@ -66,6 +66,10 @@ public class AuditSettingChanged {
             audit.record(head + "rounding value=" + (input.rounding() != null ? input.rounding() : "")
                     + from(input, SettingHistory.ROUNDING));
         }
+        if (input.setsReviewThreshold()) {
+            audit.record(head + "review-threshold value=" + SettingsResponse.text(input.reviewThreshold())
+                    + from(input, "review-threshold"));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

@@ -8,7 +8,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /** A sheet's dated settings: by key (floor, late-pct, terms, terms-A/B/C, grace-A/B/C, clerk-limit, cap,
- *  proof-threshold, note-threshold, proof-threshold-A/B/C, rounding), each value recorded
+ *  proof-threshold, note-threshold, proof-threshold-A/B/C, rounding, review-threshold), each value recorded
  *  by its from-date (null: blank). The value in force on a date is the one with the latest from-date on or before
  *  it; before every from-date the sheet's starting value applies. */
 public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values) {
@@ -16,7 +16,8 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     /** The keys of the settings that are dated. */
     public static final List<String> KEYS = List.of("clerk-limit", "floor", "terms", "terms-A",
             "terms-B", "terms-C", "grace-A", "grace-B", "grace-C", "late-pct", "cap", "proof-threshold",
-            "note-threshold", "proof-threshold-A", "proof-threshold-B", "proof-threshold-C", "rounding");
+            "note-threshold", "proof-threshold-A", "proof-threshold-B", "proof-threshold-C", "rounding",
+            "review-threshold");
 
     /** The key of the rounding mode: half-up or half-even (blank: none, the policy date rounds). */
     public static final String ROUNDING = "rounding";
@@ -115,6 +116,11 @@ public record SettingHistory(Map<String, NavigableMap<LocalDate, String>> values
     /** The note threshold in force on the date: two decimals, or null when there is none. */
     public BigDecimal noteThresholdOn(LocalDate date) {
         return amountOn("note-threshold", date);
+    }
+
+    /** The review threshold in force on the date: two decimals, or null when there is none. */
+    public BigDecimal reviewThresholdOn(LocalDate date) {
+        return amountOn("review-threshold", date);
     }
 
     private BigDecimal amountOn(String key, LocalDate date) {

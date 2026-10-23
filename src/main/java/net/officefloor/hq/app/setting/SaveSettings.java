@@ -69,6 +69,9 @@ public class SaveSettings {
         if (input.setsRounding()) {
             repository.setDated(id, SettingHistory.ROUNDING, input.rounding(), from(input, SettingHistory.ROUNDING, today));
         }
+        if (input.setsReviewThreshold()) {
+            repository.setDated(id, "review-threshold", text(input.reviewThreshold()), from(input, "review-threshold", today));
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }
