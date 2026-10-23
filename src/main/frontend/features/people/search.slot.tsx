@@ -6,7 +6,7 @@ import type { Claim } from '../claims/claims';
 import { personDueTotal, type Rate } from '../rates/rates';
 import { floorOf, lateOf, type Settings } from '../settings/settings';
 import type { Sheet } from '../sheet/sheet';
-import type { Person } from './people';
+import { nameWithGrade, type Person } from './people';
 
 /** Whether the text (as typed, case ignored) is in the person's name or one of their aliases. */
 const matches = (person: Person, text: string) =>
@@ -25,7 +25,7 @@ async function sheetLines(sheetId: string, text: string): Promise<string[]> {
   const late = lateOf(settings, today, claims, people);
   return people
     .filter((p) => matches(p, text))
-    .map((p) => `${sheetId} ${p.name} ${personDueTotal(p, claims, rates, today, floor, late, settings.cap ?? '')}`);
+    .map((p) => `${sheetId} ${nameWithGrade(p, today)} ${personDueTotal(p, claims, rates, today, floor, late, settings.cap ?? '')}`);
 }
 
 /** A search box and button listing, over this sheet and every other sheet of its tree (its ancestors and its

@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { live, useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { nameWithGrade, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { patronShares, recentSettledSum, sharedSum, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../settings/settings';
@@ -60,7 +60,7 @@ function PersonPatrons({ sheetId, user, person }: { sheetId: string; user: strin
     <td>
       {showPatrons && (
         <>
-          Patrons <span data-testid="person-patrons">{patrons.map((p) => `${p.person.name} ${p.share}`).join(', ')}</span>{' '}
+          Patrons <span data-testid="person-patrons">{patrons.map((p) => `${nameWithGrade(p.person, today)} ${p.share}`).join(', ')}</span>{' '}
         </>
       )}
       {showBacking && (

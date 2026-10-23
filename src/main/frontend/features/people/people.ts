@@ -52,6 +52,12 @@ export function gradeOn(person: Person | undefined, date: string): string {
   return found?.grade ?? '';
 }
 
+/** How the screen shows a person's name: <name> (<grade in force on the sheet's today>), the stored grade while the
+ *  today is loading. Exports, audit lines, import and paste boxes and selects keep the plain name. */
+export function nameWithGrade(person: Person, today: string): string {
+  return `${person.name} (${(today !== '' && gradeOn(person, today)) || person.grade})`;
+}
+
 export const GRADES = ['A', 'B', 'C'] as const;
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;

@@ -5,7 +5,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetBody } from '../../slots/defs/sheet';
 import { useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { nameWithGrade, usePeople } from '../people/people';
 import { personDueTotal, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../settings/settings';
@@ -29,6 +29,8 @@ function CrewRow({ sheetId, user, crew }: { sheetId: string; user: string; crew:
   const queryClient = useQueryClient();
   const people = usePeople(sheetId).data ?? [];
   const dueTotal = useCrewDueTotal(sheetId, crew);
+  const today = useSheetToday(sheetId);
+  const lead = people.find((p) => p.id === crew.leadId);
   const [personId, setPersonId] = useState('');
   const [error, setError] = useState('');
   const once = useSubmitOnce();
@@ -66,7 +68,7 @@ function CrewRow({ sheetId, user, crew }: { sheetId: string; user: string; crew:
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead}</span>, due total{' '}
+      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{lead ? nameWithGrade(lead, today) : crew.lead}</span>, due total{' '}
       <span data-testid="crew-due-total">{dueTotal}</span>
       <ul>
         {crew.members.map((m) => (

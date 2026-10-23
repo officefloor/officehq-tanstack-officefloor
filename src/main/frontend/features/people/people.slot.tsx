@@ -5,7 +5,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { PersonRow } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheet';
-import { GRADES, peopleKey, savedTermsKey, useCloseEditor, useEditingPerson, usePeople, useSavedTerms,
+import { GRADES, nameWithGrade, peopleKey, savedTermsKey, useCloseEditor, useEditingPerson, usePeople, useSavedTerms,
   useShowRetired } from './people';
 import type { Person } from './people';
 import { claimsKey } from '../claims/claims';
@@ -359,6 +359,7 @@ function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
 /** The sheet's people, in list order unless this user's screen sorts them otherwise, each with their name and
  *  grade. Retired people have no row unless "show retired" is on. */
 function People({ sheetId, user }: { sheetId: string; user: string }) {
+  const today = useSheetToday(sheetId);
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => String(p.id) === editingId);
@@ -403,7 +404,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         <tbody>
           {listed.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{nameWithGrade(p, today)}</td>
               <td data-testid="person-grade">{p.grade}</td>
               {showTerms && <td data-testid="person-terms">{(p.id in savedTerms ? savedTerms[p.id] : p.terms) ?? ''}</td>}
               {showContact && <td data-testid="person-contact">{p.contact ?? ''}</td>}
