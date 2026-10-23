@@ -1,0 +1,74 @@
+diff --git a/src/main/frontend/features/snapshots/compare.slot.tsx b/src/main/frontend/features/snapshots/compare.slot.tsx
+new file mode 100644
+index 0000000..8ae8e27
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/compare.slot.tsx
+@@ -0,0 +1,68 @@
++import { useState } from 'react';
++import { SheetBody } from '../../slots/defs/sheet';
++import { useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { personDueTotal, useRates } from '../rates/rates';
++import { useCap, useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++import { type Snapshot, useSnapshots } from './snapshots';
++
++/** The due-total of the snapshot written for the person when the sheet's today was changed away from the day (the
++ *  latest, should there be several), or empty when there is none. */
++function snapshotOn(snapshots: Snapshot[], personId: number, day: string): string {
++  let found = '';
++  for (const s of snapshots) {
++    if (s.personId === personId && s.day === day) found = s.dueTotal;
++  }
++  return found;
++}
++
++/** Compares two snapshot dates: per person in list order, <name> <then> <now> — `then` from the snapshot for the
++ *  from-date, `now` from the snapshot for the to-date, or the person's due-total now when the to-date is blank. */
++function SnapshotCompare({ sheetId }: { sheetId: string; user: string }) {
++  const [from, setFrom] = useState('');
++  const [to, setTo] = useState('');
++  const [compared, setCompared] = useState<{ from: string; to: string } | null>(null);
++  const snapshots = useSnapshots(sheetId);
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const cap = useCap(sheetId);
++  const all = snapshots.data ?? [];
++
++  const compare = () => {
++    setCompared({ from: from.trim(), to: to.trim() });
++    void snapshots.refetch();
++  };
++
++  return (
++    <section>
++      <h3>Compare snapshots</h3>
++      <input type="date" data-testid="snapshot-from" value={from} onChange={(e) => setFrom(e.target.value)} />
++      <input type="date" data-testid="snapshot-to" value={to} onChange={(e) => setTo(e.target.value)} />
++      <button type="button" data-testid="snapshot-compare" onClick={compare}>
++        Compare
++      </button>
++      {compared && (
++        <ul>
++          {people.map((p) => {
++            const then = snapshotOn(all, p.id, compared.from);
++            const now = compared.to
++              ? snapshotOn(all, p.id, compared.to)
++              : personDueTotal(p, claims, rates, today, floor, late, cap);
++            return (
++              <li key={p.id} data-testid="snapshot-line" style={{ whiteSpace: 'pre' }}>
++                {`${p.name} ${then} ${now}`}
++              </li>
++            );
++          })}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 24.5, Component: SnapshotCompare });
