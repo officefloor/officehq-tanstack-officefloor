@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** For every plan on the sheet, in the order they were added, make a DRAFT claim of the plan's amount, dated that day
- *  with an empty note, for every plan date (the start, then every N days) up to the plan's end and the sheet's today
+ *  with an empty note, for every plan date (the start, then every N days; or a monthly plan's day in each month) up to the plan's end and the sheet's today
  *  that the plan has made none for yet. Each is added as the claim form adds one — its CLAIM_ADDED line and then how
  *  the sheet's figures moved over it — and a date the claim form would refuse (its rules, or after the person's
  *  retirement date) is skipped, to be tried again next time. A closed period does not stop a plan's claim. */
@@ -41,8 +41,7 @@ public class GeneratePlanClaims {
             if (person == null || today == null) {
                 continue;
             }
-            for (LocalDate date = plan.start(); !date.isAfter(plan.end()) && !date.isAfter(today);
-                    date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.dates(today)) {
                 if (plans.made(plan.id(), date)) {
                     continue;
                 }

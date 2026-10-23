@@ -9,7 +9,7 @@ public class AuditPlanAdded {
     public void audit(@Val PlanInput input, @Val Person person, @Val Plan plan, Audit audit) {
         PlanResponse shown = PlanResponse.from(plan);
         audit.record("PLAN_ADDED sheet=" + plan.sheetId() + " by=" + input.user() + " name=" + person.name()
-                + " amount=" + shown.amount() + " start=" + shown.start() + " every=" + shown.every()
+                + " amount=" + shown.amount() + " start=" + shown.start() + (shown.day() != null ? " day=" + shown.day() : " every=" + shown.every())
                 + " end=" + shown.end());
     }
 }

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: the amount is a number, not below 0.00, with up to
  *  two decimals; the start and end are real yyyy-mm-dd dates, the end not before the start; every is a whole number
- *  of days, at least 1. */
+ *  of days, at least 1 — or, for a monthly plan instead, the day of the month is a whole number from 1 to 31. */
 public class ValidatePlan {
     public void validate(@RequestBody PlanRequest request, Out<PlanInput> body) throws InvalidPlanException {
         if (request == null || request.user() == null || request.user().isBlank()) {
@@ -20,14 +20,28 @@ public class ValidatePlan {
         }
         LocalDate start = date(request.start(), "start");
         String every = request.every() == null ? "" : request.every().trim();
-        if (!every.matches("\\d{1,9}") || Integer.parseInt(every) < 1) {
-            throw new InvalidPlanException("Every must be a whole number of days, at least 1.");
+        String day = request.day() == null ? "" : request.day().trim();
+        Integer everyDays = null;
+        Integer dayOfMonth = null;
+        if (!day.isEmpty()) {
+            if (!every.isEmpty()) {
+                throw new InvalidPlanException("Give either every N days or a day of the month, not both.");
+            }
+            if (!day.matches("\\d{1,2}") || Integer.parseInt(day) < 1 || Integer.parseInt(day) > 31) {
+                throw new InvalidPlanException("The day of the month must be a whole number from 1 to 31.");
+            }
+            dayOfMonth = Integer.parseInt(day);
+        } else {
+            if (!every.matches("\\d{1,9}") || Integer.parseInt(every) < 1) {
+                throw new InvalidPlanException("Every must be a whole number of days, at least 1.");
+            }
+            everyDays = Integer.parseInt(every);
         }
         LocalDate end = date(request.end(), "end");
         if (end.isBefore(start)) {
             throw new InvalidPlanException("The end may not be before the start.");
         }
-        body.set(new PlanInput(request.user().trim(), new BigDecimal(amount).setScale(2), start, Integer.parseInt(every),
+        body.set(new PlanInput(request.user().trim(), new BigDecimal(amount).setScale(2), start, everyDays, dayOfMonth,
                 end));
     }
 
