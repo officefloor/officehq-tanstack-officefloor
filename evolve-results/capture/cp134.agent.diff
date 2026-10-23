@@ -1,0 +1,165 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 050044e..5ff9ad6 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -9,6 +9,7 @@ import { GRADES, peopleKey, useCloseEditor, useEditingPerson, usePeople, useShow
+ import type { Person } from './people';
+ import { claimsKey } from '../claims/claims';
+ import { useSheetToday } from '../sheet/sheet';
++import { SORT_KEYS, useSortBy, useSortedPeople } from './sort';
+ 
+ /** One form that adds a person, or edits the one whose editor is open (filled with their values). An added
+  *  person's grade applies from the beginning of time; an edit records the grade from its from-date (the sheet's
+@@ -329,15 +330,16 @@ function QuickAddBar({ sheetId, user }: { sheetId: string; user: string }) {
+   );
+ }
+ 
+-/** The sheet's people in list order, each with their name and grade. Retired people have no
+- *  row unless "show retired" is on. */
++/** The sheet's people, in list order unless this user's screen sorts them otherwise, each with their name and
++ *  grade. Retired people have no row unless "show retired" is on. */
+ function People({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
+   const [editingId, setEditing] = useEditingPerson();
+   const editing = people.data?.find((p) => String(p.id) === editingId);
+   const [showRetired, setShowRetired] = useShowRetired();
+   const [carried, setCarried] = useState('');
+-  const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
++  const [sortBy, setSortBy] = useSortBy();
++  const listed = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
+ 
+   return (
+     <section data-testid="people">
+@@ -354,6 +356,16 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
+           onChange={(e) => setShowRetired(e.target.checked || undefined)}
+         />{' '}
+         Show retired
++      </label>{' '}
++      <label>
++        Sort by{' '}
++        <select data-testid="sort-by" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
++          {SORT_KEYS.map((k) => (
++            <option key={k} value={k}>
++              {k}
++            </option>
++          ))}
++        </select>
+       </label>
+       <table>
+         <tbody>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 2d2d653..af9d72d 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -52,12 +52,15 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ 
+ export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
+ 
++/** The query of the sheet's people, in list order (by their position; new people go to the end). */
++export const peopleQuery = (sheetId: string) => ({
++  queryKey: peopleKey(sheetId),
++  queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
++});
++
+ /** The sheet's people, in list order (by their position; new people go to the end). */
+ export function usePeople(sheetId: string) {
+-  return useQuery({
+-    queryKey: peopleKey(sheetId),
+-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
+-  });
++  return useQuery(peopleQuery(sheetId));
+ }
+ 
+ /** The id of the person whose editor is open ('' when the form adds a new person). */
+diff --git a/src/main/frontend/features/people/sort.ts b/src/main/frontend/features/people/sort.ts
+new file mode 100644
+index 0000000..fe226e3
+--- /dev/null
++++ b/src/main/frontend/features/people/sort.ts
+@@ -0,0 +1,52 @@
++import { useClaims } from '../claims/claims';
++import { capped, personDueSum, toCents, useRates } from '../rates/rates';
++import { useCap, useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { gradeOn, type Person } from './people';
++
++export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
++export type SortKey = (typeof SORT_KEYS)[number];
++
++/** What this user's screen sorts the people list by ('added', list order, unless chosen). It belongs to the
++ *  screen, not the sheet: other users are unaffected, and loading a sheet leaves it as it is. */
++export function useSortBy(): [SortKey, (key: SortKey) => void] {
++  const [raw, set] = useSearchParam('sortBy', asString);
++  const key = (SORT_KEYS as readonly string[]).includes(raw) ? (raw as SortKey) : 'added';
++  return [key, (k) => set(k === 'added' ? undefined : k)];
++}
++
++/** A name as names are compared: without regard to case, ignoring surrounding spaces. */
++const nameKey = (name: string) => name.trim().toLowerCase();
++
++/** The people (given in list order) as the screen shows them, sorted by the screen's key: by name as names are
++ *  compared, by the grade in force, or by due-total as shown (n/a last); equal keys keep list order. Only what the
++ *  screen shows changes: positions and everything done in list order are unaffected. */
++export function useSortedPeople(sheetId: string, people: Person[]): Person[] {
++  const [sortBy] = useSortBy();
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const cap = useCap(sheetId);
++  if (sortBy === 'added') return people;
++  const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
++  const keyed = people.map((p, i) => {
++    if (sortBy === 'name') return { p, i, key: nameKey(p.name) };
++    if (sortBy === 'grade') return { p, i, key: (today !== '' && gradeOn(p, today)) || p.grade };
++    const due = capped(personDueSum(p, claims, rates, today, floor, late), cap);
++    return { p, i, key: due, cents: due === 'n/a' ? null : toCents(due) };
++  });
++  return keyed
++    .sort((x, y) => {
++      if (sortBy === 'due-total') {
++        const a = 'cents' in x ? x.cents : null;
++        const b = 'cents' in y ? y.cents : null;
++        const c = a === null ? (b === null ? 0 : 1) : b === null ? -1 : a < b ? -1 : a > b ? 1 : 0;
++        return c || x.i - y.i;
++      }
++      return compare(x.key, y.key) || x.i - y.i;
++    })
++    .map((k) => k.p);
++}
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 5794e03..f824f84 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -54,7 +54,7 @@ export function useRateFor(sheetId: string, grade: string, date: string): string
+ }
+ 
+ /** A two-decimal amount (may be negative) as whole cents, exactly. */
+-function toCents(amount: string): bigint {
++export function toCents(amount: string): bigint {
+   const trimmed = amount.trim();
+   const negative = trimmed.startsWith('-');
+   const [whole, frac = ''] = (negative ? trimmed.slice(1) : trimmed).split('.');
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+index 530ab01..5979b02 100644
+--- a/src/main/frontend/features/sheet/SheetPicker.tsx
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { peopleQuery } from '../people/people';
+ import { useSheetId } from '../session/session';
+ 
+ import type { Sheet } from './sheet';
+@@ -19,6 +20,8 @@ export function SheetPicker({ user }: { user: string }) {
+     mutationFn: (id: string) => putJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`, { user }),
+     onSuccess: async (sheet) => {
+       await queryClient.invalidateQueries({ queryKey: ['sheet', sheet.id] });
++      // The sheet shows as loaded once its people are read, so its list is never seen empty while they come.
++      await queryClient.fetchQuery(peopleQuery(sheet.id)).catch(() => undefined);
+       setSheetId(sheet.id);
+     },
+     onSettled: once.done,
