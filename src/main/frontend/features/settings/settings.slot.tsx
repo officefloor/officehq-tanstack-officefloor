@@ -10,6 +10,7 @@ import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, GRADES, PERM_ACTIONS, s
 
 const LIMIT = /^\d+(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
+const WHOLE = /^-?\d{1,6}$/;
 const PCT = /^\d{1,3}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
@@ -25,7 +26,7 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string; gradeClerkLimit?: Record<string, string> };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string };
 
 /** The sheet's settings — the clerk limit and the floor in force, and the form that saves them (a blank clerk
  *  limit: no limit). A clerk may settle only claims whose due is at or below the limit; the server enforces it.
@@ -81,6 +82,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const currentAlertThreshold = settings.data?.alertThreshold ?? '';
   const currentEscalateAfter = settings.data?.escalateAfter ?? '';
   const currentReviewSla = settings.data?.reviewSla ?? '';
+  const currentScoreMid = settings.data?.scoreMid ?? '';
+  const currentScoreHigh = settings.data?.scoreHigh ?? '';
   const currentProofKinds = settings.data?.proofKinds ?? '';
   const currentDefaultGrade = settings.data?.defaultGrade ?? '';
   const currentRounding = settings.data?.rounding ?? '';
@@ -104,6 +107,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
   const [typedAlertThreshold, setTypedAlertThreshold] = useState<string | null>(null);
   const [typedEscalateAfter, setTypedEscalateAfter] = useState<string | null>(null);
   const [typedReviewSla, setTypedReviewSla] = useState<string | null>(null);
+  const [typedScoreMid, setTypedScoreMid] = useState<string | null>(null);
+  const [typedScoreHigh, setTypedScoreHigh] = useState<string | null>(null);
   const [typedProofKinds, setTypedProofKinds] = useState<string | null>(null);
   const [typedDefaultGrade, setTypedDefaultGrade] = useState<string | null>(null);
   const [typedParent, setTypedParent] = useState<string | null>(null);
@@ -146,6 +151,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
       setTypedAlertThreshold(null);
       setTypedEscalateAfter(null);
       setTypedReviewSla(null);
+      setTypedScoreMid(null);
+      setTypedScoreHigh(null);
       setTypedProofKinds(null);
       setTypedDefaultGrade(null);
       setTypedRounding(null);
@@ -296,6 +303,22 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         return;
       }
       changes.reviewSla = reviewSla;
+    }
+    if (typedScoreMid !== null) {
+      const scoreMid = typedScoreMid.trim();
+      if (scoreMid !== '' && !WHOLE.test(scoreMid)) {
+        setError('The mid score threshold must be a whole number, or blank for none.');
+        return;
+      }
+      changes.scoreMid = scoreMid;
+    }
+    if (typedScoreHigh !== null) {
+      const scoreHigh = typedScoreHigh.trim();
+      if (scoreHigh !== '' && !WHOLE.test(scoreHigh)) {
+        setError('The high score threshold must be a whole number, or blank for none.');
+        return;
+      }
+      changes.scoreHigh = scoreHigh;
     }
     if (typedProofKinds !== null) {
       const proofKinds = typedProofKinds.trim();
@@ -489,6 +512,8 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
         Alert threshold <strong data-testid="setting-alert-threshold-current">{currentAlertThreshold}</strong>{' '}
         Escalate after <strong data-testid="setting-escalate-after-current">{currentEscalateAfter}</strong>{' '}
         Review SLA <strong data-testid="setting-review-sla-current">{currentReviewSla}</strong>{' '}
+        Score mid <strong data-testid="setting-score-mid-current">{currentScoreMid}</strong>{' '}
+        Score high <strong data-testid="setting-score-high-current">{currentScoreHigh}</strong>{' '}
         Proof kinds <strong data-testid="setting-proof-kinds-current">{currentProofKinds}</strong>{' '}
         Default grade <strong data-testid="setting-default-grade-current">{currentDefaultGrade}</strong>{' '}
         Rounding <strong data-testid="setting-rounding-current">{currentRounding}</strong>{' '}
@@ -749,6 +774,28 @@ function SettingsSection({ sheetId, user }: { sheetId: string; user: string }) {
             onFocus={() => setTypedReviewSla((v) => v ?? currentReviewSla)}
           />{' '}
           days
+        </label>{' '}
+        <label>
+          Score mid{' '}
+          <input
+            data-testid="setting-score-mid"
+            placeholder="none"
+            value={typedScoreMid ?? currentScoreMid}
+            onInput={typed(setTypedScoreMid)}
+            onChange={typed(setTypedScoreMid)}
+            onFocus={() => setTypedScoreMid((v) => v ?? currentScoreMid)}
+          />
+        </label>{' '}
+        <label>
+          Score high{' '}
+          <input
+            data-testid="setting-score-high"
+            placeholder="none"
+            value={typedScoreHigh ?? currentScoreHigh}
+            onInput={typed(setTypedScoreHigh)}
+            onChange={typed(setTypedScoreHigh)}
+            onFocus={() => setTypedScoreHigh((v) => v ?? currentScoreHigh)}
+          />
         </label>{' '}
         <label>
           Proof kinds{' '}

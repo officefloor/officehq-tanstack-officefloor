@@ -93,6 +93,14 @@ public class ValidateSettings {
         if (reviewSla != null && !reviewSla.isEmpty() && !reviewSla.matches("\\d{1,4}")) {
             throw new InvalidSettingException("The review SLA must be a whole number of days, 0 or more, or blank for none.");
         }
+        String scoreMid = request.scoreMid() == null ? null : request.scoreMid().trim();
+        if (scoreMid != null && !scoreMid.isEmpty() && !scoreMid.matches("-?\\d{1,6}")) {
+            throw new InvalidSettingException("The mid score threshold must be a whole number, or blank for none.");
+        }
+        String scoreHigh = request.scoreHigh() == null ? null : request.scoreHigh().trim();
+        if (scoreHigh != null && !scoreHigh.isEmpty() && !scoreHigh.matches("-?\\d{1,6}")) {
+            throw new InvalidSettingException("The high score threshold must be a whole number, or blank for none.");
+        }
         String proofKinds = request.proofKinds() == null ? null : proofKinds(request.proofKinds());
         String defaultGrade = request.defaultGrade() == null ? null : request.defaultGrade().trim();
         if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
@@ -271,7 +279,9 @@ public class ValidateSettings {
                 reviewSla != null, reviewSla == null || reviewSla.isEmpty() ? null : Integer.valueOf(reviewSla),
                 proofKinds != null, proofKinds == null || proofKinds.isEmpty() ? null : proofKinds,
                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade,
-                gradeClerkLimit));
+                gradeClerkLimit,
+                scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.valueOf(scoreMid),
+                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.valueOf(scoreHigh)));
     }
 
     /** The proof kinds as stored: each listed kind trimmed, in the order given, without repeats, joined by commas ('':

@@ -86,6 +86,12 @@ public class SaveSettings {
         if (input.setsDefaultGrade()) {
             repository.setDefaultGrade(id, input.defaultGrade());
         }
+        if (input.setsScoreMid()) {
+            repository.setScoreMid(id, input.scoreMid());
+        }
+        if (input.setsScoreHigh()) {
+            repository.setScoreHigh(id, input.scoreHigh());
+        }
         input.perms().forEach((action, roles) -> repository.setPermission(id, action, roles));
         settings.set(repository.of(id));
     }

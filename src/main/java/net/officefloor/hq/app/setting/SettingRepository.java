@@ -77,7 +77,7 @@ public class SettingRepository {
                 entryDate(sheetId), gradeGrace, gradeProofThreshold, pot(sheetId), parent(sheetId),
                 fiscalStartMonth(sheetId), alertThreshold(sheetId), history.roundingOn(today),
                 history.reviewThresholdOn(today), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                defaultGrade(sheetId), gradeClerkLimit);
+                defaultGrade(sheetId), gradeClerkLimit, scoreMid(sheetId), scoreHigh(sheetId));
     }
 
     /** Every value of the sheet's dated settings, by key and from-date. */
@@ -256,6 +256,26 @@ public class SettingRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's mid score threshold: null when blank (none). */
+    public Integer scoreMid(String sheetId) {
+        return jdbc.query("SELECT score_mid FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, Integer.class) : null, sheetId);
+    }
+
+    public void setScoreMid(String sheetId, Integer threshold) {
+        jdbc.update("UPDATE sheet SET score_mid = ? WHERE id = ?", threshold, sheetId);
+    }
+
+    /** The sheet's high score threshold: null when blank (none). */
+    public Integer scoreHigh(String sheetId) {
+        return jdbc.query("SELECT score_high FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, Integer.class) : null, sheetId);
+    }
+
+    public void setScoreHigh(String sheetId, Integer threshold) {
+        jdbc.update("UPDATE sheet SET score_high = ? WHERE id = ?", threshold, sheetId);
     }
 
     /** The sheet's proof kinds, comma separated: null when blank (none). While set, a claim above the proof threshold

@@ -38,13 +38,14 @@ import { useSheetToday } from '../sheet/sheet';
  *  approved (the server refuses it). `defaultGrade` is the default grade (A, B or C; not dated; '' when blank, which
  *  means A): the quick-add bar gives a new person it, and an import line with a blank grade uses it.
  *  `gradeClerkLimit` is each grade's own clerk limit with two decimals ('' when the grade has none: the sheet's
- *  applies), dated (keys clerk-limit-A/B/C). */
+ *  applies), dated (keys clerk-limit-A/B/C). `scoreMid` and `scoreHigh` are the score thresholds, whole numbers (not
+ *  dated; '' when none): while both are set, each person shows a band (see scoreBand). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string;
   periodNumberingFrom: string; gradeTerms: Record<string, string>; cap: string; proofThreshold?: string; noteThreshold?: string; dated?: Record<string, Dated[]>;
   perms?: Record<string, string>; graceDays?: string; entryDate?: string; gradeGrace?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>; pot?: string; parent?: string; fiscalStartMonth?: string; alertThreshold?: string;
   rounding?: string; reviewThreshold?: string; escalateAfter?: string; reviewSla?: string; proofKinds?: string;
-  defaultGrade?: string; gradeClerkLimit?: Record<string, string> };
+  defaultGrade?: string; gradeClerkLimit?: Record<string, string>; scoreMid?: string; scoreHigh?: string };
 
 /** A dated setting's value ('' when blank) in force from its from-date (yyyy-mm-dd). */
 export type Dated = { from: string; value: string };
@@ -115,6 +116,12 @@ export function useFloor(sheetId: string): DatedValue {
 /** The sheet's review SLA in days ('' when there is none, or while the settings load). */
 export function useReviewSla(sheetId: string): string {
   return useSettings(sheetId).data?.reviewSla ?? '';
+}
+
+/** The sheet's score thresholds, mid and high ('' when there is none, or while the settings load). */
+export function useScoreThresholds(sheetId: string): { mid: string; high: string } {
+  const data = useSettings(sheetId).data;
+  return { mid: data?.scoreMid ?? '', high: data?.scoreHigh ?? '' };
 }
 
 /** The sheet's cap in force ('' when there is none, or while the settings load). */

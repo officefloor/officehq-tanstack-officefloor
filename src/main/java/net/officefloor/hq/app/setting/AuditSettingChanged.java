@@ -84,6 +84,12 @@ public class AuditSettingChanged {
         if (input.setsDefaultGrade()) {
             audit.record(head + "default-grade value=" + (input.defaultGrade() != null ? input.defaultGrade() : ""));
         }
+        if (input.setsScoreMid()) {
+            audit.record(head + "score-mid value=" + (input.scoreMid() != null ? input.scoreMid() : ""));
+        }
+        if (input.setsScoreHigh()) {
+            audit.record(head + "score-high value=" + (input.scoreHigh() != null ? input.scoreHigh() : ""));
+        }
         input.perms().forEach((action, roles) -> audit.record(head + "perm-" + action + " value=" + roles));
     }
 

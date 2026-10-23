@@ -34,7 +34,7 @@ public class SheetCloner {
 
     public void copy(String from, String to, String user) {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, "
-                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade, cloned_from) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade, id "
+                + "pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, cloned_from) SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, parent, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, id "
                 + "FROM sheet WHERE id = ?", to, user, from);
         copyRows("rate", "grade, pct, from_date, to_date, version, after_claim", null, from, to);
         copyRows("rate_log", "grade, pct, from_date, to_date, made_on, version, after_claim", "id", from, to);
