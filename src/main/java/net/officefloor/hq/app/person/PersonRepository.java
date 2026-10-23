@@ -312,7 +312,7 @@ public class PersonRepository {
         jdbc.update("UPDATE period_person_opening SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
                 sheetId, from.id());
         joinStatements(from, into);
-        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement", "person_terms",
+        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_flag", "person_statement", "person_terms",
                 "person_retire_log", "person_retirement")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.id());
         }
@@ -344,7 +344,7 @@ public class PersonRepository {
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?",
                 into.sheetId(), into.id(), sheetId, person.id());
         joinStatements(person, into);
-        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement", "person_terms",
+        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_flag", "person_statement", "person_terms",
                 "person_retire_log", "person_retirement", "period_person_total", "period_person_opening")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }
@@ -357,7 +357,7 @@ public class PersonRepository {
      *  periods are dropped; they arrive added on the other sheet's today. */
     public void transfer(Person person, String toSheet) {
         String sheetId = person.sheetId();
-        for (String table : List.of("person_hold", "person_retire_log", "person_retirement",
+        for (String table : List.of("person_hold", "person_flag", "person_retire_log", "person_retirement",
                 "period_person_total", "period_person_opening")) {
             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
         }

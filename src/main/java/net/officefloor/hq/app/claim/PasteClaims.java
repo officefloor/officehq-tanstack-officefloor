@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.flag.FlagRepository;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.CappedPeriodException;
 import net.officefloor.hq.app.period.ClosedPeriodException;
@@ -36,7 +37,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class PasteClaims {
     public void paste(@PathVariable("sheetId") String sheetId, @Val PasteInput input, PersonRepository people,
             SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods, ClaimRepository claims,
-            ClaimLogRepository log, ClaimLineRepository lines, RateRepository rates, RoleRepository roles, Rollups rollups,
+            ClaimLogRepository log, ClaimLineRepository lines, RateRepository rates, RoleRepository roles, FlagRepository flags, Rollups rollups,
             Audit audit, PlatformTransactionManager transactions, Out<PasteResponse> result)
             throws InvalidClaimException {
         String sheet = sheetId.trim();
@@ -71,7 +72,7 @@ public class PasteClaims {
                     PasteLine line = input.lines().get(i);
                     try {
                         paste(sheet, input.user(), line.claim(), owners.get(i), people, sheets, settings, holidays,
-                                periods, claims, log, lines, rates, roles, rollups, audit);
+                                periods, claims, log, lines, rates, roles, flags, rollups, audit);
                     } catch (InvalidClaimException | ClaimStatusNotAllowedException | ClosedPeriodException
                             | CappedPeriodException e) {
                         status.setRollbackOnly();
@@ -94,7 +95,7 @@ public class PasteClaims {
     private static void paste(String sheet, String user, ClaimInput line, Person person, PersonRepository people,
             SheetRepository sheets, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods,
             ClaimRepository claims, ClaimLogRepository log, ClaimLineRepository lines, RateRepository rates,
-            RoleRepository roles, Rollups rollups, Audit audit)
+            RoleRepository roles, FlagRepository flags, Rollups rollups, Audit audit)
             throws InvalidClaimException, ClaimStatusNotAllowedException, ClosedPeriodException, CappedPeriodException {
         var date = line.date() != null ? line.date() : sheets.newClaimDate(sheet);
         String note = line.note() == null ? "" : line.note();
@@ -144,6 +145,7 @@ public class PasteClaims {
         if (capped != null) {
             throw new CappedPeriodException(capped);
         }
+        RefuseFlaggedOpen.refuse(claim, user, roles, flags);
         ClaimStatusInput open = new ClaimStatusInput(user, "open", ClaimStatus.OPEN, null);
         ClaimResponse saved = ClaimStatusChange.save(open, claim, claims, people, rates, roles, settings, sheets, log);
         ClaimStatusChange.audit(open, claim, saved, people, null, audit);

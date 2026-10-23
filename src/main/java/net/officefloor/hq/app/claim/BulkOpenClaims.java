@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.flag.FlagRepository;
 import net.officefloor.hq.app.period.PeriodCap;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
@@ -19,12 +20,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Open each selected claim that can be opened, in list order (people in list order, newest
  *  claim first within a person), giving each the sheet's next number. Each is opened as a single open would be,
  *  with its OPEN line in its status log, its CLAIM_OPENED line and then how the sheet's figures moved over it. A selected claim that cannot be
- *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, dated in a closed period, its person already at its period's cap of OPEN or PENDING claims, or with an empty note and a due above the note threshold in force on its date) is left as it is and counted as refused. One whose due is above the review threshold in force on
+ *  opened (the sheet is archived, the user's role may not open, not on the sheet, not a DRAFT, dated in a closed period, its person already at its period's cap of OPEN or PENDING claims, or with an empty note and a due above the note threshold in force on its date, or its person flagged in force and the user not a steward) is left as it is and counted as refused. One whose due is above the review threshold in force on
  *  its date goes to REVIEW instead, unnumbered, with a CLAIM_REVIEW line, and is counted as opened. */
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimRepository claims, ClaimLogRepository log,
             PersonRepository people, PeriodRepository periods, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
-            Rollups rollups, Audit audit, Out<BulkOpenResponse> result) {
+            FlagRepository flags, Rollups rollups, Audit audit, Out<BulkOpenResponse> result) {
         String sheet = sheetId.trim();
         periods.lockSheet(sheet);
         int opened = 0;
@@ -42,7 +43,8 @@ public class BulkOpenClaims {
             for (Claim claim : theirs) {
                 if (claim.status().canBecome(ClaimStatus.OPEN) && periods.closedOn(sheet, claim.dueBy()) == null
                         && PeriodCap.reached(claim, periods, claims) == null
-                        && ClaimStatusChange.noteRequired(claim, claims, people, rates, settings, sheets) == null) {
+                        && ClaimStatusChange.noteRequired(claim, claims, people, rates, settings, sheets) == null
+                        && !flagged(claim, input.user(), roles, flags)) {
                     Rollup before = rollups.take(sheet);
                     boolean review = ClaimStatusChange.reviewRequired(claim, claims, people, rates, settings, sheets);
                     String number = review ? null : claims.nextNumber(sheet, claim.dueBy());
@@ -58,5 +60,14 @@ public class BulkOpenClaims {
             }
         }
         result.set(new BulkOpenResponse(opened, input.claimIds().size() - opened));
+    }
+
+    private static boolean flagged(Claim claim, String user, RoleRepository roles, FlagRepository flags) {
+        try {
+            RefuseFlaggedOpen.refuse(claim, user, roles, flags);
+            return false;
+        } catch (ClaimStatusNotAllowedException e) {
+            return true;
+        }
     }
 }
