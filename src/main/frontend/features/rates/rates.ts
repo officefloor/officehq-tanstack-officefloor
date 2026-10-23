@@ -272,14 +272,14 @@ export function roundsUp(claim: Claim, late: Late): boolean {
 }
 
 /** A claim's due: the one fixed when it was settled (its late charge frozen in), else the greater of the sheet's floor
- *  in force on its date and its figure — the one its person's last statement bound it to, n/a included (not while it
- *  is PENDING: then it is live), else live on its amount at the rate — with the late charge on that figure added. A
+ *  in force on its date and its figure — the one its person's last statement bound it to, n/a included (an OPEN or
+ *  PENDING one alike), else live on its amount at the rate — with the late charge on that figure added. A
  *  correction (a negative amount) has no floor and no late charge. */
 export function claimDue(claim: Claim, rate: string | undefined, floor: DatedValue, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
   const correction = toCents(claim.amount) < 0n;
   const live = dueOn(claim.amount, rate, roundsUp(claim, late));
-  const bound = claim.status === 'PENDING' || !claim.stated ? null : claim.statedDue ?? 'n/a';
+  const bound = !claim.stated ? null : claim.statedDue ?? 'n/a';
   const figure = bound ?? live;
   if (correction || figure === 'n/a') return figure;
   return floored(fromCents(toCents(figure) + toCents(lateCharge(claim, figure, late))), floor(claim.date));

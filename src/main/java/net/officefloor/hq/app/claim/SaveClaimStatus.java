@@ -17,8 +17,8 @@ import net.officefloor.plugin.variable.Val;
  *  considered; no threshold, or a due of n/a, is within it). When a clerk (any user not made a steward)
  *  settles a claim whose due (as shown: bound by a statement, else live, plus any late charge) is above the sheet's
  *  clerk limit, it becomes PENDING instead (a due of n/a, or no limit, is within it). A steward other than the
- *  user who opened it or last edited it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — live, a
- *  PENDING claim is not bound by a statement — frozen in) or rejects it (OPEN again, bound again by the statement
+ *  user who opened it or last edited it approves a PENDING claim (it becomes SETTLED, its due as its row shows it then — the figure a
+ *  statement bound it to, else live — frozen in) or rejects it (OPEN again, bound again by the statement
  *  that bound it). A steward re-settles a SETTLED claim: it is frozen again at the figure it would have today as an
  *  OPEN claim bound by no statement (today's rates, grades, floor and late charge). A steward voids a SETTLED claim within 7 days of its settlement (its SETTLED date in the status log, by the sheet's today): it keeps its number and its frozen figure, which leaves every total. The new status is added to the claim's status log. A claim settled one at a time is settled by no batch. The rules are in {@link ClaimStatusChange}. */
 public class SaveClaimStatus {

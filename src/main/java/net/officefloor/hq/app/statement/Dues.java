@@ -16,14 +16,14 @@ public final class Dues {
     }
 
     /** A claim's figure: the due fixed when it was settled, else the one its last statement bound it to, n/a
-     *  included (not while it is PENDING: then it is live), else live: its amount times its person's rate in force on
+     *  included (an OPEN or PENDING one alike), else live: its amount times its person's rate in force on
      *  its date for their grade then, divided by 100, rounded to two decimals as the claim rounds (see Rounding); null
      *  (n/a) when no rate applies. The floor is not in it: it is applied last (see shown). */
     public static BigDecimal figure(Claim claim, Grades grades, Rates rates, Rounding rounding) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
-        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
+        if (claim.stated()) {
             return claim.statedDue();
         }
         return live(claim, grades, rates, rounding);
