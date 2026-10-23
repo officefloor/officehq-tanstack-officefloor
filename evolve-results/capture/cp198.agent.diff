@@ -1,0 +1,55 @@
+diff --git a/src/main/frontend/features/claims/dups.slot.tsx b/src/main/frontend/features/claims/dups.slot.tsx
+new file mode 100644
+index 0000000..bda6ea1
+--- /dev/null
++++ b/src/main/frontend/features/claims/dups.slot.tsx
+@@ -0,0 +1,49 @@
++import { useState } from 'react';
++import { SheetBody } from '../../slots/defs/sheet';
++import { usePeople } from '../people/people';
++import type { Person } from '../people/people';
++import { useClaims } from './claims';
++import type { Claim } from './claims';
++
++type Dup = { name: string; date: string; amount: string; count: number };
++
++/** The duplicate claims: for each person, date and amount with two or more claims (VOID and DELETED left out),
++ *  people in list order, then by date, then by amount. */
++function duplicates(people: Person[], claims: Claim[]): Dup[] {
++  const out: Dup[] = [];
++  for (const p of people) {
++    const groups = new Map<string, Dup>();
++    for (const c of claims) {
++      if (c.personId !== p.id || c.status === 'VOID' || c.status === 'DELETED') continue;
++      const key = `${c.date} ${c.amount}`;
++      const g = groups.get(key);
++      if (g) g.count++;
++      else groups.set(key, { name: p.name, date: c.date, amount: c.amount, count: 1 });
++    }
++    out.push(...[...groups.values()].filter((g) => g.count >= 2)
++      .sort((a, b) => a.date.localeCompare(b.date) || Number(a.amount) - Number(b.amount)));
++  }
++  return out;
++}
++
++function SheetDups({ sheetId }: { sheetId: string; user: string }) {
++  const [shown, setShown] = useState(false);
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  return (
++    <section>
++      <button type="button" data-testid="dups-show" onClick={() => setShown(true)}>Show duplicate claims</button>
++      {shown && (
++        <ul>
++          {duplicates(people, claims).map((d) => (
++            <li key={`${d.name} ${d.date} ${d.amount}`} data-testid="dup-line">
++              {d.name} {d.date} {d.amount} x{d.count}
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 22.6, Component: SheetDups });
