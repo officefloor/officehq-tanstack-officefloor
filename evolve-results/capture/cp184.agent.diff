@@ -1,0 +1,145 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index b2e3e4b..acad523 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -10,7 +10,7 @@ import { useFloor, useLate, useReviewSla, useSettings } from '../settings/settin
+ import { claimDue, rateOn, useRates } from '../rates/rates';
+ import { periodOf, usePeriods } from '../periods/periods';
+ import { useSheetToday } from '../sheet/sheet';
+-import { claimsKey, dueBy, PROOF_KINDS, live, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
++import { claimsKey, dueBy, PROOF_KINDS, claimedLive, overdue, reviewLate, sumAmounts, useClaims, useEditingClaim } from './claims';
+ import type { Claim } from './claims';
+ import { setSelected, useSelectedClaims } from './selection';
+ import { setLockRefused, useLockRefused } from './lock';
+@@ -820,7 +820,7 @@ function PersonClaims({ sheetId, user, person }: { sheetId: string; user: string
+ 
+   return (
+     <>
+-      {showClaimed && <td data-testid="person-claimed">{sumAmounts(live(claims, [person], today))}</td>}
++      {showClaimed && <td data-testid="person-claimed">{sumAmounts(claimedLive(claims, [person], today))}</td>}
+       <td>
+         {/* Keyed by the claim being edited (and each add), so the form fills with its values or starts blank. */}
+         <ClaimForm
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 16167b3..c828d39 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -80,6 +80,13 @@ export function live(claims: Claim[], people: Person[], today: string): Claim[]
+   return claims.filter((c) => counts(c) && !leftOut(c, byId, today));
+ }
+ 
++/** The claims that count toward claimed among these on the sheet's today (yyyy-mm-dd): as live, except a hold (the
++ *  claim's own or its person's) does not take a claim out of claimed — only its due leaves the totals while held. */
++export function claimedLive(claims: Claim[], people: Person[], today: string): Claim[] {
++  const byId = new Map(people.map((p) => [p.id, p]));
++  return claims.filter((c) => counts(c) && !(!c.stated && unsettled(c) && retiredOn(byId.get(c.personId), today)));
++}
++
+ /** Whether a person is active on the sheet's today (yyyy-mm-dd; '' while loading: not active): they have an OPEN or
+  *  PENDING claim that counts in the live totals (see live) dated within the 30 days up to and including it. */
+ export function active(person: Person, claims: Claim[], today: string): boolean {
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index 44eb392..b4678dc 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -1,7 +1,7 @@
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { usePeople } from '../people/people';
+ import { useSheetToday } from '../sheet/sheet';
+-import { live, sumAmounts, useClaims } from './claims';
++import { claimedLive, sumAmounts, useClaims } from './claims';
+ 
+ /** The sheet's claimed total: every person's claimed added up. */
+ function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
+@@ -10,7 +10,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
+   const today = useSheetToday(sheetId);
+   return (
+     <p>
+-      Claimed total <strong data-testid="rollup-claimed-total">{sumAmounts(live(claims.data ?? [], people.data ?? [], today))}</strong>
++      Claimed total <strong data-testid="rollup-claimed-total">{sumAmounts(claimedLive(claims.data ?? [], people.data ?? [], today))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditClaimHoldRollup.java b/src/main/java/net/officefloor/hq/app/rollup/AuditClaimHoldRollup.java
+new file mode 100644
+index 0000000..e4b34de
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditClaimHoldRollup.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.hq.app.claim.ClaimHoldInput;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Record, after the change's own lines, how the sheet's figures moved over it. */
++public class AuditClaimHoldRollup {
++    public void audit(@PathVariable("sheetId") String sheetId, @Val ClaimHoldInput request, @Val Rollup before,
++            Rollups rollups) {
++        rollups.record(sheetId.trim(), request.user(), before);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+index d838765..fb20656 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+@@ -58,9 +58,9 @@ public class Rollups {
+         List<BigDecimal> overdues = new ArrayList<>();
+         for (Person p : people.list(sheetId)) {
+             List<Claim> theirs = all.stream().filter(c -> c.personId() == p.id()).toList();
+-            // claimed: the amounts of their claims that count, leaving out corrections of another claim
++            // claimed: the amounts of their claims that count toward claimed (a held one does), leaving out corrections of another claim
+             BigDecimal claimed = theirs.stream()
+-                    .filter(c -> Dues.counts(c, p.holds(), p.retiredFrom(), today) && c.corrects() == null)
++                    .filter(c -> Dues.countsClaimed(c, p.retiredFrom(), today) && c.corrects() == null)
+                     .map(Claim::amount).reduce(new BigDecimal("0.00"), BigDecimal::add);
+             BigDecimal due = Dues.capped(
+                     Dues.total(sheetId, theirs, p.grades(), p.holds(), p.retiredFrom(), today, rates, floor, late), cap);
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Dues.java b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+index bd3e3f0..92a87bc 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+@@ -67,6 +67,12 @@ public final class Dues {
+                 && !retiredOut(claim, retiredFrom, today);
+     }
+ 
++    /** Whether a claim counts toward claimed and the claimed-total: as it counts (see counts), except a hold (the
++     *  claim's own or its person's) does not take it out — only its due leaves the totals while held. */
++    public static boolean countsClaimed(Claim claim, LocalDate retiredFrom, LocalDate today) {
++        return claim.status().counts() && !claim.deferredOn(today) && !retiredOut(claim, retiredFrom, today);
++    }
++
+     /** Whether a claim leaves the live totals because its person is retired: the sheet's today is on or after their
+      *  retirement date (null: not retired) and it is OPEN or PENDING and not bound by a statement. */
+     private static boolean retiredOut(Claim claim, LocalDate retiredFrom, LocalDate today) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml
+index 2be0acc..d68f038 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml
+@@ -1,10 +1,14 @@
+-# Hold or release an OPEN or PENDING claim (a toggle): held, an OPEN one not bound by a statement counts in no live total, as a held person's claims do. A refused toggle (another status, unknown claim) writes nothing, not even an audit line.
++# Hold or release an OPEN or PENDING claim (a toggle): held, an OPEN one not bound by a statement counts in no due figure, as a held person's claims do, though its amount still counts in claimed and the claimed-total. A refused toggle (another status, unknown claim) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimHold
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaimHold
+@@ -13,6 +17,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimHold
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditClaimHoldRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
