@@ -1,0 +1,89 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index ebd6675..cf6bdfc 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -3,7 +3,7 @@ import { getJsonNow } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { STATUSES, type Claim } from '../claims/claims';
+ import { GRADES, gradeOn, type Person } from '../people/people';
+-import { personDueTotal, sheetDueTotal, sheetOverdueTotal, sumDue, type Rate } from '../rates/rates';
++import { overdueDues, personDueTotal, sumDue, trimmedSum, type Rate } from '../rates/rates';
+ import { floorOf, lateOf, type Settings } from '../settings/settings';
+ import { useAsOf, type Sheet } from '../sheet/sheet';
+ 
+@@ -17,11 +17,13 @@ function useNow<T>(sheetId: string, part: string, asOf = '') {
+   });
+ }
+ 
+-type Figures = { people: number; due: string; overdue: string; grades: Record<string, string>;
++/** The tree's figures gathered so far: per person (in sheet order) their names (name and aliases), due-total and
++ *  overdue-total, and the per-grade and per-status figures added up. */
++type Figures = { names: string[][]; dues: string[]; overdues: string[]; grades: Record<string, string>;
+   statuses: Record<string, number> };
+ 
+ const NONE: Figures = {
+-  people: 0, due: '0.00', overdue: '0.00',
++  names: [], dues: [], overdues: [],
+   grades: Object.fromEntries(GRADES.map((g) => [g, '0.00'])),
+   statuses: Object.fromEntries(STATUSES.map((s) => [s, 0])),
+ };
+@@ -48,9 +50,10 @@ function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number;
+   const floor = floorOf(settings);
+   const late = lateOf(settings, today, claims, people);
+   const next: Figures = {
+-    people: sum.people + people.length,
+-    due: sumDue([sum.due, sheetDueTotal(people, claims, rates, today, floor, late, settings?.cap ?? '')]),
+-    overdue: sumDue([sum.overdue, sheetOverdueTotal(people, claims, rates, late, floor)]),
++    names: [...sum.names, ...people.map((p) => [p.name, ...p.aliases])],
++    dues: [...sum.dues, ...people.map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? ''))],
++    overdues: [...sum.overdues, ...people.map((p) => sumDue(overdueDues(claims.filter((c) => c.personId === p.id), [p],
++      rates, late, floor)))],
+     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue([sum.grades[g],
+       ...people.filter((p) => p.retiredFrom === null && gradeOn(p, today) === g)
+         .map((p) => personDueTotal(p, claims, rates, today, floor, late, settings?.cap ?? ''))])])),
+@@ -60,12 +63,30 @@ function SheetFigures({ sheets, at, sum, asOf }: { sheets: string[]; at: number;
+   return <Accumulate sheets={sheets} at={at + 1} sum={next} asOf={asOf} />;
+ }
+ 
++/** A name as names are compared: without regard to case, ignoring surrounding spaces. */
++const nameKey = (name: string) => name.trim().toLowerCase();
++
++/** How many people there are, counting as one all whose names or aliases match (as names are compared), directly
++ *  or through others. */
++function distinctPeople(names: string[][]): number {
++  const parent = names.map((_, i) => i);
++  const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));
++  const owner = new Map<string, number>();
++  names.forEach((ns, i) => ns.forEach((n) => {
++    const key = nameKey(n);
++    const other = owner.get(key);
++    if (other === undefined) owner.set(key, i);
++    else parent[root(i)] = root(other);
++  }));
++  return names.filter((_, i) => root(i) === i).length;
++}
++
+ function Shown({ figures }: { figures: Figures }) {
+   return (
+     <p data-testid="consolidated">
+-      Consolidated: people <strong data-testid="consolidated-people-count">{figures.people}</strong>{' '}
+-      due total <strong data-testid="consolidated-due-total">{figures.due}</strong>{' '}
+-      overdue total <strong data-testid="consolidated-overdue-total">{figures.overdue}</strong>
++      Consolidated: people <strong data-testid="consolidated-people-count">{distinctPeople(figures.names)}</strong>{' '}
++      due total <strong data-testid="consolidated-due-total">{trimmedSum(figures.dues)}</strong>{' '}
++      overdue total <strong data-testid="consolidated-overdue-total">{trimmedSum(figures.overdues)}</strong>
+       {GRADES.map((g) => (
+         <span key={g}>
+           {' '}grade {g} due total <strong data-testid={`consolidated-grade-${g}-due-total`}>{figures.grades[g]}</strong>
+@@ -82,8 +103,9 @@ function Shown({ figures }: { figures: Figures }) {
+ 
+ /** Consolidated figures over the sheet and all its descendants (its children — the sheets naming it as their
+  *  parent — theirs, and so on), as the store holds them now (while this screen shows the sheet as of a date: every
+- *  sheet of the tree as it stood at the end of that day, with that date as its today): the people, and each sheet's due-total and
+- *  overdue-total (as that sheet shows them) added up, per grade its people's due-totals and per status its claims
++ *  sheet of the tree as it stood at the end of that day, with that date as its today): the people (those whose names or
++ *  aliases match, as names are compared, counted once), the due-total and overdue-total over every person of the tree
++ *  (each as their sheet shows it), trimmed once over the whole tree (see trimmedSum), per grade its people's due-totals and per status its claims
+  *  counted. A sheet with no children shows its own. */
+ function Consolidated({ sheetId }: { sheetId: string; user: string }) {
+   const [asOf] = useAsOf();
