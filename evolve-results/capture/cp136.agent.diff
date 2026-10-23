@@ -1,0 +1,231 @@
+diff --git a/src/main/frontend/features/people/merge.slot.tsx b/src/main/frontend/features/people/merge.slot.tsx
+index e4dac64..5151a68 100644
+--- a/src/main/frontend/features/people/merge.slot.tsx
++++ b/src/main/frontend/features/people/merge.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { claimsKey } from '../claims/claims';
+ import { PersonRow } from '../../slots/defs/personRow';
+ import { usePeople } from './people';
+ import { usePersonError } from './rowError';
+@@ -20,7 +21,9 @@ function PersonMerge({ sheetId, user, person }: { sheetId: string; user: string;
+     mutationFn: (intoId: number) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${person.id}/merge`, { user, intoId }),
+     onSuccess: async () => {
+-      // the merge moves claims, aliases, patrons and pool members: everything shown of the sheet follows
++      // the merge moves claims, aliases, patrons and pool members: everything shown of the sheet follows, the
++      // claims first so the merged person leaves the list only once the other shows the claims they took
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+       await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+     },
+     onError: (e) =>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index db38116..872d188 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -155,11 +155,11 @@ public class ClaimRepository {
+     }
+ 
+     /** Move every claim of one person to another in the order they came to the first, each the newest in the other's
+-     *  list, keeping its number and date and unbinding it from any statement. */
++     *  list, keeping its number and date and the figure a statement bound it to. */
+     public void moveAll(String sheetId, long fromId, long toId) {
+         for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed",
+                 Long.class, sheetId, fromId)) {
+-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
++            jdbc.update("UPDATE claim SET person_id = ?, "
+                     + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ?", toId, sheetId, id);
+             kept(sheetId, id);
+         }
+@@ -167,14 +167,14 @@ public class ClaimRepository {
+ 
+     /** Move every claim of the person to another sheet, keeping its place in their list, its status, dates, note,
+      *  settled due, tags, comments and log: each claim that had a number takes the next number of the other sheet,
+-     *  in the order the claims were added; each is unbound from any statement, loses its reference, editor lock and
++     *  in the order the claims were added; each keeps the figure a statement bound it to, loses its reference, editor lock and
+      *  settle batch, and its history here is dropped (it is kept anew on the other sheet). */
+     public void transfer(String sheetId, long personId, String toSheet) {
+         List<Claim> theirs = listForPerson(sheetId, personId).stream()
+                 .sorted(java.util.Comparator.comparingLong(Claim::id)).toList();
+         for (Claim c : theirs) {
+             String number = c.number() != null ? nextNumber(toSheet, c.dueBy()) : null;
+-            jdbc.update("UPDATE claim SET sheet_id = ?, claim_number = ?, due_by = ?, stated = FALSE, stated_due = NULL, "
++            jdbc.update("UPDATE claim SET sheet_id = ?, claim_number = ?, due_by = ?, "
+                     + "ref = NULL, locked_by = NULL WHERE sheet_id = ? AND id = ?", toSheet, number, c.dueBy(), sheetId,
+                     c.id());
+             for (String table : List.of("claim_log", "claim_comment", "claim_void_reason")) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+index 281d32e..547d65a 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+@@ -8,18 +8,16 @@ import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuse a new claim dated inside a closed period, or whose due-by (its date — a blank date being the sheet's entry date,
+- *  else its today — plus the terms it would get) falls inside one. */
++/** Refuse a new claim whose due-by (its date — a blank date being the sheet's entry date, else its today — plus the
++ *  terms it would get) falls inside a closed period: a claim belongs to the period holding its due-by, as a pasted or
++ *  template claim does. */
+ public class RefuseClosedNewClaim {
+     public void refuse(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
+             HolidayRepository holidays, PeriodRepository periods)
+             throws ClosedPeriodException {
+         periods.lockSheet(person.sheetId());
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+-        Period closed = periods.closedOn(person.sheetId(), date);
+-        if (closed == null) {
+-            closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
+-        }
++        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergePerson.java b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+index b5a584f..2f64bfe 100644
+--- a/src/main/java/net/officefloor/hq/app/person/MergePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+@@ -11,10 +11,12 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Merge the loaded person into another: only a steward may, into another person on the sheet, neither of them
+  *  retired. The merged person's claims move to the other (numbers and dates kept, listed after the other's in the
+- *  order they were added, each unbound from any statement); their name and aliases become aliases of the other;
++ *  order they were added, each keeping the figure a statement bound it to); their name and aliases become aliases
++ *  of the other;
+  *  their patrons are added to the other's (not the other themselves, no repeats), and anyone naming them as patron
+  *  names the other instead (no repeats); their pool memberships move to the other (shares added when the other is
+- *  already a member); their statements, holds, watchers and contact are dropped, and they leave the sheet. */
++ *  already a member); their statements are added to the other's count (the other's last statement stays theirs or,
++ *  having none, becomes the merged person's); their holds, watchers and contact are dropped, and they leave the sheet. */
+ public class MergePerson {
+     public void merge(@Val MergeInput input, @Val Person loaded, PersonRepository people, ClaimRepository claims,
+             PatronRepository patrons, PoolRepository pools, WatchRepository watches, RoleRepository roles,
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index e92251c..ee6d1b8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -274,8 +274,9 @@ public class PersonRepository {
+     }
+ 
+     /** Merge the person (their claims, patrons, pools and watchers already dealt with) into another: their aliases
+-     *  and then their name become the other's aliases, their figures in closed periods are added to the other's, and
+-     *  they leave the sheet with their grades, holds, statements, retirement and contact. */
++     *  and then their name become the other's aliases, their figures in closed periods are added to the other's,
++     *  their statements are added to the other's count (the other's last statement stays theirs or, having none,
++     *  becomes theirs, with its history), and they leave the sheet with their grades, holds, retirement and contact. */
+     public void merge(Person from, Person into) {
+         String sheetId = from.sheetId();
+         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(), sheetId,
+@@ -290,6 +291,7 @@ public class PersonRepository {
+                 + "AND t.person_id = ?)", sheetId, from.id(), into.id());
+         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.id(),
+                 sheetId, from.id());
++        joinStatements(from, into);
+         for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement",
+                 "person_retire_log", "person_retirement")) {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, from.id());
+@@ -298,20 +300,52 @@ public class PersonRepository {
+         alias(into, from.name());
+     }
+ 
++    /** Add the person's statements to another's count (on this sheet or another): the other's last statement stays
++     *  theirs or, when they have none, becomes the person's, whose statements (with their history) go to them. */
++    private void joinStatements(Person from, Person into) {
++        if (into.statementCount() == 0) {
++            jdbc.update("UPDATE person SET statement_count = statement_count + ?, stated_total = ?, statement_date = ? "
++                    + "WHERE sheet_id = ? AND id = ?", from.statementCount(), from.statedTotal(), from.statementDate(),
++                    into.sheetId(), into.id());
++            jdbc.update("UPDATE person_statement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?",
++                    into.sheetId(), into.id(), from.sheetId(), from.id());
++        } else {
++            jdbc.update("UPDATE person SET statement_count = statement_count + ? WHERE sheet_id = ? AND id = ?",
++                    from.statementCount(), into.sheetId(), into.id());
++        }
++    }
++
++    /** Transfer the person (their claims, patrons, pools and watchers already dealt with) into another on another
++     *  sheet, as merge merges them there: their aliases and then their name become the other's aliases, their
++     *  statements join the other's, and they leave this sheet with their grades, holds, retirement, contact and
++     *  figures in closed periods. */
++    public void transferInto(Person person, Person into) {
++        String sheetId = person.sheetId();
++        jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?",
++                into.sheetId(), into.id(), sheetId, person.id());
++        joinStatements(person, into);
++        for (String table : List.of("person_grade", "person_grade_log", "person_hold", "person_statement",
++                "person_retire_log", "person_retirement", "period_person_total")) {
++            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
++        }
++        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.id());
++        alias(into, person.name());
++    }
++
+     /** Transfer the person (their claims, patrons, pools and watchers already dealt with) to another sheet: their
+-     *  grades (with their log) and aliases go with them; their holds, statements, retirement and figures in closed
+-     *  periods are dropped; they arrive with no statement taken, added on the other sheet's today. */
++     *  grades (with their log), aliases and statements go with them; their holds, retirement and figures in closed
++     *  periods are dropped; they arrive added on the other sheet's today. */
+     public void transfer(Person person, String toSheet) {
+         String sheetId = person.sheetId();
+-        for (String table : List.of("person_hold", "person_statement", "person_retire_log", "person_retirement",
++        for (String table : List.of("person_hold", "person_retire_log", "person_retirement",
+                 "period_person_total")) {
+             jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, person.id());
+         }
+-        for (String table : List.of("person_grade", "person_grade_log", "person_alias")) {
++        for (String table : List.of("person_grade", "person_grade_log", "person_alias", "person_statement")) {
+             jdbc.update("UPDATE " + table + " SET sheet_id = ? WHERE sheet_id = ? AND person_id = ?", toSheet, sheetId,
+                     person.id());
+         }
+-        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL, "
++        jdbc.update("UPDATE person SET sheet_id = ?, "
+                 + "retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_position = " + END_POSITION
+                 + ", origin = ? WHERE sheet_id = ? AND id = ?", toSheet, toSheet, toSheet, sheetId, sheetId, person.id());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index 9a7d1b3..a61c098 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -14,12 +14,13 @@ import net.officefloor.plugin.variable.Val;
+ /** Transfer the loaded person to another sheet: only a steward may, a person not retired, to a sheet other than this
+  *  one (created when never loaded) that is not archived. When one person there has their name or one of their aliases (as names are compared; more
+  *  than one is refused), they are merged into that person as MergePerson merges (not retired; their claims after
+- *  theirs, their name and aliases joined to theirs, their contact and figures bound to statements dropped);
++ *  theirs, keeping the figures statements bound them to, their name and aliases joined to theirs, their statements
++ *  added to that person's count, their contact dropped);
+  *  otherwise the other sheet must not have their contact. They arrive
+  *  with every grade they were given (and its from-date), their terms, contact and aliases, and their claims (status,
+  *  dates, notes, settled dues and logs kept; each claim that had a number takes the next number of the other sheet,
+- *  in the order the claims were added; unbound from any statement; references dropped), with no statement taken.
+- *  They leave this sheet entirely: their patron links, pool memberships, holds, statements and watchers are dropped. */
++ *  in the order the claims were added; keeping the figure a statement bound them to; references dropped) and their
++ *  statements. They leave this sheet entirely: their patron links, pool memberships, holds and watchers are dropped. */
+ public class TransferPerson {
+     public void transfer(@Val TransferInput input, @Val Person loaded, PersonRepository people, ClaimRepository claims,
+             PatronRepository patrons, PoolRepository pools, WatchRepository watches, RoleRepository roles,
+@@ -74,10 +75,11 @@ public class TransferPerson {
+         pools.drop(from, person.id());
+         watches.drop(from, person.id());
+         claims.transfer(from, person.id(), to);
+-        people.transfer(person, to);
+         if (into != null) {
+             claims.moveAll(to, person.id(), into.id());
+-            people.merge(people.find(to, person.id()), into);
++            people.transferInto(person, into);
++        } else {
++            people.transfer(person, to);
+         }
+         transfer.set(new Transfer(from, to, person.name(), toBefore, into != null ? into.name() : null));
+         saved.set(PersonResponse.from(people.find(to, into != null ? into.id() : person.id())));
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 5a1b587..46b9e83 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,4 +1,4 @@
+-# Add a claim to a person. A refused add (bad amount or date, unknown person, a correction that names no SETTLED claim of the person, a reference another claim on the sheet already has (without regard to case), a claim dated in a closed period or after the person's retirement date) writes nothing, not even an audit line.
++# Add a claim to a person. A refused add (bad amount or date, unknown person, a correction that names no SETTLED claim of the person, a reference another claim on the sheet already has (without regard to case), a claim whose due-by falls in a closed period, or one dated after the person's retirement date) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
