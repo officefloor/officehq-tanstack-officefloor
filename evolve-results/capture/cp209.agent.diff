@@ -1,0 +1,53 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index c08e9a5..ab74d1a 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -333,3 +333,19 @@ export function ratePreview(people: Person[], claims: Claim[], rates: Rate[], gr
+   }
+   return { count, diff: fromCents(diff) };
+ }
++
++/** A person's score: their settled figures (see personStatusSum, SETTLED) divided by 100, minus 5 for each of their
++ *  overdue claims that count (see overdueDues), rounded half to even to a whole number (exact, in integers). */
++export function personScore(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
++    late: Late): string {
++  const own = claims.filter((c) => c.personId === person.id);
++  const settled = toCents(personStatusSum(person, own, rates, today, floor, late, SETTLED_STATUSES));
++  const overdueCount = BigInt(overdueDues(own, [person], rates, late, floor).length);
++  const scaled = settled - overdueCount * 50000n; // in 1/10000 of a point
++  const sign = scaled < 0n ? -1n : 1n;
++  const abs = scaled * sign;
++  let whole = abs / 10000n;
++  const rest = abs % 10000n;
++  if (rest > 5000n || (rest === 5000n && whole % 2n === 1n)) whole += 1n;
++  return String(whole * sign);
++}
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+new file mode 100644
+index 0000000..4a4208b
+--- /dev/null
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -0,0 +1,23 @@
++import { PersonRow } from '../../slots/defs/personRow';
++import { useClaims } from '../claims/claims';
++import type { Person } from '../people/people';
++import { personScore, useRates } from '../rates/rates';
++import { useFloor, useLate } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++
++/** A person's score: their settled figures divided by 100, minus 5 per overdue claim that counts, rounded half to
++ *  even (see personScore). */
++function PersonScore({ sheetId, person }: { sheetId: string; user: string; person: Person }) {
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  return (
++    <td>
++      Score <span data-testid="person-score">{personScore(person, claims, rates, today, floor, late)}</span>
++    </td>
++  );
++}
++
++export const contribution = PersonRow.fill({ order: 24, Component: PersonScore });
