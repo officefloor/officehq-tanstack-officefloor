@@ -1,0 +1,269 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 1481952..6aa1062 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -6,10 +6,10 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { SheetBody } from '../../slots/defs/sheet';
+ import { useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+-import { personDueTotal, sumDue, useRates } from '../rates/rates';
++import { personDueTotal, useRates } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useCap, useFloor, useLate } from '../settings/settings';
+-import { crewsKey, useCrews } from './crews';
++import { crewDueTotal, crewsKey, useCrews } from './crews';
+ import type { Crew } from './crews';
+ 
+ /** A crew's due-total: its lead's and its members' due-totals (as shown on their rows) added up, skipping n/a. */
+@@ -21,8 +21,7 @@ function useCrewDueTotal(sheetId: string, crew: Crew): string {
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
+-  const ids = new Set([crew.leadId, ...crew.members.map((m) => m.personId)]);
+-  return sumDue(people.filter((p) => ids.has(p.id)).map((p) => personDueTotal(p, claims, rates, today, floor, late, cap)));
++  return crewDueTotal(crew, people, (p) => personDueTotal(p, claims, rates, today, floor, late, cap));
+ }
+ 
+ /** One crew: its lead, its due-total, its members, and the entry a member is added with. */
+diff --git a/src/main/frontend/features/crews/crews.ts b/src/main/frontend/features/crews/crews.ts
+index 8aabec3..0bbcd4f 100644
+--- a/src/main/frontend/features/crews/crews.ts
++++ b/src/main/frontend/features/crews/crews.ts
+@@ -1,5 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import type { Person } from '../people/people';
++import { sumDue } from '../rates/rates';
+ 
+ /** A member of a crew: the person and their name. */
+ export type CrewMember = { personId: number; name: string };
+@@ -16,3 +18,10 @@ export function useCrews(sheetId: string) {
+     queryFn: () => getJson<Crew[]>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`),
+   });
+ }
++
++/** A crew's due-total: its lead's and its members' due-totals (as shown on their rows) added up, skipping n/a.
++ *  `due` is a person's due-total as shown on their row. */
++export function crewDueTotal(crew: Crew, people: Person[], due: (person: Person) => string): string {
++  const ids = new Set([crew.leadId, ...crew.members.map((m) => m.personId)]);
++  return sumDue(people.filter((p) => ids.has(p.id)).map(due));
++}
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index b5d7d55..c234c16 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -1,4 +1,5 @@
+ import { SheetBody } from '../../slots/defs/sheet';
++import { crewDueTotal, useCrews } from '../crews/crews';
+ import { STATUSES, useClaims } from '../claims/claims';
+ import { usePeople, type Person } from '../people/people';
+ import { overdueDues, personDueTotal, sheetDueTotal, sheetOverdueTotal, sumDue, useRates } from '../rates/rates';
+@@ -8,7 +9,9 @@ import { useSheetToday } from '../sheet/sheet';
+ /** The sheet's header counters, shown above everything else: its people (retired ones included), its claims
+  *  per status (as the summary counts them) and its due-total and overdue-total (as the rollup shows them); and the
+  *  signed-in user's own figures: the due-total and overdue-total of the person whose name or alias is the user's
+- *  name (as names are compared), shown on their row; nothing when there is no such person. */
++ *  name (as names are compared), shown on their row; nothing when there is no such person; and the user's crew
++ *  total: the due-totals of the crews that person leads (as shown on the crew rows), added up; nothing when they
++ *  lead no crew. */
+ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -17,7 +20,10 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
++  const crews = useCrews(sheetId).data ?? [];
+   const me = personNamed(people, user);
++  const due = (p: Person) => personDueTotal(p, claims, rates, today, floor, late, cap);
++  const led = me ? crews.filter((c) => c.leadId === me.id) : [];
+ 
+   return (
+     <header data-testid="header">
+@@ -38,13 +44,18 @@ function Header({ sheetId, user }: { sheetId: string; user: string }) {
+       </span>{' '}
+       <span>
+         My due total <strong data-testid="my-due-total">
+-          {me ? personDueTotal(me, claims, rates, today, floor, late, cap) : ''}
++          {me ? due(me) : ''}
+         </strong>
+       </span>{' '}
+       <span>
+         My overdue total <strong data-testid="my-overdue-total">
+           {me ? sumDue(overdueDues(claims.filter((c) => c.personId === me.id), [me], rates, late, floor)) : ''}
+         </strong>
++      </span>{' '}
++      <span>
++        My crew due total <strong data-testid="my-crew-due-total">
++          {led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, people, due))) : ''}
++        </strong>
+       </span>
+     </header>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index ffeee18..6b278c0 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ /** Once the sheet's new today is set: while it has grace days, close each open period (not a soft-closed one) whose to-date plus them is
+  *  before the new today, in order of their to-dates, exactly as a close by hand would, each recorded as
+  *  PERIOD_CLOSED with auto=yes at its end, and closed (to a sheet read as of a date) from the day after its to-date
+- *  plus the grace days. */
++ *  plus the grace days; it is marked as closed automatically (it does not refuse new claims). */
+ public class AutoClosePeriods {
+     public void close(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val LocalDate today,
+             PeriodRepository periods, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people,
+@@ -34,6 +34,7 @@ public class AutoClosePeriods {
+                 .toList();
+         for (Period period : due) {
+             Period closed = PeriodCloser.fix(id, period, periods, claims, logs, people, rates, settings, sheets);
++            periods.markAutoClosed(closed);
+             // it stands closed from the day after its to-date plus the grace days, as a sheet read as of a date sees
+             periods.dateLastKept(period, period.to().plusDays(grace + 1L));
+             audit.record("PERIOD_CLOSED sheet=" + closed.sheetId() + " by=" + request.user()
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 2175256..5e97aeb 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -61,6 +61,23 @@ public class PeriodRepository {
+         return list(sheetId).stream().filter(p -> p.closed() && p.contains(date)).findFirst().orElse(null);
+     }
+ 
++    /** The period on the sheet closed by hand (not automatically) that would hold a new claim dated on the date and
++     *  due by the due-by: the one whose dates contain its due-by, else one it would run across (the period starts
++     *  after its date and ends before its due-by); null when none does. */
++    public Period closedByHandFor(String sheetId, LocalDate date, LocalDate dueBy) {
++        var closed = jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND closed AND NOT auto_closed ORDER BY from_date",
++                ROW, sheetId);
++        return closed.stream().filter(p -> p.contains(dueBy)).findFirst()
++                .or(() -> closed.stream().filter(p -> p.from().isAfter(date) && p.to().isBefore(dueBy)).findFirst())
++                .orElse(null);
++    }
++
++    /** Mark the closed period as closed automatically. */
++    public void markAutoClosed(Period period) {
++        jdbc.update("UPDATE period SET auto_closed = TRUE WHERE sheet_id = ? AND name = ? AND closed",
++                period.sheetId(), period.name());
++    }
++
+     /** The closed period on the sheet whose dates overlap from..to (both included), or null when none does. */
+     public Period closedBetween(String sheetId, LocalDate from, LocalDate to) {
+         return list(sheetId).stream().filter(p -> p.closed() && p.overlaps(from, to)).findFirst().orElse(null);
+@@ -75,7 +92,7 @@ public class PeriodRepository {
+      *  (by person id) afresh: false when it was already closed, and nothing is written. */
+     public boolean close(Period period, BigDecimal total, Map<Long, BigDecimal> personTotals,
+             Map<Long, BigDecimal> personCarried) {
+-        if (jdbc.update("UPDATE period SET closed = TRUE, soft = FALSE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
++        if (jdbc.update("UPDATE period SET closed = TRUE, soft = FALSE, auto_closed = FALSE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
+                 total, period.sheetId(), period.name()) != 1) {
+             return false;
+         }
+@@ -130,7 +147,7 @@ public class PeriodRepository {
+     /** Reopen the closed or soft-closed period, dropping its fixed due-totals: false when it was neither, and nothing
+      *  is written. */
+     public boolean reopen(Period period) {
+-        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
++        if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, auto_closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND (closed OR soft)",
+                 period.sheetId(), period.name()) != 1) {
+             return false;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+index 8437e61..5c1a256 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
++++ b/src/main/java/net/officefloor/hq/app/period/RefuseClosedNewClaim.java
+@@ -9,7 +9,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Refuse a new claim whose due-by (its date — a blank date being the sheet's entry date, else its today — plus the
+- *  terms it would get) falls inside a closed period: a claim belongs to the period holding its due-by, as a pasted or
++ *  terms it would get) falls inside a period closed by hand (one closed automatically does not refuse it): a claim belongs to the period holding its due-by, as a pasted or
+  *  template claim does. A claim whose date and due-by straddle a closed period (it would run across it: the period
+  *  starts after its date and ends before its due-by) is refused too. */
+ public class RefuseClosedNewClaim {
+@@ -19,13 +19,7 @@ public class RefuseClosedNewClaim {
+         periods.lockSheet(person.sheetId());
+         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
+         var dueBy = DueBy.of(person, date, settings, holidays);
+-        Period closed = periods.closedOn(person.sheetId(), dueBy);
+-        if (closed == null && date.isBefore(dueBy)) {
+-            // straddled: the closed period starts after its date and ends before its due-by
+-            closed = periods.list(person.sheetId()).stream()
+-                    .filter(p -> p.closed() && p.from().isAfter(date) && p.to().isBefore(dueBy))
+-                    .findFirst().orElse(null);
+-        }
++        Period closed = periods.closedByHandFor(person.sheetId(), date, dueBy);
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+index 04606a9..fc12042 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/RefuseClosedQuickAdd.java
+@@ -1,19 +1,32 @@
+ package net.officefloor.hq.app.quickadd;
+ 
++import net.officefloor.hq.app.claim.DueBy;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.ClosedPeriodException;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Refuse the quick-add when the claim's date (the sheet's entry date, else its today) is inside a closed period —
+- *  before any person is added, so a refused quick-add leaves nothing behind. */
++/** Refuse the quick-add as the claim form refuses a new claim: when the claim's due-by (its date — the sheet's entry
++ *  date, else its today — plus the terms it would get: the named person's, else those of a new grade A person) falls
++ *  inside a period closed by hand, or it would run across one — before any person is added, so a refused quick-add
++ *  leaves nothing behind. */
+ public class RefuseClosedQuickAdd {
+-    public void refuse(@PathVariable("sheetId") String sheetId, SheetRepository sheets, PeriodRepository periods)
++    public void refuse(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, SheetRepository sheets,
++            PersonRepository people, SettingRepository settings, HolidayRepository holidays, PeriodRepository periods)
+             throws ClosedPeriodException {
+         String id = sheetId.trim();
+         periods.lockSheet(id);
+-        Period closed = periods.closedOn(id, sheets.newClaimDate(id));
++        var date = sheets.newClaimDate(id);
++        Person found = people.findByName(id, request.name());
++        int terms = found != null ? DueBy.terms(found, date, settings) : settings.termsFor(id, request.grade(), date);
++        Period closed = periods.closedByHandFor(id, date, holidays.dueBy(id, date, terms));
+         if (closed != null) {
+             throw new ClosedPeriodException(closed);
+         }
+diff --git a/src/main/resources/db/migration/V95__period_auto_closed.sql b/src/main/resources/db/migration/V95__period_auto_closed.sql
+new file mode 100644
+index 0000000..cac09d9
+--- /dev/null
++++ b/src/main/resources/db/migration/V95__period_auto_closed.sql
+@@ -0,0 +1,3 @@
++-- Whether the closed period was closed automatically (its grace days ran out) rather than by hand. A new claim is
++-- refused only for a period closed by hand; a close by hand, or a reopen, clears it.
++ALTER TABLE period ADD COLUMN auto_closed BOOLEAN NOT NULL DEFAULT FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 46b9e83..0cfcd9c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,4 +1,4 @@
+-# Add a claim to a person. A refused add (bad amount or date, unknown person, a correction that names no SETTLED claim of the person, a reference another claim on the sheet already has (without regard to case), a claim whose due-by falls in a closed period, or one dated after the person's retirement date) writes nothing, not even an audit line.
++# Add a claim to a person. A refused add (bad amount or date, unknown person, a correction that names no SETTLED claim of the person, a reference another claim on the sheet already has (without regard to case), a claim whose due-by falls in (or runs across) a period closed by hand, or one dated after the person's retirement date) writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index 9438f6c..082fca8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -1,6 +1,6 @@
+ # Quick-add a DRAFT claim for the named person, dated the sheet's entry date (else its today) with an empty note; a name new to the
+ # sheet adds the person first with grade A. One change: a refused quick-add (no name, bad amount, unknown sheet,
+-# that date in a closed period, or after the person's retirement date, or a new name another sheet of the tree has) adds no person and writes nothing, not even an audit line.
++# its due-by in (or running across) a period closed by hand, or dated after the person's retirement date, or a new name another sheet of the tree has) adds no person and writes nothing, not even an audit line.
+ validate:
+   class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
+   next: load
