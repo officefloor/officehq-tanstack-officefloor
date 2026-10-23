@@ -57,7 +57,7 @@ public class PasteClaims {
             } catch (RetiredPersonException e) {
                 throw new InvalidClaimException("Line " + line.number() + ": " + e.getMessage());
             }
-            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings, holidays));
+            Period closed = periods.closedOn(sheet, DueBy.of(person, date, settings, sheets, holidays));
             if (closed != null) {
                 throw new InvalidClaimException("Line " + line.number() + ": " + new ClosedPeriodException(closed).getMessage());
             }

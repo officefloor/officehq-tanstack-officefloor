@@ -25,7 +25,7 @@ public class RefuseClosedQuickAdd {
         periods.lockSheet(id);
         var date = sheets.newClaimDate(id);
         Person found = people.findByName(id, request.name());
-        int terms = found != null ? DueBy.terms(found, date, settings) : settings.termsFor(id, request.grade(), date);
+        int terms = found != null ? DueBy.terms(found, settings, sheets) : settings.termsFor(id, request.grade(), sheets.today(id));
         Period closed = periods.closedByHandFor(id, date, holidays.dueBy(id, date, terms));
         if (closed != null) {
             throw new ClosedPeriodException(closed);

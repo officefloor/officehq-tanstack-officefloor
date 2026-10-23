@@ -18,7 +18,7 @@ public class RefuseClosedNewClaim {
             throws ClosedPeriodException {
         periods.lockSheet(person.sheetId());
         var date = input.date() != null ? input.date() : sheets.newClaimDate(person.sheetId());
-        var dueBy = DueBy.of(person, date, settings, holidays);
+        var dueBy = DueBy.of(person, date, settings, sheets, holidays);
         Period closed = periods.closedByHandFor(person.sheetId(), date, dueBy);
         if (closed != null) {
             throw new ClosedPeriodException(closed);

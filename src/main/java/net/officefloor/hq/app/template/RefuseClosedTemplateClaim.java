@@ -18,7 +18,7 @@ public class RefuseClosedTemplateClaim {
             HolidayRepository holidays, PeriodRepository periods) throws ClosedPeriodException {
         periods.lockSheet(person.sheetId());
         var date = sheets.newClaimDate(person.sheetId());
-        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, holidays));
+        Period closed = periods.closedOn(person.sheetId(), DueBy.of(person, date, settings, sheets, holidays));
         if (closed != null) {
             throw new ClosedPeriodException(closed);
         }
