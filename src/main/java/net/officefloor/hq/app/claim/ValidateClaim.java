@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the body and refuse it before anything is read or written: the amount is required, a
- *  number with up to two decimals, below 0.00 only for a correction, which names (by its number: a whole number, or <period name>-<n> / X-<n>) the claim it
+ *  number with up to two decimals, below 0.00 only for a correction, which names (by its number: a whole number, FY<yyyy>-<n>, or <period name>-<n> / X-<n>) the claim it
  *  corrects, and only a correction names one; the date, when given, is a real yyyy-mm-dd date; a reference, when given, is
  *  at most 200 characters (whether it is already used on the sheet is checked once the sheet is read); tags, when given, are at most
  *  1000 characters once normalised. */

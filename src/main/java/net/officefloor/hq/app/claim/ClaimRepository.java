@@ -278,8 +278,9 @@ public class ClaimRepository {
     /** Take the next number for a claim due by the date, as it is opened. While the sheet's period numbering from
      *  is a date and the sheet's today is on or after it, that is the next in the claim's period (the one holding its due-by: <period name>-<n>),
      *  or for a claim in no period the next in its own sequence (X-<n>); otherwise it is the next number of the
-     *  sheet's tree (the sheet's root, reached through its parents, and every descendant of the root): one after
-     *  the last number given on any sheet of the tree, recorded as the last number of this sheet.
+     *  sheet's tree (the sheet's root, reached through its parents, and every descendant of the root) within the
+     *  fiscal year of the due-by (by this sheet's fiscal year start month): FY<yyyy>-<n>, one after the last number
+     *  given in that fiscal year on any sheet of the tree, recorded as this sheet's last number for that year.
      *  Taking a number locks the sheet's row (and, for a tree number, every row of the tree, in id order) until the
      *  transaction ends, so concurrent openings are numbered one after the other; a rolled-back one gives its number
      *  back, so there are no gaps. */
@@ -293,11 +294,19 @@ public class ClaimRepository {
             String in = String.join(",", Collections.nCopies(tree.size(), "?"));
             Object[] ids = tree.toArray();
             jdbc.query("SELECT id FROM sheet WHERE id IN (" + in + ") ORDER BY id FOR UPDATE", rs -> null, ids);
-            Integer last = jdbc.queryForObject("SELECT MAX(last_claim_number) FROM sheet WHERE id IN (" + in + ")",
-                    Integer.class, ids);
+            int fy = fiscalYear(sheetId, date);
+            Object[] args = new Object[ids.length + 1];
+            System.arraycopy(ids, 0, args, 0, ids.length);
+            args[ids.length] = fy;
+            Integer last = jdbc.queryForObject("SELECT MAX(last_number) FROM fiscal_year_number WHERE sheet_id IN ("
+                    + in + ") AND fiscal_year = ?", Integer.class, args);
             int next = (last == null ? 0 : last) + 1;
-            jdbc.update("UPDATE sheet SET last_claim_number = ? WHERE id = ?", next, sheetId);
-            return String.valueOf(next);
+            if (jdbc.update("UPDATE fiscal_year_number SET last_number = ? WHERE sheet_id = ? AND fiscal_year = ?",
+                    next, sheetId, fy) == 0) {
+                jdbc.update("INSERT INTO fiscal_year_number (sheet_id, fiscal_year, last_number) VALUES (?, ?, ?)",
+                        sheetId, fy, next);
+            }
+            return "FY" + fy + "-" + next;
         }
         String[] period = jdbc.query(
                 "SELECT name, name_key FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ? ORDER BY from_date",
@@ -311,6 +320,15 @@ public class ClaimRepository {
         int n = jdbc.queryForObject("SELECT last_number FROM period_number WHERE sheet_id = ? AND seq_key = ?",
                 Integer.class, sheetId, key);
         return prefix + "-" + n;
+    }
+
+    /** The fiscal year holding the date by the sheet's fiscal year start month, named by the calendar year its
+     *  first day falls in. */
+    private int fiscalYear(String sheetId, LocalDate date) {
+        Integer month = jdbc.query("SELECT fiscal_start_month FROM sheet WHERE id = ?",
+                rs -> rs.next() ? (Integer) rs.getObject(1, Integer.class) : null, sheetId);
+        int start = month != null ? month : 1;
+        return date.getMonthValue() >= start ? date.getYear() : date.getYear() - 1;
     }
 
     /** The sheets of the sheet's tree, in id order: its root (its parent's parent, and so on, up to a sheet with
