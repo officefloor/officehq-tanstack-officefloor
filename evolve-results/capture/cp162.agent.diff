@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 3449533..b87b12e 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -17,6 +17,7 @@ import { setLockRefused, useLockRefused } from './lock';
+ import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
+ import { useTemplates } from '../templates/templates';
+ import { useColumnShown } from '../people/columns';
++import { ClaimTimeline } from './timeline';
+ 
+ const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+ 
+@@ -410,6 +411,7 @@ function ClaimRow({ sheetId, user, claim, rate }: { sheetId: string; user: strin
+           <li key={i} data-testid="claim-log-line">{line}</li>
+         ))}
+       </ol>{' '}
++      <ClaimTimeline sheetId={sheetId} claimId={claim.id} />{' '}
+       <ol data-testid="claim-comments">
+         {claim.comments.map((line, i) => (
+           <li key={i} data-testid="claim-comments-line">{line}</li>
+diff --git a/src/main/frontend/features/claims/timeline.tsx b/src/main/frontend/features/claims/timeline.tsx
+new file mode 100644
+index 0000000..3bfb363
+--- /dev/null
++++ b/src/main/frontend/features/claims/timeline.tsx
+@@ -0,0 +1,35 @@
++import { useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A claim's timeline: the audit lines about it exactly as the audit file holds them, newest first (those carrying its
++ *  number, or for a claim with none those naming its person, amount and date). Each press of the button re-reads the
++ *  file. */
++export function ClaimTimeline({ sheetId, claimId }: { sheetId: string; claimId: string | number }) {
++  const [shown, setShown] = useState(0);
++  const lines = useQuery({
++    queryKey: ['sheet', sheetId, 'claim-timeline', String(claimId), shown],
++    queryFn: () =>
++      getJson<string[]>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(String(claimId))}/timeline`,
++      ),
++    enabled: shown > 0,
++  });
++
++  return (
++    <>
++      <button type="button" data-testid="claim-timeline" onClick={() => setShown((n) => n + 1)}>
++        Timeline
++      </button>
++      {shown > 0 && lines.data && (
++        <ol>
++          {lines.data.map((line, i) => (
++            <li key={i} data-testid="claim-timeline-line">
++              {line}
++            </li>
++          ))}
++        </ol>
++      )}
++    </>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithClaimTimeline.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithClaimTimeline.java
+new file mode 100644
+index 0000000..73c4a93
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithClaimTimeline.java
+@@ -0,0 +1,54 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Locale;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimResponse;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** A claim's timeline: the sheet's audit lines about the claim as the file holds them, newest first. For a claim with
++ *  a number, the lines carrying number=<its number>; for a claim with none, the lines carrying no number that name its
++ *  person (person=, compared as names are), its amount and its date as the screen shows them. Reads the file; keeps
++ *  no copy. */
++public class RespondWithClaimTimeline {
++    public void respond(@Val Claim claim, Audit audit, PersonRepository people, ObjectResponse<List<String>> response) {
++        ClaimResponse shown = ClaimResponse.from(claim);
++        Person person = people.find(claim.sheetId(), claim.personId());
++        String name = person == null ? null : person.name().trim().toLowerCase(Locale.ROOT);
++        List<String> lines = new ArrayList<>();
++        for (String line : audit.lines()) {
++            if (!field(line, "sheet", claim.sheetId())) {
++                continue;
++            }
++            boolean about = claim.number() != null
++                    ? field(line, "number", claim.number())
++                    : name != null && !line.contains(" number=") && field(line.toLowerCase(Locale.ROOT), "person", name)
++                            && field(line, "amount", shown.amount()) && field(line, "date", shown.date());
++            if (about) {
++                lines.add(line);
++            }
++        }
++        Collections.reverse(lines);
++        response.send(lines);
++    }
++
++    /** Whether a <label>= field of the line holds exactly the value. */
++    private static boolean field(String line, String label, String value) {
++        String key = " " + label + "=" + value;
++        int at = line.indexOf(key);
++        while (at >= 0) {
++            int end = at + key.length();
++            if (end == line.length() || line.charAt(end) == ' ') {
++                return true;
++            }
++            at = line.indexOf(key, at + 1);
++        }
++        return false;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 0000000..b66002c
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,9 @@
++# A claim's timeline: the audit lines about it, newest first, exactly as the audit file holds them — those carrying
++# number=<its number>, or for a claim with no number those naming its person, amount and date. 404 for an unknown claim.
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithClaimTimeline
++  govern: [ readonly-transaction ]
