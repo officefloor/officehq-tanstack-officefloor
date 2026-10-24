@@ -12,6 +12,7 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimComment;
 import net.officefloor.hq.app.claim.ClaimCommentRepository;
+import net.officefloor.hq.app.claim.ClaimLineRepository;
 import net.officefloor.hq.app.claim.ClaimLog;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -31,13 +32,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * clone gets this sheet's today, settings (with their log), roles, rates (with their log), holidays, void reasons,
  * templates, people (grades, terms, contacts, aliases, holds, retirements, patrons) in list order, pools with their
  * members, periods (all open) and claims, each person's in the order listed, with their status, frozen figures,
- * dates, notes, tags, references, status logs and comments. Each claim that had a number takes the clone's next one,
+ * dates, notes, tags, references, status logs, comments and lines. Each claim that had a number takes the clone's next one,
  * in the order they were opened (by the sheet's today when each was opened, then by the order they were added to the
  * clone). Statements are not copied, so no figure is bound there; nor are watchers, delegations or the as-of history.
  */
 public class ApplyClone {
     public void apply(@Val CloneInput input, @Val Sheet sheet, SheetRepository sheets, RoleRepository roles,
             PersonRepository people, ClaimRepository claims, ClaimLogRepository logs, ClaimCommentRepository comments,
+            ClaimLineRepository claimLines,
             PeriodRepository periods, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<SheetCloned> cloned)
             throws InvalidCloneException {
@@ -148,6 +150,7 @@ public class ApplyClone {
                         .findFirst().ifPresent(d -> openedOn.put(claim, d));
                 lines.forEach(l -> logs.save(l.copyFor(copy)));
                 comments.findByClaimIdOrderByIdAsc(claim.getId()).forEach(c -> comments.save(c.copyFor(copy)));
+                claimLines.findByClaimIdOrderByIdAsc(claim.getId()).forEach(l -> claimLines.save(l.copyFor(copy)));
             }
         }
 

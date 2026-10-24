@@ -12,6 +12,8 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimComment;
 import net.officefloor.hq.app.claim.ClaimCommentRepository;
+import net.officefloor.hq.app.claim.ClaimLine;
+import net.officefloor.hq.app.claim.ClaimLineRepository;
 import net.officefloor.hq.app.claim.ClaimLog;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -42,7 +44,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * statement bound it to, their statements become that person's (before that person's own), their name and aliases become that person's aliases, and their grades, terms and contact are
  * dropped. Otherwise they arrive there with every grade they were given
  * (and its from-date), their terms, contact and aliases, and their claims with their status, dates, notes, tags,
- * frozen dues, the figures a statement bound them to, status logs and comments, listed in the same order, and their
+ * frozen dues, the figures a statement bound them to, status logs, comments and lines, listed in the same order, and their
  * statements. Each claim that had a number takes the other
  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
  * were added). References are not carried.
@@ -51,7 +53,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
  */
 public class ApplyTransfer {
     public void apply(@Val TransferInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
-            ClaimLogRepository logs, ClaimCommentRepository comments, PersonAliasRepository aliases,
+            ClaimLogRepository logs, ClaimCommentRepository comments, ClaimLineRepository claimLines,
+            PersonAliasRepository aliases,
             PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
             RateRepository rates, PeriodRepository periods, EntityManager entityManager,
@@ -149,6 +152,9 @@ public class ApplyTransfer {
             List<ClaimComment> notes = comments.findByClaimIdOrderByIdAsc(claim.getId());
             notes.forEach(c -> comments.save(c.copyFor(copy)));
             comments.deleteAll(notes);
+            List<ClaimLine> items = claimLines.findByClaimIdOrderByIdAsc(claim.getId());
+            items.forEach(l -> claimLines.save(l.copyFor(copy)));
+            claimLines.deleteAll(items);
         }
 
         // Numbers: the other sheet's next, in the order the claims were opened.

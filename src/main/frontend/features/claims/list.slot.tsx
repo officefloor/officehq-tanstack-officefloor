@@ -81,6 +81,11 @@ function PersonClaims({ person }: { person: Person }) {
                 </button>
               )}
             </ClaimStatusActions>
+            <ol data-testid="claim-lines">
+              {(c.lines ?? []).map((line, i) => (
+                <li key={i} data-testid="claim-lines-line">{line}</li>
+              ))}
+            </ol>
             <ol data-testid="claim-comments">
               {(c.comments ?? []).map((line, i) => (
                 <li key={i} data-testid="claim-comments-line">{line}</li>
@@ -141,7 +146,11 @@ const ACTIONS = [
 // the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
 // beside the void button); a void without one shows the claim's error. A claim of any status is commented with the
 // text typed beside the comment button (shown on the claim, oldest first, as <user> on <date>: <text>); an empty
-// comment shows the claim's error. A DRAFT is deleted (DELETED: it counts nowhere and cannot be edited, opened or
+// comment shows the claim's error. A DRAFT gains a line (a label, a whole quantity of at least 1 and a unit amount with
+// up to two decimals, typed beside the add-line button; shown on the claim as <label> <qty> x <unit>), which makes its
+// amount its lines' total; adding a line edits the claim, so a claim that is not a DRAFT, whose due-by is in a closed
+// period or that another user has locked, or a line with a field out of rule, shows the claim's error, and an edit of a
+// claim with lines that types another amount is refused. A DRAFT is deleted (DELETED: it counts nowhere and cannot be edited, opened or
 // voided); any other status, or a claim whose due-by is in a closed period, shows the claim's error. On the sheet's today
 // it was deleted, restore makes it a DRAFT again; on a later day, or for a claim that is not DELETED, it shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
@@ -216,6 +225,18 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     },
   });
   const submitComment = useSubmitOnce(comment);
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineQty, setLineQty] = useState('');
+  const [lineUnit, setLineUnit] = useState('');
+  const line = useMutation({
+    mutationFn: (l: { label: string; qty: string; unit: string }) =>
+      postJson<Claim>(`${claimsPath(sheet)}/${claim.id}/lines`, l, user),
+    onSuccess: () => {
+      setLineLabel(''); setLineQty(''); setLineUnit('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
+  });
+  const submitLine = useSubmitOnce(line);
   const [splitAmount, setSplitAmount] = useState('');
   const split = useMutation({
     mutationFn: (amount: string) =>
@@ -246,7 +267,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   const submitLock = useSubmitOnce(lock);
   // Submitting the claim's editor is the next action on it: a refused lock's error goes.
   useEffect(() => {
-    if (editorSubmits > 0) lock.reset(); inline.reset();
+    if (editorSubmits > 0) lock.reset(); inline.reset(); line.reset();
   }, [editorSubmits]);
   const action = change.variables?.action;
   const periods = usePeriods();
@@ -258,12 +279,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <select
         data-testid="claim-void-reason"
         value={voidReason}
-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       >
         <option value="">(no void reason)</option>
         {(voidReasons.data ?? []).map((r) => (
@@ -277,7 +298,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           data-testid={`claim-${action}`}
           disabled={change.isPending}
           onClick={() => {
-            setEditRefused(false); lock.reset(); inline.reset();
+            setEditRefused(false); lock.reset(); inline.reset(); line.reset();
             move.reset();
             defer.reset(); redate.reset(); split.reset();
             proof.reset(); remind.reset(); comment.reset();
@@ -291,7 +312,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -305,7 +326,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           defer.reset(); redate.reset(); split.reset();
           proof.reset(); remind.reset(); comment.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           if (target) submitMove(target.id);
         }}
       >
@@ -315,7 +336,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-defer-date"
         placeholder="Defer until YYYY-MM-DD"
         value={deferTo}
-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -326,7 +347,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           move.reset();
           proof.reset(); remind.reset(); comment.reset();
           split.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitDefer(deferTo);
         }}
       >
@@ -336,7 +357,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-date-new"
         placeholder="Re-date to YYYY-MM-DD"
         value={redateTo}
-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -348,7 +369,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           defer.reset();
           proof.reset(); remind.reset(); comment.reset();
           split.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitRedate(redateTo);
         }}
       >
@@ -362,7 +383,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitProof(undefined);
         }}
       >
@@ -377,7 +398,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           move.reset();
           defer.reset(); redate.reset(); split.reset();
           proof.reset(); comment.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitRemind(undefined);
         }}
       >
@@ -387,7 +408,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-comment-text"
         placeholder="Comment"
         value={commentText}
-        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -398,18 +419,53 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           move.reset();
           defer.reset(); redate.reset(); split.reset();
           proof.reset(); remind.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitComment(commentText);
         }}
       >
         Comment
       </button>{' '}
       <input
+        data-testid="claim-line-label"
+        placeholder="Line label"
+        value={lineLabel}
+        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+      />{' '}
+      <input
+        data-testid="claim-line-qty"
+        placeholder="Qty"
+        inputMode="numeric"
+        value={lineQty}
+        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+      />{' '}
+      <input
+        data-testid="claim-line-unit"
+        placeholder="Unit amount"
+        inputMode="decimal"
+        value={lineUnit}
+        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-line-add"
+        disabled={line.isPending}
+        onClick={() => {
+          change.reset();
+          move.reset();
+          defer.reset(); redate.reset(); split.reset();
+          proof.reset(); remind.reset(); comment.reset();
+          setEditRefused(false); lock.reset(); inline.reset();
+          submitLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
+        }}
+      >
+        Add line
+      </button>{' '}
+      <input
         data-testid="claim-split-amount"
         placeholder="Amount to split off"
         inputMode="decimal"
         value={splitAmount}
-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -420,13 +476,13 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           move.reset();
           defer.reset(); redate.reset();
           proof.reset(); remind.reset(); comment.reset();
-          setEditRefused(false); lock.reset(); inline.reset();
+          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitSplit(splitAmount);
         }}
       >
         Split
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}>
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
         <input
           data-testid="claim-inline-amount"
           placeholder="Amount"
@@ -458,9 +514,19 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || comment.isError || split.isError || editRefused || lock.isError || inline.isError) && (
+      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || comment.isError || line.isError || split.isError || editRefused || lock.isError || inline.isError) && (
         <span data-testid="claim-error">
-          {inline.isError
+          {line.isError
+            ? line.error instanceof HttpError && line.error.status === 423
+              ? 'Another user is editing this claim; no line can be added until they save or cancel.'
+              : line.error instanceof HttpError && line.error.status === 403
+              ? 'A viewer cannot edit a claim, and no claim on an archived sheet can be edited.'
+              : claim.status !== 'DRAFT'
+              ? `Only a draft claim can have lines; this one is ${claim.status}.`
+              : closed
+              ? 'This claim is due by a date in a closed period, so no line can be added.'
+              : 'A line needs a label, a whole quantity of at least 1 and a unit amount with up to two decimals.'
+            : inline.isError
             ? inline.error instanceof HttpError && inline.error.status === 423
               ? 'Another user is editing this claim; its amount cannot change until they save or cancel.'
               : inline.error instanceof HttpError && inline.error.status === 403
@@ -469,6 +535,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
               ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
               : closed
               ? 'This claim is due by a date in a closed period, so it cannot be edited.'
+              : (claim.lines ?? []).length > 0
+              ? `This claim has lines: its amount is their total (${claim.amount}).`
               : 'The amount must be a number with up to two decimals; a negative amount is a correction and must name a settled claim of this person.'
             : lock.isError
             ? lock.error instanceof HttpError && lock.error.status === 423
@@ -686,7 +754,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
           The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
           terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
           number, a settled claim of this person (only a correction may); a reference must not already be used on this sheet
-          (ignoring case); only a draft claim can be edited; a claim from a template needs a template chosen.
+          (ignoring case); only a draft claim can be edited, and one with lines keeps their total as its amount; a claim from a template needs a template chosen.
         </span>
       )}
     </form>
