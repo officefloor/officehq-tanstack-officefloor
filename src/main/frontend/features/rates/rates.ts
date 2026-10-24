@@ -44,9 +44,12 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
   return undefined;
 }
 
-/** Whether a claim's live figures round half up: the date it rounds by (a correction's is the date of the claim it
- *  corrects) is before the sheet's policy date (its today when blank); else they round half to even. */
+/** Whether a claim's live figures round half up: by the sheet's rounding mode in force on the date it rounds by (a
+ *  correction's is the date of the claim it corrects) when one is; else when that date is before the sheet's policy
+ *  date (its today when blank); else they round half to even. */
 export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: string | undefined): boolean {
+  const mode = settings && settingOn(settings, 'rounding', c.roundsOn ?? c.date, '');
+  if (mode === 'half-up' || mode === 'half-even') return mode === 'half-up';
   const policy = settings?.policyDate || today;
   return policy !== undefined && (c.roundsOn ?? c.date) < policy;
 }

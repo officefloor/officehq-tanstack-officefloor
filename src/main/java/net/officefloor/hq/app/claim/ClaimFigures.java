@@ -24,7 +24,8 @@ import net.officefloor.hq.app.sheet.Sheet;
  * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the figure only (never
  * the floor or the charge); settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
  * never takes a late charge. The rounding policy: a claim dated before the sheet's policy date (its today when blank)
- * rounds half up, one dated on or after it half to even; a correction goes by the date of the claim it corrects.
+ * rounds half up, one dated on or after it half to even — unless the sheet has a rounding mode (half-up or half-even) in force on
+ * that date, which it then rounds by; a correction goes by the date of the claim it corrects.
  */
 public class ClaimFigures {
 
@@ -53,9 +54,16 @@ public class ClaimFigures {
         this.cap = sheet.getCap();
     }
 
-    /** How the claim's live figures round: half up when the date it rounds by is before the policy date, else half
-     *  to even. */
+    /** How the claim's live figures round: by the sheet's rounding mode in force on the date it rounds by, when one
+     *  is; else half up when that date is before the policy date, else half to even. */
     public RoundingMode rounding(Claim claim) {
+        String mode = sheet.roundingOn(claim.getRoundsOn());
+        if (Sheet.HALF_UP.equals(mode)) {
+            return RoundingMode.HALF_UP;
+        }
+        if (Sheet.HALF_EVEN.equals(mode)) {
+            return RoundingMode.HALF_EVEN;
+        }
         return claim.getRoundsOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 

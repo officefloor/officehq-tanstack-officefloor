@@ -42,6 +42,9 @@ public class Sheet {
     /** The key of the fiscal year start month: undated, a month 1 to 12 (null: 1). */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
 
+    /** The key of the rounding mode: dated, half-up or half-even (null: none — a claim rounds by the policy date). */
+    public static final String ROUNDING = "rounding", HALF_UP = "half-up", HALF_EVEN = "half-even";
+
     /** The keys of the undated dates, as the settings form names them. */
     public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from",
             ENTRY_DATE = "entry-date";
@@ -334,6 +337,12 @@ public class Sheet {
 
     public void setPolicyDate(LocalDate policyDate) {
         this.policyDate = policyDate;
+    }
+
+    /** The rounding mode in force on a date: half-up or half-even; null when none is (a claim then rounds by the
+     *  policy date). */
+    public String roundingOn(LocalDate on) {
+        return valueOn(ROUNDING, on);
     }
 
     /** The policy date in force: the one set, else the sheet's today. */
