@@ -44,7 +44,8 @@ public class ApplyClaim {
         if (person != null && person.retiredOn(date)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
         }
-        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), claim.getPersonId(), input.corrects());
+        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), claim.getPersonId(), input.corrects(),
+                input.amount(), claim.getId());
         repository.checkRef(sheet.getId(), claim.getId(), input.ref());
         claim.setAmount(input.amount());
         claim.setCorrects(input.corrects());

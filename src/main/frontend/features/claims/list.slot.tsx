@@ -143,8 +143,9 @@ const ACTIONS = [
 // not allow, or rejecting one without a reason (typed beside the reject
 // button), or a review by anyone but a steward. A claim whose due is above the review threshold in force on its date goes to
 // REVIEW when opened; a steward's review button opens it (it is numbered then). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
-// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim, or of a claim whose due-by is in a
-// closed period, shows the claim's error instead of opening its editor (an open claim is voided and added anew). Opening a
+// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error instead of opening
+// its editor (an open claim is voided and added anew); that of a DRAFT whose due-by is in a closed period opens its
+// editor but shows the claim's error, and the editor cannot save. Opening a
 // DRAFT's editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes: another
 // user's edit button on a locked claim (and a viewer's) shows the claim's error, and their editor cannot save. A DRAFT's
 // amount can also be saved in the row (the amount typed beside the edit button), by the claim form's rules: a refusal
@@ -524,9 +525,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           type="button"
           data-testid="claim-edit"
           onClick={() => {
-            if (claim.status !== 'DRAFT' || closed) {
+            if (claim.status !== 'DRAFT') {
               setEditRefused(true);
             } else {
+              // A DRAFT whose due-by is in a closed period opens its editor, but the lock refuses it (the
+              // claim's error) and the editor cannot save.
               onEdit();
               submitLock(undefined);
             }
@@ -779,7 +782,8 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
           {save.error instanceof HttpError && save.error.status === 423 && 'Another user is editing this claim. '}
           The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
           terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
-          number, a settled claim of this person (only a correction may); a reference must not already be used on this sheet
+          number, a settled claim of this person (only a correction may) and not exceed what remains of it (its amount less the
+          corrections already made against it that are not void or deleted); a reference must not already be used on this sheet
           (ignoring case); only a draft claim can be edited, and one with lines keeps their total as its amount; a claim from a template needs a template chosen.
         </span>
       )}

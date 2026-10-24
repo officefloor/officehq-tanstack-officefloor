@@ -32,16 +32,38 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
     /** The person's claims given this number (at most one: numbers are never reused on a sheet). */
     List<Claim> findBySheetIdAndPersonIdAndNumber(String sheetId, Long personId, String number);
 
-    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person; gives that
-     *  claim's date (null when it is not a correction). */
-    default LocalDate checkCorrects(String sheetId, Long personId, String corrects) throws InvalidClaimException {
+    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person, and a correction
+     *  of the amount given (negative) larger than what remains of the claim it corrects: its amount less the
+     *  corrections already made against it, VOID or DELETED ones and the claim being edited (null: none) left out.
+     *  Gives the corrected claim's date (null when it is not a correction). */
+    default LocalDate checkCorrects(String sheetId, Long personId, String corrects, java.math.BigDecimal amount,
+            Long claimId) throws InvalidClaimException {
         if (corrects == null) {
             return null;
         }
+        Claim target = settledTarget(sheetId, personId, corrects);
+        java.math.BigDecimal remaining = target.getAmount();
+        for (Claim c : findBySheetIdAndCorrects(sheetId, corrects)) {
+            if (!c.getId().equals(claimId) && c.getStatus() != ClaimStatus.VOID
+                    && c.getStatus() != ClaimStatus.DELETED) {
+                remaining = remaining.add(c.getAmount());
+            }
+        }
+        if (amount.negate().compareTo(remaining) > 0) {
+            throw new InvalidClaimException("A correction may not exceed what remains of " + corrects + " ("
+                    + remaining.max(java.math.BigDecimal.ZERO).setScale(2).toPlainString() + ").");
+        }
+        return target.getDate();
+    }
+
+    private Claim settledTarget(String sheetId, Long personId, String corrects) throws InvalidClaimException {
         return findBySheetIdAndPersonIdAndNumber(sheetId, personId, corrects).stream()
-                .filter(c -> c.getStatus() == ClaimStatus.SETTLED).map(Claim::getDate).findFirst()
+                .filter(c -> c.getStatus() == ClaimStatus.SETTLED).findFirst()
                 .orElseThrow(() -> new InvalidClaimException("A correction must name a settled claim of the same person."));
     }
+
+    /** The sheet's corrections of the claim given this number. */
+    List<Claim> findBySheetIdAndCorrects(String sheetId, String corrects);
 
     /** Whether a claim on the sheet other than the given one (null: none) has the reference, ignoring case. */
     boolean existsBySheetIdAndRefIgnoreCaseAndIdNot(String sheetId, String ref, Long id);
