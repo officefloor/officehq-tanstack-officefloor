@@ -8,11 +8,11 @@ import { gradeOn, usePeople } from '../people/people';
 import { countsLive, heldIds, useClaims } from '../claims/claims';
 import { chargedOf, sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { periodClosePath, periodOn, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { periodClosePath, periodOn, periodReopenPath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a held person's OPEN ones),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
-// button that closes it, and the form that adds one.
+// buttons that close and reopen it, and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -110,22 +110,36 @@ function Periods() {
   );
 }
 
-// The button that closes a period. Closing one already closed is refused by the server and shows the period's
-// error, which goes as soon as the next action on the row is taken.
+// The buttons that close and reopen a period. Closing one already closed, or reopening one not closed or by
+// anyone but a steward, is refused by the server and shows the period's error, which goes as soon as the next
+// action on the row is taken.
 function PeriodActions({ sheet, period }: { sheet: string; period: Period }) {
   const [user] = useCurrentUser();
   const queryClient = useQueryClient();
+  const onSuccess = () => queryClient.invalidateQueries({ queryKey: ['sheet', sheet] });
   const close = useMutation({
     mutationFn: () => putJson<Period>(periodClosePath(sheet, period.id), undefined, user),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet) }),
   });
+  const reopen = useMutation({
+    mutationFn: () => putJson<Period>(periodReopenPath(sheet, period.id), undefined, user),
+    onSuccess,
+  });
   const submitClose = useSubmitOnce(close);
+  const submitReopen = useSubmitOnce(reopen);
+  const pending = close.isPending || reopen.isPending;
   return (
     <>
-      <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => submitClose()}>
+      <button type="button" data-testid="period-close" disabled={pending}
+        onClick={() => { reopen.reset(); submitClose(); }}>
         Close
       </button>
+      <button type="button" data-testid="period-reopen" disabled={pending}
+        onClick={() => { close.reset(); submitReopen(); }}>
+        Reopen
+      </button>
       {close.isError && <span data-testid="period-error">This period cannot be closed: it is already closed.</span>}
+      {reopen.isError && <span data-testid="period-error">This period cannot be reopened: it is not closed, or you are not a steward.</span>}
     </>
   );
 }

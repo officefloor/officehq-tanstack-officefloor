@@ -4,7 +4,7 @@ import { useCurrentSheet } from '../session/session';
 
 /** A sheet's period as the store holds it: its name (unique on the sheet) and its from and to date
  *  (YYYY-MM-DD), inclusive. No two periods overlap. A closed period keeps the due-total fixed when it was closed
- *  (`closedTotal`, null while open). */
+ *  (`closedTotal`, null while open) until a steward reopens it. */
 export type Period = { id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
 
 export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -12,6 +12,8 @@ export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'
 export const periodsPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/periods`;
 
 export const periodClosePath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/close`;
+
+export const periodReopenPath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/reopen`;
 
 /** The sheet's periods, by from-date. */
 export function usePeriods() {
