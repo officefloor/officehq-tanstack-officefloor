@@ -1,0 +1,25 @@
+import { useQuery } from '@tanstack/react-query';
+import { getJson } from '../../api/http';
+import { useCurrentSheet } from '../session/session';
+import { asString, useSearchParam } from '../../url/useSearchParam';
+
+export const GRADES = ['A', 'B', 'C'] as const;
+
+export type Person = { id: number; name: string; grade: string };
+
+export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
+
+export const peoplePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+
+/** The sheet's people, in the order they were added. */
+export function usePeople() {
+  const [sheet] = useCurrentSheet();
+  return useQuery({
+    queryKey: peopleQueryKey(sheet ?? ''),
+    queryFn: () => getJson<Person[]>(peoplePath(sheet ?? '')),
+    enabled: !!sheet,
+  });
+}
+
+/** The id of the person whose editor is open (search param `editPerson`), or '' for none. */
+export const useEditingPerson = () => useSearchParam('editPerson', asString);
