@@ -1,0 +1,168 @@
+diff --git a/src/main/frontend/features/auditview/auditview.slot.tsx b/src/main/frontend/features/auditview/auditview.slot.tsx
+new file mode 100644
+index 00000000..202dd310
+--- /dev/null
++++ b/src/main/frontend/features/auditview/auditview.slot.tsx
+@@ -0,0 +1,48 @@
++import { useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++
++const auditPath = (sheetId: string, name: string) =>
++  `/api/sheets/${encodeURIComponent(sheetId)}/audit?name=${encodeURIComponent(name)}`;
++
++// The audit viewer: the sheet's audit lines exactly as the audit file holds them, newest first, or only those
++// about the person named in the filter. It reads the file each time Show is pressed; it keeps no record of its
++// own. While a read runs the old lines are gone, so two reads are always told apart.
++function AuditViewer() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [filter, setFilter] = useState('');
++  const show = useMutation({
++    mutationFn: (name: string) => getJson<string[]>(auditPath(sheet ?? '', name)),
++  });
++
++  if (!user || !sheet) return null;
++  return (
++    <section data-testid="audit-viewer">
++      <h2>Audit</h2>
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          show.mutate(filter);
++        }}
++      >
++        <input
++          data-testid="audit-filter"
++          placeholder="Person name (blank for all)"
++          value={filter}
++          onChange={(e) => setFilter(e.target.value)}
++        />
++        <button type="submit" data-testid="audit-show">Show</button>
++      </form>
++      <ul>
++        {(show.isPending ? [] : show.data ?? []).map((line, i) => (
++          <li key={i} data-testid="audit-line">{line}</li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 99, Component: AuditViewer });
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index aee24d5d..2fefbb87 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -82,6 +82,21 @@ public class Audit {
+         }
+     }
+ 
++    /** Every line the file holds for a sheet (carrying sheet=&lt;id&gt;), in the order they were written. */
++    public synchronized java.util.List<String> linesOf(String sheetId) {
++        String token = "sheet=" + sheetId;
++        try {
++            if (!Files.exists(file)) {
++                return java.util.List.of();
++            }
++            return Files.readAllLines(file, StandardCharsets.UTF_8).stream()
++                    .filter(line -> java.util.Arrays.asList(line.split(" ")).contains(token))
++                    .toList();
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
+new file mode 100644
+index 00000000..0faa2ad8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app.auditview;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The sheet's audit lines exactly as the file holds them, newest first. With a name, only the lines carrying
++ *  name=&lt;the name&gt; or person=&lt;the name&gt;, compared as names are (case and surrounding spaces ignored). */
++public class RespondWithAuditLines {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "name", required = false) String name, Audit audit,
++            ObjectResponse<List<String>> response) {
++        String wanted = name == null ? "" : name.trim();
++        List<String> lines = new ArrayList<>(audit.linesOf(sheetId.trim()).stream()
++                .filter(line -> wanted.isEmpty() || about(line, "name", wanted) || about(line, "person", wanted))
++                .toList());
++        Collections.reverse(lines);
++        response.send(lines);
++    }
++
++    /** Whether the line carries key=&lt;value&gt; as a whole field, the value compared ignoring case. */
++    private static boolean about(String line, String key, String value) {
++        String prefix = " " + key + "=";
++        for (int at = line.indexOf(prefix); at >= 0; at = line.indexOf(prefix, at + 1)) {
++            int start = at + prefix.length();
++            int end = start + value.length();
++            if (line.regionMatches(true, start, value, 0, value.length())
++                    && (end == line.length() || line.charAt(end) == ' ')) {
++                return true;
++            }
++        }
++        return false;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+index dde579b7..d84a27c6 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.quickadd;
+ 
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -9,17 +10,17 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Refuses the quick-add before anyone is added when its claim, dated the sheet's entry date (else its today), would have
+- *  its due-by in a closed period: the date plus the named person's terms (a person not on the sheet yet is added with
+- *  grade A and no terms of their own) — so a refused claim leaves no new person behind. */
++ *  its due-by in a closed period: the named person's terms-th business day after the date, as BuildClaim fixes it (a
++ *  person not on the sheet yet is added with grade A and no terms of their own) — so a refused claim leaves no new person behind. */
+ public class CheckQuickAddDate {
+     public void check(@Val QuickAddName name, @Val Sheet sheet, PeriodRepository periods, PersonRepository people,
+-            PersonGradeRepository grades) throws InvalidClaimException {
++            PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
+         LocalDate date = sheet.entryDateInForce();
+         int terms = people.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+                 .filter(p -> p.getName().equalsIgnoreCase(name.name())).findFirst()
+                 .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(date), date))
+                 .orElseGet(() -> sheet.termsFor(null, "A", date));
+-        if (periods.isClosedOn(sheet.getId(), date.plusDays(terms))) {
++        if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
+             throw new InvalidClaimException("No claim can be added in a closed period.");
+         }
+     }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+new file mode 100644
+index 00000000..93192124
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/audit?name=Ada — the sheet's audit lines as the file holds them, newest first,
++# only those about the named person when a name is given. Reads the file; writes nothing.
++respond:
++  class: net.officefloor.hq.app.auditview.RespondWithAuditLines
