@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import type { Person } from '../people/people';
 import { claimsPath, claimsQueryKey, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
 
@@ -45,6 +45,7 @@ function PersonClaims({ person }: { person: Person }) {
 }
 
 function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; claim?: Claim }) {
+  const [user] = useCurrentUser();
   const [, setEditing] = useEditingClaim();
   const today = useSheetToday();
   const [amount, setAmount] = useState(claim?.amount ?? '');
@@ -54,8 +55,8 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
   const save = useMutation({
     mutationFn: (body: { amount: string; date: string; note: string }) =>
       claim
-        ? putJson<Claim>(`${claimsPath(sheet)}/${claim.id}`, body)
-        : postJson<Claim>(personClaimsPath(sheet, person.id), body),
+        ? putJson<Claim>(`${claimsPath(sheet)}/${claim.id}`, body, user)
+        : postJson<Claim>(personClaimsPath(sheet, person.id), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
       if (claim) {

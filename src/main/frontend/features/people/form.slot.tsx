@@ -19,6 +19,7 @@ function PersonForm() {
 }
 
 function PersonFormFields({ sheet, person }: { sheet: string; person?: Person }) {
+  const [user] = useCurrentUser();
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(person?.name ?? '');
   const [grade, setGrade] = useState(person?.grade ?? 'A');
@@ -26,8 +27,8 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
   const save = useMutation({
     mutationFn: (body: { name: string; grade: string }) =>
       person
-        ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, body)
-        : postJson<Person>(peoplePath(sheet), body),
+        ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, body, user)
+        : postJson<Person>(peoplePath(sheet), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
       if (person) {

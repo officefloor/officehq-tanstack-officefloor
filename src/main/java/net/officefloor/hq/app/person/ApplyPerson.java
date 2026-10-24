@@ -10,6 +10,6 @@ public class ApplyPerson {
         }
         person.setName(request.name());
         person.setGrade(request.grade());
-        repository.save(person);
+        repository.saveAndFlush(person);
     }
 }

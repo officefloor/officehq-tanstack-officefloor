@@ -12,18 +12,23 @@ export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
 }
 
-export function postJson<T>(path: string, body: unknown): Promise<T> {
+// A change sends the signed-in name (`user`) as `X-User`, URI-encoded (a header is Latin-1 only),
+// so the server records who made it.
+const jsonHeaders = (user?: string): Record<string, string> =>
+  user ? { 'Content-Type': 'application/json', 'X-User': encodeURIComponent(user) } : { 'Content-Type': 'application/json' };
+
+export function postJson<T>(path: string, body: unknown, user?: string): Promise<T> {
   return send<T>(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(user),
     body: JSON.stringify(body),
   });
 }
 
-export function putJson<T>(path: string, body?: unknown): Promise<T> {
+export function putJson<T>(path: string, body?: unknown, user?: string): Promise<T> {
   return send<T>(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(user),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
