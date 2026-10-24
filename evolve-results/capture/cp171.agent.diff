@@ -1,0 +1,371 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 51e069c4..edb889f6 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -45,6 +45,8 @@ export type Claim = {
+   /** Whether it was added while the period its due-by falls in was soft-closed. */
+   lateEntry: boolean;
+   remindedOn: string | null;
++  /** The sheet's today when it last went to REVIEW (YYYY-MM-DD), or null when it never did. */
++  reviewOn: string | null;
+   /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
+   ref: string | null;
+   /** Its tags, trimmed, lower-cased and sorted, without repeats; empty when it has none. */
+@@ -162,6 +164,14 @@ export function lateFromOf(c: Claim, grade: string, settings: Settings | undefin
+ export const isOverdue = (c: Claim, today: string | undefined, grade: string, settings: Settings | undefined) =>
+   isOpen(c) && !isDeferred(c, today) && today !== undefined && lateFromOf(c, grade, settings) < today;
+ 
++/** Whether a claim is late in review: it is REVIEW and its review day plus the sheet's review SLA (setting
++ *  review-sla; none: never late) is before the sheet's today. */
++export function isReviewLate(c: Claim, today: string | undefined, settings: Settings | undefined): boolean {
++  const sla = settings?.reviewSla ?? '';
++  if (c.status !== 'REVIEW' || c.reviewOn === null || sla === '' || today === undefined) return false;
++  return new Date(Date.parse(`${c.reviewOn}T00:00:00Z`) + Number(sla) * 86_400_000).toISOString().slice(0, 10) < today;
++}
++
+ /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
+ export const useEditingClaim = () => useSearchParam('editClaim', asString);
+ 
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 53c5bc79..a8eb05ea 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -10,7 +10,7 @@ import { periodOn, usePeriods } from '../periods/periods';
+ import { useSettings } from '../roles/roles';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ import { templateClaimsPath, useTemplates } from '../templates/templates';
+-import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
++import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, isReviewLate, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
+ 
+ // A person's claims, newest first, with the claim form that adds one — or, while one of their
+ // claims' editor is open, saves its changes.
+@@ -69,6 +69,7 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
+             <span data-testid="claim-tags">{(c.tags ?? []).join(', ')}</span>{' '}
+             <span data-testid="claim-batch">{c.settleBatch ?? ''}</span>{' '}
++            <span data-testid="claim-review-late">{isReviewLate(c, today, settings.data) ? 'yes' : 'no'}</span>{' '}
+             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => { setSubmits({ id: c.id, count: 0 }); setEditing(String(c.id)); }}
+               editorSubmits={claim?.id === c.id && submits.id === c.id ? submits.count : 0}>
+               {claim?.id === c.id && (
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index b1c0a6cc..853a6069 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -13,7 +13,7 @@ export type Role = { user: string; role: string };
+  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
+  *  two decimals ("" when there is none — a person's due-total is at most it), and its proof threshold with two decimals ("" when there is none — a claim whose due is
+  *  above the one in force on its date cannot be settled or approved without a proof), and its grace days ("" when off; not dated), and its note threshold with two decimals ("" when there is none — a claim whose due is
+- *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's), and its pot with two decimals ("" when there is none; not dated — shared out among the members of each balanced pool by their shares), and its parent sheet's id ("" when none; not dated — a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up), and its fiscal year start month (1 to 12; "1" unless set; not dated — a fiscal year starts on its first day in that month and is named FY<yyyy> by the calendar year that day falls in), and its alert threshold with two decimals ("" when off; not dated — a person whose due-total goes above it is alerted in the audit), and its rounding mode (half-up or half-even; "" when none — a claim with one in force on the date it rounds by rounds by it, else by the policy date), and its review threshold with two decimals ("" when there is none — a claim whose due is above the one in force on its date goes to REVIEW when opened), and its escalation gap in days ("" when off; not dated — reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim). Each of those is the value in force on the
++ *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's), and its pot with two decimals ("" when there is none; not dated — shared out among the members of each balanced pool by their shares), and its parent sheet's id ("" when none; not dated — a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up), and its fiscal year start month (1 to 12; "1" unless set; not dated — a fiscal year starts on its first day in that month and is named FY<yyyy> by the calendar year that day falls in), and its alert threshold with two decimals ("" when off; not dated — a person whose due-total goes above it is alerted in the audit), and its rounding mode (half-up or half-even; "" when none — a claim with one in force on the date it rounds by rounds by it, else by the policy date), and its review threshold with two decimals ("" when there is none — a claim whose due is above the one in force on its date goes to REVIEW when opened), and its escalation gap in days ("" when off; not dated — reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim), and its review SLA in days ("" when none; not dated — a REVIEW claim whose review day plus that many days is before the sheet's today is late). Each of those is the value in force on the
+  *  sheet's today; `dated` holds the values recorded for each setting that carries a figure, by key (floor, late-pct,
+  *  terms, terms-A/B/C, clerk-limit, cap, proof-threshold, note-threshold, grace-A/B/C, proof-threshold-A/B/C, rounding, review-threshold), each from its from-date on (null: from the beginning of time; a null value is blank). */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string;
+@@ -25,7 +25,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   graceA: string; graceB: string; graceC: string;
+   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string;
+   fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string;
+-  escalateAfter: string };
++  escalateAfter: string; reviewSla: string };
+ 
+ /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
+  *  before it, else `start` (the sheet's starting value). */
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index 6f0e4385..ba8e19d7 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
+ import { ratesQueryKey } from '../rates/rates';
+ import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | PermKey;
++type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | PermKey;
+ 
+ /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
+  *  Not dated. */
+@@ -53,7 +53,7 @@ type Drafts = Partial<Record<Key, string>>;
+ // claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
+ // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
+ // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
+-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), and the form that sets them. A clerk settles a claim only when its due is at or below the
++// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), and the form that sets them. A clerk settles a claim only when its due is at or below the
+ // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
+ // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
+ // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
+@@ -104,6 +104,7 @@ function SheetSettings() {
+     rounding: settings.data?.rounding ?? '',
+     reviewThreshold: settings.data?.reviewThreshold ?? '',
+     escalateAfter: settings.data?.escalateAfter ?? '',
++    reviewSla: settings.data?.reviewSla ?? '',
+     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
+   };
+   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
+@@ -191,6 +192,10 @@ function SheetSettings() {
+         Escalate after days (blank: off):{' '}
+         <span data-testid="setting-escalate-after-current">{settings.data?.escalateAfter ?? ''}</span>
+       </p>
++      <p>
++        Review SLA days (blank: none):{' '}
++        <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
++      </p>
+       <p>
+         Grace days (blank: off): <span data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</span>
+       </p>
+@@ -372,6 +377,15 @@ function SheetSettings() {
+           onInput={edit('escalateAfter')}
+           onFocus={touch('escalateAfter')}
+         />
++        <input
++          data-testid="setting-review-sla"
++          placeholder="Review SLA days (blank: none)"
++          inputMode="numeric"
++          value={valueOf('reviewSla')}
++          onChange={edit('reviewSla')}
++          onInput={edit('reviewSla')}
++          onFocus={touch('reviewSla')}
++        />
+         <input
+           data-testid="setting-grace-days"
+           placeholder="Grace days (blank: off)"
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 240124c8..863062a2 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,7 +1,7 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+-import { useClaims } from '../claims/claims';
++import { isReviewLate, useClaims } from '../claims/claims';
+ import { personDue } from '../rates/due.slot';
+ import { diffDue, sumDue, useRates } from '../rates/rates';
+ import { useSettings } from '../roles/roles';
+@@ -15,7 +15,7 @@ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'
+ // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
+ // the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period (by from-date), its due-total and its change from
+ // the period before it (none for the earliest); per status, how
+-// many of the sheet's claims have it; per reason on the sheet's list of void reasons, how many VOID claims were voided with it.
++// many of the sheet's claims have it, and how many REVIEW claims are late in review; per reason on the sheet's list of void reasons, how many VOID claims were voided with it.
+ function Summary() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -95,6 +95,12 @@ function Summary() {
+               <td data-testid={`summary-status-${s}-count`}>{allClaims.filter((c) => c.status === s).length}</td>
+             </tr>
+           ))}
++          <tr>
++            <td>REVIEW late</td>
++            <td data-testid="summary-review-late-count">
++              {allClaims.filter((c) => isReviewLate(c, today, settings.data)).length}
++            </td>
++          </tr>
+         </tbody>
+       </table>
+       <table>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 7171f874..2dbad269 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -106,6 +106,7 @@ public class ApplyClaimStatus {
+             BigDecimal reviewThreshold = sheet.reviewThresholdOn(claim.getDate());
+             if ("open".equals(action) && reviewThreshold != null && due != null && due.compareTo(reviewThreshold) > 0) {
+                 claim.setStatus(ClaimStatus.REVIEW);
++                claim.setReviewOn(sheet.getToday());
+                 claim.setOpenedBy(user);
+                 repository.saveAndFlush(claim);
+                 return null;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 6adf1a41..62354158 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -110,6 +110,10 @@ public class Claim {
+     @Column(nullable = false)
+     private boolean escalated;
+ 
++    /** The sheet's today when the claim last went to REVIEW; null for a claim never in review. */
++    @Column(name = "review_on")
++    private LocalDate reviewOn;
++
+     /** How many proofs the claim has: raised by one at a time; 0 for a new claim. */
+     @Column(nullable = false)
+     private int proofs;
+@@ -332,6 +336,14 @@ public class Claim {
+         this.remindedOn = remindedOn;
+     }
+ 
++    public LocalDate getReviewOn() {
++        return reviewOn;
++    }
++
++    public void setReviewOn(LocalDate reviewOn) {
++        this.reviewOn = reviewOn;
++    }
++
+     public boolean isEscalated() {
+         return escalated;
+     }
+@@ -395,6 +407,7 @@ public class Claim {
+         then.deferredUntil = deferredUntil;
+         then.remindedOn = remindedOn;
+         then.escalated = escalated;
++        then.reviewOn = reviewOn;
+         then.proofs = proofs;
+         then.splitFrom = splitFrom;
+         then.lateEntry = lateEntry;
+@@ -422,6 +435,7 @@ public class Claim {
+         moved.deferredUntil = deferredUntil;
+         moved.remindedOn = remindedOn;
+         moved.escalated = escalated;
++        moved.reviewOn = reviewOn;
+         moved.proofs = proofs;
+         moved.lateEntry = lateEntry;
+         moved.tags = tags;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index d8869c27..1d345e4f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -7,13 +7,13 @@ import java.util.List;
+  * whether its person's last statement binds it, and the figure it binds it to (null: none, or n/a); the number of the
+  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
+  * the date of the claim it corrects, else its own); and its due-by (YYYY-MM-DD), fixed when it was created; and its status log, oldest first
+- * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>). */
++ * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy,
+         boolean stated, String statedDue, String corrects, String roundsOn, String dueBy,
+         List<String> log, String deferredUntil, int proofs, String splitFrom, boolean lateEntry, String remindedOn, String ref,
+         List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, String editedBy,
+-        Integer settleBatch, List<String> lines) {
++        Integer settleBatch, List<String> lines, String reviewOn) {
+ 
+     public static ClaimResponse from(Claim claim, List<String> log, List<String> comments, List<String> lines) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),
+@@ -25,6 +25,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getSplitFrom(), claim.isLateEntry(),
+                 claim.getRemindedOn() == null ? null : claim.getRemindedOn().toString(), claim.getRef(),
+                 Tags.list(claim.getTags()), Tags.list(claim.getTagsUsed()), claim.getVoidReason(), comments, claim.getEditedBy(),
+-                claim.getSettleBatch(), lines);
++                claim.getSettleBatch(), lines, claim.getReviewOn() == null ? null : claim.getReviewOn().toString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index a5590db4..ca877f96 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Sets the settings the form sets: a setting that carries a figure (the clerk limit, floor, terms, late percent,
+  *  each grade's own terms, cap, proof threshold, note threshold, each grade's grace days, each grade's proof threshold, review threshold) is recorded from its from-date (the sheet's today when none is given), replacing a
+  *  value recorded from that date and keeping the others; the policy date, period numbering from and entry date are set; a permission matrix entry
+- *  (key perm-<action>), the grace days, the pot, the parent sheet, the fiscal year start month and the alert threshold and the escalation gap are recorded undated. Each is logged with the sheet's today (so the
++ *  (key perm-<action>), the grace days, the pot, the parent sheet, the fiscal year start month and the alert threshold and the escalation gap and the review SLA are recorded undated. Each is logged with the sheet's today (so the
+  *  settings can be worked out as they stood on an earlier date). */
+ public class ApplySettings {
+     public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository, SettingLogRepository log) {
+@@ -20,7 +20,7 @@ public class ApplySettings {
+                 from = change.from() != null ? change.from() : sheet.getToday();
+                 sheet.record(change.key(), from, change.value());
+             } else if (change.key().startsWith("perm-") || Sheet.GRACE_DAYS.equals(change.key())
+-                    || Sheet.ESCALATE_AFTER.equals(change.key())
++                    || Sheet.ESCALATE_AFTER.equals(change.key()) || Sheet.REVIEW_SLA.equals(change.key())
+                     || Sheet.POT.equals(change.key()) || Sheet.PARENT.equals(change.key())
+                     || Sheet.FISCAL_START_MONTH.equals(change.key())
+                     || Sheet.ALERT_THRESHOLD.equals(change.key())) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 89079cf5..d98c5881 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.setting;
+ /** The settings form as submitted: the clerk limit (blank: no limit), the floor (blank: 1.00) and the terms in
+  *  days (blank: 14) and the late percent
+  *  (blank: 0.00) and the policy date (YYYY-MM-DD; blank: the sheet's today) and the period numbering from (YYYY-MM-DD; blank: off) and the terms of grades A, B and C in days (blank: the sheet's terms) and the cap (blank: none) and the proof threshold (blank: none); and the permission matrix entries for open, settle, void, reassign, close and reopen
+- *  (comma separated roles; blank: the standing rule); and the grace days (a whole number of days; blank: off; not dated); and the note threshold (blank: none); and the entry date (YYYY-MM-DD; blank: off; not dated); and the grace days of grades A, B and C (blank: none); and the proof thresholds of grades A, B and C (blank: none — the sheet's applies); and the pot (two decimals; blank: none; not dated); and the parent sheet (a sheet's id; blank: none; not dated); and the fiscal year start month (1 to 12; blank: 1; not dated); and the alert threshold (two decimals; blank: off; not dated); and the rounding mode (half-up or half-even; blank: none — a claim rounds by the policy date); and the review threshold (blank: none); and the escalation gap (a whole number of days; blank: off; not dated); a key left out (null) is not changed.
++ *  (comma separated roles; blank: the standing rule); and the grace days (a whole number of days; blank: off; not dated); and the note threshold (blank: none); and the entry date (YYYY-MM-DD; blank: off; not dated); and the grace days of grades A, B and C (blank: none); and the proof thresholds of grades A, B and C (blank: none — the sheet's applies); and the pot (two decimals; blank: none; not dated); and the parent sheet (a sheet's id; blank: none; not dated); and the fiscal year start month (1 to 12; blank: 1; not dated); and the alert threshold (two decimals; blank: off; not dated); and the rounding mode (half-up or half-even; blank: none — a claim rounds by the policy date); and the review threshold (blank: none); and the escalation gap (a whole number of days; blank: off; not dated); and the review SLA (a whole number of days; blank: none; not dated); a key left out (null) is not changed.
+  *  Each setting that carries a figure has its from-date (YYYY-MM-DD; blank or left out: the sheet's today): it is
+  *  recorded from that date on. */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+@@ -16,5 +16,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         String proofThresholdA, String proofThresholdB, String proofThresholdC,
+         String proofThresholdAFrom, String proofThresholdBFrom, String proofThresholdCFrom, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String roundingFrom,
+-        String reviewThreshold, String reviewThresholdFrom, String escalateAfter) {
++        String reviewThreshold, String reviewThresholdFrom, String escalateAfter, String reviewSla) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 07025a31..d30e1b73 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -13,14 +13,14 @@ import net.officefloor.hq.app.sheet.SheetSetting;
+  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
+  *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
+  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date; and the permission matrix
+- *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated). */
++ *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated); and the review SLA in days ("" when none; not dated). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
+         Map<String, List<Dated>> dated, String permOpen, String permSettle, String permVoid, String permReassign,
+         String permClose, String permReopen, String graceDays, String noteThreshold, String entryDate,
+         String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter) {
++        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
+ 
+     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
+     public record Dated(String from, String value) {
+@@ -53,7 +53,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 sheet.getAlertThreshold() == null ? "" : sheet.getAlertThreshold().toPlainString(),
+                 sheet.roundingOn(sheet.getToday()) == null ? "" : sheet.roundingOn(sheet.getToday()),
+                 sheet.reviewThresholdOn(sheet.getToday()) == null ? "" : sheet.reviewThresholdOn(sheet.getToday()).toPlainString(),
+-                sheet.getEscalateAfter() == null ? "" : String.valueOf(sheet.getEscalateAfter()));
++                sheet.getEscalateAfter() == null ? "" : String.valueOf(sheet.getEscalateAfter()),
++                sheet.getReviewSla() == null ? "" : String.valueOf(sheet.getReviewSla()));
+     }
+ 
+     /** The grade's grace days in force on the sheet's today; "" when it has none. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index b04e2e37..b2b1751b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -81,6 +81,8 @@ public class ValidateSettings {
+                     "The review threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");
+             undatedDays(changes, Sheet.ESCALATE_AFTER, request.escalateAfter(),
+                     "The escalation gap must be a whole number of days, 0 or more, or blank.");
++            undatedDays(changes, Sheet.REVIEW_SLA, request.reviewSla(),
++                    "The review SLA must be a whole number of days, 0 or more, or blank.");
+         }
+         body.set(new SettingsInput(changes));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 5b3a4e87..dee1e5de 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -33,6 +33,9 @@ public class Sheet {
+     /** The key of the escalation gap: undated, a whole number of days (null: off). */
+     public static final String ESCALATE_AFTER = "escalate-after";
+ 
++    /** The key of the review SLA: undated, a whole number of days (null: none). */
++    public static final String REVIEW_SLA = "review-sla";
++
+     /** The key of the pot: undated, an amount with two decimals (null: none). */
+     public static final String POT = "pot";
+ 
+@@ -295,6 +298,13 @@ public class Sheet {
+         return days == null ? null : Integer.valueOf(days);
+     }
+ 
++    /** The review SLA: a REVIEW claim whose review day plus this many days is before the sheet's today is late.
++     *  Not dated; null when none. */
++    public Integer getReviewSla() {
++        String days = valueOn(REVIEW_SLA, today);
++        return days == null ? null : Integer.valueOf(days);
++    }
++
+     /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */
+     public BigDecimal getPot() {
+         return amountOn(POT, today);
+diff --git a/src/main/resources/db/migration/V83__claim_review_on.sql b/src/main/resources/db/migration/V83__claim_review_on.sql
+new file mode 100644
+index 00000000..f0e8d941
+--- /dev/null
++++ b/src/main/resources/db/migration/V83__claim_review_on.sql
+@@ -0,0 +1,2 @@
++-- The sheet's today when the claim last went to REVIEW (null: never in review, or not recorded).
++ALTER TABLE claim ADD COLUMN review_on DATE;
