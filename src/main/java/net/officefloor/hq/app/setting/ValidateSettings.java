@@ -7,8 +7,11 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
- *  decimals. A blank clerk limit means no limit; a blank floor is 1.00. A key left out is not changed. */
+ *  decimals, and terms that are not a whole number of days. A blank clerk limit means no limit; a blank floor is
+ *  1.00; blank terms are 14. A key left out is not changed. */
 public class ValidateSettings {
+
+    private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
@@ -29,6 +32,14 @@ public class ValidateSettings {
             }
             floorValue = new BigDecimal(floor.trim()).setScale(2);
         }
-        body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue));
+        String terms = request == null ? null : request.terms();
+        int termsValue = Sheet.DEFAULT_TERMS;
+        if (terms != null && !terms.trim().isEmpty()) {
+            if (!DAYS.matcher(terms.trim()).matches()) {
+                throw new InvalidSettingsException("The terms must be a whole number of days, 0 or more, or blank.");
+            }
+            termsValue = Integer.parseInt(terms.trim());
+        }
+        body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue));
     }
 }

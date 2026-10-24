@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor. */
+/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor, then the terms. */
 public class AuditSettingChanged {
     public void audit(@Val SettingsInput input, @Val Sheet sheet,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
@@ -17,6 +17,9 @@ public class AuditSettingChanged {
         }
         if (input.setFloor()) {
             audit.record(head + " key=floor value=" + settings.floor());
+        }
+        if (input.setTerms()) {
+            audit.record(head + " key=terms value=" + settings.terms());
         }
     }
 }

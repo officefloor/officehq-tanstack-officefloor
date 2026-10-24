@@ -6,8 +6,11 @@ import { useCurrentSheet } from '../session/session';
 export type Role = { user: string; role: string };
 
 /** The sheet's settings: its clerk limit with two decimals (null when there is none) and its floor with two
- *  decimals (a claim's live due is at least it). */
-export type Settings = { clerkLimit: string | null; floor: string };
+ *  decimals (a claim's live due is at least it), and its terms in days (a claim is due by its date plus them). */
+export type Settings = { clerkLimit: string | null; floor: string; terms: string };
+
+/** The terms a sheet starts at, in days. */
+export const DEFAULT_TERMS = '14';
 
 export const rolesQueryKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
 export const rolesPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/roles`;

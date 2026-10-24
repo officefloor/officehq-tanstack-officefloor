@@ -4,7 +4,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Sets the sheet's clerk limit and floor, those the form sets. */
+/** Sets the sheet's clerk limit, floor and terms, those the form sets. */
 public class ApplySettings {
     public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository) {
         if (input.setClerkLimit()) {
@@ -12,6 +12,9 @@ public class ApplySettings {
         }
         if (input.setFloor()) {
             sheet.setFloor(input.floor());
+        }
+        if (input.setTerms()) {
+            sheet.setTerms(input.terms());
         }
         repository.saveAndFlush(sheet);
     }

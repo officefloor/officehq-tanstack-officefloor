@@ -27,6 +27,13 @@ public class Sheet {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal floor = Sheet.DEFAULT_FLOOR;
 
+    /** The terms: a claim is due by its date plus this many days; a sheet starts at 14. */
+    @Column(nullable = false)
+    private int terms = Sheet.DEFAULT_TERMS;
+
+    /** The terms a sheet starts at. */
+    public static final int DEFAULT_TERMS = 14;
+
     /** The floor a sheet starts at. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
@@ -64,5 +71,13 @@ public class Sheet {
 
     public void setFloor(BigDecimal floor) {
         this.floor = floor;
+    }
+
+    public int getTerms() {
+        return terms;
+    }
+
+    public void setTerms(int terms) {
+        this.terms = terms;
     }
 }

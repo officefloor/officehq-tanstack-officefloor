@@ -7,8 +7,8 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import type { Person } from '../people/people';
 import { figureOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
-import { useSettings } from '../roles/roles';
-import { claimsPath, claimsQueryKey, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
+import { DEFAULT_TERMS, useSettings } from '../roles/roles';
+import { claimsPath, claimsQueryKey, dueByOf, isOverdue, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
 // claims' editor is open, saves its changes.
@@ -23,6 +23,8 @@ function PersonClaims({ person }: { person: Person }) {
   const rates = useRates();
   const periods = usePeriods();
   const settings = useSettings();
+  const today = useSheetToday();
+  const terms = settings.data?.terms ?? DEFAULT_TERMS;
   if (!sheet) return null;
   const mine = (claims.data ?? []).filter((c) => c.personId === person.id);
   const claim = editing ? mine.find((c) => String(c.id) === editing) : undefined;
@@ -39,6 +41,8 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-due">{figureOf(c, rates.data, person.grade, settings.data?.floor)}</span>{' '}
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+            <span data-testid="claim-due-by">{dueByOf(c, terms)}</span>{' '}
+            <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>

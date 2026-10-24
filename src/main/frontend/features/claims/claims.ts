@@ -60,5 +60,16 @@ export function sumOf(claims: Claim[], held: Set<number> = new Set()): string {
   return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 
+/** A claim's due-by (YYYY-MM-DD): its date plus the terms in force, in days. */
+export function dueByOf(c: Claim, terms: string): string {
+  const d = new Date(`${c.date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + Number(terms));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+export const isOverdue = (c: Claim, terms: string, today: string | undefined) =>
+  c.status === 'OPEN' && today !== undefined && dueByOf(c, terms) < today;
+
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);

@@ -6,11 +6,11 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type Key = 'clerkLimit' | 'floor';
+type Key = 'clerkLimit' | 'floor' | 'terms';
 type Drafts = Partial<Record<Key, string>>;
 
 // The sheet's settings: the clerk limit in force (blank when there is none), the floor in force (a claim's live
-// due is at least it), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// due is at least it), the terms in force (a claim is due by its date plus that many days), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit; a steward settles anything. Each field shows the value in force until it is typed in; saving sets only
 // the fields typed in (all of them when none was).
 function SheetSettings() {
@@ -32,6 +32,7 @@ function SheetSettings() {
   const current: Record<Key, string> = {
     clerkLimit: settings.data?.clerkLimit ?? '',
     floor: settings.data?.floor ?? '',
+    terms: settings.data?.terms ?? '',
   };
   const valueOf = (key: Key) => drafts[key] ?? current[key];
   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
@@ -47,6 +48,9 @@ function SheetSettings() {
       </p>
       <p>
         Floor: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
+      </p>
+      <p>
+        Terms (days): <span data-testid="setting-terms-current">{settings.data?.terms ?? ''}</span>
       </p>
       <form
         data-testid="settings-form"
@@ -71,11 +75,19 @@ function SheetSettings() {
           onChange={edit('floor')}
           onInput={edit('floor')}
         />
+        <input
+          data-testid="setting-terms"
+          placeholder="Terms in days (blank: 14)"
+          inputMode="numeric"
+          value={valueOf('terms')}
+          onChange={edit('terms')}
+          onInput={edit('terms')}
+        />
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank.</span>
         )}
       </form>
     </section>
