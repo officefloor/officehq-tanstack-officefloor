@@ -8,12 +8,13 @@ import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { periodClosePath, periodDue, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { fiscalYearOf, periodClosePath, periodDue, periodsGenerateFyPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a person's unbound OPEN ones dated within a hold of theirs),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // buttons that close and reopen it, the form that adds one, and the form that generates one per calendar month
-// (named yyyy-mm, leaving out a month whose name or days the sheet's periods already take), showing how many were made.
+// (named yyyy-mm, leaving out a month whose name or days the sheet's periods already take), showing how many were made,
+// and the entry that generates a fiscal year's twelve the same way; each period shows the fiscal year its from-date falls in.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -46,6 +47,15 @@ function Periods() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') }),
   });
   const submitGenerate = useSubmitOnce(generate);
+  const [fyYear, setFyYear] = useState('');
+  const generateFy = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ generated: number }>(periodsGenerateFyPath(sheet ?? ''), body, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') }),
+  });
+  const submitGenerateFy = useSubmitOnce(generateFy);
+  // The two generators share one count and one error: the one pressed last shows.
+  const generated = generate.isSuccess ? generate.data.generated : generateFy.isSuccess ? generateFy.data.generated : null;
 
   if (!user || !sheet) return null;
   const dueTotal = (period: Period) =>
@@ -61,6 +71,7 @@ function Periods() {
             <th>To</th>
             <th>Due</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th></th>
           </tr>
         </thead>
@@ -72,6 +83,7 @@ function Periods() {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{dueTotal(p)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
+              <td data-testid="period-fy">{fiscalYearOf(p.from, settings.data)}</td>
               <td>
                 <PeriodActions key={`${sheet}:${p.id}`} sheet={sheet} period={p} />
               </td>
@@ -115,6 +127,7 @@ function Periods() {
         data-testid="period-generate-form"
         onSubmit={(e) => {
           e.preventDefault();
+          generateFy.reset();
           submitGenerate({ from: genFrom, to: genTo });
         }}
       >
@@ -122,24 +135,46 @@ function Periods() {
           data-testid="period-generate-from"
           placeholder="From (YYYY-MM-DD)"
           value={genFrom}
-          onChange={(e) => { setGenFrom(e.target.value); generate.reset(); }}
+          onChange={(e) => { setGenFrom(e.target.value); generate.reset(); generateFy.reset(); }}
         />
         <input
           data-testid="period-generate-to"
           placeholder="To (YYYY-MM-DD)"
           value={genTo}
-          onChange={(e) => { setGenTo(e.target.value); generate.reset(); }}
+          onChange={(e) => { setGenTo(e.target.value); generate.reset(); generateFy.reset(); }}
         />
         <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
           Generate monthly periods
         </button>
-        {generate.isSuccess && (
+        {generated !== null && (
           <>
-            {' '}Made <span data-testid="period-generated">{generate.data.generated}</span>
+            {' '}Made <span data-testid="period-generated">{generated}</span>
           </>
         )}
         {generate.isError && (
           <span data-testid="period-generate-error">Nothing was made: the from and to dates must be calendar dates, the to-date on or after the from-date.</span>
+        )}
+      </form>
+      <form
+        data-testid="period-generate-fy-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          generate.reset();
+          submitGenerateFy({ year: fyYear });
+        }}
+      >
+        <input
+          data-testid="period-generate-fy-year"
+          placeholder="Fiscal year (yyyy)"
+          inputMode="numeric"
+          value={fyYear}
+          onChange={(e) => { setFyYear(e.target.value); generate.reset(); generateFy.reset(); }}
+        />
+        <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
+          Generate fiscal year
+        </button>
+        {generateFy.isError && (
+          <span data-testid="period-generate-error">Nothing was made: the fiscal year must be a year (yyyy).</span>
         )}
       </form>
     </section>

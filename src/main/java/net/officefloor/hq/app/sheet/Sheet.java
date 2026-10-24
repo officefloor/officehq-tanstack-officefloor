@@ -36,6 +36,9 @@ public class Sheet {
      *  this sheet takes the parent's, then the parent's parent's, up to three levels up. */
     public static final String PARENT = "parent";
 
+    /** The key of the fiscal year start month: undated, a month 1 to 12 (null: 1). */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
     /** The keys of the undated dates, as the settings form names them. */
     public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from",
             ENTRY_DATE = "entry-date";
@@ -273,6 +276,12 @@ public class Sheet {
     /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */
     public BigDecimal getPot() {
         return amountOn(POT, today);
+    }
+
+    /** The month (1 to 12) a fiscal year starts in. Not dated; 1 unless set. */
+    public int getFiscalStartMonth() {
+        String month = valueOn(FISCAL_START_MONTH, today);
+        return month == null ? 1 : Integer.parseInt(month);
     }
 
     /** The id of the parent sheet. Not dated; null when none. */

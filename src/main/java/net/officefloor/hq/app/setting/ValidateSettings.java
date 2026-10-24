@@ -15,11 +15,13 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+
+    private static final Pattern MONTH = Pattern.compile("\\d{1,2}");
 
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
@@ -71,6 +73,7 @@ public class ValidateSettings {
                     "The proof threshold of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
             pot(changes, request.pot());
             parent(changes, request.parent());
+            fiscalStartMonth(changes, request.fiscalStartMonth());
         }
         body.set(new SettingsInput(changes));
     }
@@ -186,6 +189,23 @@ public class ValidateSettings {
             return;
         }
         changes.add(new SettingsInput.Change(Sheet.PARENT, value.trim().isEmpty() ? null : value.trim(), false, null));
+    }
+
+    /** Adds the fiscal year start month when the form sets it: a month 1 to 12, or blank (1). Undated. */
+    private static void fiscalStartMonth(List<SettingsInput.Change> changes, String value)
+            throws InvalidSettingsException {
+        if (value == null) {
+            return;
+        }
+        int month = 1;
+        if (!value.trim().isEmpty()) {
+            if (!MONTH.matcher(value.trim()).matches() || Integer.parseInt(value.trim()) < 1
+                    || Integer.parseInt(value.trim()) > 12) {
+                throw new InvalidSettingsException("The fiscal year start month must be a month, 1 to 12, or blank.");
+            }
+            month = Integer.parseInt(value.trim());
+        }
+        changes.add(new SettingsInput.Change(Sheet.FISCAL_START_MONTH, String.valueOf(month), false, null));
     }
 
     /** A setting's from-date: null when blank or left out (the sheet's today). */

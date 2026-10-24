@@ -21,9 +21,15 @@ public class GeneratePeriods {
         if (to.isBefore(from)) {
             throw new InvalidPeriodException("The to-date must be on or after the from-date.");
         }
+        generatedOut.set(months(sheet, YearMonth.from(from), YearMonth.from(to), repository));
+    }
+
+    /** Adds a period per calendar month from the first month to the last, leaving out a month whose name the sheet
+     *  already has or whose days overlap a period. */
+    static GeneratedPeriods months(Sheet sheet, YearMonth firstMonth, YearMonth lastMonth, PeriodRepository repository) {
         List<Period> periods = new ArrayList<>(repository.findBySheetIdOrderByFromDateAscIdAsc(sheet.getId()));
         List<Period> made = new ArrayList<>();
-        for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(to)); month = month.plusMonths(1)) {
+        for (YearMonth month = firstMonth; !month.isAfter(lastMonth); month = month.plusMonths(1)) {
             String name = month.toString();
             LocalDate first = month.atDay(1);
             LocalDate last = month.atEndOfMonth();
@@ -34,7 +40,7 @@ public class GeneratePeriods {
             periods.add(period);
             made.add(period);
         }
-        generatedOut.set(new GeneratedPeriods(made));
+        return new GeneratedPeriods(made);
     }
 
     private static LocalDate date(String value, String which, LocalDate today) throws InvalidPeriodException {

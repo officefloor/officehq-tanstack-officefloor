@@ -23,6 +23,9 @@ export const periodsPath = (sheetId: string) => `/api/sheets/${encodeURIComponen
 /** Generates a period per calendar month from a from-date's month to a to-date's. */
 export const periodsGeneratePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-periods`;
 
+/** Generates a fiscal year's twelve monthly periods, as the period generator does. */
+export const periodsGenerateFyPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-fy`;
+
 export const periodClosePath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/close`;
 
 export const periodSoftClosePath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/soft-close`;
@@ -67,4 +70,13 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
   return sumDue(claims
     .filter((c) => c.personId === person.id && countsAsOf(c, held, today, period.to) && periodOn([period], dueByOf(c)))
     .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
+}
+
+/** The fiscal year a date (YYYY-MM-DD) falls in, FY<yyyy>: a fiscal year starts on the first of the sheet's fiscal
+ *  year start month (1 unless set) and is named by the calendar year that day falls in. */
+export function fiscalYearOf(date: string, settings: Settings | undefined): string {
+  const start = Number(settings?.fiscalStartMonth || '1');
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= start ? year : year - 1}`;
 }
