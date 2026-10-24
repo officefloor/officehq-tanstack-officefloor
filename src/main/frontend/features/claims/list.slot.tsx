@@ -535,6 +535,10 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? 'You opened this claim, so someone else must settle it.'
             : action === 'approve' && claim.openedBy === user && claim.status === 'PENDING'
             ? 'You opened this claim, so someone else must approve it.'
+            : action === 'settle' && claim.editedBy === user
+            ? 'You last edited this claim, so someone else must settle it.'
+            : action === 'approve' && claim.editedBy === user && claim.status === 'PENDING'
+            ? 'You last edited this claim, so someone else must approve it.'
             : action === 'reject' && claim.status === 'PENDING' && reason.trim() === ''
             ? 'Give a reason to reject this claim.'
             : `That status change is not allowed for a ${claim.status} claim.`}

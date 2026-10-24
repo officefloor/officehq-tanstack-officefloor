@@ -48,6 +48,9 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
     private final Map<SharedSessionContractImplementor, Map<Object, Boolean>> changed =
             Collections.synchronizedMap(new IdentityHashMap<>());
 
+    /** The date a change is to be recorded on instead of its sheet's today, by entity. */
+    private final Map<Object, java.time.LocalDate> recordedOn = Collections.synchronizedMap(new IdentityHashMap<>());
+
     private final EntityManagerFactory entityManagerFactory;
 
     private final History history;
@@ -66,6 +69,11 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
         registry.appendListeners(EventType.POST_DELETE, this);
         registry.appendListeners(EventType.POST_COLLECTION_UPDATE, this);
         registry.appendListeners(EventType.POST_COLLECTION_RECREATE, this);
+    }
+
+    /** Records the entity's next saved state on the date, not its sheet's today then. */
+    public void recordOn(Object entity, java.time.LocalDate date) {
+        recordedOn.put(entity, date);
     }
 
     @Override
@@ -140,8 +148,12 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
                 long id = state.get("id").asLong();
                 String sheetId = state.get("sheetId").asString();
                 java.sql.Date today = todays.computeIfAbsent(sheetId, k -> todayOf(connection, k));
+                java.time.LocalDate on = recordedOn.remove(entity);
                 if (today == null) {
                     continue;
+                }
+                if (on != null) {
+                    today = java.sql.Date.valueOf(on);
                 }
                 String kind = History.kindOf(entity.getClass());
                 if ("claim".equals(kind) && state instanceof ObjectNode claim) {

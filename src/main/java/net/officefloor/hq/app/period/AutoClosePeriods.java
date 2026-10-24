@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.history.HistoryRecorder;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -15,11 +16,12 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 /** Once the sheet's today is changed, with grace days set, closes each open period (not a soft-closed one, whose totals stay as fixed) whose to-date plus the grace
  *  days is before the new today, in order of their to-dates, fixing its totals exactly as a close by hand would (the
- *  permission matrix governs closing by hand, not this), recording each closing with auto=yes at its end. */
+ *  permission matrix governs closing by hand, not this), recording each closing with auto=yes, and keeping it in the sheet's history as of its to-date (its end). */
 public class AutoClosePeriods {
     public void close(@Val Sheet sheet, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, RoleRepository roles,
-            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+            @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+            HistoryRecorder history) {
         Integer grace = sheet.getGraceDays();
         if (grace == null) {
             return;
@@ -31,6 +33,7 @@ public class AutoClosePeriods {
                 .toList();
         for (Period period : due) {
             ClosePeriod.fix(period, sheet, claims, people, rates, grades, log);
+            history.recordOn(period, period.getToDate());
             repository.saveAndFlush(period);
             audit.record("PERIOD_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
                     + " total=" + period.getClosedTotal().toPlainString() + " auto=yes");

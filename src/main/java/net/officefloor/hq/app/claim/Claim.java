@@ -54,6 +54,10 @@ public class Claim {
     @Column(name = "opened_by")
     private String openedBy;
 
+    /** The signed-in name that last edited the claim (its form or its amount entry); null while it was never edited. */
+    @Column(name = "edited_by")
+    private String editedBy;
+
     /** Whether the claim is bound by its person's last statement to the figure it had then. */
     @Column(nullable = false)
     private boolean stated;
@@ -238,6 +242,14 @@ public class Claim {
         this.openedBy = openedBy;
     }
 
+    public String getEditedBy() {
+        return editedBy;
+    }
+
+    public void setEditedBy(String editedBy) {
+        this.editedBy = editedBy;
+    }
+
     public String getCorrects() {
         return corrects;
     }
@@ -349,6 +361,7 @@ public class Claim {
         then.number = number;
         then.due = due;
         then.openedBy = openedBy;
+        then.editedBy = editedBy;
         then.dueBy = dueBy;
         then.dueFrom = dueFrom;
         then.dueTerms = dueTerms;

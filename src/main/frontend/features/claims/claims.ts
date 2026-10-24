@@ -25,6 +25,8 @@ export type Claim = {
   number: string | null;
   due: string | null;
   openedBy: string | null;
+  /** Who last edited it (its form or its amount entry); null when never edited. */
+  editedBy: string | null;
   stated: boolean;
   statedDue: string | null;
   corrects: string | null;
