@@ -60,3 +60,20 @@ export function useSettings() {
     enabled: !!sheet,
   });
 }
+
+/** The steward role delegated by a steward (`by`) to a user name, from `from` to `to` (YYYY-MM-DD), inclusive, by
+ *  the sheet's today: while today is inside it the user acts as a steward in every rule. */
+export type Delegation = { user: string; by: string; from: string; to: string };
+
+export const delegationsQueryKey = (sheetId: string) => ['sheet', sheetId, 'delegations'] as const;
+export const delegationsPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/delegations`;
+
+/** The delegations made on the sheet, oldest first. */
+export function useDelegations() {
+  const [sheet] = useCurrentSheet();
+  return useQuery({
+    queryKey: delegationsQueryKey(sheet ?? ''),
+    queryFn: () => getJson<Delegation[]>(delegationsPath(sheet ?? '')),
+    enabled: !!sheet,
+  });
+}
