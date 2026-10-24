@@ -57,13 +57,13 @@ public class Rollup {
             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
             for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
-                BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person)).map(Claim::getAmount)
+                BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 ClaimFigures figures = new ClaimFigures(sheetRates,
                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
                 String due = figures.dueTotal(mine, sheet.get().getToday(), person);
                 BigDecimal overdue = mine.stream()
-                        .filter(c -> ClaimFigures.countsLive(c, person) && figures.overdue(c))
+                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c))
                         .map(figures::due).filter(d -> d != null)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due,

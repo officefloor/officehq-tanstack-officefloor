@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim dated in a closed period cannot change status. Returns the claim's number for the
+ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim dated in a closed period cannot change status. Returns the claim's number for the
  * audit.
  */
 public class ApplyClaimStatus {
@@ -65,6 +65,9 @@ public class ApplyClaimStatus {
             }
             if ("reject".equals(action) && (reason == null || reason.isBlank())) {
                 throw new ClaimStatusException("A rejection needs a reason.");
+            }
+            if (next == ClaimStatus.SETTLED && claim.isDeferredOn(sheet.getToday())) {
+                throw new ClaimStatusException("A deferred claim cannot be settled until the sheet's today reaches its date.");
             }
             if (next == ClaimStatus.SETTLED && user.equals(claim.getOpenedBy())) {
                 throw new ClaimStatusException("The one who opened a claim cannot settle or approve it.");

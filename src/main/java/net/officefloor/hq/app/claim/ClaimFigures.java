@@ -55,9 +55,10 @@ public class ClaimFigures {
         return claim.getRoundsOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether a claim is overdue: it is OPEN or PENDING and its due-by (fixed when it was created) is before the sheet's today. */
+    /** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by (fixed when it was created) is
+     *  before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return claim.getStatus().isOpen() && claim.getDueBy().isBefore(today);
+        return claim.getStatus().isOpen() && !claim.isDeferredOn(today) && claim.getDueBy().isBefore(today);
     }
 
     /** The late charge on a figure: the late percent of it for every full 30 days the claim is overdue, rounded
@@ -77,15 +78,16 @@ public class ClaimFigures {
         return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
     }
 
-    /** Whether a claim counts toward the totals: only OPEN, PENDING and SETTLED claims do. */
-    public static boolean counts(Claim claim) {
-        return claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED;
+    /** Whether a claim counts toward the totals on a day: only OPEN, PENDING and SETTLED claims do, but not an OPEN
+     *  one deferred until after that day. */
+    public static boolean counts(Claim claim, LocalDate today) {
+        return (claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED) && !claim.isDeferredOn(today);
     }
 
     /** Whether a claim counts toward the live totals: as {@link #counts}, except its person's OPEN and PENDING
      *  claims dated within a hold of theirs, unless a statement binds them (null person: no holds). */
-    public static boolean countsLive(Claim claim, Person person) {
-        return counts(claim) && !(person != null && claim.getStatus().isOpen() && !claim.isBound()
+    public static boolean countsLive(Claim claim, Person person, LocalDate today) {
+        return counts(claim, today) && !(person != null && claim.getStatus().isOpen() && !claim.isBound()
                 && person.heldOn(claim.getDate()));
     }
 
@@ -160,7 +162,7 @@ public class ClaimFigures {
 
     /** The person's live due-total before the cap: the sum of their figures. */
     private String uncappedDueTotal(List<Claim> claims, LocalDate today, Person person) {
-        List<Claim> counted = claims.stream().filter(c -> countsLive(c, person)).toList();
+        List<Claim> counted = claims.stream().filter(c -> countsLive(c, person, today)).toList();
         String grade = grades.on(today);
         boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
                 || (!c.isBound() && (!grade.equals(grades.on(c.getDate())) || !c.getDate().isAfter(today)) && figure(c) != null));

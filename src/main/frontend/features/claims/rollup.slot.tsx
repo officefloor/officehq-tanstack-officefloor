@@ -1,5 +1,5 @@
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { usePeople } from '../people/people';
 import { holdsOf, sumOf, useClaims } from './claims';
 
@@ -9,10 +9,11 @@ function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
   const people = usePeople();
   const claims = useClaims();
+  const today = useSheetToday();
   if (!user || !sheet) return null;
   return (
     <p>
-      Claimed in total <strong data-testid="rollup-claimed-total">{sumOf(claims.data ?? [], holdsOf(people.data))}</strong>
+      Claimed in total <strong data-testid="rollup-claimed-total">{sumOf(claims.data ?? [], holdsOf(people.data), today)}</strong>
     </p>
   );
 }

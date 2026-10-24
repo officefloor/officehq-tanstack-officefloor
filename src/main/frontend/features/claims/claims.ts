@@ -32,6 +32,8 @@ export type Claim = {
   dueBy: string;
   /** Its status log, oldest first: one line per status it has had, `<STATUS> by <user> on <date> due=<due>`. */
   log: string[];
+  /** The date it is deferred until (YYYY-MM-DD), or null when it was never deferred. */
+  deferredUntil: string | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
@@ -41,8 +43,14 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  *  (a PENDING claim shows its live figure, and is bound again if rejected). */
 export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
-/** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do. */
-export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+/** Whether a claim is deferred on the sheet's today: it is OPEN and deferred until a date after it. Until then it
+ *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+export const isDeferred = (c: Claim, today: string | undefined) =>
+  c.status === 'OPEN' && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+
+/** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do, but not a
+ *  deferred one. */
+export const counts = (c: Claim, today: string | undefined) => (isOpen(c) || c.status === 'SETTLED') && !isDeferred(c, today);
 
 /** A hold: from a date on, to a date (YYYY-MM-DD, inclusive; null: open-ended). */
 export type Hold = { from: string; to: string | null };
@@ -60,7 +68,7 @@ const heldOn = (c: Claim, holds: Holds) =>
 
 /** Whether a claim counts toward the live totals: as `counts`, except its person's OPEN and PENDING claims dated
  *  within a hold of theirs, unless a statement binds them. */
-export const countsLive = (c: Claim, holds: Holds) => counts(c) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
+export const countsLive = (c: Claim, holds: Holds, today: string | undefined) => counts(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
 
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -84,16 +92,16 @@ const cents = (amount: string) => Math.round(Number(amount) * 100);
 
 /** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; unbound OPEN claims dated
  *  within a hold of their person are left out. */
-export function sumOf(claims: Claim[], held: Holds = new Map()): string {
-  return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
+export function sumOf(claims: Claim[], held: Holds, today: string | undefined): string {
+  return (claims.filter((c) => countsLive(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 
 /** A claim's due-by (YYYY-MM-DD), fixed when it was created. */
 export const dueByOf = (c: Claim): string => c.dueBy;
 
-/** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by is before the sheet's today. */
 export const isOverdue = (c: Claim, today: string | undefined) =>
-  isOpen(c) && today !== undefined && dueByOf(c) < today;
+  isOpen(c) && !isDeferred(c, today) && today !== undefined && dueByOf(c) < today;
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);

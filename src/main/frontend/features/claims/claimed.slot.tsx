@@ -1,4 +1,5 @@
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+import { useSheetToday } from '../session/session';
 import type { Person } from '../people/people';
 import { holdsOf, sumOf, useClaims } from './claims';
 
@@ -9,7 +10,8 @@ function ClaimedHeader() {
 
 function PersonClaimed({ person }: { person: Person }) {
   const claims = useClaims();
-  return <td data-testid="person-claimed">{sumOf((claims.data ?? []).filter((c) => c.personId === person.id), holdsOf([person]))}</td>;
+  const today = useSheetToday();
+  return <td data-testid="person-claimed">{sumOf((claims.data ?? []).filter((c) => c.personId === person.id), holdsOf([person]), today)}</td>;
 }
 
 export const contributions = [

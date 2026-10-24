@@ -12,7 +12,7 @@ import { countsLive, holdsOf, isOverdue, useClaims, type Claim } from './claims'
 export function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): { count: number; total: string } {
   const held = holdsOf([person]);
-  const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, today));
+  const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held, today) && isOverdue(c, today));
   return { count: mine.length, total: sumDue(mine.map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today))) };
 }
 

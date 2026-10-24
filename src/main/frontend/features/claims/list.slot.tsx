@@ -8,7 +8,7 @@ import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/peopl
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
 import { useSettings } from '../roles/roles';
-import { claimsPath, claimsQueryKey, dueByOf, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
+import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
 // claims' editor is open, saves its changes.
@@ -50,6 +50,8 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}
             <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
             <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
+            <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
+            <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
@@ -88,7 +90,9 @@ const ACTIONS = [
 // instead of opening its editor (an open claim is voided and added anew). A steward moves a DRAFT, OPEN or PENDING
 // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
 // shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
-// bound by no statement; anyone else, or any other status, shows the claim's error.
+// bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
+// a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
+// in a closed period shows the claim's error. A deferred claim cannot be settled.
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
 }) {
@@ -118,6 +122,17 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
     ]),
   });
   const submitMove = useSubmitOnce(move);
+  const today = useSheetToday();
+  const [deferTo, setDeferTo] = useState('');
+  const defer = useMutation({
+    mutationFn: (until: string) =>
+      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/defer?until=${encodeURIComponent(until)}`, undefined, user),
+    onSuccess: () => {
+      setDeferTo('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
+  });
+  const submitDefer = useSubmitOnce(defer);
   const [editRefused, setEditRefused] = useState(false);
   const action = change.variables?.action;
   const periods = usePeriods();
@@ -129,7 +144,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); setEditRefused(false); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); setEditRefused(false); }}
       />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
@@ -140,6 +155,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
           onClick={() => {
             setEditRefused(false);
             move.reset();
+            defer.reset();
             submitChange(action === 'reject' ? { action, reason } : { action });
           }}
         >
@@ -149,7 +165,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); setEditRefused(false); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); setEditRefused(false); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -161,13 +177,33 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         disabled={move.isPending || !target}
         onClick={() => {
           change.reset();
+          defer.reset();
           setEditRefused(false);
           if (target) submitMove(target.id);
         }}
       >
         Move
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); setEditRefused(false); }}>
+      <input
+        data-testid="claim-defer-date"
+        placeholder="Defer until YYYY-MM-DD"
+        value={deferTo}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); change.reset(); move.reset(); setEditRefused(false); }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-defer"
+        disabled={defer.isPending}
+        onClick={() => {
+          change.reset();
+          move.reset();
+          setEditRefused(false);
+          submitDefer(deferTo);
+        }}
+      >
+        Defer
+      </button>{' '}
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); setEditRefused(false); }}>
         <button
           type="button"
           data-testid="claim-edit"
@@ -180,9 +216,15 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || editRefused) && (
+      {(change.isError || move.isError || defer.isError || editRefused) && (
         <span data-testid="claim-error">
-          {move.isError
+          {defer.isError
+            ? closed
+              ? 'This claim is dated in a closed period, so it cannot be deferred.'
+              : claim.status !== 'OPEN'
+              ? `Only an open claim can be deferred; this one is ${claim.status}.`
+              : `A claim can only be deferred to a date after the sheet's today (${today ?? ''}).`
+            : move.isError
             ? move.error instanceof HttpError && move.error.status === 403
               ? 'Only a steward can move a claim to another person.'
               : `A ${claim.status} claim cannot move to another person.`
@@ -196,6 +238,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? 'Only a steward can re-settle a claim.'
             : action === 'resettle'
             ? `Only a settled claim can be re-settled; this one is ${claim.status}.`
+            : action === 'settle' && isDeferred(claim, today)
+            ? `This claim is deferred until ${claim.deferredUntil}, so it cannot be settled before then.`
             : action === 'settle' && claim.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
             : action === 'approve' && claim.openedBy === user && claim.status === 'PENDING'

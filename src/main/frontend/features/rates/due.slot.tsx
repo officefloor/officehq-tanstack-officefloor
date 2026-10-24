@@ -40,7 +40,7 @@ function subtract(a: string, b: string): string {
 /** The sum of a person's figures, before the cap. */
 function personFigures(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): string {
-  const mine = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person])));
+  const mine = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person]), today));
   const grade = gradeOn(person, today);
   const kept = (c: Claim) => c.due !== null || (isBound(c) && c.statedDue !== null)
     || (!isBound(c) && (gradeOn(person, c.date) !== grade || (today !== undefined && c.date <= today)) && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');

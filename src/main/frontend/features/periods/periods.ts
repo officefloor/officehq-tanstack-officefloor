@@ -46,7 +46,7 @@ export function periodDue(period: Period, people: Person[] | undefined, claims: 
   const personOf = new Map((people ?? []).map((p) => [p.id, p]));
   const held = holdsOf(people);
   return sumDue(claims
-    .filter((c) => countsLive(c, held) && personOf.has(c.personId) && periodOn([period], c.date))
+    .filter((c) => countsLive(c, held, today) && personOf.has(c.personId) && periodOn([period], c.date))
     .map((c) => chargedOf(c, rates, gradeOn(personOf.get(c.personId)!, c.date), settings, today)));
 }
 
@@ -58,6 +58,6 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
   const held = holdsOf(people);
   return sumDue(claims
-    .filter((c) => c.personId === person.id && countsLive(c, held) && periodOn([period], c.date))
+    .filter((c) => c.personId === person.id && countsLive(c, held, today) && periodOn([period], c.date))
     .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
 }

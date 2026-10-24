@@ -30,7 +30,7 @@ public class TakeStatement {
         String dueTotal = figures.dueTotal(mine, sheet.getToday(), person);
         int counted = 0;
         for (Claim claim : mine) {
-            if (ClaimFigures.countsLive(claim, person)) {
+            if (ClaimFigures.countsLive(claim, person, sheet.getToday())) {
                 BigDecimal figure = figures.figure(claim);
                 claim.bind(true, figure);
                 counted++;
