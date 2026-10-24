@@ -1,0 +1,94 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index e02e4721..55040e3c 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -10,6 +10,17 @@ import { useSettings } from '../roles/roles';
+ import { sumDue, useRates } from '../rates/rates';
+ import { personDue } from '../rates/due.slot';
+ import { crewsPath, crewsQueryKey, useCrews, type Crew } from './crews';
++import type { Person } from '../people/people';
++import type { Claim } from '../claims/claims';
++import type { Rate } from '../rates/rates';
++import type { Settings } from '../roles/roles';
++
++/** A crew's due-total: its lead's and its members' due-totals added up, n/a skipped. */
++export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++  settings: Settings | undefined): string {
++  const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
++  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings)));
++}
+ 
+ // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.
+ // A blank name, or one already a crew's, is refused by the server and shows the error beside the entry, which goes
+@@ -98,9 +109,6 @@ function CrewRow({ crew }: { crew: Crew }) {
+     },
+   });
+   const submit = useSubmitOnce(add);
+-  const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
+-  const dues = (people.data ?? []).filter((p) => ids.includes(p.id))
+-    .map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data));
+   return (
+     <tr data-testid={`crew-row-${crew.name}`}>
+       <td data-testid="crew-name">{crew.name}</td>
+@@ -112,7 +120,7 @@ function CrewRow({ crew }: { crew: Crew }) {
+           ))}
+         </ul>
+       </td>
+-      <td data-testid="crew-due-total">{sumDue(dues)}</td>
++      <td data-testid="crew-due-total">{crewDue(crew, people.data ?? [], claims.data ?? [], rates.data, today, settings.data)}</td>
+       <td>
+         <select
+           data-testid="crew-member-select"
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index 60ea58c6..de4e6e06 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -4,11 +4,13 @@ import { usePeople } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { overdueOf } from '../claims/overdue.slot';
+ import { personDue } from '../rates/due.slot';
+-import { trimmedSum, useRates, type Rate } from '../rates/rates';
++import { sumDue, trimmedSum, useRates, type Rate } from '../rates/rates';
+ import { useSettings, type Settings } from '../roles/roles';
+ import type { Person } from '../people/people';
+ import type { Claim } from '../claims/claims';
+ import { STATUSES } from '../summary/summary.slot';
++import { useCrews } from '../crews/crews';
++import { crewDue } from '../crews/crews.slot';
+ 
+ /** A sheet's due-total and overdue-total, as the rollup figures them, from what the store holds for it. */
+ export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+@@ -31,11 +33,13 @@ export function personNamed(people: Person[], user: string | undefined): Person
+ // The header counters, shown at all times: how many people the sheet has (retired ones included), how many of its
+ // claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
+ // figures them); and the signed-in user's own due-total and overdue-total, when a person on the sheet goes by their
+-// name (blank when none does).
++// name (blank when none does), with their crew total: the due-totals of the crews that person leads, added up (blank
++// when they lead none).
+ function HeaderCounters() {
+   const people = usePeople();
+   const claims = useClaims();
+   const rates = useRates();
++  const crews = useCrews();
+   const settings = useSettings();
+   const today = useSheetToday();
+   const allPeople = people.data ?? [];
+@@ -44,6 +48,10 @@ function HeaderCounters() {
+   const [user] = useCurrentUser();
+   const me = personNamed(allPeople, user);
+   const mine = me ? sheetTotals([me], allClaims, rates.data, today, settings.data) : { due: '', overdue: '' };
++  const led = me ? (crews.data ?? []).filter((c) => c.lead?.id === me.id) : [];
++  const myCrewDue = led.length > 0
++    ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))
++    : '';
+   return (
+     <section data-testid="header-counters">
+       People <strong data-testid="header-people-count">{allPeople.length}</strong>
+@@ -56,6 +64,7 @@ function HeaderCounters() {
+       {' · '}Overdue <strong data-testid="header-overdue-total">{overdue}</strong>
+       {' · '}My due <strong data-testid="my-due-total">{mine.due}</strong>
+       {' · '}My overdue <strong data-testid="my-overdue-total">{mine.overdue}</strong>
++      {' · '}My crew due <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
+     </section>
+   );
+ }
