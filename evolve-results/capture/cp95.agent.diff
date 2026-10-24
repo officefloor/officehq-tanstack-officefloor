@@ -1,0 +1,228 @@
+diff --git a/src/main/frontend/features/rates/form.slot.tsx b/src/main/frontend/features/rates/form.slot.tsx
+index 811d07bb..9040e7a1 100644
+--- a/src/main/frontend/features/rates/form.slot.tsx
++++ b/src/main/frontend/features/rates/form.slot.tsx
+@@ -1,11 +1,11 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { putJson } from '../../api/http';
++import { getJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { GRADES } from '../people/people';
+-import { rateOn, ratesPath, ratesQueryKey, useRates, type Rate } from './rates';
++import { rateOn, ratesPath, ratesPreviewPath, ratesQueryKey, useRates, type Rate } from './rates';
+ 
+ // The sheet's rates: each grade's rate in force on the sheet's today (n/a for a grade with none), every
+ // rate with its from-date and to-date (a grade's rate from the start shows n/a when it has none), and the form that
+@@ -31,6 +31,14 @@ function Rates() {
+     },
+   });
+   const submit = useSubmitOnce(save);
++  const [previewGrade, setPreviewGrade] = useState<string>(GRADES[0]);
++  const [previewPct, setPreviewPct] = useState('');
++  // Nothing is saved: the store works out what the candidate rate would change and the screen shows it.
++  const preview = useMutation({
++    mutationFn: (q: { grade: string; pct: string }) =>
++      getJson<{ count: number; diff: string }>(
++        `${ratesPreviewPath(sheet ?? '')}?grade=${encodeURIComponent(q.grade)}&pct=${encodeURIComponent(q.pct)}`),
++  });
+ 
+   if (!user || !sheet) return null;
+   return (
+@@ -115,6 +123,43 @@ function Rates() {
+           <span data-testid="rate-form-error">The rate must be a percent, 0.00 or more, with up to two decimals, the from-date a calendar date or blank, and the to-date a calendar date on or after the from-date, or blank.</span>
+         )}
+       </form>
++      <form
++        data-testid="rate-preview-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          preview.reset();
++          preview.mutate({ grade: previewGrade, pct: previewPct });
++        }}
++      >
++        <select
++          data-testid="rate-preview-grade"
++          value={previewGrade}
++          onChange={(e) => { setPreviewGrade(e.target.value); preview.reset(); }}
++        >
++          {GRADES.map((g) => (
++            <option key={g} value={g}>{g}</option>
++          ))}
++        </select>
++        <input
++          data-testid="rate-preview-pct"
++          placeholder="Candidate percent"
++          inputMode="decimal"
++          value={previewPct}
++          onChange={(e) => { setPreviewPct(e.target.value); preview.reset(); }}
++        />
++        <button type="submit" data-testid="rate-preview" disabled={preview.isPending}>
++          Preview
++        </button>
++        {preview.isSuccess && (
++          <span>
++            {' '}<span data-testid="rate-preview-count">{preview.data.count}</span> claims would change by{' '}
++            <span data-testid="rate-preview-diff">{preview.data.diff}</span>
++          </span>
++        )}
++        {preview.isError && (
++          <span data-testid="rate-preview-error">The candidate rate must be a percent, 0.00 or more, with up to two decimals.</span>
++        )}
++      </form>
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 536099f0..dde18398 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -12,6 +12,9 @@ export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as
+ 
+ export const ratesPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rates`;
+ 
++/** Where a candidate rate is previewed: what it would change, saving nothing. */
++export const ratesPreviewPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rate-preview`;
++
+ /** The sheet's rates, by grade, then by from-date (a rate with none first). */
+ export function useRates() {
+   const [sheet] = useCurrentSheet();
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RatePreviewInput.java b/src/main/java/net/officefloor/hq/app/rate/RatePreviewInput.java
+new file mode 100644
+index 00000000..f6e40965
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RatePreviewInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++
++/** A validated rate preview: the grade and the candidate percent with two decimals. */
++public record RatePreviewInput(String grade, BigDecimal pct) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RatePreviewResponse.java b/src/main/java/net/officefloor/hq/app/rate/RatePreviewResponse.java
+new file mode 100644
+index 00000000..f86006b6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RatePreviewResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rate;
++
++/** A rate preview: how many claims would show a different due, and the sum of the differences ("3.00", "-1.50"). */
++public record RatePreviewResponse(int count, String diff) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
+new file mode 100644
+index 00000000..87963cfd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
+@@ -0,0 +1,54 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimFigures;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonGrade;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonGrades;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** What a candidate rate would do: of the OPEN and PENDING claims whose person had the grade on the claim's date,
++ *  not bound by a statement, how many would show a different due were the candidate the grade's rate on every date,
++ *  and the sum of the differences (new due minus current due; n/a counts as 0.00). Nothing is saved. */
++public class RespondWithRatePreview {
++    public void respond(@Val Sheet sheet, @Val RatePreviewInput input, RateRepository rates, PersonRepository persons,
++            ClaimRepository claims, PersonGradeRepository grades, ObjectResponse<RatePreviewResponse> response) {
++        List<Rate> current = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheet.getId());
++        List<Rate> candidate = new ArrayList<>(current.stream().filter(r -> !r.getGrade().equals(input.grade())).toList());
++        candidate.add(new Rate(sheet.getId(), input.grade(), input.pct(), null, null));
++        Map<Long, Person> people = persons.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++                .collect(Collectors.toMap(Person::getId, p -> p));
++        Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(sheet.getId());
++        int count = 0;
++        BigDecimal diff = BigDecimal.ZERO.setScale(2);
++        for (Claim claim : claims.findBySheetIdOrderByIdDesc(sheet.getId())) {
++            Person person = people.get(claim.getPersonId());
++            if (person == null || !claim.getStatus().isOpen() || claim.isBound()) {
++                continue;
++            }
++            PersonGrades personGrades = new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of()));
++            if (!input.grade().equals(personGrades.on(claim.getDate()))) {
++                continue;
++            }
++            BigDecimal was = new ClaimFigures(current, personGrades, sheet).due(claim);
++            BigDecimal would = new ClaimFigures(candidate, personGrades, sheet).due(claim);
++            BigDecimal before = was == null ? BigDecimal.ZERO : was;
++            BigDecimal after = would == null ? BigDecimal.ZERO : would;
++            if ((was == null) != (would == null) || before.compareTo(after) != 0) {
++                count++;
++                diff = diff.add(after.subtract(before));
++            }
++        }
++        response.send(new RatePreviewResponse(count, diff.setScale(2).toPlainString()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRatePreview.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRatePreview.java
+new file mode 100644
+index 00000000..86181395
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRatePreview.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.rate;
++
++import java.math.BigDecimal;
++import java.util.Set;
++import java.util.regex.Pattern;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Reads the rate preview from the query; refuses a grade other than A, B or C and a candidate percent that is
++ *  missing, negative or has more than two decimals. */
++public class ValidateRatePreview {
++
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    private static final Pattern PCT = Pattern.compile("\\d+(\\.\\d{1,2})?");
++
++    public void validate(@RequestParam(name = "grade", required = false) String gradeParam,
++            @RequestParam(name = "pct", required = false) String pctParam, Out<RatePreviewInput> input)
++            throws InvalidRateException {
++        String grade = gradeParam == null ? "" : gradeParam.trim();
++        String pct = pctParam == null ? "" : pctParam.trim();
++        if (!GRADES.contains(grade)) {
++            throw new InvalidRateException("The grade must be A, B or C.");
++        }
++        if (!PCT.matcher(pct).matches()) {
++            throw new InvalidRateException("The rate must be a percent, 0.00 or more, with up to two decimals.");
++        }
++        input.set(new RatePreviewInput(grade, new BigDecimal(pct).setScale(2)));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml
+new file mode 100644
+index 00000000..1eb010fd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml
+@@ -0,0 +1,11 @@
++# GET /api/sheets/{sheetId}/rate-preview?grade=A&pct=20.00 — what a candidate rate for a grade would change. Saves nothing.
++validate:
++  class: net.officefloor.hq.app.rate.ValidateRatePreview
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.rate.RespondWithRatePreview
++  govern: [ transaction ]
