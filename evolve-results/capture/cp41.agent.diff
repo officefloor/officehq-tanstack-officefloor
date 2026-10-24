@@ -1,0 +1,70 @@
+diff --git a/src/main/frontend/features/claims/overdue.slot.tsx b/src/main/frontend/features/claims/overdue.slot.tsx
+index ec21a20e..48a8498e 100644
+--- a/src/main/frontend/features/claims/overdue.slot.tsx
++++ b/src/main/frontend/features/claims/overdue.slot.tsx
+@@ -9,7 +9,7 @@ import { countsLive, holdsOf, isOverdue, useClaims, type Claim } from './claims'
+ // A person's overdue count and overdue-total: their counted claims that are overdue (OPEN or PENDING, due-by before the
+ // sheet's today; their unbound OPEN and PENDING claims dated within a hold of theirs do not count), and those claims' dues (with their late charge) added up, skipping n/a.
+ // The sheet's are everyone's added up.
+-function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++export function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined): { count: number; total: string } {
+   const held = holdsOf([person]);
+   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, today));
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+new file mode 100644
+index 00000000..cecf43bf
+--- /dev/null
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -0,0 +1,38 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useSheetToday } from '../session/session';
++import { usePeople } from '../people/people';
++import { useClaims } from '../claims/claims';
++import { overdueOf } from '../claims/overdue.slot';
++import { personDue } from '../rates/due.slot';
++import { sumDue, useRates } from '../rates/rates';
++import { useSettings } from '../roles/roles';
++import { STATUSES } from '../summary/summary.slot';
++
++// The header counters, shown at all times: how many people the sheet has (retired ones included), how many of its
++// claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
++// figures them).
++function HeaderCounters() {
++  const people = usePeople();
++  const claims = useClaims();
++  const rates = useRates();
++  const settings = useSettings();
++  const today = useSheetToday();
++  const allPeople = people.data ?? [];
++  const allClaims = claims.data ?? [];
++  const due = sumDue(allPeople.map((p) => personDue(p, allClaims, rates.data, today, settings.data)));
++  const overdue = sumDue(allPeople.map((p) => overdueOf(p, allClaims, rates.data, today, settings.data).total));
++  return (
++    <section data-testid="header-counters">
++      People <strong data-testid="header-people-count">{allPeople.length}</strong>
++      {STATUSES.map((s) => (
++        <span key={s}>
++          {' · '}{s} <strong data-testid={`header-claims-${s}-count`}>{allClaims.filter((c) => c.status === s).length}</strong>
++        </span>
++      ))}
++      {' · '}Due <strong data-testid="header-due-total">{due}</strong>
++      {' · '}Overdue <strong data-testid="header-overdue-total">{overdue}</strong>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 1, Component: HeaderCounters });
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index fa0b35ea..1419b382 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -8,7 +8,7 @@ import { useSettings } from '../roles/roles';
+ import { periodDue, usePeriods } from '../periods/periods';
+ 
+ /** The statuses the summary counts claims by. */
+-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
++export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+ 
+ // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
+ // the sheet's today and their due-totals added up (skipping n/a); per period, its due-total; per status, how
