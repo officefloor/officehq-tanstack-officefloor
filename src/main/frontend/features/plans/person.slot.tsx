@@ -8,13 +8,14 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peoplePath, type Person } from '../people/people';
 import { plansQueryKey, usePlans, type Plan } from './plans';
 
-// A person's plans — each an amount, a start, every N days and an end, with how many claims it has made so far — and
-// the form that adds another. A bad amount or interval, or an end before the start, is refused.
+// A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
+// claims it has made so far — and the form that adds another. A bad amount, interval or day, both an interval and a
+// day, or an end before the start, is refused.
 function PlansHeader() {
   return <th>Plans</th>;
 }
 
-const blank = { amount: '', start: '', every: '', end: '' };
+const blank = { amount: '', start: '', every: '', day: '', end: '' };
 
 function PersonPlans({ person }: { person: Person }) {
   const [user] = useCurrentUser();
@@ -43,7 +44,12 @@ function PersonPlans({ person }: { person: Person }) {
         {mine.map((p) => (
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
             <span data-testid="plan-amount">{p.amount}</span> from <span data-testid="plan-start">{p.start}</span>{' '}
-            every <span data-testid="plan-every">{p.every}</span> days to <span data-testid="plan-end">{p.end}</span>;
+            {p.day != null ? (
+              <>monthly on day <span data-testid="plan-day">{p.day}</span></>
+            ) : (
+              <>every <span data-testid="plan-every">{p.every}</span> days</>
+            )}{' '}
+            to <span data-testid="plan-end">{p.end}</span>;
             made <span data-testid="plan-generated">{p.generated}</span>
           </li>
         ))}
@@ -51,6 +57,7 @@ function PersonPlans({ person }: { person: Person }) {
       <input data-testid="plan-form-amount" placeholder="Amount" {...field('amount')} />
       <input data-testid="plan-form-start" placeholder="Start YYYY-MM-DD" {...field('start')} />
       <input data-testid="plan-form-every" placeholder="Every N days" {...field('every')} />
+      <input data-testid="plan-form-day" placeholder="Or day of month 1-31" {...field('day')} />
       <input data-testid="plan-form-end" placeholder="End YYYY-MM-DD" {...field('end')} />
       <button
         type="button"
@@ -63,7 +70,7 @@ function PersonPlans({ person }: { person: Person }) {
       {add.isError && rowAction.isLatest && (
         <span data-testid="plan-error">
           A plan needs an amount, 0.00 or more with up to two decimals, a start and an end date, the end not before the
-          start, and every N days, a whole number of at least 1.
+          start, and either every N days, a whole number of at least 1, or a day of the month from 1 to 31.
         </span>
       )}
     </td>

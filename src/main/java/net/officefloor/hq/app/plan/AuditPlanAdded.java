@@ -12,6 +12,8 @@ public class AuditPlanAdded {
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         audit.record("PLAN_ADDED sheet=" + plan.getSheetId() + " by=" + AuditUser.decode(user)
                 + " name=" + person.getName() + " amount=" + plan.getAmount().setScale(2).toPlainString()
-                + " start=" + plan.getStart() + " every=" + plan.getEvery() + " end=" + plan.getEnd());
+                + " start=" + plan.getStart()
+                + (plan.getDay() != null ? " day=" + plan.getDay() : " every=" + plan.getEvery())
+                + " end=" + plan.getEnd());
     }
 }
