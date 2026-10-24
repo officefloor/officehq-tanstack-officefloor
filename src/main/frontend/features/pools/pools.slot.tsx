@@ -64,20 +64,24 @@ function Pools() {
 // A pool's row: its members with their shares, its total and balance, and the member select (a person, or another
 // pool as pool:<name>) and share that add a member. A person already in the pool, a pool already a member of one, one
 // that would contain itself or make a chain of pools more than three deep, or a share that is not more than 0.00 and
-// at most 100.00 (two decimals), is refused and shows the error on the pool, which goes as soon as the entry changes.
+// at most 100.00 (two decimals), or a to-date before the from-date (both optional), is refused and shows the error on the pool, which goes as soon as the entry changes.
 function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople();
   const [memberKey, setMemberKey] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const queryClient = useQueryClient();
   const add = useMutation({
-    mutationFn: (body: { personId: number | null; memberPoolId: number | null; share: string }) =>
+    mutationFn: (body: { personId: number | null; memberPoolId: number | null; share: string; from: string; to: string }) =>
       postJson<Pool[]>(`${poolsPath(sheet ?? '')}/${pool.id}/members`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsQueryKey(sheet ?? '') });
       setShare('');
+      setFrom('');
+      setTo('');
     },
   });
   const submit = useSubmitOnce(add);
@@ -120,6 +124,18 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
           value={share}
           onChange={(e) => { setShare(e.target.value); add.reset(); }}
         />
+        <input
+          data-testid="pool-member-from"
+          placeholder="from (open)"
+          value={from}
+          onChange={(e) => { setFrom(e.target.value); add.reset(); }}
+        />
+        <input
+          data-testid="pool-member-to"
+          placeholder="to (open)"
+          value={to}
+          onChange={(e) => { setTo(e.target.value); add.reset(); }}
+        />
         <button
           type="button"
           data-testid="pool-member-add"
@@ -128,12 +144,14 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
             personId: memberKey === '' || memberKey.startsWith('pool:') ? null : Number(memberKey),
             memberPoolId: memberKey.startsWith('pool:') ? Number(memberKey.slice('pool:'.length)) : null,
             share,
+            from,
+            to,
           })}
         >
           Add member
         </button>
         {add.isError && (
-          <span data-testid="pool-error">A member must not already be in the pool (a pool in at most one, never itself, at most three deep), with a share above 0.00 and at most 100.00.</span>
+          <span data-testid="pool-error">A member must not already be in the pool (a pool in at most one, never itself, at most three deep), with a share above 0.00 and at most 100.00, and a to-date not before the from-date.</span>
         )}
       </td>
     </tr>

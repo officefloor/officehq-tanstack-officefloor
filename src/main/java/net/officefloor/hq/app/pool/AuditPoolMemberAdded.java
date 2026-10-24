@@ -10,6 +10,8 @@ public class AuditPoolMemberAdded {
     public void audit(@Val Pool pool, @Val ApplyPoolMember.MemberName name, @Val PoolMember member,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         audit.record("POOL_MEMBER_ADDED sheet=" + pool.getSheetId() + " by=" + AuditUser.decode(user)
-                + " pool=" + pool.getName() + " name=" + name.name() + " share=" + member.getShare().toPlainString());
+                + " pool=" + pool.getName() + " name=" + name.name() + " share=" + member.getShare().toPlainString()
+                + (member.getFromDate() == null ? "" : " from=" + member.getFromDate())
+                + (member.getToDate() == null ? "" : " to=" + member.getToDate()));
     }
 }

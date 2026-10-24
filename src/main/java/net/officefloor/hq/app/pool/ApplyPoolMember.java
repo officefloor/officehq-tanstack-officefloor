@@ -37,7 +37,8 @@ public class ApplyPoolMember {
                 throw new InvalidPoolException("A chain of pools is at most three deep.");
             }
             nameOut.set(new MemberName(member.getName()));
-            memberOut.set(members.saveAndFlush(PoolMember.ofPool(pool.getId(), member.getId(), request.share())));
+            memberOut.set(members.saveAndFlush(PoolMember.ofPool(pool.getId(), member.getId(), request.share())
+                    .during(request.from(), request.to())));
             return;
         }
         Person person = people.findByIdAndSheetId(request.personId(), pool.getSheetId())
@@ -46,7 +47,8 @@ public class ApplyPoolMember {
             throw new InvalidPoolException("That person is already in the pool.");
         }
         nameOut.set(new MemberName(person.getName()));
-        memberOut.set(members.saveAndFlush(new PoolMember(pool.getId(), person.getId(), request.share())));
+        memberOut.set(members.saveAndFlush(new PoolMember(pool.getId(), person.getId(), request.share())
+                .during(request.from(), request.to())));
     }
 
     /** How many levels of pools the pool heads: 1 for itself, plus its deepest member pool's. */
