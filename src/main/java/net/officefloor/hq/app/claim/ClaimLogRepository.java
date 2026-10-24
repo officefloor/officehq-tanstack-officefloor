@@ -21,6 +21,12 @@ public interface ClaimLogRepository extends JpaRepository<ClaimLog, Long> {
                 .map(ClaimLog::getOnDate).reduce((a, b) -> b).orElse(null);
     }
 
+    /** The sheet's today when the claim was last deleted (its latest DELETED log line); null when it never was. */
+    default LocalDate deletedOn(Claim claim) {
+        return findByClaimIdOrderByIdAsc(claim.getId()).stream().filter(l -> ClaimStatus.DELETED.name().equals(l.getStatus()))
+                .map(ClaimLog::getOnDate).reduce((a, b) -> b).orElse(null);
+    }
+
     /** The claim's log as the screen shows it, oldest first. */
     default List<String> linesOf(Claim claim) {
         return findByClaimIdOrderByIdAsc(claim.getId()).stream().map(ClaimLog::line).toList();

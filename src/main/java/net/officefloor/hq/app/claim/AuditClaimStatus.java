@@ -22,6 +22,7 @@ public class AuditClaimStatus {
         String event = switch (action) {
             case "approve" -> "CLAIM_APPROVED";
             case "reject" -> "CLAIM_REJECTED";
+            case "restore" -> "CLAIM_RESTORED";
             default -> claim.getStatus().event();
         };
         String line = ClaimAudit.line(event, claim, person, AuditUser.decode(user), number);

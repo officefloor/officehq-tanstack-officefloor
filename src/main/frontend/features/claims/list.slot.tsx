@@ -108,6 +108,8 @@ const ACTIONS = [
   { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
   { action: 'resettle', label: 'Re-settle' },
+  { action: 'delete', label: 'Delete' },
+  { action: 'restore', label: 'Restore' },
 ] as const;
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
@@ -139,7 +141,9 @@ const ACTIONS = [
 // the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
 // beside the void button); a void without one shows the claim's error. A claim of any status is commented with the
 // text typed beside the comment button (shown on the claim, oldest first, as <user> on <date>: <text>); an empty
-// comment shows the claim's error.
+// comment shows the claim's error. A DRAFT is deleted (DELETED: it counts nowhere and cannot be edited, opened or
+// voided); any other status, or a claim whose due-by is in a closed period, shows the claim's error. On the sheet's today
+// it was deleted, restore makes it a DRAFT again; on a later day, or for a claim that is not DELETED, it shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   sheet: string; claim: Claim; onEdit: () => void; editorSubmits: number; children: ReactNode;
 }) {
@@ -526,6 +530,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? 'Choose a void reason from the sheet\'s list to void this claim.'
             : action === 'void' && claim.status === 'SETTLED'
             ? 'A settled claim can be voided only within 7 days of its settlement.'
+            : action === 'delete'
+            ? `Only a draft claim can be deleted; this one is ${claim.status}.`
+            : action === 'restore' && claim.status === 'DELETED'
+            ? 'A deleted claim can be restored only on the day it was deleted.'
+            : action === 'restore'
+            ? `Only a deleted claim can be restored; this one is ${claim.status}.`
             : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can re-settle a claim.'
             : action === 'resettle'
