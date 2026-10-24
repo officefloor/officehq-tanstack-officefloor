@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
+import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
@@ -25,15 +26,16 @@ function PersonStatement({ person }: { person: Person }) {
       ]),
   });
   const submit = useSubmitOnce(take);
+  const rowAction = useRowAction(`person-${person.id}`);
   return (
     <td>
       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
       <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
       <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
-      <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => submit(undefined)}>
+      <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => { rowAction.take(); submit(undefined); }}>
         Statement
       </button>
-      {take.isError && <span data-testid="person-error">The statement could not be taken.</span>}
+      {take.isError && rowAction.isLatest && <span data-testid="person-error">The statement could not be taken.</span>}
     </td>
   );
 }

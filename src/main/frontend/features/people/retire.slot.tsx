@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
+import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
@@ -26,6 +27,7 @@ function PersonRetired({ person }: { person: Person }) {
     },
   });
   const submit = useSubmitOnce(retire);
+  const rowAction = useRowAction(`person-${person.id}`);
   return (
     <td>
       <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
@@ -36,10 +38,10 @@ function PersonRetired({ person }: { person: Person }) {
         value={date}
         onChange={(e) => { setDate(e.target.value); retire.reset(); }}
       />
-      <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={() => submit({ date })}>
+      <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={() => { rowAction.take(); submit({ date }); }}>
         Retire
       </button>
-      {retire.isError && <span data-testid="person-error">The retirement date must be a calendar date.</span>}
+      {retire.isError && rowAction.isLatest && <span data-testid="person-error">The retirement date must be a calendar date.</span>}
     </td>
   );
 }

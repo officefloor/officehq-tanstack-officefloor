@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
+import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { useClaims } from '../claims/claims';
@@ -41,6 +42,7 @@ function PersonPatrons({ person }: { person: Person }) {
     },
   });
   const submit = useSubmitOnce(add);
+  const rowAction = useRowAction(`person-${person.id}`);
   const everyone = people.data ?? [];
   const patrons = person.patronIds
     .map((id) => everyone.find((p) => p.id === id))
@@ -68,11 +70,11 @@ function PersonPatrons({ person }: { person: Person }) {
           type="button"
           data-testid="person-patron-add"
           disabled={add.isPending}
-          onClick={() => submit({ patronId: Number(chosen) })}
+          onClick={() => { rowAction.take(); submit({ patronId: Number(chosen) }); }}
         >
           Add patron
         </button>
-        {add.isError && <span data-testid="person-patron-error">The patron could not be added.</span>}
+        {add.isError && rowAction.isLatest && <span data-testid="person-patron-error">The patron could not be added.</span>}
       </td>
       <td data-testid="person-backing">{backing}</td>
     </>

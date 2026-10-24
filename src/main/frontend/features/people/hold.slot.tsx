@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
+import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
@@ -30,6 +31,7 @@ function PersonHold({ person }: { person: Person }) {
     },
   });
   const submit = useSubmitOnce(hold);
+  const rowAction = useRowAction(`person-${person.id}`);
   return (
     <td>
       <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>{' '}
@@ -48,10 +50,10 @@ function PersonHold({ person }: { person: Person }) {
         value={to}
         onChange={(e) => { setTo(e.target.value); hold.reset(); }}
       />
-      <button type="button" data-testid="person-hold-toggle" disabled={hold.isPending} onClick={() => submit({ from, to })}>
+      <button type="button" data-testid="person-hold-toggle" disabled={hold.isPending} onClick={() => { rowAction.take(); submit({ from, to }); }}>
         Hold
       </button>
-      {hold.isError && <span data-testid="person-error">The hold's dates must be calendar dates, the to-date not before the from-date.</span>}
+      {hold.isError && rowAction.isLatest && <span data-testid="person-error">The hold's dates must be calendar dates, the to-date not before the from-date.</span>}
     </td>
   );
 }
