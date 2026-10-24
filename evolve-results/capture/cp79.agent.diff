@@ -1,0 +1,336 @@
+diff --git a/src/main/frontend/features/claims/paste.slot.tsx b/src/main/frontend/features/claims/paste.slot.tsx
+index 89654c53..130c23e7 100644
+--- a/src/main/frontend/features/claims/paste.slot.tsx
++++ b/src/main/frontend/features/claims/paste.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQueryKey } from '../people/people';
+ import { claimsQueryKey } from './claims';
+ 
+ // The paste box: each line is name,amount,date,note (the note may hold commas; the date may be blank for the
+-// sheet's today; the note may be absent) and adds a DRAFT claim, in order, for the named person on the sheet.
++// sheet's entry date, else its today; the note may be absent) and adds a DRAFT claim, in order, for the named person on the sheet.
+ // The server checks every line by the claim form's rules first, so one refused line adds nothing. How many were
+ // added shows once done, and is gone while it runs.
+ function PasteClaims() {
+diff --git a/src/main/frontend/features/people/quickadd.slot.tsx b/src/main/frontend/features/people/quickadd.slot.tsx
+index d80ae38e..f0a3aca1 100644
+--- a/src/main/frontend/features/people/quickadd.slot.tsx
++++ b/src/main/frontend/features/people/quickadd.slot.tsx
+@@ -8,7 +8,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { peopleQueryKey } from './people';
+ 
+ // The quick-add bar above the people list: a name and an amount make a DRAFT claim for that person, dated the
+-// sheet's today with an empty note; a name not on the sheet adds the person first, with grade A. The server
++// sheet's entry date (else its today) with an empty note; a name not on the sheet adds the person first, with grade A. The server
+ // checks everything before it stores anything, so a refusal adds nobody.
+ function QuickAddBar() {
+   const [user] = useCurrentUser();
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 59b81a58..fd7bea8d 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -13,7 +13,7 @@ export type Role = { user: string; role: string };
+  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
+  *  two decimals ("" when there is none — a person's due-total is at most it), and its proof threshold with two decimals ("" when there is none — a claim whose due is
+  *  above the one in force on its date cannot be settled or approved without a proof), and its grace days ("" when off; not dated), and its note threshold with two decimals ("" when there is none — a claim whose due is
+- *  above the one in force on its date cannot be opened with an empty note). Each of those is the value in force on the
++ *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today). Each of those is the value in force on the
+  *  sheet's today; `dated` holds the values recorded for each setting that carries a figure, by key (floor, late-pct,
+  *  terms, terms-A/B/C, clerk-limit, cap, proof-threshold, note-threshold), each from its from-date on (null: from the beginning of time; a null value is blank). */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string;
+@@ -21,7 +21,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   termsA: string; termsB: string; termsC: string; cap: string; proofThreshold: string;
+   dated: Record<string, { from: string | null; value: string | null }[]>;
+   permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string;
+-  graceDays: string; noteThreshold: string };
++  graceDays: string; noteThreshold: string; entryDate: string };
+ 
+ /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
+  *  before it, else `start` (the sheet's starting value). */
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index d057442f..7429924e 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | PermKey;
++type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | PermKey;
+ 
+ /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
+  *  Not dated. */
+@@ -39,7 +39,7 @@ type Drafts = Partial<Record<Key, string>>;
+ // claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
+ // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
+ // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
+-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
++// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
+ // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
+ // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
+ // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
+@@ -74,6 +74,7 @@ function SheetSettings() {
+     proofThreshold: settings.data?.proofThreshold ?? '',
+     graceDays: settings.data?.graceDays ?? '',
+     noteThreshold: settings.data?.noteThreshold ?? '',
++    entryDate: settings.data?.entryDate ?? '',
+     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
+   };
+   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
+@@ -127,6 +128,9 @@ function SheetSettings() {
+         Period numbering from:{' '}
+         <span data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</span>
+       </p>
++      <p>
++        Entry date (blank: off): <span data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</span>
++      </p>
+       {GRADE_TERMS.map(({ grade, key }) => (
+         <p key={grade}>
+           Terms of grade {grade} (days; blank: the sheet's):{' '}
+@@ -216,6 +220,14 @@ function SheetSettings() {
+           onInput={edit('periodNumberingFrom')}
+           onFocus={touch('periodNumberingFrom')}
+         />
++        <input
++          data-testid="setting-entry-date"
++          placeholder="Entry date YYYY-MM-DD (blank: off)"
++          value={valueOf('entryDate')}
++          onChange={edit('entryDate')}
++          onInput={edit('entryDate')}
++          onFocus={touch('entryDate')}
++        />
+         {GRADE_TERMS.map(({ grade, key }) => (
+           <Fragment key={grade}>
+             <input
+@@ -284,7 +296,7 @@ function SheetSettings() {
+           Save settings
+         </button>
+         {save.isError && (
+-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap and proof threshold each an amount, 0.00 or more, with up to two decimals, or blank; the grace days a whole number of days, or blank; a from-date a date (YYYY-MM-DD), or blank; the roles that may take an action a comma separated list of clerk and steward, or blank.</span>
++          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date, period numbering from and entry date each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap and proof threshold each an amount, 0.00 or more, with up to two decimals, or blank; the grace days a whole number of days, or blank; a from-date a date (YYYY-MM-DD), or blank; the roles that may take an action a comma separated list of clerk and steward, or blank.</span>
+         )}
+       </form>
+     </section>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+index 912476d3..b223d5c9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+@@ -56,7 +56,7 @@ public final class ClaimRules {
+     /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. */
+     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
+             PeriodRepository periods, PersonGradeRepository grades) throws InvalidClaimException {
+-        LocalDate date = input.date() != null ? input.date() : sheet.getToday();
++        LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
+         if (periods.isClosedOn(sheet.getId(), date)) {
+             throw new InvalidClaimException("No claim can be added in a closed period.");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+index 18c726fb..77e0423b 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+@@ -5,11 +5,11 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuses the quick-add before anyone is added when its claim, dated the sheet's today, falls in a closed
++/** Refuses the quick-add before anyone is added when its claim, dated the sheet's entry date (else its today), falls in a closed
+  *  period — so a refused claim leaves no new person behind. */
+ public class CheckQuickAddDate {
+     public void check(@Val Sheet sheet, PeriodRepository periods) throws InvalidClaimException {
+-        if (periods.isClosedOn(sheet.getId(), sheet.getToday())) {
++        if (periods.isClosedOn(sheet.getId(), sheet.entryDateInForce())) {
+             throw new InvalidClaimException("No claim can be added in a closed period.");
+         }
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index af9b3ded..74ad6e6d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Sets the settings the form sets: a setting that carries a figure (the clerk limit, floor, terms, late percent,
+  *  each grade's own terms, cap, proof threshold, note threshold) is recorded from its from-date (the sheet's today when none is given), replacing a
+- *  value recorded from that date and keeping the others; the policy date and period numbering from are set; a permission matrix entry
++ *  value recorded from that date and keeping the others; the policy date, period numbering from and entry date are set; a permission matrix entry
+  *  (key perm-<action>) and the grace days are recorded undated. Each is logged with the sheet's today (so the
+  *  settings can be worked out as they stood on an earlier date). */
+ public class ApplySettings {
+@@ -25,6 +25,8 @@ public class ApplySettings {
+                 sheet.setPolicyDate(change.value() == null ? null : LocalDate.parse(change.value()));
+             } else if (Sheet.PERIOD_NUMBERING_FROM.equals(change.key())) {
+                 sheet.setPeriodNumberingFrom(change.value() == null ? null : LocalDate.parse(change.value()));
++            } else if (Sheet.ENTRY_DATE.equals(change.key())) {
++                sheet.setEntryDate(change.value() == null ? null : LocalDate.parse(change.value()));
+             } else {
+                 continue;
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index aafac85a..5ef50948 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Records each setting the form set, once it is saved, with the value saved: the clerk limit (blank when there is none), then the floor, then the terms, then the late percent, then the policy date (blank when it is the sheet's today), then the period numbering from (blank when off), then each grade's own terms (key terms-<grade>; blank when it uses the sheet's terms), then the cap (blank when there is none), then the proof threshold (blank when there is none), then the permission matrix entries, then the grace days, then the note threshold (blank when there is none); a dated setting ends with from=<date> when a from-date was given. */
++/** Records each setting the form set, once it is saved, with the value saved: the clerk limit (blank when there is none), then the floor, then the terms, then the late percent, then the policy date (blank when it is the sheet's today), then the period numbering from (blank when off), then each grade's own terms (key terms-<grade>; blank when it uses the sheet's terms), then the cap (blank when there is none), then the proof threshold (blank when there is none), then the permission matrix entries, then the grace days, then the note threshold (blank when there is none), then the entry date (blank when off); a dated setting ends with from=<date> when a from-date was given. */
+ public class AuditSettingChanged {
+     public void audit(@Val SettingsInput input, @Val Sheet sheet,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index 40ad0876..51c914cb 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -5,7 +5,7 @@ import java.util.List;
+ 
+ /** A validated settings form: the settings it sets, in the order they are recorded — the clerk limit, the floor, the
+  *  terms, the late percent, the policy date, the period numbering from, the terms of grades A, B and C, the cap, the proof threshold, the
+- *  permission matrix entries for open, settle, void, reassign, close and reopen, the grace days, the note threshold. */
++ *  permission matrix entries for open, settle, void, reassign, close and reopen, the grace days, the note threshold, the entry date. */
+ public record SettingsInput(List<Change> changes) {
+ 
+     /** A setting the form sets: its key (as the audit names it), its value as the screen shows it (null: blank —
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index b766000b..e2b55a48 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.setting;
+ /** The settings form as submitted: the clerk limit (blank: no limit), the floor (blank: 1.00) and the terms in
+  *  days (blank: 14) and the late percent
+  *  (blank: 0.00) and the policy date (YYYY-MM-DD; blank: the sheet's today) and the period numbering from (YYYY-MM-DD; blank: off) and the terms of grades A, B and C in days (blank: the sheet's terms) and the cap (blank: none) and the proof threshold (blank: none); and the permission matrix entries for open, settle, void, reassign, close and reopen
+- *  (comma separated roles; blank: the standing rule); and the grace days (a whole number of days; blank: off; not dated); and the note threshold (blank: none); a key left out (null) is not changed.
++ *  (comma separated roles; blank: the standing rule); and the grace days (a whole number of days; blank: off; not dated); and the note threshold (blank: none); and the entry date (YYYY-MM-DD; blank: off; not dated); a key left out (null) is not changed.
+  *  Each setting that carries a figure has its from-date (YYYY-MM-DD; blank or left out: the sheet's today): it is
+  *  recorded from that date on. */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+@@ -11,5 +11,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         String clerkLimitFrom, String floorFrom, String termsFrom, String latePctFrom,
+         String termsAFrom, String termsBFrom, String termsCFrom, String capFrom, String proofThresholdFrom,
+         String permOpen, String permSettle, String permVoid, String permReassign, String permClose, String permReopen,
+-        String graceDays, String noteThreshold, String noteThresholdFrom) {
++        String graceDays, String noteThreshold, String noteThresholdFrom, String entryDate) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 44e3226c..a001de0f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -12,11 +12,11 @@ import net.officefloor.hq.app.sheet.SheetSetting;
+  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
+  *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
+  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date; and the permission matrix
+- *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none). */
++ *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
+         Map<String, List<Dated>> dated, String permOpen, String permSettle, String permVoid, String permReassign,
+-        String permClose, String permReopen, String graceDays, String noteThreshold) {
++        String permClose, String permReopen, String graceDays, String noteThreshold, String entryDate) {
+ 
+     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
+     public record Dated(String from, String value) {
+@@ -39,7 +39,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 dated, sheet.permOf("open"), sheet.permOf("settle"), sheet.permOf("void"), sheet.permOf("reassign"),
+                 sheet.permOf("close"), sheet.permOf("reopen"),
+                 sheet.getGraceDays() == null ? "" : String.valueOf(sheet.getGraceDays()),
+-                sheet.noteThresholdOn(sheet.getToday()) == null ? "" : sheet.noteThresholdOn(sheet.getToday()).toPlainString());
++                sheet.noteThresholdOn(sheet.getToday()) == null ? "" : sheet.noteThresholdOn(sheet.getToday()).toPlainString(),
++                sheet.getEntryDate() == null ? "" : sheet.getEntryDate().toString());
+     }
+ 
+     /** The grade's own terms in days in force on the sheet's today; "" when it uses the sheet's terms. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 30b466be..f8838b84 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
+  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
+  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
+- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
++ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
+  *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A key left out is not changed.
+  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
+ public class ValidateSettings {
+@@ -37,6 +37,7 @@ public class ValidateSettings {
+             date(changes, "policy-date", request.policyDate(), "The policy date must be a date (YYYY-MM-DD), or blank.");
+             date(changes, "period-numbering-from", request.periodNumberingFrom(),
+                     "The period numbering from must be a date (YYYY-MM-DD), or blank.");
++            date(changes, Sheet.ENTRY_DATE, request.entryDate(), "The entry date must be a date (YYYY-MM-DD), or blank.");
+             days(changes, Sheet.TERMS + "-A", request.termsA(), null, request.termsAFrom(),
+                     "The terms of grade A must be a whole number of days, 0 or more, or blank.");
+             days(changes, Sheet.TERMS + "-B", request.termsB(), null, request.termsBFrom(),
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java
+index 073b1657..86205e3f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java
+@@ -23,6 +23,8 @@ public interface SettingLogRepository extends JpaRepository<SettingLog, Long> {
+                 then.setPolicyDate(set.getValue() == null ? null : LocalDate.parse(set.getValue()));
+             } else if (Sheet.PERIOD_NUMBERING_FROM.equals(set.getKey())) {
+                 then.setPeriodNumberingFrom(set.getValue() == null ? null : LocalDate.parse(set.getValue()));
++            } else if (Sheet.ENTRY_DATE.equals(set.getKey())) {
++                then.setEntryDate(set.getValue() == null ? null : LocalDate.parse(set.getValue()));
+             } else {
+                 then.record(set.getKey(), set.getFromDate(), set.getValue());
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index c2833ad8..c5e40f9d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -28,7 +28,8 @@ public class Sheet {
+     public static final String GRACE_DAYS = "grace-days";
+ 
+     /** The keys of the undated dates, as the settings form names them. */
+-    public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from";
++    public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from",
++            ENTRY_DATE = "entry-date";
+ 
+     /** The setting key of an action's entry in the permission matrix. */
+     public static String permKey(String action) {
+@@ -62,6 +63,11 @@ public class Sheet {
+     @Column(name = "period_numbering_from")
+     private LocalDate periodNumberingFrom;
+ 
++    /** The entry date: while it is set, the default date of a new claim in place of the sheet's today; null (blank)
++     *  for off. */
++    @Column(name = "entry_date")
++    private LocalDate entryDate;
++
+     /** Whether the sheet is archived: everything on it stays visible and every change is refused. */
+     @Column(nullable = false)
+     private boolean archived;
+@@ -262,4 +268,17 @@ public class Sheet {
+     public boolean periodNumberingOn() {
+         return periodNumberingFrom != null && !today.isBefore(periodNumberingFrom);
+     }
++
++    public LocalDate getEntryDate() {
++        return entryDate;
++    }
++
++    public void setEntryDate(LocalDate entryDate) {
++        this.entryDate = entryDate;
++    }
++
++    /** The default date of a new claim: the entry date while it is set, else the sheet's today. */
++    public LocalDate entryDateInForce() {
++        return entryDate != null ? entryDate : today;
++    }
+ }
+diff --git a/src/main/resources/db/migration/V46__sheet_entry_date.sql b/src/main/resources/db/migration/V46__sheet_entry_date.sql
+new file mode 100644
+index 00000000..9ee8fca2
+--- /dev/null
++++ b/src/main/resources/db/migration/V46__sheet_entry_date.sql
+@@ -0,0 +1,3 @@
++-- The sheet's entry date: while it is set, it is the default date of a new claim wherever the sheet's today was
++-- (the claim form, the quick-add bar, a pasted line with a blank date, a correction). Null (blank) means off.
++ALTER TABLE sheet ADD COLUMN entry_date DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index f369a0b0..fea17719 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -1,4 +1,4 @@
+-# POST /api/sheets/{sheetId}/quick-add — add a DRAFT claim for the named person, dated the sheet's today with
++# POST /api/sheets/{sheetId}/quick-add — add a DRAFT claim for the named person, dated the sheet's entry date (else its today) with
+ # an empty note, adding the person (grade A) first when the name is not on the sheet. Body:
+ # { "name": "...", "amount": "12.50" }. Every check runs before anything is stored, so a refusal adds nobody.
+ guard:
