@@ -7,7 +7,8 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Adds the claim; refuses one dated in a closed period, or after the person's retirement date. */
+/** Adds the claim; refuses one dated in a closed period, or after the person's retirement date, and a correction
+ * that does not name a settled claim of the person. */
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, ClaimRepository repository,
             PeriodRepository periods, Out<Claim> claimOut) throws InvalidClaimException {
@@ -18,6 +19,8 @@ public class BuildClaim {
         if (person.retiredOn(date)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
         }
-        claimOut.set(repository.save(new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note())));
+        repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
+        claimOut.set(repository.save(new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(),
+                input.corrects())));
     }
 }

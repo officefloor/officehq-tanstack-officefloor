@@ -17,7 +17,8 @@ import net.officefloor.hq.app.sheet.Sheet;
  * the grade its person had on its date, rounded half to even, and at least the sheet's floor; none — n/a — when no rate applies then). An
  * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
- * freezes it in.
+ * freezes it in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
+ * never takes a late charge.
  */
 public class ClaimFigures {
 
@@ -54,7 +55,7 @@ public class ClaimFigures {
     /** The late charge on a figure: the late percent of it for every full 30 days the claim is overdue, rounded
      *  half to even; 0.00 when it is not overdue. */
     public BigDecimal lateCharge(Claim claim, BigDecimal figure) {
-        if (figure == null || !overdue(claim)) {
+        if (figure == null || claim.isCorrection() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
         long periods = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today) / 30;
@@ -105,7 +106,7 @@ public class ClaimFigures {
             return claim.getStatedDue();
         }
         return rateOn(grades.on(claim.getDate()), claim.getDate())
-                .map(pct -> liveDue(claim.getAmount(), pct, floor))
+                .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : floor))
                 .orElse(null);
     }
 

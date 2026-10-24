@@ -42,6 +42,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
             <span data-testid="claim-due-by">{dueByOf(c, terms)}</span>{' '}
+            <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
             <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
@@ -136,9 +137,10 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
   const [amount, setAmount] = useState(claim?.amount ?? '');
   const [date, setDate] = useState(claim?.date ?? '');
   const [note, setNote] = useState(claim?.note ?? '');
+  const [corrects, setCorrects] = useState(claim?.corrects == null ? '' : String(claim.corrects));
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: (body: { amount: string; date: string; note: string }) =>
+    mutationFn: (body: { amount: string; date: string; note: string; corrects: string }) =>
       claim
         ? putJson<Claim>(`${claimsPath(sheet)}/${claim.id}`, body, user)
         : postJson<Claim>(personClaimsPath(sheet, person.id), body, user),
@@ -150,6 +152,7 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
         setAmount('');
         setDate('');
         setNote('');
+        setCorrects('');
       }
     },
   });
@@ -160,7 +163,7 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ amount, date, note });
+        submit({ amount, date, note, corrects });
       }}
     >
       <input
@@ -182,13 +185,21 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
         value={note}
         onChange={(e) => { setNote(e.target.value); save.reset(); }}
       />
+      <input
+        data-testid="claim-form-corrects"
+        placeholder="Corrects claim no."
+        inputMode="numeric"
+        value={corrects}
+        onChange={(e) => { setCorrects(e.target.value); save.reset(); }}
+      />
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {claim ? 'Save claim' : 'Add claim'}
       </button>
       {save.isError && (
         <span data-testid="claim-form-error">
-          The amount must be a number, 0.00 or more, with up to two decimals, and the date a calendar date
-          not in a closed period nor after the person's retirement date; only a draft claim can be edited.
+          The amount must be a number with up to two decimals, and the date a calendar date not in a closed
+          period nor after the person's retirement date; a negative amount is a correction and must name, by
+          number, a settled claim of this person (only a correction may); only a draft claim can be edited.
         </span>
       )}
     </form>

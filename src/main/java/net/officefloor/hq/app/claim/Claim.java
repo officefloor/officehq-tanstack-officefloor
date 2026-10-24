@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A claim by a person on a sheet: an amount (0.00 or more), a date, a note (may be empty)
+/** A claim by a person on a sheet: an amount (negative only for a correction, which names the number of the
+ * settled claim it corrects), a date, a note (may be empty)
  * a status (DRAFT to start), a number (given when opened), who opened it and a due (fixed when settled). */
 @Entity
 @Table(name = "claim")
@@ -57,10 +58,15 @@ public class Claim {
     @Column(name = "stated_due", precision = 19, scale = 2)
     private BigDecimal statedDue;
 
+    /** The number of the settled claim of the same person this correction corrects; null for any other claim. */
+    @Column(name = "corrects")
+    private Integer corrects;
+
     protected Claim() {
     }
 
-    public Claim(String sheetId, Long personId, BigDecimal amount, LocalDate date, String note) {
+    public Claim(String sheetId, Long personId, BigDecimal amount, LocalDate date, String note, Integer corrects) {
+        this.corrects = corrects;
         this.sheetId = sheetId;
         this.personId = personId;
         this.amount = amount;
@@ -134,6 +140,19 @@ public class Claim {
 
     public void setOpenedBy(String openedBy) {
         this.openedBy = openedBy;
+    }
+
+    public Integer getCorrects() {
+        return corrects;
+    }
+
+    public void setCorrects(Integer corrects) {
+        this.corrects = corrects;
+    }
+
+    /** Whether the claim is a correction: it names a claim it corrects. */
+    public boolean isCorrection() {
+        return corrects != null;
     }
 
     public boolean isStated() {

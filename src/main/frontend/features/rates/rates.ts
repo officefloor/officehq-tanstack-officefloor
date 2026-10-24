@@ -36,20 +36,23 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
 }
 
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
- *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none). */
+ *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none);
+ *  a correction's live due has no floor. */
 export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined): string {
   if (c.due !== null) return c.due;
   if (c.stated) return c.statedDue ?? 'n/a';
-  return atLeast(dueOf(c.amount, rateOn(rates, grade, c.date)), floor);
+  const due = dueOf(c.amount, rateOn(rates, grade, c.date));
+  return c.corrects !== null ? due : atLeast(due, floor);
 }
 
 /** A claim's due: a settled claim's frozen due, else its figure plus its late charge — the sheet's late percent
  *  of the figure for every full 30 days it is overdue on the sheet's today, rounded like a due ("n/a" when it
- *  has no figure). A statement binds only the figure: the charge keeps following the sheet's today. */
+ *  has no figure). A statement binds only the figure: the charge keeps following the sheet's today. A correction never
+ *  takes a late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
   today: string | undefined): string {
   const figure = figureOf(c, rates, grade, settings?.floor);
-  if (c.due !== null || figure === 'n/a') return figure;
+  if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
   const terms = settings?.terms ?? DEFAULT_TERMS;
   if (today === undefined || !isOverdue(c, terms, today)) return figure;
   const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueByOf(c, terms)}T00:00:00Z`)) / 86_400_000;

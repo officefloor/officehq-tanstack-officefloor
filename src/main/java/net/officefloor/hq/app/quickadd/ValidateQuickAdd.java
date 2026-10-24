@@ -27,6 +27,6 @@ public class ValidateQuickAdd {
             throw new InvalidClaimException("The amount must be a number, 0.00 or more, with up to two decimals.");
         }
         nameOut.set(new QuickAddName(name));
-        claimOut.set(new ClaimInput(new BigDecimal(amount).setScale(2), null, ""));
+        claimOut.set(new ClaimInput(new BigDecimal(amount).setScale(2), null, "", null));
     }
 }

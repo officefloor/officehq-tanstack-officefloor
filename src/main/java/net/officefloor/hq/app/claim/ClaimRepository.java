@@ -17,6 +17,17 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
 
     Optional<Claim> findByIdAndSheetId(Long id, String sheetId);
 
+    /** The person's claims given this number (at most one: numbers are never reused on a sheet). */
+    List<Claim> findBySheetIdAndPersonIdAndNumber(String sheetId, Long personId, Integer number);
+
+    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person. */
+    default void checkCorrects(String sheetId, Long personId, Integer corrects) throws InvalidClaimException {
+        if (corrects != null && findBySheetIdAndPersonIdAndNumber(sheetId, personId, corrects).stream()
+                .noneMatch(c -> c.getStatus() == ClaimStatus.SETTLED)) {
+            throw new InvalidClaimException("A correction must name a settled claim of the same person.");
+        }
+    }
+
     /** Takes the sheet's next claim number; the update locks the sheet's row until the transaction ends, so
      * two claims opened at once are numbered one after the other. */
     @Modifying

@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Saves the claim's changes; refuses them unless the claim is a DRAFT (an open claim is voided and added anew
  * instead), when its date, or the one it would move to, is in a closed period, and when it would move after its
- * person's retirement date. */
+ * person's retirement date, and a correction that does not name a settled claim of its person. */
 public class ApplyClaim {
     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
             PeriodRepository periods, PersonRepository people) throws InvalidClaimException {
@@ -22,7 +22,9 @@ public class ApplyClaim {
         if (people.findById(claim.getPersonId()).map(p -> p.retiredOn(date)).orElse(false)) {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
         }
+        repository.checkCorrects(sheet.getId(), claim.getPersonId(), input.corrects());
         claim.setAmount(input.amount());
+        claim.setCorrects(input.corrects());
         claim.setDate(date);
         claim.setNote(input.note());
         repository.saveAndFlush(claim);

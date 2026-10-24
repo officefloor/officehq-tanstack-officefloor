@@ -9,7 +9,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
  *  the number given when it was opened (null for a claim never opened; a voided claim keeps it) and the due fixed when it was
  *  settled (null when it has none: its due is live), and who opened it (null when never opened); whether its person's last statement binds it, and the
- *  figure it binds it to (null: n/a). */
+ *  figure it binds it to (null: n/a); the number of the settled claim of the same person it corrects (null when it is not
+ *  a correction — a correction is a claim with a negative amount). */
 export type Claim = {
   id: number;
   personId: number;
@@ -22,6 +23,7 @@ export type Claim = {
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
+  corrects: number | null;
 };
 
 /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
