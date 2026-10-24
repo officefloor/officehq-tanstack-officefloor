@@ -8,11 +8,12 @@ import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { periodClosePath, periodDue, periodReopenPath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { periodClosePath, periodDue, periodReopenPath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a person's unbound OPEN ones dated within a hold of theirs),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
-// buttons that close and reopen it, and the form that adds one.
+// buttons that close and reopen it, the form that adds one, and the form that generates one per calendar month
+// (named yyyy-mm, leaving out a month whose name or days the sheet's periods already take), showing how many were made.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -37,6 +38,14 @@ function Periods() {
     },
   });
   const submit = useSubmitOnce(add);
+  const [genFrom, setGenFrom] = useState('');
+  const [genTo, setGenTo] = useState('');
+  const generate = useMutation({
+    mutationFn: (body: { from: string; to: string }) =>
+      postJson<{ generated: number }>(periodsGeneratePath(sheet ?? ''), body, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') }),
+  });
+  const submitGenerate = useSubmitOnce(generate);
 
   if (!user || !sheet) return null;
   const dueTotal = (period: Period) =>
@@ -100,6 +109,37 @@ function Periods() {
         </button>
         {add.isError && (
           <span data-testid="period-form-error">A period needs a name the sheet does not have yet, and calendar from and to dates, the to-date on or after the from-date, not overlapping another period.</span>
+        )}
+      </form>
+      <form
+        data-testid="period-generate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitGenerate({ from: genFrom, to: genTo });
+        }}
+      >
+        <input
+          data-testid="period-generate-from"
+          placeholder="From (YYYY-MM-DD)"
+          value={genFrom}
+          onChange={(e) => { setGenFrom(e.target.value); generate.reset(); }}
+        />
+        <input
+          data-testid="period-generate-to"
+          placeholder="To (YYYY-MM-DD)"
+          value={genTo}
+          onChange={(e) => { setGenTo(e.target.value); generate.reset(); }}
+        />
+        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+          Generate monthly periods
+        </button>
+        {generate.isSuccess && (
+          <>
+            {' '}Made <span data-testid="period-generated">{generate.data.generated}</span>
+          </>
+        )}
+        {generate.isError && (
+          <span data-testid="period-generate-error">Nothing was made: the from and to dates must be calendar dates, the to-date on or after the from-date.</span>
         )}
       </form>
     </section>

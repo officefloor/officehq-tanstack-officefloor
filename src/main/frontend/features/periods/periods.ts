@@ -19,6 +19,9 @@ export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'
 
 export const periodsPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/periods`;
 
+/** Generates a period per calendar month from a from-date's month to a to-date's. */
+export const periodsGeneratePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-periods`;
+
 export const periodClosePath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/close`;
 
 export const periodReopenPath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/reopen`;
