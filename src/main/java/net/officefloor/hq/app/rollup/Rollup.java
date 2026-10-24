@@ -96,6 +96,17 @@ public class Rollup {
         return lines;
     }
 
+    /** The audit lines stating the figures in full: one per person, in list order, then the totals. */
+    public List<String> lines(String sheetId, String user) {
+        String head = " sheet=" + sheetId.trim() + " by=" + user;
+        List<String> lines = new ArrayList<>();
+        people.values().forEach(f -> lines.add("ROLLUP" + head + " person=" + f.name() + " claimed=" + f.claimed()
+                + " due-total=" + f.dueTotal() + " overdue-total=" + f.overdueTotal()));
+        lines.add("TOTALS" + head + " claimed-total=" + claimedTotal + " due-total=" + dueTotal
+                + " overdue-total=" + overdueTotal);
+        return lines;
+    }
+
     /** The audit lines telling how the figures moved from before to now: one per person whose figures changed
      *  (or who is new), then the totals when they changed; none when nothing moved. */
     public List<String> changesSince(Rollup before, String sheetId, String user) {

@@ -7,8 +7,9 @@ import { useCurrentSheet, useCurrentUser, useSheetInfo, sheetQueryKey, type Shee
 import { useSettings } from '../roles/roles';
 
 // The sheet's today: shown and changeable here, with the parent sheet it names (blank when none). Changing it re-reads the whole sheet, since every
-// date decision in the app depends on it. The sheet is archived here too (a steward only); the two
-// share the sheet's one error element, which either action clears.
+// date decision in the app depends on it. The sheet is archived here too (a steward only), and cloned to another id
+// never used (a steward only; the id of the last clone made is shown); the three share the sheet's one error element,
+// which any of them clears.
 function SheetToday() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -30,6 +31,12 @@ function SheetToday() {
     onSuccess: (saved) => queryClient.setQueryData(sheetQueryKey(saved.id), saved),
   });
   const submitArchive = useSubmitOnce(archive);
+  const [cloneTo, setCloneTo] = useState('');
+  const clone = useMutation({
+    mutationFn: (toSheet: string) =>
+      putJson<{ toSheet: string }>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/clone`, { toSheet }, user),
+  });
+  const submitClone = useSubmitOnce(clone);
   const shown = info.data?.id === sheet ? info.data : undefined;
 
   if (!user || !sheet) return null;
@@ -38,6 +45,7 @@ function SheetToday() {
       onSubmit={(e) => {
         e.preventDefault();
         archive.reset();
+        clone.reset();
         submit(date.trim());
       }}
     >
@@ -48,7 +56,7 @@ function SheetToday() {
         data-testid="sheet-today-input"
         placeholder="YYYY-MM-DD"
         value={date}
-        onChange={(e) => { setDate(e.target.value); save.reset(); archive.reset(); }}
+        onChange={(e) => { setDate(e.target.value); save.reset(); archive.reset(); clone.reset(); }}
       />
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
@@ -63,12 +71,30 @@ function SheetToday() {
         type="button"
         data-testid="sheet-archive"
         disabled={archive.isPending}
-        onClick={() => { save.reset(); submitArchive(undefined); }}
+        onClick={() => { save.reset(); clone.reset(); submitArchive(undefined); }}
       >
         Archive sheet
       </button>
+      <input
+        data-testid="sheet-clone-to"
+        placeholder="Clone to sheet id"
+        value={cloneTo}
+        onChange={(e) => { setCloneTo(e.target.value); save.reset(); archive.reset(); clone.reset(); }}
+      />
+      <button
+        type="button"
+        data-testid="sheet-clone"
+        disabled={clone.isPending}
+        onClick={() => { save.reset(); archive.reset(); submitClone(cloneTo.trim()); }}
+      >
+        Clone sheet
+      </button>
+      <span>
+        Cloned to <strong data-testid="sheet-cloned-to">{clone.isSuccess ? clone.data.toSheet : ''}</strong>
+      </span>
       {save.isError && <span data-testid="sheet-error">Could not change the sheet's today.</span>}
       {archive.isError && <span data-testid="sheet-error">Could not archive the sheet.</span>}
+      {clone.isError && <span data-testid="sheet-error">Could not clone the sheet.</span>}
     </form>
   );
 }
