@@ -53,7 +53,7 @@ public class ClosePeriod {
             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log) {
         Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(period.getSheetId()).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
-        var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(period.getSheetId());
+        var sheetRates = rates.findInChain(period.getSheetId());
         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(period.getSheetId());
         Map<Long, ClaimStatus> then = log.statusesOn(period.getSheetId(), period.getToDate());
         Map<Long, BigDecimal> totals = new HashMap<>();

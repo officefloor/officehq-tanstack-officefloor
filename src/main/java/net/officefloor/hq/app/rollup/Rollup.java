@@ -55,7 +55,7 @@ public class Rollup {
         List<BigDecimal> overdues = new ArrayList<>();
         if (sheet.isPresent()) {
             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
-            var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(id);
+            var sheetRates = rates.findInChain(id);
             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
             for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();

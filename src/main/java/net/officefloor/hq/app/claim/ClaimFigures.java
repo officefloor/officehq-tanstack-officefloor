@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -136,14 +137,23 @@ public class ClaimFigures {
         return !deferred && !(person != null && claim.getStatus().isOpen() && !claim.isBound() && person.leftOn(claim.getDate(), today));
     }
 
-    /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. */
+    /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. When the
+     *  sheet has none in force then, the next sheet up its chain's (the rates of each sheet come in chain order). */
     private Optional<BigDecimal> rateOn(String grade, LocalDate on) {
-        return rates.stream()
-                .filter(r -> r.getGrade().equals(grade))
-                .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
-                .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
-                .filter(r -> !r.endedBy(on))
-                .map(Rate::getPct);
+        List<String> chain = new ArrayList<>(List.of(sheet.getId()));
+        rates.stream().map(Rate::getSheetId).filter(id -> !chain.contains(id)).forEach(chain::add);
+        for (String sheetId : chain) {
+            Optional<BigDecimal> pct = rates.stream()
+                    .filter(r -> r.getSheetId().equals(sheetId) && r.getGrade().equals(grade))
+                    .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
+                    .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
+                    .filter(r -> !r.endedBy(on))
+                    .map(Rate::getPct);
+            if (pct.isPresent()) {
+                return pct;
+            }
+        }
+        return Optional.empty();
     }
 
     /** The due the claim would have today as an open claim bound by no statement: its live figure at today's rates,

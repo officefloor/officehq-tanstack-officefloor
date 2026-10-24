@@ -100,7 +100,7 @@ public final class ClaimRules {
     public static void log(Claim claim, Sheet sheet, ClaimLogRepository log, PersonRepository people,
             RateRepository rates, PersonGradeRepository grades, String by) {
         BigDecimal due = people.findById(claim.getPersonId())
-                .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
+                .map(p -> new ClaimFigures(rates.findInChain(claim.getSheetId()),
                         grades.gradesOf(p), sheet).due(claim))
                 .orElse(null);
         log.saveAndFlush(new ClaimLog(claim, by, sheet.getToday(), due));

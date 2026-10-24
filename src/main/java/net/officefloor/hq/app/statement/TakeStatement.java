@@ -52,7 +52,7 @@ public class TakeStatement {
         String dueTotal;
         int counted = 0;
         if (asOf == null) {
-            ClaimFigures figures = new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheet.getId()),
+            ClaimFigures figures = new ClaimFigures(rates.findInChain(sheet.getId()),
                     grades.gradesOf(person), sheet);
             dueTotal = figures.dueTotal(mine, sheet.getToday(), person);
             for (Claim claim : mine) {
@@ -69,7 +69,8 @@ public class TakeStatement {
             Sheet then = settingLogs.sheetAsOf(sheet, asOf);
             Person personThen = person.asOf(asOf);
             PersonGrades gradesThen = grades.gradesOf(person).asOf(asOf);
-            ClaimFigures figures = new ClaimFigures(rateLogs.ratesAsOf(sheet.getId(), asOf), gradesThen, then);
+            ClaimFigures figures = new ClaimFigures(rates.chainOf(sheet.getId()).stream()
+                    .flatMap(id -> rateLogs.ratesAsOf(id, asOf).stream()).toList(), gradesThen, then);
             Map<Long, BigDecimal> boundThen = bindings.boundAsOf(person.getId(), asOf);
             Map<Long, List<ClaimLog>> logged = logs.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
                     .collect(Collectors.groupingBy(ClaimLog::getClaimId));

@@ -5,8 +5,9 @@ import { settingOn, type Settings } from '../roles/roles';
 import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
- *  when it applies from the beginning of time), through a to-date (null when it has no end). */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
+ *  when it applies from the beginning of time), through a to-date (null when it has no end), and the sheet it is set
+ *  on — the sheet's own, or one up its chain of parents. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; sheet: string };
 
 export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
@@ -15,7 +16,8 @@ export const ratesPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(
 /** Where a candidate rate is previewed: what it would change, saving nothing. */
 export const ratesPreviewPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rate-preview`;
 
-/** The sheet's rates, by grade, then by from-date (a rate with none first). */
+/** The sheet's rates, by grade, then by from-date (a rate with none first); then those of its parent, its parent's
+ *  parent, and one more up, each in the same order. */
 export function useRates() {
   const [sheet] = useCurrentSheet();
   return useQuery({
@@ -26,17 +28,20 @@ export function useRates() {
 }
 
 /** The percent ("12.50") of a grade's rate in force on a date (YYYY-MM-DD): the one whose from-date is the
- *  latest on or before it, a rate with no from-date applying from the beginning of time — or undefined when
- *  no rate applies then, or when that one's to-date is before the date. */
+ *  latest on or before it, a rate with no from-date applying from the beginning of time — or, when no rate applies
+ *  then on the sheet, or that one's to-date is before the date, the next sheet's up its chain of parents (the rates
+ *  come sheet by sheet, the sheet's own first); undefined when none has one. */
 export function rateOn(rates: Rate[] | undefined, grade: string, date: string | undefined): string | undefined {
   if (date === undefined) return undefined;
-  let found: Rate | undefined;
-  for (const r of rates ?? []) {
-    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
-    if (!found || (found.from ?? '') <= (r.from ?? '')) found = r;
+  for (const sheet of [...new Set((rates ?? []).map((r) => r.sheet))]) {
+    let found: Rate | undefined;
+    for (const r of rates ?? []) {
+      if (r.sheet !== sheet || r.grade !== grade || (r.from !== null && r.from > date)) continue;
+      if (!found || (found.from ?? '') <= (r.from ?? '')) found = r;
+    }
+    if (found && (found.to == null || found.to >= date)) return found.pct;
   }
-  if (found?.to != null && found.to < date) return undefined;
-  return found?.pct;
+  return undefined;
 }
 
 /** Whether a claim's live figures round half up: the date it rounds by (a correction's is the date of the claim it

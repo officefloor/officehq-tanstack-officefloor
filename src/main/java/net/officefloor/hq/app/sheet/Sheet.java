@@ -30,6 +30,10 @@ public class Sheet {
     /** The key of the pot: undated, an amount with two decimals (null: none). */
     public static final String POT = "pot";
 
+    /** The key of the parent sheet: undated, a sheet's id (null: none). A grade with no rate in force on a date on
+     *  this sheet takes the parent's, then the parent's parent's, up to three levels up. */
+    public static final String PARENT = "parent";
+
     /** The keys of the undated dates, as the settings form names them. */
     public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from",
             ENTRY_DATE = "entry-date";
@@ -262,6 +266,11 @@ public class Sheet {
     /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */
     public BigDecimal getPot() {
         return amountOn(POT, today);
+    }
+
+    /** The id of the parent sheet. Not dated; null when none. */
+    public String getParent() {
+        return valueOn(PARENT, today);
     }
 
     public boolean isArchived() {

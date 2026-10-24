@@ -4,14 +4,16 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { AppSession } from '../../slots/defs/appSession';
 import { useCurrentSheet, useCurrentUser, useSheetInfo, sheetQueryKey, type SheetInfo } from './session';
+import { useSettings } from '../roles/roles';
 
-// The sheet's today: shown and changeable here. Changing it re-reads the whole sheet, since every
+// The sheet's today: shown and changeable here, with the parent sheet it names (blank when none). Changing it re-reads the whole sheet, since every
 // date decision in the app depends on it. The sheet is archived here too (a steward only); the two
 // share the sheet's one error element, which either action clears.
 function SheetToday() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const info = useSheetInfo();
+  const settings = useSettings();
   const [date, setDate] = useState('');
   const queryClient = useQueryClient();
   const save = useMutation({
@@ -53,6 +55,9 @@ function SheetToday() {
       </button>
       <span>
         Archived <strong data-testid="sheet-archived">{shown ? (shown.archived ? 'yes' : 'no') : ''}</strong>
+      </span>
+      <span>
+        Parent <strong data-testid="sheet-parent">{shown ? (settings.data?.parent ?? '') : ''}</strong>
       </span>
       <button
         type="button"

@@ -78,7 +78,7 @@ public class ApplyClaimStatus {
             BigDecimal noteThreshold = sheet.noteThresholdOn(claim.getDate());
             if (noteThreshold != null && (claim.getNote() == null || claim.getNote().isBlank())) {
                 BigDecimal due = people.findById(claim.getPersonId())
-                        .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
+                        .map(p -> new ClaimFigures(rates.findInChain(claim.getSheetId()),
                                 grades.gradesOf(p), sheet).due(claim))
                         .orElse(null);
                 if (due != null && due.compareTo(noteThreshold) > 0) {
@@ -132,7 +132,7 @@ public class ApplyClaimStatus {
             if (next == ClaimStatus.SETTLED) {
                 PersonGrades personGrades = people.findById(claim.getPersonId()).map(grades::gradesOf).orElse(null);
                 BigDecimal due = personGrades == null ? null
-                        : new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
+                        : new ClaimFigures(rates.findInChain(claim.getSheetId()),
                                 personGrades, sheet).due(claim);
                 BigDecimal threshold = sheet.proofThresholdFor(
                         personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());

@@ -7,7 +7,8 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { GRADES } from '../people/people';
 import { rateOn, ratesPath, ratesPreviewPath, ratesQueryKey, useRates, type Rate } from './rates';
 
-// The sheet's rates: each grade's rate in force on the sheet's today (n/a for a grade with none), every
+// The sheet's rates: each grade's rate in force on the sheet's today (its parent's, up to three levels up, when it
+// has none in force; n/a for a grade with none), every
 // rate with its from-date and to-date (a grade's rate from the start shows n/a when it has none), and the form that
 // sets one — replacing the grade's rate with the same from-date.
 function Rates() {
@@ -56,7 +57,7 @@ function Rates() {
         </thead>
         <tbody>
           {GRADES.flatMap((g) => {
-            const mine = (rates.data ?? []).filter((r) => r.grade === g);
+            const mine = (rates.data ?? []).filter((r) => r.sheet === sheet && r.grade === g);
             const start = mine.find((r) => r.from === null);
             const dated = mine.filter((r) => r.from !== null);
             return [

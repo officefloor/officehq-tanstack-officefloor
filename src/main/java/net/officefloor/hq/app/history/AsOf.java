@@ -166,11 +166,16 @@ public class AsOf {
                         Comparator.comparing(Period::getFromDate).thenComparing(Period::getId));
     }
 
-    /** The sheet's rates, by grade, then from-date (one from the beginning of time first). */
+    /** The sheet's rates, by grade, then from-date (one from the beginning of time first); then, in turn, those of each
+     *  sheet up its chain of parents (each as of the date too), as {@link RateRepository#findInChain}. */
     public List<Rate> rates(String sheetId, LocalDate date) {
-        return date == null ? rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheetId)
-                : sorted(rateLogs.ratesAsOf(sheetId, date), Comparator.comparing(Rate::getGrade)
-                        .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
+        if (date == null) {
+            return rates.findInChain(sheetId);
+        }
+        return rates.chainOf(sheetId).stream()
+                .flatMap(id -> sorted(rateLogs.ratesAsOf(id, date), Comparator.comparing(Rate::getGrade)
+                        .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder()))).stream())
+                .toList();
     }
 
     /** The user names given a role on the sheet, by name. */

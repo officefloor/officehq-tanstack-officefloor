@@ -23,7 +23,7 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithRatePreview {
     public void respond(@Val Sheet sheet, @Val RatePreviewInput input, RateRepository rates, PersonRepository persons,
             ClaimRepository claims, PersonGradeRepository grades, ObjectResponse<RatePreviewResponse> response) {
-        List<Rate> current = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheet.getId());
+        List<Rate> current = rates.findInChain(sheet.getId());
         List<Rate> candidate = new ArrayList<>(current.stream().filter(r -> !r.getGrade().equals(input.grade())).toList());
         candidate.add(new Rate(sheet.getId(), input.grade(), input.pct(), null, null));
         Map<Long, Person> people = persons.findBySheetIdOrderByIdAsc(sheet.getId()).stream()

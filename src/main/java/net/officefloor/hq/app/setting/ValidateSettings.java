@@ -70,6 +70,7 @@ public class ValidateSettings {
             amount(changes, Sheet.proofThresholdKey("C"), request.proofThresholdC(), null, request.proofThresholdCFrom(),
                     "The proof threshold of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
             pot(changes, request.pot());
+            parent(changes, request.parent());
         }
         body.set(new SettingsInput(changes));
     }
@@ -176,6 +177,15 @@ public class ValidateSettings {
             pot = new BigDecimal(value.trim()).setScale(2).toPlainString();
         }
         changes.add(new SettingsInput.Change(Sheet.POT, pot, false, null));
+    }
+
+    /** Adds the parent sheet when the form sets it: a sheet's id, or blank (none). Undated. Whether that sheet may
+     *  be the parent is checked once the sheet is loaded ({@link ValidateParent}). */
+    private static void parent(List<SettingsInput.Change> changes, String value) {
+        if (value == null) {
+            return;
+        }
+        changes.add(new SettingsInput.Change(Sheet.PARENT, value.trim().isEmpty() ? null : value.trim(), false, null));
     }
 
     /** A setting's from-date: null when blank or left out (the sheet's today). */

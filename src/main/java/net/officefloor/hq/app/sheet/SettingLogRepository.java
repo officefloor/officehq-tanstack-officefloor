@@ -10,13 +10,14 @@ public interface SettingLogRepository extends JpaRepository<SettingLog, Long> {
     List<SettingLog> findBySheetIdOrderByIdAsc(String sheetId);
 
     /** The sheet as it stood at the end of a date, that date standing in for its today: every setting set while
-     *  its today was on or before it. Only worked out, never saved. */
+     *  its today was on or before it — but the parent sheet it names now, which is not dated. Only worked out, never
+     *  saved. */
     default Sheet sheetAsOf(Sheet sheet, LocalDate date) {
         Sheet then = new Sheet(sheet.getId());
         then.setToday(date);
         then.setArchived(sheet.archivedBy(date));
         for (SettingLog set : findBySheetIdOrderByIdAsc(sheet.getId())) {
-            if (set.getMadeOn().isAfter(date)) {
+            if (set.getMadeOn().isAfter(date) || Sheet.PARENT.equals(set.getKey())) {
                 continue;
             }
             if (Sheet.POLICY_DATE.equals(set.getKey())) {
@@ -29,6 +30,7 @@ public interface SettingLogRepository extends JpaRepository<SettingLog, Long> {
                 then.record(set.getKey(), set.getFromDate(), set.getValue());
             }
         }
+        then.record(Sheet.PARENT, null, sheet.getParent());
         return then;
     }
 }

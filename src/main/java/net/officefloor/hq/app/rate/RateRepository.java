@@ -1,10 +1,13 @@
 package net.officefloor.hq.app.rate;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface RateRepository extends JpaRepository<Rate, Long> {
 
@@ -27,5 +30,37 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
                 .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .filter(r -> !r.endedBy(on));
+    }
+
+    /** How many sheets up a sheet's rates are looked for: its parent, its parent's parent, and one more. */
+    int CHAIN_LEVELS = 3;
+
+    /** The parent sheet a sheet names (its undated parent setting); empty (or a null value) when none. */
+    @Query("select s.value from SheetSetting s where s.sheet.id = :sheetId and s.key = 'parent'")
+    List<String> parentsOf(@Param("sheetId") String sheetId);
+
+    /** The sheet's id, then its parent's, then its parent's parent, up to three levels up. */
+    default List<String> chainOf(String sheetId) {
+        List<String> chain = new ArrayList<>(List.of(sheetId));
+        String id = sheetId;
+        for (int level = 0; level < CHAIN_LEVELS; level++) {
+            String parent = parentsOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
+            if (parent == null || chain.contains(parent)) {
+                break;
+            }
+            chain.add(parent);
+            id = parent;
+        }
+        return chain;
+    }
+
+    /** The sheet's rates (as {@link #findBySheetIdOrderByGradeAscFromDateAscIdAsc}), then those of each sheet up its
+     *  chain ({@link #chainOf}) in turn: a grade with no rate in force on a date on a sheet takes the next one's. */
+    default List<Rate> findInChain(String sheetId) {
+        List<Rate> rates = new ArrayList<>();
+        for (String id : chainOf(sheetId)) {
+            rates.addAll(findBySheetIdOrderByGradeAscFromDateAscIdAsc(id));
+        }
+        return rates;
     }
 }
