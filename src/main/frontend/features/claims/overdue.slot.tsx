@@ -4,14 +4,14 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
-import { countsLive, heldIds, isOverdue, useClaims, type Claim } from './claims';
+import { countsLive, holdsOf, isOverdue, useClaims, type Claim } from './claims';
 
 // A person's overdue count and overdue-total: their counted claims that are overdue (OPEN or PENDING, due-by before the
-// sheet's today; a held person's OPEN and PENDING claims do not count), and those claims' dues (with their late charge) added up, skipping n/a.
+// sheet's today; their unbound OPEN and PENDING claims dated within a hold of theirs do not count), and those claims' dues (with their late charge) added up, skipping n/a.
 // The sheet's are everyone's added up.
 function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): { count: number; total: string } {
-  const held = heldIds([person]);
+  const held = holdsOf([person]);
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, today));
   return { count: mine.length, total: sumDue(mine.map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today))) };
 }

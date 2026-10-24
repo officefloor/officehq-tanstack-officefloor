@@ -1,16 +1,23 @@
 package net.officefloor.hq.app.person;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 
 /** A person on a sheet: a name and a grade (A, B or C), the date they are retired from (null: not retired),
- *  and whether they are on hold. */
+ *  and their holds over time. */
 @Entity
 @Table(name = "person")
 public class Person {
@@ -37,9 +44,12 @@ public class Person {
     @Column(name = "retired_from")
     private LocalDate retiredFrom;
 
-    /** Set: their OPEN and PENDING claims count in no live total; their SETTLED claims still count. */
-    @Column(nullable = false)
-    private boolean held;
+    /** Their holds, earliest from-date first: their OPEN and PENDING claims dated within one count in no live
+     *  total, unless a statement binds them; their other claims still count. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "person_hold", joinColumns = @JoinColumn(name = "person_id"))
+    @OrderBy("fromDate ASC, toDate ASC")
+    private List<PersonHold> holds = new ArrayList<>();
 
     protected Person() {
     }
@@ -86,12 +96,22 @@ public class Person {
         this.retiredFrom = retiredFrom;
     }
 
-    public boolean isHeld() {
-        return held;
+    public List<PersonHold> getHolds() {
+        return holds;
     }
 
-    public void setHeld(boolean held) {
-        this.held = held;
+    public void addHold(PersonHold hold) {
+        holds.add(hold);
+    }
+
+    /** Whether they have any hold. */
+    public boolean isHeld() {
+        return !holds.isEmpty();
+    }
+
+    /** Whether a hold of theirs covers the date. */
+    public boolean heldOn(LocalDate date) {
+        return holds.stream().anyMatch(h -> h.covers(date));
     }
 
     /** Whether a claim on this date is refused: it is after their retirement date. */

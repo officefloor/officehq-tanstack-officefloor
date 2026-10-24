@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
+import type { Hold } from '../claims/claims';
 import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
@@ -13,7 +14,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // one's due-total and the sheet's today when it was taken (null with none).
 // `retiredFrom` is the date they are retired from (null: not retired); with one set they count as retired at
 // once, whatever the date.
-// `held`: their OPEN and PENDING claims count in no live total; their SETTLED claims still count.
+// `held`: whether they have any hold. `holds`: their holds, earliest from-date first; their OPEN and PENDING
+// claims dated within one count in no live total, unless a statement binds them; their other claims still count.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -26,6 +28,7 @@ export type Person = {
   statementDate: string | null;
   retiredFrom: string | null;
   held: boolean;
+  holds: Hold[];
   patronIds: number[];
 };
 

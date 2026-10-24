@@ -10,7 +10,7 @@ import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { periodClosePath, periodDue, periodReopenPath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
-// The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a held person's OPEN ones),
+// The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a person's unbound OPEN ones dated within a hold of theirs),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // buttons that close and reopen it, and the form that adds one.
 function Periods() {

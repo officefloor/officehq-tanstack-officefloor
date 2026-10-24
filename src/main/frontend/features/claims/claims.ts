@@ -44,12 +44,23 @@ export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 /** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** The ids of the people on hold. */
-export const heldIds = (people: { id: number; held: boolean }[] | undefined) =>
-  new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
+/** A hold: from a date on, to a date (YYYY-MM-DD, inclusive; null: open-ended). */
+export type Hold = { from: string; to: string | null };
 
-/** Whether a claim counts toward the live totals: as `counts`, except a held person's OPEN and PENDING claims. */
-export const countsLive = (c: Claim, held: Set<number>) => counts(c) && !(isOpen(c) && held.has(c.personId));
+/** Each person's holds, by person id. */
+export type Holds = Map<number, Hold[]>;
+
+/** The holds of the people, by person id. */
+export const holdsOf = (people: { id: number; holds: Hold[] }[] | undefined): Holds =>
+  new Map((people ?? []).map((p) => [p.id, p.holds]));
+
+/** Whether a hold of the claim's person covers its date. */
+const heldOn = (c: Claim, holds: Holds) =>
+  (holds.get(c.personId) ?? []).some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
+
+/** Whether a claim counts toward the live totals: as `counts`, except its person's OPEN and PENDING claims dated
+ *  within a hold of theirs, unless a statement binds them. */
+export const countsLive = (c: Claim, holds: Holds) => counts(c) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
 
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -71,9 +82,9 @@ export function useClaims() {
 /** An amount ("12.50") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; a held person's OPEN claims
- *  are left out. */
-export function sumOf(claims: Claim[], held: Set<number> = new Set()): string {
+/** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; unbound OPEN claims dated
+ *  within a hold of their person are left out. */
+export function sumOf(claims: Claim[], held: Holds = new Map()): string {
   return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 

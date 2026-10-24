@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
 import { gradeOn, type Person } from '../people/people';
-import { countsLive, heldIds, type Claim } from '../claims/claims';
+import { countsLive, holdsOf, type Claim } from '../claims/claims';
 import { chargedOf, sumDue, type Rate } from '../rates/rates';
 import type { Settings } from '../roles/roles';
 
@@ -34,13 +34,13 @@ export function periodOn(periods: Period[] | undefined, date: string): Period | 
   return (periods ?? []).find((p) => p.from <= date && date <= p.to);
 }
 
-/** A period's due-total: the dues (with any late charge) of the counted claims whose date falls in it (not a held
- *  person's OPEN ones), added up, skipping n/a; for a closed period, the one fixed when it was closed. */
+/** A period's due-total: the dues (with any late charge) of the counted claims whose date falls in it (not a person's
+ *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one fixed when it was closed. */
 export function periodDue(period: Period, people: Person[] | undefined, claims: Claim[], rates: Rate[] | undefined,
   settings: Settings | undefined, today: string | undefined): string {
   if (period.closedTotal !== null) return period.closedTotal;
   const personOf = new Map((people ?? []).map((p) => [p.id, p]));
-  const held = heldIds(people);
+  const held = holdsOf(people);
   return sumDue(claims
     .filter((c) => countsLive(c, held) && personOf.has(c.personId) && periodOn([period], c.date))
     .map((c) => chargedOf(c, rates, gradeOn(personOf.get(c.personId)!, c.date), settings, today)));

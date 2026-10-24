@@ -7,6 +7,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -81,10 +82,11 @@ public class ClaimFigures {
         return claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED;
     }
 
-    /** Whether a claim counts toward the live totals: as {@link #counts}, except a held person's OPEN and PENDING
-     *  claims. */
-    public static boolean countsLive(Claim claim, boolean held) {
-        return counts(claim) && !(held && claim.getStatus().isOpen());
+    /** Whether a claim counts toward the live totals: as {@link #counts}, except its person's OPEN and PENDING
+     *  claims dated within a hold of theirs, unless a statement binds them (null person: no holds). */
+    public static boolean countsLive(Claim claim, Person person) {
+        return counts(claim) && !(person != null && claim.getStatus().isOpen() && !claim.isBound()
+                && person.heldOn(claim.getDate()));
     }
 
     /** The percent of the grade's rate in force on a date. */
@@ -122,13 +124,13 @@ public class ClaimFigures {
      *  in force on the day has no rate in force then, unless a counted claim keeps a figure: a fixed one (settled or bound), or a
      *  live one at another grade they had on its date. */
     public String dueTotal(List<Claim> claims, LocalDate today) {
-        return dueTotal(claims, today, false);
+        return dueTotal(claims, today, null);
     }
 
-    /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; while they are held their OPEN
-     *  claims do not count. */
-    public String dueTotal(List<Claim> claims, LocalDate today, boolean held) {
-        List<Claim> counted = claims.stream().filter(c -> countsLive(c, held)).toList();
+    /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims dated within a hold
+     *  of theirs do not count, unless a statement binds them. */
+    public String dueTotal(List<Claim> claims, LocalDate today, Person person) {
+        List<Claim> counted = claims.stream().filter(c -> countsLive(c, person)).toList();
         String grade = grades.on(today);
         boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
                 || (!c.isBound() && !grade.equals(grades.on(c.getDate())) && figure(c) != null));

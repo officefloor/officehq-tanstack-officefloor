@@ -17,8 +17,8 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Closes the period, fixing its due-total as it is now: the dues (with any late charge) of the counted claims dated in it (not a held
- *  person's OPEN ones), added up, skipping n/a. Refuses a period already closed. */
+/** Closes the period, fixing its due-total as it is now: the dues (with any late charge) of the counted claims dated in it (not a person's
+ *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a. Refuses a period already closed. */
 public class ClosePeriod {
     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
             RateRepository rates, SheetRepository sheets, PersonGradeRepository grades) throws InvalidPeriodException {
@@ -31,7 +31,7 @@ public class ClosePeriod {
         var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(period.getSheetId());
         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(period.getSheetId());
         BigDecimal total = claims.findBySheetIdOrderByIdDesc(period.getSheetId()).stream()
-                .filter(c -> byId.containsKey(c.getPersonId()) && ClaimFigures.countsLive(c, byId.get(c.getPersonId()).isHeld())
+                .filter(c -> byId.containsKey(c.getPersonId()) && ClaimFigures.countsLive(c, byId.get(c.getPersonId()))
                         && period.contains(c.getDate()))
                 .map(c -> new ClaimFigures(sheetRates, new PersonGrades(byId.get(c.getPersonId()).getGrade(),
                         dated.getOrDefault(c.getPersonId(), List.of())), sheet).due(c))
