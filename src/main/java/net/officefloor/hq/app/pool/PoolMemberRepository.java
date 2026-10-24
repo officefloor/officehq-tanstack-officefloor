@@ -13,6 +13,9 @@ public interface PoolMemberRepository extends JpaRepository<PoolMember, Long> {
 
     Optional<PoolMember> findByPoolIdAndPersonId(Long poolId, Long personId);
 
+    /** The membership of the pool in another pool, if it is one. */
+    Optional<PoolMember> findByMemberPoolId(Long memberPoolId);
+
     /** The person's memberships, in the order they were added. */
     List<PoolMember> findByPersonIdOrderByIdAsc(Long personId);
 }

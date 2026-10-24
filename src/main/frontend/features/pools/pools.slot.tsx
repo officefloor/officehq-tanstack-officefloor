@@ -34,7 +34,7 @@ function Pools() {
           <tr><th>Pool</th><th>Members</th><th>Total share</th><th>Balanced</th><th>Add member</th></tr>
         </thead>
         <tbody>
-          {(pools.data ?? []).map((p) => <PoolRow key={p.id} pool={p} />)}
+          {(pools.data ?? []).map((p) => <PoolRow key={p.id} pool={p} pools={pools.data ?? []} />)}
         </tbody>
       </table>
       <form
@@ -61,18 +61,19 @@ function Pools() {
   );
 }
 
-// A pool's row: its members with their shares, its total and balance, and the person select and share that add a
-// member. A person already in the pool, or a share that is not more than 0.00 and at most 100.00 (two decimals),
-// is refused and shows the error on the pool, which goes as soon as the entry changes.
-function PoolRow({ pool }: { pool: Pool }) {
+// A pool's row: its members with their shares, its total and balance, and the member select (a person, or another
+// pool as pool:<name>) and share that add a member. A person already in the pool, a pool already a member of one, one
+// that would contain itself or make a chain of pools more than three deep, or a share that is not more than 0.00 and
+// at most 100.00 (two decimals), is refused and shows the error on the pool, which goes as soon as the entry changes.
+function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople();
-  const [personId, setPersonId] = useState('');
+  const [memberKey, setMemberKey] = useState('');
   const [share, setShare] = useState('');
   const queryClient = useQueryClient();
   const add = useMutation({
-    mutationFn: (body: { personId: number | null; share: string }) =>
+    mutationFn: (body: { personId: number | null; memberPoolId: number | null; share: string }) =>
       postJson<Pool[]>(`${poolsPath(sheet ?? '')}/${pool.id}/members`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsQueryKey(sheet ?? '') });
@@ -86,7 +87,10 @@ function PoolRow({ pool }: { pool: Pool }) {
       <td>
         <ul>
           {pool.members.map((m) => (
-            <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+            <li
+              key={m.poolId != null ? `pool-${m.poolId}` : m.personId}
+              data-testid={m.poolId != null ? `pool-member-${pool.name}-pool-${m.name}` : `pool-member-${pool.name}-${m.personId}`}
+            >
               <span data-testid="pool-member-name">{m.name}</span>{' '}
               <span data-testid="pool-share">{m.share}</span>{' '}
               <span data-testid="pool-cut">{m.cut}</span>
@@ -99,12 +103,15 @@ function PoolRow({ pool }: { pool: Pool }) {
       <td>
         <select
           data-testid="pool-member-select"
-          value={personId}
-          onChange={(e) => { setPersonId(e.target.value); add.reset(); }}
+          value={memberKey}
+          onChange={(e) => { setMemberKey(e.target.value); add.reset(); }}
         >
-          <option value="">Choose a person</option>
+          <option value="">Choose a person or pool</option>
           {(people.data ?? []).map((p) => (
             <option key={p.id} value={String(p.id)}>{p.name}</option>
+          ))}
+          {pools.map((p) => (
+            <option key={`pool-${p.id}`} value={`pool:${p.id}`}>{`pool:${p.name}`}</option>
           ))}
         </select>
         <input
@@ -117,12 +124,16 @@ function PoolRow({ pool }: { pool: Pool }) {
           type="button"
           data-testid="pool-member-add"
           disabled={add.isPending}
-          onClick={() => submit({ personId: personId === '' ? null : Number(personId), share })}
+          onClick={() => submit({
+            personId: memberKey === '' || memberKey.startsWith('pool:') ? null : Number(memberKey),
+            memberPoolId: memberKey.startsWith('pool:') ? Number(memberKey.slice('pool:'.length)) : null,
+            share,
+          })}
         >
           Add member
         </button>
         {add.isError && (
-          <span data-testid="pool-error">A member must not already be in the pool, with a share above 0.00 and at most 100.00.</span>
+          <span data-testid="pool-error">A member must not already be in the pool (a pool in at most one, never itself, at most three deep), with a share above 0.00 and at most 100.00.</span>
         )}
       </td>
     </tr>
