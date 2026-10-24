@@ -185,6 +185,20 @@ public class ClaimRepository {
         }
     }
 
+    /** Move the claims back from one person to another (those of them still with the first), as they are now, listed
+     *  after the other's in the order they were listed. */
+    public void moveBack(String sheetId, List<Long> ids, long fromId, long toId) {
+        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed",
+                Long.class, sheetId, fromId)) {
+            if (!ids.contains(id)) {
+                continue;
+            }
+            jdbc.update("UPDATE claim SET person_id = ?, "
+                    + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ?", toId, sheetId, id);
+            kept(sheetId, id);
+        }
+    }
+
     /** Move every claim of the person to another sheet, keeping its place in their list, its status, dates, note,
      *  settled due, tags, comments, lines and log: each claim that had a number takes the next number of the other sheet,
      *  in the order the claims were added; each keeps the figure a statement bound it to, loses its reference, editor lock and

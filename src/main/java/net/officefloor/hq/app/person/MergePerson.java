@@ -16,11 +16,12 @@ import net.officefloor.plugin.variable.Val;
  *  their patrons are added to the other's (not the other themselves, no repeats), and anyone naming them as patron
  *  names the other instead (no repeats); their pool memberships move to the other (shares added when the other is
  *  already a member); their statements are added to the other's count (the other's last statement stays theirs or,
- *  having none, becomes the merged person's); their holds, watchers and contact are dropped, and they leave the sheet. */
+ *  having none, becomes the merged person's); their holds, watchers and contact are dropped, and they leave the sheet. The merge is kept
+ *  (see PersonMergeRepository) so it can be undone. */
 public class MergePerson {
     public void merge(@Val MergeInput input, @Val Person loaded, PersonRepository people, ClaimRepository claims,
             PatronRepository patrons, PoolRepository pools, WatchRepository watches, RoleRepository roles,
-            Out<Merge> merge, Out<PersonResponse> saved) throws InvalidPersonException {
+            PersonMergeRepository merges, Out<Merge> merge, Out<PersonResponse> saved) throws InvalidPersonException {
         if (!Role.STEWARD.equals(roles.of(loaded.sheetId(), input.user()))) {
             throw new InvalidPersonException("Only a steward may merge people.");
         }
@@ -44,11 +45,13 @@ public class MergePerson {
         if (into.retiredFrom() != null) {
             throw new InvalidPersonException(into.name() + " is retired: nobody can be merged into them.");
         }
+        long made = merges.record(from, into, input.user());
         claims.moveAll(from.sheetId(), from.id(), into.id());
         patrons.merge(from.sheetId(), from.id(), into.id());
         pools.merge(from.sheetId(), from.id(), into.id());
         watches.drop(from.sheetId(), from.id());
         people.merge(from, into);
+        merges.named(made, into, from.name());
         merge.set(new Merge(from.sheetId(), from.name(), into.name()));
         saved.set(PersonResponse.from(people.find(into.sheetId(), into.id())));
     }
