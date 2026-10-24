@@ -79,6 +79,10 @@ public class Person {
     @Column(name = "retired_made_on")
     private LocalDate retiredMadeOn;
 
+    /** The sheet they were transferred from (null: they were not transferred here). */
+    @Column(name = "origin_sheet")
+    private String originSheet;
+
     protected Person() {
     }
 
@@ -136,6 +140,14 @@ public class Person {
 
     public boolean isTermsChanged() {
         return termsChanged;
+    }
+
+    public String getOriginSheet() {
+        return originSheet;
+    }
+
+    public void setOriginSheet(String originSheet) {
+        this.originSheet = originSheet;
     }
 
     public String getContact() {

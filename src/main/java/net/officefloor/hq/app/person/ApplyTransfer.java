@@ -95,6 +95,7 @@ public class ApplyTransfer {
         arrived.setAddedOn(today);
         arrived.setTerms(person.getTerms());
         arrived.setContact(person.getContact());
+        arrived.setOriginSheet(sheetId);
         arrived = people.saveAndFlush(arrived);
         List<PersonGrade> theirGrades = grades.findByPersonIdOrderByFromDateAsc(from);
         for (PersonGrade grade : theirGrades) {

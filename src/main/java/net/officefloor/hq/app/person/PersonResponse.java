@@ -9,11 +9,12 @@ import net.officefloor.hq.app.statement.Statement;
  *  with its from-date (null for the first, which applies from the beginning of time), with their statement count
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
- *  they clash: their name or an alias is in use on another sheet of the sheet's tree. */
+ *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
+ *  transferred from (null: none). */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
         List<Hold> holds, List<Long> patronIds, Integer terms,
-        String contact, List<String> aliases, boolean clashing) {
+        String contact, List<String> aliases, boolean clashing, String origin) {
 
     /** A hold from a date on, to a date (inclusive; null: open-ended). */
     public record Hold(String from, String to) {
@@ -47,6 +48,7 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                         .sorted(String.CASE_INSENSITIVE_ORDER.thenComparing(java.util.Comparator.naturalOrder()))
                         .toList(),
                 usedAround.contains(TreeNames.key(person.getName()))
-                        || aliases.stream().anyMatch(a -> usedAround.contains(TreeNames.key(a.getAlias()))));
+                        || aliases.stream().anyMatch(a -> usedAround.contains(TreeNames.key(a.getAlias()))),
+                person.getOriginSheet());
     }
 }
