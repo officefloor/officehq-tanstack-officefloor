@@ -108,6 +108,7 @@ function PersonClaims({ person }: { person: Person }) {
 
 const ACTIONS = [
   { action: 'open', label: 'Open' },
+  { action: 'review', label: 'Review' },
   { action: 'settle', label: 'Settle' },
   { action: 'approve', label: 'Approve' },
   { action: 'reject', label: 'Reject' },
@@ -121,7 +122,8 @@ const ACTIONS = [
 // by the server and shows the claim's error, as is settling or approving a claim the signed-in user opened, a
 // non-steward approving or rejecting a PENDING claim, an open, settle or void by a role the permission matrix does
 // not allow, or rejecting one without a reason (typed beside the reject
-// button). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
+// button), or a review by anyone but a steward. A claim whose due is above the review threshold in force on its date goes to
+// REVIEW when opened; a steward's review button opens it (it is numbered then). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
 // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim, or of a claim whose due-by is in a
 // closed period, shows the claim's error instead of opening its editor (an open claim is voided and added anew). Opening a
 // DRAFT's editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes: another
@@ -589,6 +591,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
             : closed
             ? 'This claim is due by a date in a closed period, so its status cannot change.'
+            : action === 'review' && claim.status === 'REVIEW' && change.error instanceof HttpError && change.error.status === 403
+            ? 'Only a steward can review a claim.'
             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can approve or reject a pending claim.'
             : action === 'void' && claim.status === 'SETTLED' && change.error instanceof HttpError && change.error.status === 403

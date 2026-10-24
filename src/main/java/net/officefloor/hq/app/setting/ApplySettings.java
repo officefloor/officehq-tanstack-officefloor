@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Sets the settings the form sets: a setting that carries a figure (the clerk limit, floor, terms, late percent,
- *  each grade's own terms, cap, proof threshold, note threshold, each grade's grace days, each grade's proof threshold) is recorded from its from-date (the sheet's today when none is given), replacing a
+ *  each grade's own terms, cap, proof threshold, note threshold, each grade's grace days, each grade's proof threshold, review threshold) is recorded from its from-date (the sheet's today when none is given), replacing a
  *  value recorded from that date and keeping the others; the policy date, period numbering from and entry date are set; a permission matrix entry
  *  (key perm-<action>), the grace days, the pot, the parent sheet, the fiscal year start month and the alert threshold are recorded undated. Each is logged with the sheet's today (so the
  *  settings can be worked out as they stood on an earlier date). */

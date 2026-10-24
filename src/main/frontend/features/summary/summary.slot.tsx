@@ -10,7 +10,7 @@ import { isActive } from '../claims/active.slot';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The statuses the summary counts claims by. */
-export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
 // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
 // the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period (by from-date), its due-total and its change from

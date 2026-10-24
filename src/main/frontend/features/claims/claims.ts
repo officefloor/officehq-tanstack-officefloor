@@ -6,8 +6,9 @@ import { settingOn, type Settings } from '../roles/roles';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
 /** A claim's status: DRAFT to start, then OPEN and SETTLED; a clerk settling one above the clerk limit leaves it
- *  PENDING, until a steward approves it (SETTLED) or rejects it (OPEN again); a DRAFT, OPEN or PENDING claim can be VOID. A DRAFT can be DELETED (it counts nowhere) and restored to DRAFT on the day it was deleted. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ *  PENDING, until a steward approves it (SETTLED) or rejects it (OPEN again); a DRAFT, OPEN or PENDING claim can be VOID. A DRAFT can be DELETED (it counts nowhere) and restored to DRAFT on the day it was deleted. A claim whose due is above the review threshold in force on its date goes to REVIEW when
+ *  opened (no number yet; it counts in no total, cannot be edited, settled or split, and can be VOID), until a steward reviews it (OPEN, numbered then). */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
  *  the number given when it was opened (the sheet's next, or the next in its period: P1-1, X-1; null for a claim never opened; a voided claim keeps it) and the due fixed when it was
