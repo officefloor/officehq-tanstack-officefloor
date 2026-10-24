@@ -1,0 +1,140 @@
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+index cd8155cc..25de076b 100644
+--- a/src/main/frontend/features/dashboard/dashboard.slot.tsx
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -6,7 +6,7 @@ import type { Person } from '../people/people';
+ import { overdueDues, type Rate } from '../rates/rates';
+ import { useActingRole } from '../roles/roles.slot';
+ import { floorOf, lateOf, type Settings } from '../settings/settings';
+-import { useAsOf, usePreview, type Sheet } from '../sheet/sheet';
++import { usePreview, type Sheet } from '../sheet/sheet';
+ 
+ /** One read of a sheet as the store holds it now (given a preview date, figured on it). Keyed under the sheet, so a
+  *  load of that sheet re-reads it. */
+@@ -81,11 +81,10 @@ function Shown({ counts, steward }: { counts: Counts; steward: boolean }) {
+ /** The steward's dashboard: over the sheet and all its descendants (its children — the sheets naming it as their
+  *  parent — theirs, and so on), as the store holds them now, how many claims are PENDING, how many REVIEW, and how
+  *  many overdue claims count (as each sheet's overdue rollup counts them). Anyone not acting as a steward sees the
+- *  cells empty, and so does everyone while the screen shows the sheet as of a date. */
++ *  cells empty; a steward sees them, as the store holds them now, even while the screen shows the sheet as of a date. */
+ function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
+-  const [asOf] = useAsOf();
+   const [preview] = usePreview();
+-  const steward = useActingRole(sheetId, user) === 'steward' && !asOf;
++  const steward = useActingRole(sheetId, user) === 'steward';
+   const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
+   return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE} steward={steward} preview={preview} />;
+ }
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index fab35dad..c3d7215b 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -46,8 +46,9 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?:
+  *  a claim whose person's grade on its date has one in force on that date takes it instead of the sheet's. A claim whose due is above the note threshold (blank: none) in
+  *  force on its date cannot be opened while its note is empty; the server enforces it. A claim whose due is above
+  *  the review threshold (blank: none) in force on its date goes to REVIEW when opened; a steward reviews it to OPEN.
+- *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles that may take
+- *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
++ *  The permission matrix gives, for each of open, settle, void, reassign, close, reopen and today (changing the
++ *  sheet's today), the roles that may take it (comma separated; blank: the standing rule); it is not dated, and the
++ *  server enforces it.
+  *  The grace days (blank: off; not dated): when the sheet's today is changed, each open period whose to-date plus
+  *  them is before the new today is closed by the server.
+  *  The entry date (blank: off; not dated): while it is set, a new claim given no date (the claim form, the quick-add
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 7ac0e1de..dd42f4c7 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -69,7 +69,7 @@ export function valueOn(values: Dated[] | undefined, start: string, date: string
+ }
+ 
+ /** The actions the permission matrix covers, in order. */
+-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ 
+ /** The grades that may have terms of their own. */
+ export const GRADES = ['A', 'B', 'C'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Permissions.java b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+index d24f4ede..9e6453f6 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Permissions.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+@@ -8,17 +8,18 @@ import net.officefloor.hq.app.role.Role;
+ 
+ /** A sheet's permission matrix: for each action the roles that may take it, as a comma separated list ('' when
+  *  blank: the standing rule applies — open, settle, void and close by clerk and steward; reassign and reopen by
+- *  steward). */
++ *  steward; changing the sheet's today by anyone but a viewer). */
+ public record Permissions(Map<String, String> roles) {
+ 
+     /** The actions the matrix covers, in order. */
+-    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     /** The standing rule for each action, used while its entry is blank. */
+     private static final Map<String, List<String>> STANDING = Map.of(
+             "open", List.of(Role.CLERK, Role.STEWARD), "settle", List.of(Role.CLERK, Role.STEWARD),
+             "void", List.of(Role.CLERK, Role.STEWARD), "close", List.of(Role.CLERK, Role.STEWARD),
+-            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD));
++            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD),
++            "today", List.of(Role.CLERK, Role.STEWARD, Role.RESTRICTED));
+ 
+     /** The entry for each action, in order ('' when blank). */
+     public Map<String, String> entries() {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 16960850..bd250674 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -227,7 +227,7 @@ public class ValidateSettings {
+         if (request.perms() != null) {
+             for (String action : request.perms().keySet()) {
+                 if (!Permissions.ACTIONS.contains(action)) {
+-                    throw new InvalidSettingException("Permissions may be set only for open, settle, void, reassign, close or reopen.");
++                    throw new InvalidSettingException("Permissions may be set only for open, settle, void, reassign, close, reopen or today.");
+                 }
+             }
+             for (String action : Permissions.ACTIONS) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RefuseTodayChange.java b/src/main/java/net/officefloor/hq/app/sheet/RefuseTodayChange.java
+new file mode 100644
+index 00000000..c026f95d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RefuseTodayChange.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Refuse a change of the sheet's today by a role the sheet's permission matrix does not allow it (by default anyone
++ *  but a viewer). */
++public class RefuseTodayChange {
++    public void refuse(@PathVariable("sheetId") String sheetId, @Val TodayRequest body, RoleRepository roles,
++            SettingRepository settings) throws InvalidSheetException {
++        String id = sheetId.trim();
++        if (!settings.permissions(id).allows("today", roles.of(id, body.user()))) {
++            throw new InvalidSheetException("Your role may not change the sheet's today.");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index aaaa8fa2..687be374 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,10 +1,15 @@
+-# Change the sheet's today. A refused change (bad date, unknown sheet) writes nothing.
++# Change the sheet's today. A refused change (bad date, unknown sheet, a role the permission matrix does not allow)
++# writes nothing.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: permit
++permit:
++  class: net.officefloor.hq.app.sheet.RefuseTodayChange
++  govern: [ transaction ]
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
