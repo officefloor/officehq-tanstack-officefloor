@@ -9,9 +9,10 @@ import { claimsQueryKey } from './claims';
 
 // The paste box: each line is name,amount,date,note (the note may hold commas; the date may be blank for the
 // sheet's entry date, else its today; the note may be absent; a note ending in ` #<reference>` gives the claim that
-// reference) and adds a DRAFT claim, in order, for the named person on the sheet.
-// The server checks every line by the claim form's rules first, so one refused line adds nothing. How many were
-// added shows once done, and is gone while it runs.
+// reference) and adds a claim, in order, for the named person on the sheet, opened as the open button opens it. A line
+// whose date and note match a DRAFT of the person's (as it stood before the paste) edits it to the line's amount and
+// opens it instead; a match in any other status is refused. One refused line (by the claim form's rules or as the
+// open button refuses) changes nothing. How many lines went through shows once done, and is gone while it runs.
 function PasteClaims() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -45,7 +46,7 @@ function PasteClaims() {
         onChange={(e) => { setText(e.target.value); paste.reset(); }}
       />
       <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-        Add draft claims
+        Add and open claims
       </button>
       {paste.isSuccess && (
         <>
@@ -56,7 +57,8 @@ function PasteClaims() {
         <span data-testid="paste-error">
           Nothing was added: every line needs a name on the sheet and an amount, 0.00 or more, with up to two
           decimals; a date must be a calendar date, due by a date in no closed period and not after the person's retirement; a reference must not repeat
-          one on the sheet or in the paste (ignoring case).
+          one on the sheet or in the paste (ignoring case); a line matching a claim that is not a draft, or one the open
+          button would refuse (a note required, a period's cap, a closed period, a permission), refuses the paste.
         </span>
       )}
     </form>
