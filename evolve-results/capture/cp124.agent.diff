@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 92e9ba8b..2db46069 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -4,11 +4,11 @@ import { useCurrentSheet } from '../session/session';
+ 
+ /** A sheet's pool as the store holds it: a trimmed name, on the sheet at most once, and its members, each a person
+  *  of the sheet at most once with a share percent. `totalShare` is the members' shares added up, a retired member's
+- *  (one with a retirement date set, whatever the date) counting as 0.00; `balanced` is whether it is exactly 100.00. */
++ *  (one with a retirement date set, whatever the date) counting as given; `balanced` is whether it is exactly 100.00. */
+ export type Pool = { id: number; name: string; totalShare: string; balanced: boolean; members: PoolMember[] };
+ 
+ /** A pool's member: the person, or another pool (`poolId`; the other null), its name, its share (two decimals) and its
+- *  cut of the pool's pot (two decimals; "" when the pool is not balanced or has no pot, or the member's dates do not include the
++ *  cut of the pool's pot (two decimals; "" when the pool is not balanced or has no pot, or every member is retired, or the member's dates do not include the
+  *  sheet's today — such a member is left out of the total share and balance too). A pool that is a member of
+  *  none has the sheet's pot; a pool that is a member of another has its cut there as its pot. */
+ export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; cut: string };
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 184c9cf7..d91d4812 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.pool;
+ import java.util.List;
+ 
+ /** A pool as the screen shows it: its name, its members, the total of their shares (a retired member's counting as
+- *  0.00) and whether that total is exactly 100.00. */
++ *  given) and whether that total is exactly 100.00. */
+ public record PoolResponse(long id, String name, String totalShare, boolean balanced, List<Member> members) {
+ 
+     /** A member: the person (or the member pool, the other null), its name, their share and their cut of the sheet's pot ("" when the pool is not
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 2422ab8e..8b72ca1b 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -20,14 +20,13 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /** The sheet's pools, in the order they were added, each with its members in the order they were added. A member
+- *  with a retirement date set (whatever the date) counts as 0.00 toward the pool's total; a member that is another
+- *  pool counts its share. A pool that is a member of none has the sheet's pot; a pool that is a member of another has
++ *  with a retirement date set (whatever the date) counts its share toward the pool's total, as any member does. A pool that is a member of none has the sheet's pot; a pool that is a member of another has
+  *  its cut in that pool as its pot (none when that pool has no cuts). Each member of a balanced pool, when it has a
+  *  pot, cuts the pot times their share divided by the shares of the members with a cut added up, rounded half to even
+- *  to two decimals (a retired member 0.00); a person with a hold covering the sheet's today has no cut, so their share
+- *  is spread over the others in proportion to theirs (the pool's total share is unchanged). The remainder, the pot
+- *  minus the cuts added up, goes to the member with a cut with the largest share (a retired member's counting as
+- *  0.00), the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
++ *  to two decimals; a retired member, and a person with a hold covering the sheet's today, has no cut (0.00), so
++ *  their share is spread over the others in proportion to theirs (the pool's total share is unchanged). A pool whose
++ *  every member is retired shows no cuts. The remainder, the pot minus the cuts added up, goes to the member with a
++ *  cut with the largest share, the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
+  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut. */
+ public class RespondWithPools {
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+@@ -61,6 +60,7 @@ public class RespondWithPools {
+             List<BigDecimal> counted = new ArrayList<>();
+             List<Boolean> held = new ArrayList<>();
+             List<Boolean> dated = new ArrayList<>();
++            List<Boolean> retired = new ArrayList<>();
+             for (PoolMember member : membersOf.get(pool.getId())) {
+                 BigDecimal share;
+                 if (member.getMemberPoolId() != null) {
+@@ -69,12 +69,15 @@ public class RespondWithPools {
+                     names.add(sub.getName());
+                     share = member.getShare();
+                     held.add(false);
++                    retired.add(false);
+                 } else {
+                     Person person = byId.get(member.getPersonId());
+                     if (person == null) continue;
+                     names.add(person.getName());
+-                    share = person.getRetiredFrom() == null ? member.getShare() : BigDecimal.ZERO.setScale(2);
+-                    held.add(sheet.getToday() != null && person.heldOn(sheet.getToday()));
++                    share = member.getShare();
++                    boolean isRetired = person.getRetiredFrom() != null;
++                    held.add(isRetired || (sheet.getToday() != null && person.heldOn(sheet.getToday())));
++                    retired.add(isRetired);
+                 }
+                 boolean in = member.includes(sheet.getToday());
+                 dated.add(in);
+@@ -86,8 +89,13 @@ public class RespondWithPools {
+             }
+             boolean balanced = total.compareTo(HUNDRED) == 0;
+             List<Boolean> heldIn = new ArrayList<>();
+-            for (int i = 0; i < kept.size(); i++) if (dated.get(i)) heldIn.add(held.get(i));
+-            List<String> countedCuts = cuts(balanced ? next.getValue() : null, counted, heldIn);
++            boolean allRetired = true;
++            for (int i = 0; i < kept.size(); i++) {
++                if (!dated.get(i)) continue;
++                heldIn.add(held.get(i));
++                if (!retired.get(i)) allRetired = false;
++            }
++            List<String> countedCuts = cuts(balanced && !allRetired ? next.getValue() : null, counted, heldIn);
+             List<String> cuts = new ArrayList<>();
+             for (int i = 0, j = 0; i < kept.size(); i++) cuts.add(dated.get(i) ? countedCuts.get(j++) : "");
+             List<PoolResponse.Member> shown = new ArrayList<>();
