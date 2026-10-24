@@ -8,7 +8,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peopleQueryKey } from './people';
 
 // The quick-add bar above the people list: a name and an amount make a DRAFT claim for that person, dated the
-// sheet's today with an empty note; a name not on the sheet adds the person first, with grade A. The server
+// sheet's entry date (else its today) with an empty note; a name not on the sheet adds the person first, with grade A. The server
 // checks everything before it stores anything, so a refusal adds nobody.
 function QuickAddBar() {
   const [user] = useCurrentUser();

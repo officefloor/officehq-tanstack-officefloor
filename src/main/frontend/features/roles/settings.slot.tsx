@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | PermKey;
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | PermKey;
 
 /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
  *  Not dated. */
@@ -39,7 +39,7 @@ type Drafts = Partial<Record<Key, string>>;
 // claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
 // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
 // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
 // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
@@ -74,6 +74,7 @@ function SheetSettings() {
     proofThreshold: settings.data?.proofThreshold ?? '',
     graceDays: settings.data?.graceDays ?? '',
     noteThreshold: settings.data?.noteThreshold ?? '',
+    entryDate: settings.data?.entryDate ?? '',
     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
@@ -126,6 +127,9 @@ function SheetSettings() {
       <p>
         Period numbering from:{' '}
         <span data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</span>
+      </p>
+      <p>
+        Entry date (blank: off): <span data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</span>
       </p>
       {GRADE_TERMS.map(({ grade, key }) => (
         <p key={grade}>
@@ -216,6 +220,14 @@ function SheetSettings() {
           onInput={edit('periodNumberingFrom')}
           onFocus={touch('periodNumberingFrom')}
         />
+        <input
+          data-testid="setting-entry-date"
+          placeholder="Entry date YYYY-MM-DD (blank: off)"
+          value={valueOf('entryDate')}
+          onChange={edit('entryDate')}
+          onInput={edit('entryDate')}
+          onFocus={touch('entryDate')}
+        />
         {GRADE_TERMS.map(({ grade, key }) => (
           <Fragment key={grade}>
             <input
@@ -284,7 +296,7 @@ function SheetSettings() {
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap and proof threshold each an amount, 0.00 or more, with up to two decimals, or blank; the grace days a whole number of days, or blank; a from-date a date (YYYY-MM-DD), or blank; the roles that may take an action a comma separated list of clerk and steward, or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date, period numbering from and entry date each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap and proof threshold each an amount, 0.00 or more, with up to two decimals, or blank; the grace days a whole number of days, or blank; a from-date a date (YYYY-MM-DD), or blank; the roles that may take an action a comma separated list of clerk and steward, or blank.</span>
         )}
       </form>
     </section>

@@ -8,7 +8,7 @@ import { peopleQueryKey } from '../people/people';
 import { claimsQueryKey } from './claims';
 
 // The paste box: each line is name,amount,date,note (the note may hold commas; the date may be blank for the
-// sheet's today; the note may be absent) and adds a DRAFT claim, in order, for the named person on the sheet.
+// sheet's entry date, else its today; the note may be absent) and adds a DRAFT claim, in order, for the named person on the sheet.
 // The server checks every line by the claim form's rules first, so one refused line adds nothing. How many were
 // added shows once done, and is gone while it runs.
 function PasteClaims() {

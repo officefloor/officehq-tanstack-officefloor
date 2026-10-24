@@ -23,6 +23,8 @@ public interface SettingLogRepository extends JpaRepository<SettingLog, Long> {
                 then.setPolicyDate(set.getValue() == null ? null : LocalDate.parse(set.getValue()));
             } else if (Sheet.PERIOD_NUMBERING_FROM.equals(set.getKey())) {
                 then.setPeriodNumberingFrom(set.getValue() == null ? null : LocalDate.parse(set.getValue()));
+            } else if (Sheet.ENTRY_DATE.equals(set.getKey())) {
+                then.setEntryDate(set.getValue() == null ? null : LocalDate.parse(set.getValue()));
             } else {
                 then.record(set.getKey(), set.getFromDate(), set.getValue());
             }

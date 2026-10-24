@@ -56,7 +56,7 @@ public final class ClaimRules {
     /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. */
     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
             PeriodRepository periods, PersonGradeRepository grades) throws InvalidClaimException {
-        LocalDate date = input.date() != null ? input.date() : sheet.getToday();
+        LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
         if (periods.isClosedOn(sheet.getId(), date)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");
         }

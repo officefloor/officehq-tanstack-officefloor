@@ -28,7 +28,8 @@ public class Sheet {
     public static final String GRACE_DAYS = "grace-days";
 
     /** The keys of the undated dates, as the settings form names them. */
-    public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from";
+    public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from",
+            ENTRY_DATE = "entry-date";
 
     /** The setting key of an action's entry in the permission matrix. */
     public static String permKey(String action) {
@@ -61,6 +62,11 @@ public class Sheet {
      *  period; null (blank) for off. */
     @Column(name = "period_numbering_from")
     private LocalDate periodNumberingFrom;
+
+    /** The entry date: while it is set, the default date of a new claim in place of the sheet's today; null (blank)
+     *  for off. */
+    @Column(name = "entry_date")
+    private LocalDate entryDate;
 
     /** Whether the sheet is archived: everything on it stays visible and every change is refused. */
     @Column(nullable = false)
@@ -261,5 +267,18 @@ public class Sheet {
     /** Whether a claim opened now is numbered within its period: the period numbering is set and today is on or after it. */
     public boolean periodNumberingOn() {
         return periodNumberingFrom != null && !today.isBefore(periodNumberingFrom);
+    }
+
+    public LocalDate getEntryDate() {
+        return entryDate;
+    }
+
+    public void setEntryDate(LocalDate entryDate) {
+        this.entryDate = entryDate;
+    }
+
+    /** The default date of a new claim: the entry date while it is set, else the sheet's today. */
+    public LocalDate entryDateInForce() {
+        return entryDate != null ? entryDate : today;
     }
 }
