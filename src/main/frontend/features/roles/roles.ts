@@ -6,8 +6,8 @@ import { useCurrentSheet } from '../session/session';
 export type Role = { user: string; role: string };
 
 /** The sheet's settings: its clerk limit with two decimals (null when there is none) and its floor with two
- *  decimals (a claim's live due is at least it), and its terms in days (a claim is due by its date plus them), and its late percent with two decimals (an overdue claim's due gains
- *  it of its figure for every full 30 days overdue), and its policy date (YYYY-MM-DD; "" when blank: the sheet's today — a claim
+ *  decimals (a claim's live due is at least it), and its terms in days (a claim is due by its date plus them), and its late percent with two decimals (an overdue claim's due gains,
+ *  for each full 30 days overdue, the one in force on that boundary date of its figure), and its policy date (YYYY-MM-DD; "" when blank: the sheet's today — a claim
  *  dated before it rounds half up, one on or after it half to even), and its period numbering from (YYYY-MM-DD; "" when off — while the sheet's today is
  *  on or after it, a claim opened is numbered within its period), and the own terms in days of grades A, B and C ("" when the
  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with

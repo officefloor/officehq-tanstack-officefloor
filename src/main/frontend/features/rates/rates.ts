@@ -55,7 +55,8 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, flo
 }
 
 /** A claim's due: a settled claim's frozen due, else its figure (at least the floor in force on its date) plus its
- *  late charge — the sheet's late percent in force on its date of the figure for every full 30 days it is overdue on the sheet's today, rounded like a due ("n/a" when it
+ *  late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that boundary date (its
+ *  due-by plus 30, 60, 90 ... days) of the figure, rounded like a due, added up; a boundary at 0.00 adds nothing ("n/a" when it
  *  has no figure). A statement binds only the figure: the charge keeps following the sheet's today. A correction never
  *  takes a late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
@@ -64,10 +65,15 @@ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, se
   const figure = figureOf(c, rates, grade, settings && settingOn(settings, 'floor', c.date, '1.00'), halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
   if (today === undefined || !isOverdue(c, today)) return figure;
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueByOf(c)}T00:00:00Z`)) / 86_400_000;
-  const periods = Math.floor(days / 30);
-  const charge = dueOf(formatCents(hundredths(figure) * BigInt(periods)), settingOn(settings, 'late-pct', c.date, '0.00'), halfUp);
-  return formatCents(hundredths(figure) + hundredths(charge));
+  const dueBy = Date.parse(`${dueByOf(c)}T00:00:00Z`);
+  const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
+  let charge = 0n;
+  for (let k = 1; k <= periods; k++) {
+    const boundary = new Date(dueBy + k * 30 * 86_400_000).toISOString().slice(0, 10);
+    const pct = settingOn(settings, 'late-pct', boundary, '0.00');
+    if (hundredths(pct) !== 0n) charge += hundredths(dueOf(figure, pct, halfUp));
+  }
+  return formatCents(hundredths(figure) + charge);
 }
 
 /** A due raised to the floor when below it ("n/a" stays n/a; no floor leaves it as it is). */

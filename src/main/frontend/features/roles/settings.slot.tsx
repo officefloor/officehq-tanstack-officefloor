@@ -36,7 +36,7 @@ type Drafts = Partial<Record<Key, string>>;
 
 // The sheet's settings: the clerk limit in force (blank when there is none), the floor in force (a claim's live
 // due is at least it), the terms in force (a claim is due by its date plus that many days), the late percent in force (an overdue
-// claim's due gains it of its figure for every full 30 days overdue), the policy date (a claim dated before it rounds half
+// claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
 // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
 // a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the

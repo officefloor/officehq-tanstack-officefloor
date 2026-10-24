@@ -42,7 +42,7 @@ public class Sheet {
     /** The dated settings: each setting that carries a figure — the clerk limit (a clerk settles a claim only when
      *  its due is at or below it), the floor (a claim's live due is at least it), the terms and each grade's own terms
      *  (key terms-&lt;grade&gt;; a claim is due by its date plus that many days), the late percent (an overdue claim's due
-     *  gains it of its figure for every full 30 days overdue), the cap (a person's due-total is at most it) and the
+     *  gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the cap (a person's due-total is at most it) and the
      *  proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved
      *  without a proof) —
      *  recorded from a from-date on. */
