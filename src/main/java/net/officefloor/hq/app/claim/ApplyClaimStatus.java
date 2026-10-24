@@ -106,6 +106,7 @@ public class ApplyClaimStatus {
             BigDecimal reviewThreshold = sheet.reviewThresholdOn(claim.getDate());
             if ("open".equals(action) && reviewThreshold != null && due != null && due.compareTo(reviewThreshold) > 0) {
                 claim.setStatus(ClaimStatus.REVIEW);
+                claim.setReviewOn(sheet.getToday());
                 claim.setOpenedBy(user);
                 repository.saveAndFlush(claim);
                 return null;

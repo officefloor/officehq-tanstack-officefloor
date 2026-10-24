@@ -33,6 +33,9 @@ public class Sheet {
     /** The key of the escalation gap: undated, a whole number of days (null: off). */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** The key of the review SLA: undated, a whole number of days (null: none). */
+    public static final String REVIEW_SLA = "review-sla";
+
     /** The key of the pot: undated, an amount with two decimals (null: none). */
     public static final String POT = "pot";
 
@@ -292,6 +295,13 @@ public class Sheet {
      *  today escalates it (once per claim). Not dated; null when off. */
     public Integer getEscalateAfter() {
         String days = valueOn(ESCALATE_AFTER, today);
+        return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** The review SLA: a REVIEW claim whose review day plus this many days is before the sheet's today is late.
+     *  Not dated; null when none. */
+    public Integer getReviewSla() {
+        String days = valueOn(REVIEW_SLA, today);
         return days == null ? null : Integer.valueOf(days);
     }
 

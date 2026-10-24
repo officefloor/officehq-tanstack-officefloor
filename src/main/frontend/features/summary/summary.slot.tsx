@@ -1,7 +1,7 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { GRADES, gradeOn, usePeople } from '../people/people';
-import { useClaims } from '../claims/claims';
+import { isReviewLate, useClaims } from '../claims/claims';
 import { personDue } from '../rates/due.slot';
 import { diffDue, sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
@@ -15,7 +15,7 @@ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'
 // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
 // the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period (by from-date), its due-total and its change from
 // the period before it (none for the earliest); per status, how
-// many of the sheet's claims have it; per reason on the sheet's list of void reasons, how many VOID claims were voided with it.
+// many of the sheet's claims have it, and how many REVIEW claims are late in review; per reason on the sheet's list of void reasons, how many VOID claims were voided with it.
 function Summary() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -95,6 +95,12 @@ function Summary() {
               <td data-testid={`summary-status-${s}-count`}>{allClaims.filter((c) => c.status === s).length}</td>
             </tr>
           ))}
+          <tr>
+            <td>REVIEW late</td>
+            <td data-testid="summary-review-late-count">
+              {allClaims.filter((c) => isReviewLate(c, today, settings.data)).length}
+            </td>
+          </tr>
         </tbody>
       </table>
       <table>

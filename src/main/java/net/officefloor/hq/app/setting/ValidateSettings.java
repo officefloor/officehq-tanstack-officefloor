@@ -81,6 +81,8 @@ public class ValidateSettings {
                     "The review threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");
             undatedDays(changes, Sheet.ESCALATE_AFTER, request.escalateAfter(),
                     "The escalation gap must be a whole number of days, 0 or more, or blank.");
+            undatedDays(changes, Sheet.REVIEW_SLA, request.reviewSla(),
+                    "The review SLA must be a whole number of days, 0 or more, or blank.");
         }
         body.set(new SettingsInput(changes));
     }

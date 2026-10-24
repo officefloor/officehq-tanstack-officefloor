@@ -10,7 +10,7 @@ import { periodOn, usePeriods } from '../periods/periods';
 import { useSettings } from '../roles/roles';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { templateClaimsPath, useTemplates } from '../templates/templates';
-import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
+import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, isReviewLate, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
 // claims' editor is open, saves its changes.
@@ -69,6 +69,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
             <span data-testid="claim-tags">{(c.tags ?? []).join(', ')}</span>{' '}
             <span data-testid="claim-batch">{c.settleBatch ?? ''}</span>{' '}
+            <span data-testid="claim-review-late">{isReviewLate(c, today, settings.data) ? 'yes' : 'no'}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => { setSubmits({ id: c.id, count: 0 }); setEditing(String(c.id)); }}
               editorSubmits={claim?.id === c.id && submits.id === c.id ? submits.count : 0}>
               {claim?.id === c.id && (

@@ -45,6 +45,8 @@ export type Claim = {
   /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
   remindedOn: string | null;
+  /** The sheet's today when it last went to REVIEW (YYYY-MM-DD), or null when it never did. */
+  reviewOn: string | null;
   /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
   ref: string | null;
   /** Its tags, trimmed, lower-cased and sorted, without repeats; empty when it has none. */
@@ -161,6 +163,14 @@ export function lateFromOf(c: Claim, grade: string, settings: Settings | undefin
  *  on its date (`grade`; see {@link lateFromOf}) is before the sheet's today. */
 export const isOverdue = (c: Claim, today: string | undefined, grade: string, settings: Settings | undefined) =>
   isOpen(c) && !isDeferred(c, today) && today !== undefined && lateFromOf(c, grade, settings) < today;
+
+/** Whether a claim is late in review: it is REVIEW and its review day plus the sheet's review SLA (setting
+ *  review-sla; none: never late) is before the sheet's today. */
+export function isReviewLate(c: Claim, today: string | undefined, settings: Settings | undefined): boolean {
+  const sla = settings?.reviewSla ?? '';
+  if (c.status !== 'REVIEW' || c.reviewOn === null || sla === '' || today === undefined) return false;
+  return new Date(Date.parse(`${c.reviewOn}T00:00:00Z`) + Number(sla) * 86_400_000).toISOString().slice(0, 10) < today;
+}
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);

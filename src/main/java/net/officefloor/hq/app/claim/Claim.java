@@ -110,6 +110,10 @@ public class Claim {
     @Column(nullable = false)
     private boolean escalated;
 
+    /** The sheet's today when the claim last went to REVIEW; null for a claim never in review. */
+    @Column(name = "review_on")
+    private LocalDate reviewOn;
+
     /** How many proofs the claim has: raised by one at a time; 0 for a new claim. */
     @Column(nullable = false)
     private int proofs;
@@ -332,6 +336,14 @@ public class Claim {
         this.remindedOn = remindedOn;
     }
 
+    public LocalDate getReviewOn() {
+        return reviewOn;
+    }
+
+    public void setReviewOn(LocalDate reviewOn) {
+        this.reviewOn = reviewOn;
+    }
+
     public boolean isEscalated() {
         return escalated;
     }
@@ -395,6 +407,7 @@ public class Claim {
         then.deferredUntil = deferredUntil;
         then.remindedOn = remindedOn;
         then.escalated = escalated;
+        then.reviewOn = reviewOn;
         then.proofs = proofs;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
@@ -422,6 +435,7 @@ public class Claim {
         moved.deferredUntil = deferredUntil;
         moved.remindedOn = remindedOn;
         moved.escalated = escalated;
+        moved.reviewOn = reviewOn;
         moved.proofs = proofs;
         moved.lateEntry = lateEntry;
         moved.tags = tags;

@@ -13,14 +13,14 @@ import net.officefloor.hq.app.sheet.SheetSetting;
  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
  *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date; and the permission matrix
- *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated). */
+ *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated); and the review SLA in days ("" when none; not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
         Map<String, List<Dated>> dated, String permOpen, String permSettle, String permVoid, String permReassign,
         String permClose, String permReopen, String graceDays, String noteThreshold, String entryDate,
         String graceA, String graceB, String graceC,
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter) {
+        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla) {
 
     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
     public record Dated(String from, String value) {
@@ -53,7 +53,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 sheet.getAlertThreshold() == null ? "" : sheet.getAlertThreshold().toPlainString(),
                 sheet.roundingOn(sheet.getToday()) == null ? "" : sheet.roundingOn(sheet.getToday()),
                 sheet.reviewThresholdOn(sheet.getToday()) == null ? "" : sheet.reviewThresholdOn(sheet.getToday()).toPlainString(),
-                sheet.getEscalateAfter() == null ? "" : String.valueOf(sheet.getEscalateAfter()));
+                sheet.getEscalateAfter() == null ? "" : String.valueOf(sheet.getEscalateAfter()),
+                sheet.getReviewSla() == null ? "" : String.valueOf(sheet.getReviewSla()));
     }
 
     /** The grade's grace days in force on the sheet's today; "" when it has none. */
