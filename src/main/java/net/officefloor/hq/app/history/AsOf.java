@@ -170,14 +170,16 @@ public class AsOf {
     }
 
     /** The sheet's rates, by grade, then from-date (one from the beginning of time first); then, in turn, those of each
-     *  sheet up its chain of parents (each as of the date too), as {@link RateRepository#findInChain}. */
+     *  sheet up its chain of parents, as {@link RateRepository#findInChain}. As of a date, only the sheet's own are as
+     *  of it: each parent keeps its own today, so its rates are as the store holds them now. */
     public List<Rate> rates(String sheetId, LocalDate date) {
+        List<Rate> chain = rates.findInChain(sheetId);
         if (date == null) {
-            return rates.findInChain(sheetId);
+            return chain;
         }
-        return rates.chainOf(sheetId).stream()
-                .flatMap(id -> sorted(rateLogs.ratesAsOf(id, date), Comparator.comparing(Rate::getGrade)
-                        .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder()))).stream())
+        List<Rate> own = sorted(rateLogs.ratesAsOf(sheetId, date), Comparator.comparing(Rate::getGrade)
+                .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
+        return java.util.stream.Stream.concat(own.stream(), chain.stream().filter(r -> !sheetId.equals(r.getSheetId())))
                 .toList();
     }
 

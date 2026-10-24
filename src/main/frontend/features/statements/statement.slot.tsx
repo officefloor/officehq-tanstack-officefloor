@@ -9,7 +9,7 @@ import { claimsQueryKey } from '../claims/claims';
 import { peoplePath, peopleQueryKey, type Person } from '../people/people';
 import { useColumnShown } from '../people/columns';
 
-// A person's statements: how many were taken, the last one's due-total and date, and the button that takes
+// A person's statements: one line per statement still standing, oldest first, as <date> <due-total>; how many were taken, the last one's due-total and date, and the button that takes
 // one — recording their due-total now and binding each of their counted claims to the figure it has now; or, with a
 // date in the entry beside it (on or before the sheet's today), as of the end of that date — and the
 // button a steward cancels the last one with, making the claims it bound live again (anyone else, or a person with no
@@ -57,6 +57,11 @@ function PersonStatement({ person }: { person: Person }) {
       {countShown && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
       {totalShown && <><span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}</>}
       {dateShown && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
+      <div>
+        {person.statements.map((s, i) => (
+          <div key={i} data-testid="person-statement-line-line">{s.date} {s.dueTotal}</div>
+        ))}
+      </div>
       <input
         data-testid="person-statement-asof"
         placeholder={today ?? 'as of'}

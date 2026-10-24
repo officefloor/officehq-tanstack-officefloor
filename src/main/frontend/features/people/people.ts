@@ -31,6 +31,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // claim of theirs for these as well as for the claim's own.
 // `snapshots`: one per SNAPSHOT written for them as the sheet's today moved on, oldest first: the day being left
 // and their due-total on it (n/a with none).
+// `statements`: their statements still standing (a cancelled one is gone), by the date each was taken as of,
+// oldest first (those a merge or transfer brought over among them): that date and the due-total it recorded.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -53,7 +55,11 @@ export type Person = {
   retirements: Retirement[];
   tags: string[];
   snapshots: Snapshot[];
+  statements: StatementLine[];
 };
+
+/** A statement still standing: the date it was taken as of (YYYY-MM-DD) and the due-total it recorded. */
+export type StatementLine = { date: string; dueTotal: string };
 
 /** A snapshot: the day being left (YYYY-MM-DD) and the person's due-total on it. */
 export type Snapshot = { date: string; dueTotal: string };

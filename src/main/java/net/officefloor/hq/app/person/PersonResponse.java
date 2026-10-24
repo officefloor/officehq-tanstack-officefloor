@@ -10,12 +10,18 @@ import net.officefloor.hq.app.statement.Statement;
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
- *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first. */
+ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, by
+ *  the date each was taken as of (in the order they stand on the same date). */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
         List<Hold> holds, List<Long> patronIds, Integer terms,
         String contact, List<String> aliases, boolean clashing, String origin,
-        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots) {
+        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots,
+        List<StatementLine> statements) {
+
+    /** A statement still standing: the date it was taken as of and the due-total it recorded. */
+    public record StatementLine(String date, String dueTotal) {
+    }
 
     /** A past retirement, from a date to the day they were unretired. */
     public record Retirement(String from, String to) {
@@ -63,6 +69,8 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                         r.getToDate().toString())).toList(),
                 net.officefloor.hq.app.claim.Tags.list(person.getTags()),
                 person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
-                        .toList());
+                        .toList(),
+                statements.stream().sorted(java.util.Comparator.comparing(Statement::getTakenOn))
+                        .map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList());
     }
 }
