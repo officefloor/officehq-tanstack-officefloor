@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /** A claim by a person on a sheet: an amount (0.00 or more), a date, a note (may be empty)
- * a status (DRAFT to start) and a number (given when opened). */
+ * a status (DRAFT to start), a number (given when opened) and a due (fixed when settled). */
 @Entity
 @Table(name = "claim")
 public class Claim {
@@ -40,6 +40,10 @@ public class Claim {
     /** The sheet's number given when the claim was opened; null for a draft or a voided claim. */
     @Column(name = "claim_number")
     private Integer number;
+
+    /** The due fixed when the claim was settled; null while it is not settled or its grade had no rate then. */
+    @Column(precision = 19, scale = 2)
+    private BigDecimal due;
 
     protected Claim() {
     }
@@ -102,5 +106,13 @@ public class Claim {
 
     public void setNumber(Integer number) {
         this.number = number;
+    }
+
+    public BigDecimal getDue() {
+        return due;
+    }
+
+    public void setDue(BigDecimal due) {
+        this.due = due;
     }
 }

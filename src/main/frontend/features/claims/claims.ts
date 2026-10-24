@@ -7,7 +7,8 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
- *  the number given when it was opened (null for a draft or a voided claim). */
+ *  the number given when it was opened (null for a draft or a voided claim) and the due fixed when it was
+ *  settled (null when it has none: its due is live). */
 export type Claim = {
   id: number;
   personId: number;
@@ -16,6 +17,7 @@ export type Claim = {
   note: string;
   status: ClaimStatus;
   number: number | null;
+  due: string | null;
 };
 
 /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */

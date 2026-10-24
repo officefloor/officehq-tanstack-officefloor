@@ -31,7 +31,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-amount">{c.amount}</span>{' '}
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
-            <span data-testid="claim-due">{dueOf(c.amount, pct)}</span>{' '}
+            <span data-testid="claim-due">{c.due ?? dueOf(c.amount, pct)}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c}>
               <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
                 Edit

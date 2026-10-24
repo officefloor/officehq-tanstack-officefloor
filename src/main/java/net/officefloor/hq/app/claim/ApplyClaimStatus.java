@@ -1,16 +1,21 @@
 package net.officefloor.hq.app.claim;
 
 import jakarta.persistence.EntityManager;
+import java.math.RoundingMode;
+import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Moves the claim to the status the action leads to; refuses a change its status does not allow. Opening gives
- * the claim the sheet's next number; voiding clears it. Returns the number the claim had for the audit.
+ * the claim the sheet's next number; voiding clears it. Settling fixes the claim's due at its person's grade's
+ * rate now (none when the grade has no rate, so it stays live). Returns the number the claim had for the audit.
  */
 public class ApplyClaimStatus {
     public Integer apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
-            EntityManager entityManager) throws ClaimStatusException {
+            EntityManager entityManager, PersonRepository people, RateRepository rates) throws ClaimStatusException {
         if ("open".equals(action) && claim.getStatus().after(action) != null) {
             // Take the number first: it locks the sheet, then re-read the claim so a concurrent open is seen.
             repository.takeNextNumber(claim.getSheetId());
@@ -25,6 +30,13 @@ public class ApplyClaimStatus {
                 claim.setNumber(null);
                 repository.saveAndFlush(claim);
                 return had;
+            }
+            if (claim.getStatus() == ClaimStatus.SETTLED) {
+                claim.setDue(people.findById(claim.getPersonId())
+                        .flatMap(p -> rates.findBySheetIdAndGrade(claim.getSheetId(), p.getGrade()))
+                        .map(Rate::getPct)
+                        .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_UP))
+                        .orElse(null));
             }
         }
         repository.saveAndFlush(claim);
