@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
- * figure its person's last statement bound it to, else its live due (amount times the rate in force on its date of
+ * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
  * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then). An
  * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
@@ -57,9 +57,9 @@ public class ClaimFigures {
         return claim.getRoundsOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether a claim is overdue: it is OPEN and its due-by (its date plus the terms) is before the sheet's today. */
+    /** Whether a claim is overdue: it is OPEN or PENDING and its due-by (its date plus the terms) is before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return claim.getStatus() == ClaimStatus.OPEN && claim.getDate().plusDays(terms).isBefore(today);
+        return claim.getStatus().isOpen() && claim.getDate().plusDays(terms).isBefore(today);
     }
 
     /** The late charge on a figure: the late percent of it for every full 30 days the claim is overdue, rounded
@@ -79,14 +79,15 @@ public class ClaimFigures {
         return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
     }
 
-    /** Whether a claim counts toward the totals: only OPEN and SETTLED claims do. */
+    /** Whether a claim counts toward the totals: only OPEN, PENDING and SETTLED claims do. */
     public static boolean counts(Claim claim) {
-        return claim.getStatus() == ClaimStatus.OPEN || claim.getStatus() == ClaimStatus.SETTLED;
+        return claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED;
     }
 
-    /** Whether a claim counts toward the live totals: as {@link #counts}, except a held person's OPEN claims. */
+    /** Whether a claim counts toward the live totals: as {@link #counts}, except a held person's OPEN and PENDING
+     *  claims. */
     public static boolean countsLive(Claim claim, boolean held) {
-        return counts(claim) && !(held && claim.getStatus() == ClaimStatus.OPEN);
+        return counts(claim) && !(held && claim.getStatus().isOpen());
     }
 
     /** The percent of the grade's rate in force on a date. */
@@ -112,7 +113,7 @@ public class ClaimFigures {
         if (claim.getDue() != null) {
             return claim.getDue();
         }
-        if (claim.isStated()) {
+        if (claim.isBound()) {
             return claim.getStatedDue();
         }
         return rateOn(grades.on(claim.getDate()), claim.getDate())
@@ -132,8 +133,8 @@ public class ClaimFigures {
     public String dueTotal(List<Claim> claims, LocalDate today, boolean held) {
         List<Claim> counted = claims.stream().filter(c -> countsLive(c, held)).toList();
         String grade = grades.on(today);
-        boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isStated() && c.getStatedDue() != null)
-                || (!c.isStated() && !grade.equals(grades.on(c.getDate())) && figure(c) != null));
+        boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
+                || (!c.isBound() && !grade.equals(grades.on(c.getDate())) && figure(c) != null));
         if (rateOn(grade, today).isEmpty() && !kept) {
             return "n/a";
         }

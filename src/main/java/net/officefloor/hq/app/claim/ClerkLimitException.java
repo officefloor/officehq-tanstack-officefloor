@@ -1,6 +1,6 @@
 package net.officefloor.hq.app.claim;
 
-/** A clerk settling a claim whose due is above the sheet's clerk limit. */
+/** A clerk doing what only a steward may: approving or rejecting a PENDING claim. */
 public class ClerkLimitException extends Exception {
     public ClerkLimitException(String message) {
         super(message);

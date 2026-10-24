@@ -70,29 +70,46 @@ function PersonClaims({ person }: { person: Person }) {
 const ACTIONS = [
   { action: 'open', label: 'Open' },
   { action: 'settle', label: 'Settle' },
+  { action: 'approve', label: 'Approve' },
+  { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
 ] as const;
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
-// by the server and shows the claim's error, as is settling a claim the signed-in user opened, or a clerk settling one whose due is above the clerk limit; the error goes as soon as the next action on the row
-// is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
+// by the server and shows the claim's error, as is settling or approving a claim the signed-in user opened, a
+// non-steward approving or rejecting a PENDING claim, or rejecting one without a reason (typed beside the reject
+// button). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
+// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
 // instead of opening its editor (an open claim is voided and added anew).
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
 }) {
   const [user] = useCurrentUser();
   const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
   const change = useMutation({
-    mutationFn: (action: string) => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/${action}`, undefined, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+    mutationFn: ({ action, reason }: { action: string; reason?: string }) =>
+      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/${action}`
+        + (reason === undefined ? '' : `?reason=${encodeURIComponent(reason)}`), undefined, user),
+    onSuccess: (_, { action }) => {
+      if (action === 'reject') setReason('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
   });
   const submitChange = useSubmitOnce(change);
   const [editRefused, setEditRefused] = useState(false);
+  const action = change.variables?.action;
   const periods = usePeriods();
   const closed = !!periodOn(periods.data, claim.date)?.closed;
   return (
     <>
       <span data-testid="claim-status">{claim.status}</span>{' '}
+      <input
+        data-testid="claim-reject-reason"
+        placeholder="Reason to reject"
+        value={reason}
+        onChange={(e) => { setReason(e.target.value); change.reset(); setEditRefused(false); }}
+      />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
           key={action}
@@ -101,7 +118,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
           disabled={change.isPending}
           onClick={() => {
             setEditRefused(false);
-            submitChange(action);
+            submitChange(action === 'reject' ? { action, reason } : { action });
           }}
         >
           {label}
@@ -126,10 +143,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
             : closed
             ? 'This claim is dated in a closed period, so its status cannot change.'
-            : change.variables === 'settle' && claim.openedBy === user
+            : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
+            ? 'Only a steward can approve or reject a pending claim.'
+            : action === 'settle' && claim.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
-            : change.variables === 'settle' && change.error instanceof HttpError && change.error.status === 403
-            ? 'Its due is above the clerk limit, so only a steward can settle it.'
+            : action === 'approve' && claim.openedBy === user && claim.status === 'PENDING'
+            ? 'You opened this claim, so someone else must approve it.'
+            : action === 'reject' && claim.status === 'PENDING' && reason.trim() === ''
+            ? 'Give a reason to reject this claim.'
             : `That status change is not allowed for a ${claim.status} claim.`}
         </span>
       )}

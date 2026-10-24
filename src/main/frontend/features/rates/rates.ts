@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { dueByOf, isOverdue, type Claim } from '../claims/claims';
+import { dueByOf, isBound, isOverdue, type Claim } from '../claims/claims';
 import { DEFAULT_TERMS, type Settings } from '../roles/roles';
 import { useCurrentSheet } from '../session/session';
 
@@ -42,13 +42,13 @@ export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: st
   return policy !== undefined && (c.roundsOn ?? c.date) < policy;
 }
 
-/** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
+/** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to (not while PENDING),
  *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none),
  *  rounded by the sheet's policy; a correction's live due has no floor. */
 export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined,
   halfUp = false): string {
   if (c.due !== null) return c.due;
-  if (c.stated) return c.statedDue ?? 'n/a';
+  if (isBound(c)) return c.statedDue ?? 'n/a';
   const due = dueOf(c.amount, rateOn(rates, grade, c.date), halfUp);
   return c.corrects !== null ? due : atLeast(due, floor);
 }

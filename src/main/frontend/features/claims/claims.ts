@@ -4,8 +4,9 @@ import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
-/** A claim's status: DRAFT to start, then OPEN and SETTLED; a DRAFT or OPEN claim can be VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** A claim's status: DRAFT to start, then OPEN and SETTLED; a clerk settling one above the clerk limit leaves it
+ *  PENDING, until a steward approves it (SETTLED) or rejects it (OPEN again); a DRAFT, OPEN or PENDING claim can be VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
  *  the number given when it was opened (the sheet's next, or the next in its period: P1-1, X-1; null for a claim never opened; a voided claim keeps it) and the due fixed when it was
@@ -29,15 +30,22 @@ export type Claim = {
   roundsOn: string;
 };
 
-/** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+
+/** Whether a claim shows and totals the figure its person's last statement bound it to: it is bound and not PENDING
+ *  (a PENDING claim shows its live figure, and is bound again if rejected). */
+export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
+
+/** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do. */
+export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
 /** The ids of the people on hold. */
 export const heldIds = (people: { id: number; held: boolean }[] | undefined) =>
   new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
 
-/** Whether a claim counts toward the live totals: as `counts`, except a held person's OPEN claims. */
-export const countsLive = (c: Claim, held: Set<number>) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId));
+/** Whether a claim counts toward the live totals: as `counts`, except a held person's OPEN and PENDING claims. */
+export const countsLive = (c: Claim, held: Set<number>) => counts(c) && !(isOpen(c) && held.has(c.personId));
 
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -59,7 +67,7 @@ export function useClaims() {
 /** An amount ("12.50") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** A sum of the counted (OPEN and SETTLED) claims' amounts, with two decimals; a held person's OPEN claims
+/** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; a held person's OPEN claims
  *  are left out. */
 export function sumOf(claims: Claim[], held: Set<number> = new Set()): string {
   return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
@@ -72,9 +80,9 @@ export function dueByOf(c: Claim, terms: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+/** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before the sheet's today. */
 export const isOverdue = (c: Claim, terms: string, today: string | undefined) =>
-  c.status === 'OPEN' && today !== undefined && dueByOf(c, terms) < today;
+  isOpen(c) && today !== undefined && dueByOf(c, terms) < today;
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);

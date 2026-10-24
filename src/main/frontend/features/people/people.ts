@@ -13,7 +13,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // one's due-total and the sheet's today when it was taken (null with none).
 // `retiredFrom` is the date they are retired from (null: not retired); with one set they count as retired at
 // once, whatever the date.
-// `held`: their OPEN claims count in no live total; their SETTLED claims still count.
+// `held`: their OPEN and PENDING claims count in no live total; their SETTLED claims still count.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;

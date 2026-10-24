@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { gradeOn, usePeople, type Person } from '../people/people';
-import { countsLive, heldIds, useClaims, type Claim } from '../claims/claims';
+import { countsLive, heldIds, isBound, useClaims, type Claim } from '../claims/claims';
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, rateOn, sumDue, useRates, type Rate } from './rates';
 
@@ -15,8 +15,8 @@ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undef
   settings: Settings | undefined): string {
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, heldIds([person])));
   const grade = gradeOn(person, today);
-  const kept = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null)
-    || (!c.stated && gradeOn(person, c.date) !== grade && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
+  const kept = (c: Claim) => c.due !== null || (isBound(c) && c.statedDue !== null)
+    || (!isBound(c) && gradeOn(person, c.date) !== grade && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
   if (rateOn(rates, grade, today) === undefined && !mine.some(kept)) {
     return 'n/a';
   }

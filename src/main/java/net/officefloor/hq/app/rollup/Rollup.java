@@ -21,7 +21,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 /**
  * The sheet's figures at one moment, as the screen shows them: each person's claimed and due-total, in the
  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
- * A held person's OPEN claims count in none of them.
+ * A held person's OPEN and PENDING claims count in none of them.
  */
 public class Rollup {
 

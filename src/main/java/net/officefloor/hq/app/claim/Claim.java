@@ -181,6 +181,12 @@ public class Claim {
         return statedDue;
     }
 
+    /** Whether the claim shows and totals the figure its person's last statement bound it to: it is bound and not
+     *  PENDING (a PENDING claim shows its live figure, and is bound again if rejected). */
+    public boolean isBound() {
+        return stated && getStatus() != ClaimStatus.PENDING;
+    }
+
     /** Binds the claim to a figure (null: n/a), or unbinds it (live again). */
     public void bind(boolean stated, BigDecimal statedDue) {
         this.stated = stated;

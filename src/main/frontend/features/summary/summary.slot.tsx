@@ -7,7 +7,7 @@ import { sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { periodDue, usePeriods } from '../periods/periods';
 
-/** The statuses the summary counts claims by (PENDING is shown for completeness; no claim is ever in it). */
+/** The statuses the summary counts claims by. */
 const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on

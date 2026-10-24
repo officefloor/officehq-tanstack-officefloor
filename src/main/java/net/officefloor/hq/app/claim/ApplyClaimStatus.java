@@ -14,13 +14,16 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Moves the claim to the status the action leads to; refuses a change its status does not allow. Opening gives
  * the claim the sheet's next number (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
  * X-<n> for a claim in no period) and records who opened it; a voided claim keeps its number (never reused). The one who opened a
  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
- * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none). Settling fixes the claim's due at the rate of the grade its
+ * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
+ * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
+ * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
  * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim dated in a closed period cannot change status. Returns the claim's number for the
  * audit.
  */
@@ -28,7 +31,8 @@ public class ApplyClaimStatus {
     public String apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
             @Val Sheet sheet, RoleRepository roles,
-            @RequestHeader(name = "X-User", required = false) String userHeader) throws ClaimStatusException, ClerkLimitException {
+            @RequestHeader(name = "X-User", required = false) String userHeader,
+            @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException {
         String user = AuditUser.decode(userHeader);
         if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
             throw new ClaimStatusException("A claim in a closed period cannot change status.");
@@ -55,8 +59,15 @@ public class ApplyClaimStatus {
             claim.setOpenedBy(user);
         } else {
             ClaimStatus next = check(claim, action);
+            boolean steward = Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user));
+            if (("approve".equals(action) || "reject".equals(action)) && !steward) {
+                throw new ClerkLimitException("Only a steward can approve or reject a pending claim.");
+            }
+            if ("reject".equals(action) && (reason == null || reason.isBlank())) {
+                throw new ClaimStatusException("A rejection needs a reason.");
+            }
             if (next == ClaimStatus.SETTLED && user.equals(claim.getOpenedBy())) {
-                throw new ClaimStatusException("The one who opened a claim cannot settle it.");
+                throw new ClaimStatusException("The one who opened a claim cannot settle or approve it.");
             }
             if (next == ClaimStatus.SETTLED) {
                 BigDecimal due = people.findById(claim.getPersonId())
@@ -64,11 +75,11 @@ public class ApplyClaimStatus {
                                 grades.gradesOf(p), sheet).due(claim))
                         .orElse(null);
                 BigDecimal limit = sheet.getClerkLimit();
-                if (limit != null && due != null && due.compareTo(limit) > 0
-                        && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user))) {
-                    throw new ClerkLimitException("A clerk cannot settle a claim whose due is above the clerk limit.");
+                if ("settle".equals(action) && limit != null && due != null && due.compareTo(limit) > 0 && !steward) {
+                    next = ClaimStatus.PENDING;
+                } else {
+                    claim.setDue(due);
                 }
-                claim.setDue(due);
             }
             claim.setStatus(next);
         }

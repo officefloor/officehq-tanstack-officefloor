@@ -37,7 +37,7 @@ public class Person {
     @Column(name = "retired_from")
     private LocalDate retiredFrom;
 
-    /** Set: their OPEN claims count in no live total; their SETTLED claims still count. */
+    /** Set: their OPEN and PENDING claims count in no live total; their SETTLED claims still count. */
     @Column(nullable = false)
     private boolean held;
 

@@ -6,8 +6,8 @@ import { DEFAULT_TERMS, useSettings, type Settings } from '../roles/roles';
 import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
 import { countsLive, heldIds, isOverdue, useClaims, type Claim } from './claims';
 
-// A person's overdue count and overdue-total: their counted claims that are overdue (OPEN, due-by before the
-// sheet's today; a held person's OPEN claims do not count), and those claims' dues (with their late charge) added up, skipping n/a.
+// A person's overdue count and overdue-total: their counted claims that are overdue (OPEN or PENDING, due-by before the
+// sheet's today; a held person's OPEN and PENDING claims do not count), and those claims' dues (with their late charge) added up, skipping n/a.
 // The sheet's are everyone's added up.
 function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, terms: string, today: string | undefined,
   settings: Settings | undefined): { count: number; total: string } {
