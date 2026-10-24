@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** Records the claim's status change, once it is saved, with the claim's number when it has one;
  * a settle or approve adds the due it fixed (n/a when the grade had no rate), a reject its reason, and voiding a
- * settled claim the frozen figure it takes out of the totals (reversed=). */
+ * settled claim the frozen figure it takes out of the totals (reversed=), then the reason it was voided with when one was given. */
 public class AuditClaimStatus {
     public void audit(@Parameter String number, @Val Claim claim, PersonRepository people,
             @PathVariable("action") String action, ClaimLogRepository log,
@@ -33,6 +33,9 @@ public class AuditClaimStatus {
         }
         if (claim.getStatus() == ClaimStatus.VOID && log.settledOn(claim) != null) {
             line += " reversed=" + (claim.getDue() == null ? "n/a" : claim.getDue().setScale(2).toPlainString());
+        }
+        if (claim.getStatus() == ClaimStatus.VOID && claim.getVoidReason() != null) {
+            line += " reason=" + claim.getVoidReason();
         }
         audit.record(line);
     }

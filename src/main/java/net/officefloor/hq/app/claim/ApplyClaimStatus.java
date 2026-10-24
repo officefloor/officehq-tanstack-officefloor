@@ -12,6 +12,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -27,7 +28,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
  * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due-by is in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
- * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. Returns the claim's number for the
+ * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. While the sheet's list of
+ * void reasons is not empty, a void needs a reason from it, which the claim keeps. Returns the claim's number for the
  * audit.
  */
 public class ApplyClaimStatus {
@@ -37,7 +39,7 @@ public class ApplyClaimStatus {
 
     public String apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
-            @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log,
+            @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
             @RequestHeader(name = "X-User", required = false) String userHeader,
             @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         String user = AuditUser.decode(userHeader);
@@ -92,6 +94,13 @@ public class ApplyClaimStatus {
                 if (settled == null || sheet.getToday().isAfter(settled.plusDays(VOID_DAYS))) {
                     throw new ClaimStatusException("A settled claim can be voided only within " + VOID_DAYS + " days of its settlement.");
                 }
+            }
+            if ("void".equals(action) && voidReasons.existsBySheetId(claim.getSheetId())) {
+                String chosen = reason == null ? "" : reason.trim();
+                if (chosen.isEmpty() || !voidReasons.existsBySheetIdAndReason(claim.getSheetId(), chosen)) {
+                    throw new ClaimStatusException("A void needs a reason from the sheet's list.");
+                }
+                claim.setVoidReason(chosen);
             }
             if ("reject".equals(action) && (reason == null || reason.isBlank())) {
                 throw new ClaimStatusException("A rejection needs a reason.");

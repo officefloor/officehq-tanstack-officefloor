@@ -126,6 +126,10 @@ public class Claim {
     @Column(name = "tags_used")
     private String tagsUsed;
 
+    /** The reason the claim was voided with, from the sheet's list; null when it was voided without one or is not VOID. */
+    @Column(name = "void_reason")
+    private String voidReason;
+
     protected Claim() {
     }
 
@@ -358,6 +362,7 @@ public class Claim {
         then.ref = ref;
         then.tags = tags;
         then.tagsUsed = tagsUsed;
+        then.voidReason = status == ClaimStatus.VOID ? voidReason : null;
         then.bind(stated, statedDue);
         return then;
     }
@@ -392,5 +397,13 @@ public class Claim {
 
     public void setLateEntry(boolean lateEntry) {
         this.lateEntry = lateEntry;
+    }
+
+    public String getVoidReason() {
+        return voidReason;
+    }
+
+    public void setVoidReason(String voidReason) {
+        this.voidReason = voidReason;
     }
 }

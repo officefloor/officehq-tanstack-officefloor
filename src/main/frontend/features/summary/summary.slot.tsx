@@ -7,13 +7,14 @@ import { sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { periodDue, usePeriods } from '../periods/periods';
 import { isActive } from '../claims/active.slot';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 
 /** The statuses the summary counts claims by. */
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
 // the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period, its due-total; per status, how
-// many of the sheet's claims have it.
+// many of the sheet's claims have it; per reason on the sheet's list of void reasons, how many VOID claims were voided with it.
 function Summary() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -23,6 +24,7 @@ function Summary() {
   const periods = usePeriods();
   const settings = useSettings();
   const today = useSheetToday();
+  const voidReasons = useVoidReasons();
   if (!user || !sheet) return null;
   const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const allClaims = claims.data ?? [];
@@ -86,6 +88,24 @@ function Summary() {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{allClaims.filter((c) => c.status === s).length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(voidReasons.data ?? []).map((r) => (
+            <tr key={r.id}>
+              <td>{r.reason}</td>
+              <td data-testid={`summary-void-${r.reason}-count`}>
+                {allClaims.filter((c) => c.status === 'VOID' && c.voidReason === r.reason).length}
+              </td>
             </tr>
           ))}
         </tbody>

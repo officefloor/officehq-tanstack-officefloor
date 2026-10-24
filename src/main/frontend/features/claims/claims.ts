@@ -48,6 +48,8 @@ export type Claim = {
   tags: string[];
   /** Every tag it has ever carried, sorted: the sheet's tags are those of all its claims. */
   tagsUsed: string[];
+  /** The reason it was voided with, from the sheet's list, or null when it was voided without one (or is not VOID). */
+  voidReason: string | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

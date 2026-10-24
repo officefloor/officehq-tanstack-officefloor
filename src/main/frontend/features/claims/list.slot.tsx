@@ -8,6 +8,7 @@ import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/peopl
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
 import { useSettings } from '../roles/roles';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
@@ -127,19 +128,23 @@ const ACTIONS = [
 // else, any other status, a claim whose due-by is in a closed period, or a new date after the person's retirement shows
 // the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number. An OPEN or PENDING claim is
 // reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
-// the claim's error.
+// the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
+// beside the void button); a void without one shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   sheet: string; claim: Claim; onEdit: () => void; editorSubmits: number; children: ReactNode;
 }) {
   const [user] = useCurrentUser();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState('');
+  const voidReasons = useVoidReasons();
+  const [voidReason, setVoidReason] = useState('');
   const change = useMutation({
     mutationFn: ({ action, reason }: { action: string; reason?: string }) =>
       putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/${action}`
         + (reason === undefined ? '' : `?reason=${encodeURIComponent(reason)}`), undefined, user),
     onSuccess: (_, { action }) => {
       if (action === 'reject') setReason('');
+      if (action === 'void') setVoidReason('');
       return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
     },
   });
@@ -231,6 +236,16 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         value={reason}
         onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
+      <select
+        data-testid="claim-void-reason"
+        value={voidReason}
+        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+      >
+        <option value="">(no void reason)</option>
+        {(voidReasons.data ?? []).map((r) => (
+          <option key={r.id} value={r.reason}>{r.reason}</option>
+        ))}
+      </select>{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
           key={action}
@@ -242,7 +257,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             move.reset();
             defer.reset(); redate.reset(); split.reset();
             proof.reset(); remind.reset();
-            submitChange(action === 'reject' ? { action, reason } : { action });
+            submitChange(action === 'reject' ? { action, reason }
+              : action === 'void' && voidReason !== '' ? { action, reason: voidReason } : { action });
           }}
         >
           {label}
@@ -459,6 +475,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? 'Only a steward can void a settled claim.'
             : (action === 'open' || action === 'settle' || action === 'void') && change.error instanceof HttpError && change.error.status === 403
             ? `Your role is not allowed to ${action} a claim.`
+            : action === 'void' && (voidReasons.data ?? []).length > 0 && !change.variables?.reason
+            ? 'Choose a void reason from the sheet\'s list to void this claim.'
             : action === 'void' && claim.status === 'SETTLED'
             ? 'A settled claim can be voided only within 7 days of its settlement.'
             : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
