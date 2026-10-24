@@ -1,0 +1,253 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index fde29098..0ce8d9b7 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -29,6 +29,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ // day they were unretired; a claim dated after the from and before the to is refused, as one after a retirement is.
+ // `tags`: their tags, trimmed, lower-cased and sorted, without repeats (empty: none); the tag totals count each
+ // claim of theirs for these as well as for the claim's own.
++// `snapshots`: one per SNAPSHOT written for them as the sheet's today moved on, oldest first: the day being left
++// and their due-total on it (n/a with none).
+ // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
+ export type Person = {
+   id: number;
+@@ -50,8 +52,12 @@ export type Person = {
+   origin: string | null;
+   retirements: Retirement[];
+   tags: string[];
++  snapshots: Snapshot[];
+ };
+ 
++/** A snapshot: the day being left (YYYY-MM-DD) and the person's due-total on it. */
++export type Snapshot = { date: string; dueTotal: string };
++
+ /** A past retirement: from a date to the day they were unretired (YYYY-MM-DD). */
+ export type Retirement = { from: string; to: string };
+ 
+diff --git a/src/main/frontend/features/people/snapshots.slot.tsx b/src/main/frontend/features/people/snapshots.slot.tsx
+new file mode 100644
+index 00000000..97ca1308
+--- /dev/null
++++ b/src/main/frontend/features/people/snapshots.slot.tsx
+@@ -0,0 +1,23 @@
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import type { Person } from './people';
++
++// A person's snapshot lines: one per SNAPSHOT written for them as the sheet's today moved on, oldest first, as the
++// day being left and their due-total on it.
++function SnapshotsHeader() {
++  return <th>Snapshots</th>;
++}
++
++function PersonSnapshots({ person }: { person: Person }) {
++  return (
++    <td>
++      {person.snapshots.map((s, i) => (
++        <div key={i} data-testid="person-snapshot-line">{s.date} {s.dueTotal}</div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 40.5, Component: SnapshotsHeader }),
++  PersonCells.fill({ order: 40.5, Component: PersonSnapshots }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 3e13e693..7a333982 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -10,12 +10,14 @@ import jakarta.persistence.GenerationType;
+ import jakarta.persistence.Id;
+ import jakarta.persistence.JoinColumn;
+ import jakarta.persistence.OrderBy;
++import jakarta.persistence.OrderColumn;
+ import jakarta.persistence.Table;
+ import jakarta.persistence.Transient;
+ import jakarta.persistence.Version;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.List;
++import org.hibernate.annotations.OptimisticLock;
+ 
+ /** A person on a sheet: a name and a grade (A, B or C), the date they are retired from (null: not retired),
+  *  and their holds over time. */
+@@ -82,6 +84,13 @@ public class Person {
+     @OrderBy("fromDate ASC, toDate ASC")
+     private List<PersonRetirement> retirements = new ArrayList<>();
+ 
++    /** Their snapshots, oldest first: one per SNAPSHOT written for them. Taking one is no edit of them. */
++    @ElementCollection(fetch = FetchType.EAGER)
++    @CollectionTable(name = "person_snapshot", joinColumns = @JoinColumn(name = "person_id"))
++    @OrderColumn(name = "seq")
++    @OptimisticLock(excluded = true)
++    private List<PersonSnapshot> snapshots = new ArrayList<>();
++
+     /** The sheet's today when they were added (null: not recorded); a statement as of an earlier date is refused. */
+     @Column(name = "added_on")
+     private LocalDate addedOn;
+@@ -231,6 +240,7 @@ public class Person {
+             }
+         }
+         holds.stream().filter(h -> h.madeBy(date)).forEach(then.holds::add);
++        snapshots.stream().filter(s -> !s.getTakenOn().isAfter(date)).forEach(then.snapshots::add);
+         return then;
+     }
+ 
+@@ -242,6 +252,15 @@ public class Person {
+         return retirements;
+     }
+ 
++    public List<PersonSnapshot> getSnapshots() {
++        return snapshots;
++    }
++
++    /** Records their due-total on the day being left as the sheet's today moves on. */
++    public void addSnapshot(PersonSnapshot snapshot) {
++        snapshots.add(snapshot);
++    }
++
+     public List<PersonHold> getHolds() {
+         return holds;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 7d16c011..9382c33f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -10,17 +10,21 @@ import net.officefloor.hq.app.statement.Statement;
+  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
+  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
+  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
+- *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted. */
++ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first. */
+ public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
+         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
+         List<Hold> holds, List<Long> patronIds, Integer terms,
+         String contact, List<String> aliases, boolean clashing, String origin,
+-        List<Retirement> retirements, List<String> tags) {
++        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots) {
+ 
+     /** A past retirement, from a date to the day they were unretired. */
+     public record Retirement(String from, String to) {
+     }
+ 
++    /** A snapshot: the day being left when the sheet's today moved on, and their due-total on it. */
++    public record Snapshot(String date, String dueTotal) {
++    }
++
+     /** A hold from a date on, to a date (inclusive; null: open-ended). */
+     public record Hold(String from, String to) {
+     }
+@@ -57,6 +61,8 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
+                 person.getOriginSheet(),
+                 person.getRetirements().stream().map(r -> new Retirement(r.getFromDate().toString(),
+                         r.getToDate().toString())).toList(),
+-                net.officefloor.hq.app.claim.Tags.list(person.getTags()));
++                net.officefloor.hq.app.claim.Tags.list(person.getTags()),
++                person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
++                        .toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonSnapshot.java b/src/main/java/net/officefloor/hq/app/person/PersonSnapshot.java
+new file mode 100644
+index 00000000..69060c7b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonSnapshot.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.person;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Embeddable;
++import java.time.LocalDate;
++
++/** One of a person's snapshots: the day being left when the sheet's today moved on, and their due-total on it. */
++@Embeddable
++public class PersonSnapshot {
++
++    @Column(name = "taken_on", nullable = false)
++    private LocalDate takenOn;
++
++    @Column(name = "due_total", nullable = false)
++    private String dueTotal;
++
++    protected PersonSnapshot() {
++    }
++
++    public PersonSnapshot(LocalDate takenOn, String dueTotal) {
++        this.takenOn = takenOn;
++        this.dueTotal = dueTotal;
++    }
++
++    public LocalDate getTakenOn() {
++        return takenOn;
++    }
++
++    public String getDueTotal() {
++        return dueTotal;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+index a8913000..7bddc922 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+@@ -3,18 +3,25 @@ package net.officefloor.hq.app.rollup;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonSnapshot;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+ /** When the sheet's today changes, records each person's due-total as it stood on the day being left, before the
+- *  change takes effect (so before any period closes and before the change's rollup lines). */
++ *  change takes effect (so before any period closes and before the change's rollup lines), and keeps it on the
++ *  person as a snapshot of that day. */
+ public class AuditSnapshot {
+     public void audit(@Val LocalDate today, @Val Sheet sheet, @Val Rollup before,
+-            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit, PersonRepository people) {
+         if (today.equals(sheet.getToday())) {
+             return;
+         }
++        before.dueTotals().forEach((id, due) -> people.findById(id).ifPresent(p -> {
++            p.addSnapshot(new PersonSnapshot(sheet.getToday(), due));
++            people.save(p);
++        }));
+         before.snapshot(sheet.getId(), AuditUser.decode(user)).forEach(audit::record);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 1548f5a0..c58a6a08 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -100,6 +100,13 @@ public class Rollup {
+         return lines;
+     }
+ 
++    /** Each person's due-total as it stands in these figures, by their id, in list order. */
++    public Map<Long, String> dueTotals() {
++        Map<Long, String> dues = new LinkedHashMap<>();
++        people.forEach((id, f) -> dues.put(id, f.dueTotal()));
++        return dues;
++    }
++
+     /** The audit lines stating the figures in full: one per person, in list order, then the totals. */
+     public List<String> lines(String sheetId, String user) {
+         String head = " sheet=" + sheetId.trim() + " by=" + user;
+diff --git a/src/main/resources/db/migration/V73__person_snapshot.sql b/src/main/resources/db/migration/V73__person_snapshot.sql
+new file mode 100644
+index 00000000..d3fb1154
+--- /dev/null
++++ b/src/main/resources/db/migration/V73__person_snapshot.sql
+@@ -0,0 +1,9 @@
++-- A person's snapshots: one per SNAPSHOT written for them when the sheet's today moved on, the day being left and
++-- their due-total as it stood on it (n/a when there was none).
++CREATE TABLE person_snapshot (
++    person_id BIGINT NOT NULL REFERENCES person (id),
++    taken_on DATE NOT NULL,
++    due_total VARCHAR(30) NOT NULL,
++    seq INT NOT NULL
++);
++CREATE INDEX person_snapshot_person ON person_snapshot (person_id);
