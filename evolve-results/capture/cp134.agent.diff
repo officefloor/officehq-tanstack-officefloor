@@ -1,0 +1,117 @@
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 85ff4190..2934198b 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -2,9 +2,16 @@ import { useIsFetching, useIsMutating } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+-import { gradeOn, peopleQueryKey, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
++import { useClaims } from '../claims/claims';
++import { personDue } from '../rates/due.slot';
++import { useRates } from '../rates/rates';
++import { useSettings } from '../roles/roles';
++import {
++  gradeOn, nameKey, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
++  type Person,
++} from './people';
+ 
+-// The sheet's people in list order — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
++// The sheet's people in list order — or as the sort select shows them — — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
+ // features add their own columns through PeopleColumns / PersonCells.
+ function PeopleList() {
+   const [user] = useCurrentUser();
+@@ -13,9 +20,22 @@ function PeopleList() {
+   const people = usePeople();
+   const [showRetired] = useShowRetired();
+   const today = useSheetToday();
++  const [sort] = useSortPeople();
++  const claims = useClaims();
++  const rates = useRates();
++  const settings = useSettings();
+   const saving = useIsMutating({ mutationKey: personSaveKey }) > 0;
+   const reading = useIsFetching({ queryKey: peopleQueryKey(sheet ?? '') }) > 0;
+   if (!user || !sheet) return null;
++  const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
++  const due = (p: Person) => {
++    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data);
++    return d === 'n/a' ? null : Number(d);
++  };
++  const shown = sort === 'name' ? sortedBy(listed, (p) => nameKey(p.name))
++    : sort === 'grade' ? sortedBy(listed, (p) => gradeOn(p, today))
++    : sort === 'due-total' ? sortedBy(listed, due)
++    : listed;
+   return (
+     <table data-testid="people">
+       <thead>
+@@ -27,7 +47,7 @@ function PeopleList() {
+         </tr>
+       </thead>
+       <tbody>
+-        {(people.data ?? []).filter((p) => showRetired || p.retiredFrom === null).map((p) => (
++        {shown.map((p) => (
+           <tr key={p.id} data-testid={`person-row-${p.id}`}>
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+             <td data-testid="person-grade">{gradeOn(p, today)}</td>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index ac4ed2ca..fde29098 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -122,3 +122,28 @@ export function useSelectedPeople() {
+     clear: () => update((set) => set.clear()),
+   };
+ }
++
++export const PEOPLE_SORTS = ['added', 'name', 'grade', 'due-total'] as const;
++export type PeopleSort = (typeof PEOPLE_SORTS)[number];
++
++const asSort = (raw: unknown): PeopleSort =>
++  (PEOPLE_SORTS as readonly unknown[]).includes(raw) ? (raw as PeopleSort) : 'added';
++
++/** How this screen shows the people list (search param `sortPeople`): added (list order) when first opened, and
++ *  left as it is by loading a sheet. It changes only what the screen shows — the list order, which every action
++ *  and figure goes by, stays as it is. */
++export const useSortPeople = () => useSearchParam('sortPeople', asSort);
++
++/** A name as names are compared: case and surrounding spaces ignored. */
++export const nameKey = (name: string) => name.trim().toLowerCase();
++
++/** The people in the order the sort shows them: by the key, those with equal keys in list order (the sort is
++ *  stable). `key` gives a person's key; null (an n/a due-total) goes last. */
++export function sortedBy<K extends string | number>(people: Person[], key: (p: Person) => K | null): Person[] {
++  const keyed = people.map((p, i) => ({ p, i, k: key(p) }));
++  keyed.sort((a, b) => {
++    if (a.k === null || b.k === null) return a.k === b.k ? a.i - b.i : a.k === null ? 1 : -1;
++    return a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i;
++  });
++  return keyed.map((e) => e.p);
++}
+diff --git a/src/main/frontend/features/people/sort.slot.tsx b/src/main/frontend/features/people/sort.slot.tsx
+new file mode 100644
+index 00000000..29bd54cd
+--- /dev/null
++++ b/src/main/frontend/features/people/sort.slot.tsx
+@@ -0,0 +1,23 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { PEOPLE_SORTS, useSortPeople, type PeopleSort } from './people';
++
++// The sort select above the people list: added (list order), name, grade in force on the sheet's today, or
++// due-total (n/a last). Only this screen's rows move; list order is untouched.
++function SortPeople() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [sort, setSort] = useSortPeople();
++  if (!user || !sheet) return null;
++  return (
++    <label>
++      Sort by{' '}
++      <select data-testid="sort-by" value={sort}
++        onChange={(e) => setSort(e.target.value === 'added' ? undefined : (e.target.value as PeopleSort))}>
++        {PEOPLE_SORTS.map((s) => <option key={s} value={s}>{s}</option>)}
++      </select>
++    </label>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 18.5, Component: SortPeople });
