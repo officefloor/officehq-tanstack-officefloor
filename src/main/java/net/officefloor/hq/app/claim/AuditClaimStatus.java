@@ -8,7 +8,7 @@ import net.officefloor.plugin.section.clazz.Parameter;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Records the claim's status change, once it is saved, with the number the claim had (a void clears it);
+/** Records the claim's status change, once it is saved, with the claim's number when it has one;
  * a settle adds the due it fixed (n/a when the grade had no rate). */
 public class AuditClaimStatus {
     public void audit(@Parameter Integer number, @Val Claim claim, PersonRepository people,

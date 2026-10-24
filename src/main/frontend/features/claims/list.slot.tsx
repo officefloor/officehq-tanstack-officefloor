@@ -37,10 +37,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-due">{figureOf(c, rates.data, person.grade)}</span>{' '}
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
-            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c}>
-              <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
-                Edit
-              </button>
+            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
                   Cancel
@@ -64,8 +61,11 @@ const ACTIONS = [
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
 // by the server and shows the claim's error, as is settling a claim the signed-in user opened; the error goes as soon as the next action on the row
-// is taken.
-function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: Claim; children: ReactNode }) {
+// is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
+// instead of opening its editor (an open claim is voided and added anew).
+function ClaimStatusActions({ sheet, claim, onEdit, children }: {
+  sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
+}) {
   const [user] = useCurrentUser();
   const queryClient = useQueryClient();
   const change = useMutation({
@@ -73,6 +73,7 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
   });
   const submitChange = useSubmitOnce(change);
+  const [editRefused, setEditRefused] = useState(false);
   const periods = usePeriods();
   const closed = !!periodOn(periods.data, claim.date)?.closed;
   return (
@@ -85,16 +86,31 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
           data-testid={`claim-${action}`}
           disabled={change.isPending}
           onClick={() => {
+            setEditRefused(false);
             submitChange(action);
           }}
         >
           {label}
         </button>
       ))}{' '}
-      <span onClickCapture={() => change.reset()}>{children}</span>
-      {change.isError && (
+      <span onClickCapture={() => { change.reset(); setEditRefused(false); }}>
+        <button
+          type="button"
+          data-testid="claim-edit"
+          onClick={() => {
+            if (claim.status === 'DRAFT') onEdit();
+            else setEditRefused(true);
+          }}
+        >
+          Edit
+        </button>
+        {children}
+      </span>
+      {(change.isError || editRefused) && (
         <span data-testid="claim-error">
-          {closed
+          {editRefused
+            ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
+            : closed
             ? 'This claim is dated in a closed period, so its status cannot change.'
             : change.variables === 'settle' && claim.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
@@ -164,7 +180,7 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
       {save.isError && (
         <span data-testid="claim-form-error">
           The amount must be a number, 0.00 or more, with up to two decimals, and the date a calendar date
-          not in a closed period.
+          not in a closed period; only a draft claim can be edited.
         </span>
       )}
     </form>
