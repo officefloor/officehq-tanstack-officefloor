@@ -180,7 +180,7 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
       {save.isError && (
         <span data-testid="claim-form-error">
           The amount must be a number, 0.00 or more, with up to two decimals, and the date a calendar date
-          not in a closed period; only a draft claim can be edited.
+          not in a closed period nor after the person's retirement date; only a draft claim can be edited.
         </span>
       )}
     </form>
