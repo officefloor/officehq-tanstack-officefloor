@@ -1,0 +1,382 @@
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index 4fa54367..b68ec394 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -134,12 +134,11 @@ public class AsOf {
+                         Comparator.comparing(PersonAlias::getId));
+     }
+ 
+-    /** The sheet's statements, oldest first. */
++    /** The sheet's statements, each person's in the order they stand, oldest first. */
+     public List<Statement> statements(String sheetId, LocalDate date) {
+-        List<Statement> now = statements.findBySheetIdOrderByIdAsc(sheetId);
++        List<Statement> now = statements.ofSheet(sheetId);
+         return date == null ? now
+-                : sorted(history.asOf(sheetId, Statement.class, date, now, Statement::getId),
+-                        Comparator.comparing(Statement::getId));
++                : sorted(history.asOf(sheetId, Statement.class, date, now, Statement::getId), Statement.ORDER);
+     }
+ 
+     /** The sheet's claims in the order they are listed: newest first, a moved claim as its new person's newest. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java b/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
+index dea0ace7..349fa590 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
+@@ -12,6 +12,9 @@ import net.officefloor.hq.app.pool.PoolMember;
+ import net.officefloor.hq.app.pool.PoolMemberRepository;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.statement.BindingLogRepository;
++import net.officefloor.hq.app.statement.BindingLogs;
+ import net.officefloor.hq.app.statement.StatementRepository;
+ import net.officefloor.hq.app.watch.WatchRepository;
+ import net.officefloor.plugin.variable.Out;
+@@ -21,16 +24,17 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ /**
+  * Merges the person into another of the sheet; only a steward may, and not into themselves, nor when either of them is
+  * retired. Their claims move to the other, keeping their numbers and dates, listed after the other's claims in the
+- * order they were added, each losing any figure a statement bound it to. Their name and aliases become aliases of the
++ * order they were added, each keeping any figure a statement bound it to. Their name and aliases become aliases of the
+  * other. Their patrons are added to the other's (not the other themselves, no repeats); anyone naming them as patron
+  * names the other instead (not themselves, no repeats). Their pool memberships move to the other (shares added when the
+- * other is already a member). Their statements, holds, dated grades, watchers and contact are dropped, and they leave
+- * the sheet.
++ * other is already a member). Their statements become the other's, standing before the other's own, so the other's
++ * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
++ * are dropped, and they leave the sheet.
+  */
+ public class ApplyMerge {
+     public void apply(@Val MergeInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
+             PersonAliasRepository aliases, PatronRepository patrons, PoolMemberRepository members,
+-            StatementRepository statements, WatchRepository watches, PersonGradeRepository grades,
++            StatementRepository statements, BindingLogRepository bindings, SheetRepository sheets, WatchRepository watches, PersonGradeRepository grades,
+             RoleRepository roles, EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMerged> merged)
+             throws InvalidPersonException, ClerkLimitException {
+@@ -58,7 +62,6 @@ public class ApplyMerge {
+         moved.sort(Comparator.comparing(Claim::getId));
+         for (Claim claim : moved) {
+             claim.setPersonId(to);
+-            claim.bind(false, null);
+             claims.saveAndFlush(claim);
+             claims.relist(claim.getId());
+         }
+@@ -100,8 +103,11 @@ public class ApplyMerge {
+             }
+         }
+ 
+-        // Dropped: statements, watchers, dated grades; holds and contact go with the person.
+-        statements.deleteAll(statements.findByPersonIdOrderByIdAsc(from));
++        // Statements move to the other, before their own; the claims bound now are recorded as the other's binding.
++        statements.moveAll(from, sheetId, to);
++        BindingLogs.record(bindings, claims, sheets, sheetId, to);
++
++        // Dropped: watchers, dated grades; holds and contact go with the person.
+         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));
+         grades.deleteAll(grades.findByPersonIdOrderByFromDateAsc(from));
+         statements.flush();
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index 4686c5ff..29f1f51f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -26,6 +26,8 @@ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.statement.BindingLogRepository;
++import net.officefloor.hq.app.statement.BindingLogs;
+ import net.officefloor.hq.app.statement.StatementRepository;
+ import net.officefloor.hq.app.watch.WatchRepository;
+ import net.officefloor.plugin.variable.Out;
+@@ -36,20 +38,21 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  * Transfers the person to another sheet by id; only a steward may, not a retired person, not to this sheet itself,
+  * nor to an archived sheet, nor when their contact is already on the other sheet. When their name or an alias of theirs
+  * is already someone's name or alias there (ignoring case), they are merged into that person instead, exactly as a
+- * merge does (not into a retired person): their claims are listed after that person's, each losing any figure a
+- * statement bound it to, their name and aliases become that person's aliases, and their grades, terms and contact are
++ * merge does (not into a retired person): their claims are listed after that person's, each keeping any figure a
++ * statement bound it to, their statements become that person's (before that person's own), their name and aliases become that person's aliases, and their grades, terms and contact are
+  * dropped. Otherwise they arrive there with every grade they were given
+  * (and its from-date), their terms, contact and aliases, and their claims with their status, dates, notes, tags,
+- * frozen dues, status logs and comments, listed in the same order. Each claim that had a number takes the other
++ * frozen dues, the figures a statement bound them to, status logs and comments, listed in the same order, and their
++ * statements. Each claim that had a number takes the other
+  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
+- * were added). Figures a statement bound are lost (they have no statements there) and references are not carried.
+- * They leave this sheet entirely: their claims, statements, holds, patron links (both ways), pool memberships and
++ * were added). References are not carried.
++ * They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships and
+  * watchers are dropped.
+  */
+ public class ApplyTransfer {
+     public void apply(@Val TransferInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
+             ClaimLogRepository logs, ClaimCommentRepository comments, PersonAliasRepository aliases,
+-            PatronRepository patrons, PoolMemberRepository members, StatementRepository statements,
++            PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
+             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
+             RateRepository rates, PeriodRepository periods, EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonTransferred> transferred)
+@@ -134,7 +137,9 @@ public class ApplyTransfer {
+         Map<Claim, Claim> copies = new LinkedHashMap<>();
+         Map<Long, LocalDate> openedOn = new HashMap<>();
+         for (Claim claim : theirs) {
+-            Claim copy = claims.saveAndFlush(claim.transferTo(to, arrivedId));
++            Claim moved = claim.transferTo(to, arrivedId);
++            moved.bind(claim.isStated(), claim.getStatedDue());
++            Claim copy = claims.saveAndFlush(moved);
+             copies.put(claim, copy);
+             List<ClaimLog> lines = logs.findByClaimIdOrderByIdAsc(claim.getId());
+             lines.stream().filter(l -> ClaimStatus.OPEN.name().equals(l.getStatus())).map(ClaimLog::getOnDate)
+@@ -179,6 +184,11 @@ public class ApplyTransfer {
+         });
+         claims.flush();
+ 
++        // Statements go with them, before the other's own when merging; the claims bound there now are recorded as
++        // their binding there.
++        statements.moveAll(from, to, arrivedId);
++        BindingLogs.record(bindings, claims, sheets, to, arrivedId);
++
+         // They leave this sheet entirely.
+         claims.deleteAll(theirs);
+         claims.flush();
+@@ -186,7 +196,6 @@ public class ApplyTransfer {
+         patrons.deleteAll(patrons.findByPatronIdOrderByIdAsc(from));
+         members.deleteAll(members.findByPersonIdOrderByIdAsc(from));
+         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));
+-        statements.deleteAll(statements.findByPersonIdOrderByIdAsc(from));
+         grades.deleteAll(theirGrades);
+         aliases.deleteAll(theirAliases);
+         aliases.flush();
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithMergedInto.java b/src/main/java/net/officefloor/hq/app/person/RespondWithMergedInto.java
+index 1895801b..8a4417fc 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithMergedInto.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithMergedInto.java
+@@ -13,7 +13,7 @@ public class RespondWithMergedInto {
+             ObjectResponse<PersonResponse> response) {
+         Person into = merged.into();
+         Sheet sheet = sheets.findById(into.getSheetId()).orElseGet(() -> new Sheet(into.getSheetId()));
+-        response.send(PersonResponse.from(into, statements.findByPersonIdOrderByIdAsc(into.getId()),
++        response.send(PersonResponse.from(into, statements.ofPerson(into.getId()),
+                 patrons.findByPersonIdOrderByIdAsc(into.getId()),
+                 aliases.findByPersonIdOrderByIdAsc(into.getId()), grades.gradesOf(into), sheet.getToday(),
+                 tree.usedAround(sheet.getId())));
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+index f3d84b62..7222515b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+@@ -11,7 +11,7 @@ public class RespondWithPerson {
+             PersonGradeRepository grades, SheetRepository sheets, TreeNames tree,
+             ObjectResponse<PersonResponse> response) {
+         Sheet sheet = sheets.findById(person.getSheetId()).orElseGet(() -> new Sheet(person.getSheetId()));
+-        response.send(PersonResponse.from(person, statements.findByPersonIdOrderByIdAsc(person.getId()),
++        response.send(PersonResponse.from(person, statements.ofPerson(person.getId()),
+                 patrons.findByPersonIdOrderByIdAsc(person.getId()),
+                 aliases.findByPersonIdOrderByIdAsc(person.getId()), grades.gradesOf(person), sheet.getToday(),
+                 tree.usedAround(sheet.getId())));
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 8b72ca1b..45b3cbce 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
+ 
+ import java.math.BigDecimal;
+ import java.math.RoundingMode;
++import java.time.LocalDate;
+ import java.util.AbstractMap.SimpleEntry;
+ import java.util.ArrayDeque;
+ import java.util.ArrayList;
+@@ -14,10 +15,12 @@ import java.util.Set;
+ import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import net.officefloor.hq.app.person.Person;
+-import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's pools, in the order they were added, each with its members in the order they were added. A member
+  *  with a retirement date set (whatever the date) counts its share toward the pool's total, as any member does. A pool that is a member of none has the sheet's pot; a pool that is a member of another has
+@@ -27,13 +30,18 @@ import net.officefloor.web.ObjectResponse;
+  *  their share is spread over the others in proportion to theirs (the pool's total share is unchanged). A pool whose
+  *  every member is retired shows no cuts. The remainder, the pot minus the cuts added up, goes to the member with a
+  *  cut with the largest share, the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
+- *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut. */
++ *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
++ *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
++ *  sheet is left out. */
+ public class RespondWithPools {
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+-    public void respond(@Val Sheet sheet, PoolRepository pools, PoolMemberRepository members, PersonRepository people,
+-            ObjectResponse<List<PoolResponse>> response) {
+-        Map<Long, Person> byId = people.findListed(sheet.getId()).stream()
++    public void respond(@Val Sheet current, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            PoolRepository pools, PoolMemberRepository members, ObjectResponse<List<PoolResponse>> response)
++            throws InvalidTodayException {
++        LocalDate date = AsOf.dateOf(asOfParam);
++        Sheet sheet = asOf.sheet(current, date);
++        Map<Long, Person> byId = asOf.people(current.getId(), date).stream()
+                 .collect(Collectors.toMap(Person::getId, Function.identity()));
+         List<Pool> sheetPools = pools.findBySheetIdOrderByIdAsc(sheet.getId());
+         Map<Long, Pool> poolsById = sheetPools.stream().collect(Collectors.toMap(Pool::getId, Function.identity()));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/BindingLogs.java b/src/main/java/net/officefloor/hq/app/statement/BindingLogs.java
+new file mode 100644
+index 00000000..324f00d5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/BindingLogs.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app.statement;
++
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++
++/** Records a person's claims bound now as a binding of theirs, on the sheet's today: done when bound claims move to
++ *  them by a merge or a transfer, so a statement as of a later date finds them bound. */
++public final class BindingLogs {
++
++    private BindingLogs() {
++    }
++
++    public static void record(BindingLogRepository bindings, ClaimRepository claims, SheetRepository sheets,
++            String sheetId, Long personId) {
++        BindingLog binding = new BindingLog(sheetId, personId,
++                sheets.findById(sheetId).map(Sheet::getToday).orElseGet(() -> new Sheet(sheetId).getToday()));
++        for (Claim claim : claims.findBySheetIdAndPersonIdOrderByIdDesc(sheetId, personId)) {
++            if (claim.isStated()) {
++                binding.bind(claim.getId(), claim.getStatedDue());
++            }
++        }
++        bindings.saveAndFlush(binding);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java b/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
+index 4efbbffa..b614369c 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
+@@ -31,7 +31,7 @@ public class CancelStatement {
+         }
+         // Lock the person so a cancel and a statement (or two cancels) are taken one after the other.
+         entityManager.refresh(person, LockModeType.PESSIMISTIC_WRITE);
+-        List<Statement> taken = statements.findByPersonIdOrderByIdAsc(person.getId());
++        List<Statement> taken = statements.ofPerson(person.getId());
+         if (taken.isEmpty()) {
+             throw new InvalidPersonException("The person has no statement to cancel.");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statement.java b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+index 9983805b..e6bb2ae6 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Statement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+@@ -8,9 +8,11 @@ import jakarta.persistence.Id;
+ import jakarta.persistence.Table;
+ import jakarta.persistence.Transient;
+ import java.time.LocalDate;
++import java.util.Comparator;
+ 
+ /** A statement taken for a person: their due-total then (two decimals, or n/a), the date it was taken as of (the
+- *  sheet's today then when none was given) and the sheet's today when it was taken. */
++ *  sheet's today then when none was given) and the sheet's today when it was taken. A person's statements stand in
++ *  the order of their places (by id when none is given); the last one is their last statement. */
+ @Entity
+ @Table(name = "statement")
+ public class Statement {
+@@ -34,6 +36,14 @@ public class Statement {
+     @Column(name = "made_on")
+     private LocalDate madeOn;
+ 
++    /** Where it stands among its person's statements (null: by its id); given when it is moved to another person. */
++    @Column(name = "place")
++    private Long place;
++
++    /** A person's statements in the order they stand, oldest first. */
++    public static final Comparator<Statement> ORDER = Comparator.comparing(Statement::getPlace)
++            .thenComparing(Statement::getId);
++
+     /** The date it was taken as of, when one was given; for the audit only. */
+     @Transient
+     private LocalDate asOf;
+@@ -56,6 +66,20 @@ public class Statement {
+         this.claims = claims;
+     }
+ 
++    /** The statement moved to another person (and sheet), standing at a place among theirs. */
++    public Statement moveTo(String toSheetId, Long toPersonId, long toPlace) {
++        Statement moved = new Statement(toSheetId, toPersonId, dueTotal, madeOn, null, 0);
++        moved.takenOn = takenOn;
++        moved.madeOn = madeOn;
++        moved.place = toPlace;
++        return moved;
++    }
++
++    /** Where it stands among its person's statements. */
++    public long getPlace() {
++        return place != null ? place : id;
++    }
++
+     public Long getId() {
+         return id;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java b/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
+index 5414ff40..439b192d 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRepository.java
+@@ -1,13 +1,43 @@
+ package net.officefloor.hq.app.statement;
+ 
++import java.util.ArrayList;
+ import java.util.List;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ public interface StatementRepository extends JpaRepository<Statement, Long> {
+ 
+-    /** The sheet's statements, oldest first. */
++    /** The sheet's statements, by id. */
+     List<Statement> findBySheetIdOrderByIdAsc(String sheetId);
+ 
+-    /** The person's statements, oldest first. */
++    /** The sheet's statements, each person's in the order they stand, oldest first. */
++    default List<Statement> ofSheet(String sheetId) {
++        return findBySheetIdOrderByIdAsc(sheetId).stream().sorted(Statement.ORDER).toList();
++    }
++
++    /** The person's statements, by id. */
+     List<Statement> findByPersonIdOrderByIdAsc(Long personId);
++
++    /** The person's statements in the order they stand, oldest first: the last is their last statement. */
++    default List<Statement> ofPerson(Long personId) {
++        return findByPersonIdOrderByIdAsc(personId).stream().sorted(Statement.ORDER).toList();
++    }
++
++    /** Moves one person's statements to another (on the same sheet or another), placed before the other's own in the
++     *  order they stood, so the other's last statement stays theirs (or, having none, becomes the last moved). The
++     *  moved statements are new; the old ones are deleted. */
++    default void moveAll(Long fromPersonId, String toSheetId, Long toPersonId) {
++        List<Statement> theirs = ofPerson(fromPersonId);
++        if (theirs.isEmpty()) {
++            return;
++        }
++        List<Statement> own = ofPerson(toPersonId);
++        long first = own.isEmpty() ? 0 : own.get(0).getPlace();
++        List<Statement> moved = new ArrayList<>();
++        for (int i = 0; i < theirs.size(); i++) {
++            moved.add(theirs.get(i).moveTo(toSheetId, toPersonId, first - theirs.size() + i));
++        }
++        deleteAll(theirs);
++        flush();
++        saveAllAndFlush(moved);
++    }
+ }
+diff --git a/src/main/resources/db/migration/V69__statement_place.sql b/src/main/resources/db/migration/V69__statement_place.sql
+new file mode 100644
+index 00000000..183d798a
+--- /dev/null
++++ b/src/main/resources/db/migration/V69__statement_place.sql
+@@ -0,0 +1,3 @@
++-- Where a statement stands among its person's (null: by its id). A statement moved to another person by a merge or a
++-- transfer is placed before that person's own, so their last statement stays theirs.
++ALTER TABLE statement ADD COLUMN place BIGINT;
