@@ -1,0 +1,424 @@
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 9c8bc02f..85ff4190 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -4,7 +4,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { gradeOn, peopleQueryKey, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
+ 
+-// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
++// The sheet's people in list order — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
+ // features add their own columns through PeopleColumns / PersonCells.
+ function PeopleList() {
+   const [user] = useCurrentUser();
+diff --git a/src/main/frontend/features/people/move.slot.tsx b/src/main/frontend/features/people/move.slot.tsx
+new file mode 100644
+index 00000000..5ba53bc8
+--- /dev/null
++++ b/src/main/frontend/features/people/move.slot.tsx
+@@ -0,0 +1,46 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { peoplePath, peopleQueryKey, type Person } from './people';
++
++// The buttons that swap a person with the one above or below them in the list (retired people included). The top
++// person cannot move up, nor the bottom one down. The list, the rollup lines and every action taken in list order
++// follow the places.
++function MoveHeader() {
++  return <th>Move</th>;
++}
++
++function PersonMove({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++  const move = useMutation({
++    mutationFn: (body: { direction: 'up' | 'down' }) => putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}/move`, body, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
++    },
++  });
++  const submit = useSubmitOnce(move);
++  const rowAction = useRowAction(`person-${person.id}`);
++  return (
++    <td>
++      <button type="button" data-testid="person-move-up" disabled={move.isPending}
++        onClick={() => { rowAction.take(); submit({ direction: 'up' }); }}>
++        Up
++      </button>{' '}
++      <button type="button" data-testid="person-move-down" disabled={move.isPending}
++        onClick={() => { rowAction.take(); submit({ direction: 'down' }); }}>
++        Down
++      </button>
++      {move.isError && rowAction.isLatest && <span data-testid="person-error">The person could not be moved.</span>}
++    </td>
++  );
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 15, Component: MoveHeader }),
++  PersonCells.fill({ order: 15, Component: PersonMove }),
++];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 03dac198..53d08e90 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -61,7 +61,7 @@ export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people']
+ 
+ export const peoplePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+ 
+-/** The sheet's people, in the order they were added. */
++/** The sheet's people, in list order: by their place, which the move buttons swap; a new person goes to the end. */
+ export function usePeople() {
+   const [sheet] = useCurrentSheet();
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index 134c1a64..4fa54367 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -98,11 +98,15 @@ public class AsOf {
+         return date == null ? sheet : settingLogs.sheetAsOf(sheet, date);
+     }
+ 
+-    /** The sheet's people, in the order they were added. */
++    /** The sheet's people, in list order: as of a date, those then on the sheet in the places they hold now. */
+     public List<Person> people(String sheetId, LocalDate date) {
+-        List<Person> now = people.findBySheetIdOrderByIdAsc(sheetId);
+-        return date == null ? now
+-                : sorted(history.asOf(sheetId, Person.class, date, now, Person::getId), Comparator.comparing(Person::getId));
++        List<Person> now = people.findListed(sheetId);
++        if (date == null) {
++            return now;
++        }
++        Map<Long, Long> places = now.stream().collect(Collectors.toMap(Person::getId, Person::getPlace));
++        return sorted(history.asOf(sheetId, Person.class, date, now, Person::getId),
++                Comparator.<Person>comparingLong(p -> places.getOrDefault(p.getId(), p.getPlace())).thenComparing(Person::getId));
+     }
+ 
+     /** The sheet's dated grades of each person, by from-date, by person id. */
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
+index b9c92acd..58d795bb 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
+@@ -45,7 +45,7 @@ public class AddImportedPeople {
+             PersonGradeRepository grades, EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+             Out<ImportedPeople> addedOut) throws InvalidPersonException {
+-        List<Person> onSheet = people.findBySheetIdOrderByIdAsc(sheet.getId());
++        List<Person> onSheet = people.findListed(sheet.getId());
+         List<Planned> planned = new ArrayList<>();
+         Set<Long> updating = new HashSet<>();
+         int at = 0;
+diff --git a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+index fbaa9f8e..b83dcc01 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+@@ -36,7 +36,7 @@ public class AddPastedClaims {
+             HolidayRepository holidays,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+             Out<PastedClaims> addedOut) throws InvalidClaimException {
+-        List<Person> onSheet = people.findBySheetIdOrderByIdAsc(sheet.getId());
++        List<Person> onSheet = people.findListed(sheet.getId());
+         List<Person> persons = new ArrayList<>();
+         List<Claim> made = new ArrayList<>();
+         Set<String> refs = new HashSet<>();
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index e4a81868..9609dadf 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -51,7 +51,7 @@ public class ClosePeriod {
+     /** Each person's due-total for the period as it is now (see above), by person id. */
+     static Map<Long, BigDecimal> totals(Period period, Sheet sheet, ClaimRepository claims, PersonRepository people,
+             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log) {
+-        Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(period.getSheetId()).stream()
++        Map<Long, Person> byId = people.findListed(period.getSheetId()).stream()
+                 .collect(Collectors.toMap(Person::getId, Function.identity()));
+         var sheetRates = rates.findInChain(period.getSheetId());
+         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(period.getSheetId());
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyMove.java b/src/main/java/net/officefloor/hq/app/person/ApplyMove.java
+new file mode 100644
+index 00000000..ca439239
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyMove.java
+@@ -0,0 +1,28 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Swaps the person with the one above or below them in the list; refuses moving the top one up or the bottom one
++ *  down. */
++public class ApplyMove {
++    public void apply(@Val MoveInput input, @Val Person person, PersonRepository repository, Out<PersonMoved> moved)
++            throws InvalidPersonException {
++        List<Person> listed = repository.findListed(person.getSheetId());
++        int at = 0;
++        while (!listed.get(at).getId().equals(person.getId())) {
++            at++;
++        }
++        int to = input.up() ? at - 1 : at + 1;
++        if (to < 0 || to >= listed.size()) {
++            throw new InvalidPersonException(input.up() ? "The top person cannot move up." : "The bottom person cannot move down.");
++        }
++        Person other = listed.get(to);
++        long mine = person.getPlace();
++        long theirs = other.getPlace();
++        repository.placeAt(person.getId(), theirs);
++        repository.placeAt(other.getId(), mine);
++        moved.set(new PersonMoved(to + 1));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java
+new file mode 100644
+index 00000000..0c8e664d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the move, once it is saved. */
++public class AuditPersonMoved {
++    public void audit(@Val Person person, @Val PersonMoved moved,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        audit.record("PERSON_MOVED sheet=" + person.getSheetId() + " by=" + AuditUser.decode(user)
++                + " name=" + person.getName() + " position=" + moved.position());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MoveInput.java b/src/main/java/net/officefloor/hq/app/person/MoveInput.java
+new file mode 100644
+index 00000000..15612d23
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MoveInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A validated move request: whether the person goes up the list (true) or down it. */
++public record MoveInput(boolean up) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 8e361b47..f217fd81 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -51,6 +51,9 @@ public class Person {
+     @Transient
+     private boolean contactChanged;
+ 
++    /** Their place in the sheet's list, lowest first (null: their id, which puts a person added later at the end). */
++    private Long position;
++
+     /** Raised on every save; an edit naming an older version is refused. */
+     @Version
+     @Column(nullable = false)
+@@ -89,6 +92,18 @@ public class Person {
+         return id;
+     }
+ 
++    /** Their place in the sheet's list, lowest first: their position, or their id with none set. */
++    public long getPlace() {
++        return position != null ? position : id;
++    }
++
++    /** Swaps their place in the list with another person's. */
++    public void swapPlace(Person other) {
++        long mine = getPlace();
++        position = other.getPlace();
++        other.position = mine;
++    }
++
+     public String getSheetId() {
+         return sheetId;
+     }
+@@ -160,6 +175,7 @@ public class Person {
+     public Person asOf(LocalDate date) {
+         Person then = new Person(sheetId, name, grade);
+         then.id = id;
++        then.position = position;
+         then.terms = terms;
+         then.contact = contact;
+         then.addedOn = addedOn;
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMoved.java b/src/main/java/net/officefloor/hq/app/person/PersonMoved.java
+new file mode 100644
+index 00000000..b6102c52
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMoved.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A move made: the person's new position in the list, counting from 1. */
++public record PersonMoved(int position) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 18f2237d..e53e5976 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -3,11 +3,20 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ import java.util.Optional;
+ import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.data.jpa.repository.Modifying;
++import org.springframework.data.jpa.repository.Query;
++import org.springframework.data.repository.query.Param;
+ 
+ public interface PersonRepository extends JpaRepository<Person, Long> {
+ 
+-    /** The sheet's people in the order they were added. */
+-    List<Person> findBySheetIdOrderByIdAsc(String sheetId);
++    /** The sheet's people in list order: by their place, a person added later at the end. */
++    @Query("select p from Person p where p.sheetId = :sheetId order by coalesce(p.position, p.id), p.id")
++    List<Person> findListed(@Param("sheetId") String sheetId);
++
++    /** Sets a person's place in the list, leaving their version as it is: a move is no edit of them. */
++    @Modifying(flushAutomatically = true, clearAutomatically = true)
++    @Query("update Person p set p.position = :position where p.id = :id")
++    void placeAt(@Param("id") Long id, @Param("position") long position);
+ 
+     Optional<Person> findByIdAndSheetId(Long id, String sheetId);
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateMove.java b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+new file mode 100644
+index 00000000..fbf20ab1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the direction of a move from the body; refuses one other than up or down. */
++public class ValidateMove {
++
++    public record MoveRequest(String direction) {
++    }
++
++    public void validate(@RequestBody(required = false) MoveRequest request, Out<MoveInput> body)
++            throws InvalidPersonException {
++        String direction = request == null || request.direction() == null ? "" : request.direction().trim();
++        switch (direction) {
++            case "up" -> body.set(new MoveInput(true));
++            case "down" -> body.set(new MoveInput(false));
++            default -> throw new InvalidPersonException("Not a direction: " + direction);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 4f92d638..cfd71728 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -31,7 +31,7 @@ public class RespondWithPools {
+ 
+     public void respond(@Val Sheet sheet, PoolRepository pools, PoolMemberRepository members, PersonRepository people,
+             ObjectResponse<List<PoolResponse>> response) {
+-        Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++        Map<Long, Person> byId = people.findListed(sheet.getId()).stream()
+                 .collect(Collectors.toMap(Person::getId, Function.identity()));
+         List<Pool> sheetPools = pools.findBySheetIdOrderByIdAsc(sheet.getId());
+         Map<Long, Pool> poolsById = sheetPools.stream().collect(Collectors.toMap(Pool::getId, Function.identity()));
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+index 7915f98c..65e6e7c3 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+@@ -18,7 +18,7 @@ public class CheckQuickAddDate {
+             PersonAliasRepository aliases,
+             PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
+         LocalDate date = sheet.entryDateInForce();
+-        int terms = PersonAliasRepository.findByNameOrAlias(people.findBySheetIdOrderByIdAsc(sheet.getId()),
++        int terms = PersonAliasRepository.findByNameOrAlias(people.findListed(sheet.getId()),
+                         aliases, sheet.getId(), name.name())
+                 .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(date), date))
+                 .orElseGet(() -> sheet.termsFor(null, "A", date));
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
+index b1f87657..46083a52 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
+@@ -29,7 +29,7 @@ public class FindOrAddPerson {
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit, TreeNames tree, Out<Person> personOut,
+             Out<Rollup> rollupOut) throws InvalidClaimException {
+         Optional<Person> found = PersonAliasRepository.findByNameOrAlias(
+-                people.findBySheetIdOrderByIdAsc(sheet.getId()), aliases, sheet.getId(), name.name());
++                people.findListed(sheet.getId()), aliases, sheet.getId(), name.name());
+         if (found.isPresent()) {
+             personOut.set(found.get());
+             return;
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
+index e61820d2..571bef48 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRatePreview.java
+@@ -26,7 +26,7 @@ public class RespondWithRatePreview {
+         List<Rate> current = rates.findInChain(sheet.getId());
+         List<Rate> candidate = new ArrayList<>(current.stream().filter(r -> !r.getGrade().equals(input.grade())).toList());
+         candidate.add(new Rate(sheet.getId(), input.grade(), input.pct(), null, null));
+-        Map<Long, Person> people = persons.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++        Map<Long, Person> people = persons.findListed(sheet.getId()).stream()
+                 .collect(Collectors.toMap(Person::getId, p -> p));
+         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(sheet.getId());
+         int count = 0;
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 42bd5d7f..744c81c6 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -57,7 +57,7 @@ public class Rollup {
+             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
+             var sheetRates = rates.findInChain(id);
+             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
+-            for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
++            for (Person person : persons.findListed(id)) {
+                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
+                 BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+diff --git a/src/main/resources/db/migration/V63__person_position.sql b/src/main/resources/db/migration/V63__person_position.sql
+new file mode 100644
+index 00000000..52d8b524
+--- /dev/null
++++ b/src/main/resources/db/migration/V63__person_position.sql
+@@ -0,0 +1,4 @@
++-- A person's place in the sheet's list: the list runs by it, lowest first. Null (a person added since, or before
++-- this was kept) places them by their id, so a new person goes to the end; moving a person swaps the places of
++-- the two people.
++ALTER TABLE person ADD COLUMN position BIGINT;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.PUT.yml
+new file mode 100644
+index 00000000..b23d5d74
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.PUT.yml
+@@ -0,0 +1,30 @@
++# PUT /api/sheets/{sheetId}/people/{personId}/move — swap the person with the one above or below them in the list.
++# Body: { "direction": "up|down" }. The top person cannot move up, nor the bottom one down.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: validate
++validate:
++  class: net.officefloor.hq.app.person.ValidateMove
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: person
++person:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.ApplyMove
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonMoved
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
