@@ -9,8 +9,8 @@ import { peoplePath, type Person } from '../people/people';
 import { plansQueryKey, usePlans, type Plan } from './plans';
 
 // A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
-// claims it has made so far — and the form that adds another. A bad amount, interval or day, both an interval and a
-// day, or an end before the start, is refused.
+// claims it has made so far and its next five dates after the sheet's today — and the form that adds another. A bad
+// amount, interval or day, both an interval and a day, or an end before the start, is refused.
 function PlansHeader() {
   return <th>Plans</th>;
 }
@@ -50,7 +50,8 @@ function PersonPlans({ person }: { person: Person }) {
               <>every <span data-testid="plan-every">{p.every}</span> days</>
             )}{' '}
             to <span data-testid="plan-end">{p.end}</span>;
-            made <span data-testid="plan-generated">{p.generated}</span>
+            made <span data-testid="plan-generated">{p.generated}</span>;
+            next <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
           </li>
         ))}
       </ul>

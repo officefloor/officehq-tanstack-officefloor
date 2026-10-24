@@ -78,6 +78,11 @@ public class Plan {
         return dates;
     }
 
+    /** The plan's next dates: the first given number of its dates after the given day and on or before its end. */
+    public List<LocalDate> nextDatesAfter(LocalDate today, int limit) {
+        return datesUpTo(null).stream().filter(d -> today == null || d.isAfter(today)).limit(limit).toList();
+    }
+
     public Long getId() {
         return id;
     }
