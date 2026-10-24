@@ -1,0 +1,68 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 30740057..9f952164 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -122,6 +122,11 @@ export function sumDue(dues: string[]): string {
+   return formatCents(dues.filter((d) => d !== 'n/a').reduce((n, d) => n + hundredths(d), 0n));
+ }
+ 
++/** One two-decimal amount minus another, as a two-decimal string (a minus sign when below zero). */
++export function diffDue(a: string, b: string): string {
++  return formatCents(hundredths(a) - hundredths(b));
++}
++
+ /** The sheet's total of people's figures, skipping "n/a": with three or more figures, the single highest and the
+  *  single lowest are left out. */
+ export function trimmedSum(dues: string[]): string {
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 9bff905e..4425a43d 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -3,7 +3,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { personDue } from '../rates/due.slot';
+-import { sumDue, useRates } from '../rates/rates';
++import { diffDue, sumDue, useRates } from '../rates/rates';
+ import { useSettings } from '../roles/roles';
+ import { periodDue, usePeriods } from '../periods/periods';
+ import { isActive } from '../claims/active.slot';
+@@ -13,7 +13,8 @@ import { useVoidReasons } from '../voidreasons/voidreasons';
+ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+ 
+ // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
+-// the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period, its due-total; per status, how
++// the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period (by from-date), its due-total and its change from
++// the period before it (none for the earliest); per status, how
+ // many of the sheet's claims have it; per reason on the sheet's list of void reasons, how many VOID claims were voided with it.
+ function Summary() {
+   const [user] = useCurrentUser();
+@@ -28,6 +29,8 @@ function Summary() {
+   if (!user || !sheet) return null;
+   const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
+   const allClaims = claims.data ?? [];
++  const sortedPeriods = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
++  const periodDues = sortedPeriods.map((p) => periodDue(p, people.data, allClaims, rates.data, settings.data, today));
+   return (
+     <section data-testid="summary">
+       <h2>Summary</h2>
+@@ -63,14 +66,16 @@ function Summary() {
+           <tr>
+             <th>Period</th>
+             <th>Due</th>
++            <th>Change</th>
+           </tr>
+         </thead>
+         <tbody>
+-          {(periods.data ?? []).map((p) => (
++          {sortedPeriods.map((p, i) => (
+             <tr key={p.id}>
+               <td>{p.name}</td>
+-              <td data-testid={`summary-period-${p.name}-due-total`}>
+-                {periodDue(p, people.data, allClaims, rates.data, settings.data, today)}
++              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDues[i]}</td>
++              <td data-testid={`summary-period-${p.name}-change`}>
++                {i === 0 ? '' : diffDue(periodDues[i], periodDues[i - 1])}
+               </td>
+             </tr>
+           ))}
