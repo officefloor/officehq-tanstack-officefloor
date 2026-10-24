@@ -67,6 +67,11 @@ public class Claim {
     @Column(name = "corrects_date")
     private LocalDate correctsDate;
 
+    /** Where the claim is listed under its person: newest first by this key. The store gives a new claim the next
+     *  key, and a moved claim the next again (it is listed as its new person's newest). */
+    @Column(nullable = false, insertable = false, updatable = false)
+    private Long listed;
+
     protected Claim() {
     }
 
@@ -89,6 +94,10 @@ public class Claim {
 
     public Long getPersonId() {
         return personId;
+    }
+
+    public void setPersonId(Long personId) {
+        this.personId = personId;
     }
 
     public BigDecimal getAmount() {

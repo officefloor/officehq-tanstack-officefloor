@@ -4,7 +4,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { gradeOn, type Person } from '../people/people';
+import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/people';
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
 import { DEFAULT_TERMS, useSettings } from '../roles/roles';
@@ -80,7 +80,9 @@ const ACTIONS = [
 // non-steward approving or rejecting a PENDING claim, or rejecting one without a reason (typed beside the reject
 // button). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
 // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
-// instead of opening its editor (an open claim is voided and added anew).
+// instead of opening its editor (an open claim is voided and added anew). A steward moves a DRAFT, OPEN or PENDING
+// claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
+// shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
 }) {
@@ -97,6 +99,19 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
     },
   });
   const submitChange = useSubmitOnce(change);
+  const people = usePeople();
+  const others = (people.data ?? []).filter((p) => p.id !== claim.personId);
+  const [moveTo, setMoveTo] = useState('');
+  const target = others.find((p) => String(p.id) === moveTo) ?? others[0];
+  const move = useMutation({
+    mutationFn: (personId: number) =>
+      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/person/${personId}`, undefined, user),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+      queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) }),
+    ]),
+  });
+  const submitMove = useSubmitOnce(move);
   const [editRefused, setEditRefused] = useState(false);
   const action = change.variables?.action;
   const periods = usePeriods();
@@ -118,13 +133,35 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
           disabled={change.isPending}
           onClick={() => {
             setEditRefused(false);
+            move.reset();
             submitChange(action === 'reject' ? { action, reason } : { action });
           }}
         >
           {label}
         </button>
       ))}{' '}
-      <span onClickCapture={() => { change.reset(); setEditRefused(false); }}>
+      <select
+        data-testid="claim-reassign-to"
+        value={target ? String(target.id) : ''}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); setEditRefused(false); }}
+      >
+        {others.map((p) => (
+          <option key={p.id} value={String(p.id)}>{p.name}</option>
+        ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="claim-reassign"
+        disabled={move.isPending || !target}
+        onClick={() => {
+          change.reset();
+          setEditRefused(false);
+          if (target) submitMove(target.id);
+        }}
+      >
+        Move
+      </button>{' '}
+      <span onClickCapture={() => { change.reset(); move.reset(); setEditRefused(false); }}>
         <button
           type="button"
           data-testid="claim-edit"
@@ -137,9 +174,13 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || editRefused) && (
+      {(change.isError || move.isError || editRefused) && (
         <span data-testid="claim-error">
-          {editRefused
+          {move.isError
+            ? move.error instanceof HttpError && move.error.status === 403
+              ? 'Only a steward can move a claim to another person.'
+              : `A ${claim.status} claim cannot move to another person.`
+            : editRefused
             ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
             : closed
             ? 'This claim is dated in a closed period, so its status cannot change.'

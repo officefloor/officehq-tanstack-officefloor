@@ -7,6 +7,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithClaims {
     public void respond(@Val Sheet sheet, ClaimRepository repository, ObjectResponse<List<ClaimResponse>> response) {
-        response.send(repository.findBySheetIdOrderByIdDesc(sheet.getId()).stream().map(ClaimResponse::from).toList());
+        response.send(repository.findBySheetIdOrderByListedDescIdDesc(sheet.getId()).stream().map(ClaimResponse::from).toList());
     }
 }
