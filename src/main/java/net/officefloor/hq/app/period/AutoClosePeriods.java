@@ -14,8 +14,8 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /** Once the sheet's today is changed, with grace days set, closes each open period whose to-date plus the grace
- *  days is before the new today, in order of their to-dates, exactly as a close by hand would (a period the user's
- *  role may not close is left open), recording each closing with auto=yes at its end. */
+ *  days is before the new today, in order of their to-dates, fixing its totals exactly as a close by hand would (the
+ *  permission matrix governs closing by hand, not this), recording each closing with auto=yes at its end. */
 public class AutoClosePeriods {
     public void close(@Val Sheet sheet, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, RoleRepository roles,
@@ -25,9 +25,6 @@ public class AutoClosePeriods {
             return;
         }
         String by = AuditUser.decode(user);
-        if (!sheet.allows("close", roles.roleOf(sheet.getId(), by))) {
-            return;
-        }
         var due = repository.findBySheetIdOrderByFromDateAscIdAsc(sheet.getId()).stream()
                 .filter(p -> !p.isClosed() && p.getToDate().plusDays(grace).isBefore(sheet.getToday()))
                 .sorted(Comparator.comparing(Period::getToDate).thenComparing(Period::getId))

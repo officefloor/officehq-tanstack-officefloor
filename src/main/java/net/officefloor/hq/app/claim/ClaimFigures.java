@@ -15,11 +15,12 @@ import net.officefloor.hq.app.sheet.Sheet;
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
  * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
- * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor in force on its date; none — n/a — when no rate applies then, or the one that would has ended by then). An
+ * the grade its person had on its date, rounded by the sheet's policy; none — n/a — when no rate applies then, or the one that would has ended by then). An
  * overdue claim's due adds, on top of its figure, the late charge: for each full 30 days it is overdue on the sheet's today, the
  * sheet's late percent in force on that boundary date (its due-by plus 30, 60, 90 ... days) of the figure, rounded like a due, and
- * the charges added up (a boundary whose percent is 0.00 adds nothing). A statement never binds the charge; settling
- * freezes it in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
+ * the charges added up (a boundary whose percent is 0.00 adds nothing). The floor comes last: an unsettled claim's due is the
+ * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the figure only (never
+ * the floor or the charge); settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
  * never takes a late charge. The rounding policy: a claim dated before the sheet's policy date (its today when blank)
  * rounds half up, one dated on or after it half to even; a correction goes by the date of the claim it corrects.
  */
@@ -85,9 +86,18 @@ public class ClaimFigures {
         return charge;
     }
 
-    /** A live due: the amount times the percent, divided by 100, rounded as given, and at least the floor. */
-    public static BigDecimal liveDue(BigDecimal amount, BigDecimal pct, BigDecimal floor, RoundingMode rounding) {
-        BigDecimal due = amount.multiply(pct).movePointLeft(2).setScale(2, rounding);
+    /** A rate figure: the amount times the percent, divided by 100, rounded as given. */
+    public static BigDecimal rateFigure(BigDecimal amount, BigDecimal pct, RoundingMode rounding) {
+        return amount.multiply(pct).movePointLeft(2).setScale(2, rounding);
+    }
+
+    /** The floor applied last: the greater of the sheet's floor in force on the claim's date and the given due; a
+     *  correction takes no floor. */
+    private BigDecimal floored(Claim claim, BigDecimal due) {
+        if (claim.isCorrection()) {
+            return due;
+        }
+        BigDecimal floor = sheet.floorOn(claim.getDate());
         return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
     }
 
@@ -133,21 +143,22 @@ public class ClaimFigures {
             return null;
         }
         if (claim.isCorrection() || !claim.getDueBy().isBefore(today)) {
-            return figure;
+            return floored(claim, figure);
         }
-        return figure.add(chargeByBoundary(claim, figure));
+        return floored(claim, figure.add(chargeByBoundary(claim, figure)));
     }
 
-    /** The claim's due: its figure, plus the late charge while it is not settled; null when it has none (n/a). */
+    /** The claim's due: its frozen due when settled, else the greater of its floor and its figure plus the late
+     *  charge; null when it has none (n/a). */
     public BigDecimal due(Claim claim) {
         if (claim.getDue() != null) {
             return claim.getDue();
         }
         BigDecimal figure = figure(claim);
-        return figure == null ? null : figure.add(lateCharge(claim, figure));
+        return figure == null ? null : floored(claim, figure.add(lateCharge(claim, figure)));
     }
 
-    /** The claim's figure, without any late charge; null when it has none (n/a). */
+    /** The claim's figure, without any late charge or floor; null when it has none (n/a). */
     public BigDecimal figure(Claim claim) {
         if (claim.getDue() != null) {
             return claim.getDue();
@@ -161,7 +172,7 @@ public class ClaimFigures {
     /** The claim's live figure: neither frozen nor bound; null when it has none (n/a). */
     private BigDecimal liveFigure(Claim claim) {
         return rateOn(grades.on(claim.getDate()), claim.getDate())
-                .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : sheet.floorOn(claim.getDate()), rounding(claim)))
+                .map(pct -> rateFigure(claim.getAmount(), pct, rounding(claim)))
                 .orElse(null);
     }
 

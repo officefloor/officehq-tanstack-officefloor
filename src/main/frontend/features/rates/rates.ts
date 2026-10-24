@@ -44,27 +44,26 @@ export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: st
 }
 
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to (not while PENDING),
- *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none),
- *  rounded by the sheet's policy; a correction's live due has no floor. */
-export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined,
-  halfUp = false): string {
+ *  else its rate figure at the rate on its date of the grade (its person's grade on its date) ("n/a" when it has none),
+ *  rounded by the sheet's policy; no floor (that comes last, in {@link chargedOf}). */
+export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, halfUp = false): string {
   if (c.due !== null) return c.due;
   if (isBound(c)) return c.statedDue ?? 'n/a';
-  const due = dueOf(c.amount, rateOn(rates, grade, c.date), halfUp);
-  return c.corrects !== null ? due : atLeast(due, floor);
+  return dueOf(c.amount, rateOn(rates, grade, c.date), halfUp);
 }
 
-/** A claim's due: a settled claim's frozen due, else its figure (at least the floor in force on its date) plus its
- *  late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that boundary date (its
- *  due-by plus 30, 60, 90 ... days) of the figure, rounded like a due, added up; a boundary at 0.00 adds nothing ("n/a" when it
- *  has no figure). A statement binds only the figure: the charge keeps following the sheet's today. A correction never
- *  takes a late charge. */
+/** A claim's due: a settled claim's frozen due, else the greater of the sheet's floor in force on its date and its figure
+ *  plus its late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that
+ *  boundary date (its due-by plus 30, 60, 90 ... days) of the figure, rounded like a due, added up; a boundary at 0.00 adds
+ *  nothing ("n/a" when it has no figure). A statement binds only the figure: the charge and the floor keep following the
+ *  sheet. A correction takes neither floor nor late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
   today: string | undefined): string {
   const halfUp = roundsHalfUp(c, settings, today);
-  const figure = figureOf(c, rates, grade, settings && settingOn(settings, 'floor', c.date, '1.00'), halfUp);
+  const figure = figureOf(c, rates, grade, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
-  if (today === undefined || !isOverdue(c, today)) return figure;
+  const floor = settings && settingOn(settings, 'floor', c.date, '1.00');
+  if (today === undefined || !isOverdue(c, today)) return atLeast(figure, floor);
   const dueBy = Date.parse(`${dueByOf(c)}T00:00:00Z`);
   const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
   let charge = 0n;
@@ -73,7 +72,7 @@ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, se
     const pct = settingOn(settings, 'late-pct', boundary, '0.00');
     if (hundredths(pct) !== 0n) charge += hundredths(dueOf(figure, pct, halfUp));
   }
-  return formatCents(hundredths(figure) + charge);
+  return atLeast(formatCents(hundredths(figure) + charge), floor);
 }
 
 /** A due raised to the floor when below it ("n/a" stays n/a; no floor leaves it as it is). */
