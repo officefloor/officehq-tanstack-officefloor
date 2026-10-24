@@ -10,6 +10,10 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClerkLimitException;
 import net.officefloor.hq.app.plan.Plan;
 import net.officefloor.hq.app.plan.PlanRepository;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewMember;
+import net.officefloor.hq.app.crew.CrewMemberRepository;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.pool.PoolMember;
 import net.officefloor.hq.app.pool.PoolMemberRepository;
 import net.officefloor.hq.app.role.Role;
@@ -29,7 +33,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * order they were added, each keeping any figure a statement bound it to. Their name and aliases become aliases of the
  * other. Their patrons are added to the other's (not the other themselves, no repeats); anyone naming them as patron
  * names the other instead (not themselves, no repeats). Their pool memberships move to the other (shares added when the
- * other is already a member). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
+ * other is already a member). The crews they lead are led by the other (who leaves those crews' members), and their crew
+ * memberships move to the other (dropped where the other already leads or is in the crew). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
  * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
  * are dropped, and they leave the sheet.
  */
@@ -37,7 +42,7 @@ public class ApplyMerge {
     public void apply(@Val MergeInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
             PersonAliasRepository aliases, PatronRepository patrons, PoolMemberRepository members,
             StatementRepository statements, BindingLogRepository bindings, SheetRepository sheets, WatchRepository watches, PersonGradeRepository grades,
-            PlanRepository plans,
+            PlanRepository plans, CrewRepository crews, CrewMemberRepository crewMembers,
             RoleRepository roles, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMerged> merged)
             throws InvalidPersonException, ClerkLimitException {
@@ -113,6 +118,29 @@ public class ApplyMerge {
                 members.saveAndFlush(member);
             }
         }
+
+        // Crews they lead are led by the other; their crew memberships move to the other where not already there.
+        for (Crew crew : crews.findByLeadIdOrderByIdAsc(from)) {
+            crew.setLeadId(to);
+            crews.saveAndFlush(crew);
+        }
+        for (CrewMember member : crewMembers.findByPersonIdOrderByIdAsc(from)) {
+            Crew crew = crews.findById(member.getCrewId()).orElse(null);
+            if (crew == null || to.equals(crew.getLeadId())
+                    || crewMembers.existsByCrewIdAndPersonId(member.getCrewId(), to)) {
+                crewMembers.delete(member);
+            } else {
+                member.setPersonId(to);
+                crewMembers.save(member);
+            }
+        }
+        crewMembers.flush();
+        for (CrewMember member : crewMembers.findByPersonIdOrderByIdAsc(to)) {
+            if (crews.findById(member.getCrewId()).map(c -> to.equals(c.getLeadId())).orElse(false)) {
+                crewMembers.delete(member);
+            }
+        }
+        crewMembers.flush();
 
         // Statements move to the other, before their own; the claims bound now are recorded as the other's binding.
         statements.moveAll(from, sheetId, to);

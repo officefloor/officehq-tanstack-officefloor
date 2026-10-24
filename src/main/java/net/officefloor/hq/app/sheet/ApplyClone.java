@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * Clones the sheet to another id; only a steward may, and only to an id never used (no sheet is stored for it). The
  * clone gets this sheet's today, settings (with their log), roles, rates (with their log), holidays, void reasons,
  * templates, people (grades, terms, contacts, aliases, holds, retirements, patrons) in list order, pools with their
- * members, periods (all open) and claims, each person's in the order listed, with their status, frozen figures,
+ * members, crews with their leads and members, periods (all open) and claims, each person's in the order listed, with their status, frozen figures,
  * dates, notes, tags, references, status logs, comments and lines. Each claim that had a number takes the clone's next one,
  * in the order they were opened (by the sheet's today when each was opened, then by the order they were added to the
  * clone). Statements are not copied, so no figure is bound there; nor are watchers, delegations or the as-of history.
@@ -131,6 +131,30 @@ public class ApplyClone {
                     + " SELECT :pool, :member, share, from_date, to_date FROM pool_member WHERE id = :id")
                     .setParameter("pool", pool).setParameter("member", person != null ? person : memberPool)
                     .setParameter("id", ((Number) member[0]).longValue()).executeUpdate();
+        }
+
+        // Crews, with their leads, then their members.
+        Map<Long, Long> crewIds = new HashMap<>();
+        for (Object[] crew : rows(entityManager, "SELECT id, name, lead_id FROM crew WHERE sheet_id = :from ORDER BY id", from)) {
+            Long lead = personIds.get(((Number) crew[2]).longValue());
+            if (lead == null) {
+                continue;
+            }
+            entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name, lead_id) VALUES (:to, :name, :lead)")
+                    .setParameter("to", to).setParameter("name", crew[1]).setParameter("lead", lead).executeUpdate();
+            Long copy = ((Number) entityManager.createNativeQuery(
+                    "SELECT id FROM crew WHERE sheet_id = :to AND name = :name")
+                    .setParameter("to", to).setParameter("name", crew[1]).getSingleResult()).longValue();
+            crewIds.put(((Number) crew[0]).longValue(), copy);
+        }
+        for (Object[] member : rows(entityManager, "SELECT m.crew_id, m.person_id"
+                + " FROM crew_member m JOIN crew c ON c.id = m.crew_id WHERE c.sheet_id = :from ORDER BY m.id", from)) {
+            Long crew = crewIds.get(((Number) member[0]).longValue());
+            Long person = personIds.get(((Number) member[1]).longValue());
+            if (crew != null && person != null) {
+                entityManager.createNativeQuery("INSERT INTO crew_member (crew_id, person_id) VALUES (:crew, :person)")
+                        .setParameter("crew", crew).setParameter("person", person).executeUpdate();
+            }
         }
 
         // Claims: each person's in the order they are listed, so they keep it, each with its log and comments.

@@ -21,6 +21,9 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClerkLimitException;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewMemberRepository;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.pool.PoolMemberRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
@@ -48,8 +51,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * statements. Each claim that had a number takes the other
  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
  * were added). References are not carried.
- * They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships and
- * watchers are dropped.
+ * They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships,
+ * crew memberships, the crews they lead (with those crews' members) and watchers are dropped.
  */
 public class ApplyTransfer {
     public void apply(@Val TransferInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
@@ -57,7 +60,8 @@ public class ApplyTransfer {
             PersonAliasRepository aliases,
             PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
-            RateRepository rates, PeriodRepository periods, EntityManager entityManager,
+            RateRepository rates, PeriodRepository periods, CrewRepository crews, CrewMemberRepository crewMembers,
+            EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonTransferred> transferred)
             throws InvalidPersonException, ClerkLimitException {
         String sheetId = person.getSheetId();
@@ -205,6 +209,13 @@ public class ApplyTransfer {
         patrons.deleteAll(patrons.findByPersonIdOrderByIdAsc(from));
         patrons.deleteAll(patrons.findByPatronIdOrderByIdAsc(from));
         members.deleteAll(members.findByPersonIdOrderByIdAsc(from));
+        crewMembers.deleteAll(crewMembers.findByPersonIdOrderByIdAsc(from));
+        for (Crew crew : crews.findByLeadIdOrderByIdAsc(from)) {
+            crewMembers.deleteAll(crewMembers.findByCrewIdOrderByIdAsc(crew.getId()));
+            crewMembers.flush();
+            crews.delete(crew);
+        }
+        crews.flush();
         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));
         grades.deleteAll(theirGrades);
         aliases.deleteAll(theirAliases);
