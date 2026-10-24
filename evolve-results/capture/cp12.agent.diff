@@ -1,0 +1,64 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index e470ea2c..752fb2ea 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -2,14 +2,17 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { usePeople, type Person } from '../people/people';
+-import { sumOf, useClaims, type Claim } from '../claims/claims';
++import { counts, useClaims, type Claim } from '../claims/claims';
+ import { dueOf, rateOn, sumDue, useRates, type Rate } from './rates';
+ 
+-// A person's due-total: their claimed times their grade's rate in force on the sheet's today, divided by
+-// 100, rounded half up (n/a when no rate is in force); and the sheet's due-total, everyone's added up,
+-// skipping n/a.
++// A person's due-total: the sum of their counted claims' figures, each already rounded (a settled claim's
++// frozen due, else its live due) — 0.00 with nothing that counts. When their grade has no rate in force on
++// the sheet's today it is n/a, unless a counted settled claim keeps a figure: then it is the sum of the
++// figures there are. The sheet's due-total is everyone's added up, skipping n/a.
+ function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined): string {
+-  return dueOf(sumOf(claims.filter((c) => c.personId === person.id)), rateOn(rates, person.grade, today));
++  const mine = claims.filter((c) => c.personId === person.id && counts(c));
++  if (rateOn(rates, person.grade, today) === undefined && !mine.some((c) => c.due !== null)) return 'n/a';
++  return sumDue(mine.map((c) => c.due ?? dueOf(c.amount, rateOn(rates, person.grade, c.date))));
+ }
+ 
+ function DueHeader() {
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index a8a76923..2923101d 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -37,7 +37,7 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string |
+ const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
+ 
+ /**
+- * The due on an amount: amount times the percent, divided by 100, rounded half up (away from zero)
++ * The due on an amount: amount times the percent, divided by 100, rounded half to even
+  * to two decimals — "n/a" when there is no percent. Computed in whole hundredths, so it is exact.
+  */
+ export function dueOf(amount: string, pct: string | undefined): string {
+@@ -47,7 +47,9 @@ export function dueOf(amount: string, pct: string | undefined): string {
+   const product = hundredths(amount) * hundredths(pct);
+   const negative = product < 0n;
+   const magnitude = negative ? -product : product;
+-  const cents = (magnitude + 5000n) / 10000n;
++  const rest = magnitude % 10000n;
++  let cents = magnitude / 10000n;
++  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+   return formatCents(negative ? -cents : cents);
+ }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 99b62c00..a380a9c5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -35,7 +35,7 @@ public class ApplyClaimStatus {
+                 claim.setDue(people.findById(claim.getPersonId())
+                         .flatMap(p -> rates.findInForce(claim.getSheetId(), p.getGrade(), claim.getDate()))
+                         .map(Rate::getPct)
+-                        .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_UP))
++                        .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN))
+                         .orElse(null));
+             }
+         }
