@@ -1,0 +1,76 @@
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 8bd18285..31074b84 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { useCurrentSheet } from '../session/session';
+ import { gradeOn, type Person } from '../people/people';
+-import { countsAsOf, dueByOf, holdsOf, type Claim } from '../claims/claims';
++import { countsAsOf, dueByOf, holdsOf, statusOn, type Claim } from '../claims/claims';
+ import { chargedOf, sumDue, type Rate } from '../rates/rates';
+ import type { Settings } from '../roles/roles';
+ 
+@@ -73,6 +73,22 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
+     .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
+ }
+ 
++/** A person's carried figure for a period: the dues (with any late charge, as shown now) of their claims that count whose
++ *  due-by falls in a period ending before this one starts and that were still OPEN or PENDING at the end of this one's
++ *  last day (by the status log, as `personPeriodDue` counts), added up, skipping n/a; 0.00 for nothing carried. */
++export function personPeriodCarried(period: Period, periods: Period[], person: Person, people: Person[] | undefined,
++  claims: Claim[], rates: Rate[] | undefined, settings: Settings | undefined, today: string | undefined): string {
++  const held = holdsOf(people);
++  const earlier = periods.filter((q) => q.to < period.from);
++  return sumDue(claims
++    .filter((c) => {
++      if (c.personId !== person.id || !periodOn(earlier, dueByOf(c))) return false;
++      const status = statusOn(c, period.to);
++      return (status === 'OPEN' || status === 'PENDING') && countsAsOf(c, held, today, period.to);
++    })
++    .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
++}
++
+ /** The fiscal year a date (YYYY-MM-DD) falls in, FY<yyyy>: a fiscal year starts on the first of the sheet's fiscal
+  *  year start month (1 unless set) and is named by the calendar year that day falls in. */
+ export function fiscalYearOf(date: string, settings: Settings | undefined): string {
+diff --git a/src/main/frontend/features/periods/person.slot.tsx b/src/main/frontend/features/periods/person.slot.tsx
+index ef284f6a..51056db3 100644
+--- a/src/main/frontend/features/periods/person.slot.tsx
++++ b/src/main/frontend/features/periods/person.slot.tsx
+@@ -4,14 +4,20 @@ import { usePeople, type Person } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { useRates } from '../rates/rates';
+ import { useSettings } from '../roles/roles';
+-import { personPeriodDue, usePeriods } from './periods';
++import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
+ 
+ // For every period on the sheet, a person's due-total for it: the dues of their counted claims whose due-by falls in it; for a
+ // closed period, the one fixed when it was closed (0.00 for a person added since). A period's due-total is the sum
+-// of these.
++// of these. Then, for every period, a person's carried figure: the dues of their counted claims whose due-by falls in an
++// earlier period and that were still OPEN or PENDING at the end of it.
+ function PeriodHeaders() {
+   const periods = usePeriods();
+-  return <>{(periods.data ?? []).map((p) => <th key={p.id}>{p.name}</th>)}</>;
++  return (
++    <>
++      {(periods.data ?? []).map((p) => <th key={p.id}>{p.name}</th>)}
++      {(periods.data ?? []).map((p) => <th key={`carried-${p.id}`}>{p.name} carried</th>)}
++    </>
++  );
+ }
+ 
+ function PersonPeriods({ person }: { person: Person }) {
+@@ -28,6 +34,11 @@ function PersonPeriods({ person }: { person: Person }) {
+           {personPeriodDue(p, person, people.data, claims.data ?? [], rates.data, settings.data, today)}
+         </td>
+       ))}
++      {(periods.data ?? []).map((p) => (
++        <td key={`carried-${p.id}`} data-testid={`person-period-${p.name}-carried`}>
++          {personPeriodCarried(p, periods.data ?? [], person, people.data, claims.data ?? [], rates.data, settings.data, today)}
++        </td>
++      ))}
+     </>
+   );
+ }
