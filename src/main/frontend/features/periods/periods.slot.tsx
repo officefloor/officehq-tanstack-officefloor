@@ -4,11 +4,11 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { gradeOn, usePeople } from '../people/people';
-import { countsLive, heldIds, useClaims } from '../claims/claims';
-import { chargedOf, sumDue, useRates } from '../rates/rates';
+import { usePeople } from '../people/people';
+import { useClaims } from '../claims/claims';
+import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { periodClosePath, periodOn, periodReopenPath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { periodClosePath, periodDue, periodReopenPath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a held person's OPEN ones),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
@@ -39,12 +39,8 @@ function Periods() {
   const submit = useSubmitOnce(add);
 
   if (!user || !sheet) return null;
-  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
-  const held = heldIds(people.data);
   const dueTotal = (period: Period) =>
-    period.closedTotal ?? sumDue((claims.data ?? [])
-      .filter((c) => countsLive(c, held) && personOf.has(c.personId) && periodOn([period], c.date))
-      .map((c) => chargedOf(c, rates.data, gradeOn(personOf.get(c.personId)!, c.date), settings.data, today)));
+    periodDue(period, people.data, claims.data ?? [], rates.data, settings.data, today);
   return (
     <section data-testid="periods">
       <h2>Periods</h2>
