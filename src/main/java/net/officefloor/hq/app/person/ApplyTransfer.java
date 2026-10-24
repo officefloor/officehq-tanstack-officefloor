@@ -51,7 +51,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * statements. Each claim that had a number takes the other
  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
  * were added). References are not carried.
- * They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships,
+ * Their plans go with them, each keeping the claims it made. They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships,
  * crew memberships, the crews they lead (with those crews' members) and watchers are dropped.
  */
 public class ApplyTransfer {
@@ -61,6 +61,7 @@ public class ApplyTransfer {
             PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
             RateRepository rates, PeriodRepository periods, CrewRepository crews, CrewMemberRepository crewMembers,
+            net.officefloor.hq.app.plan.PlanRepository plans, net.officefloor.hq.app.plan.PlanClaimRepository planClaims,
             EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonTransferred> transferred)
             throws InvalidPersonException, ClerkLimitException {
@@ -122,6 +123,9 @@ public class ApplyTransfer {
             arrived = new Person(to, person.getName(), person.getGrade());
             arrived.setAddedOn(today);
             arrived.setTerms(person.getTerms());
+            for (PersonTerms t : person.getDatedTerms()) {
+                arrived.getDatedTerms().add(new PersonTerms(t.getFromDate(), t.getTerms()));
+            }
             arrived.setContact(person.getContact());
             arrived.setTags(person.getTags());
             arrived.setOriginSheet(sheetId);
@@ -203,6 +207,27 @@ public class ApplyTransfer {
         if (here != null) {
             theirs.forEach(c -> here.addDepartedTags(c.getTagsUsed()));
             sheets.save(here);
+        }
+        // Plans go with them, each keeping the claims it made (now their copies).
+        Map<Long, Long> copyIds = new HashMap<>();
+        copies.forEach((claim, copy) -> copyIds.put(claim.getId(), copy.getId()));
+        for (net.officefloor.hq.app.plan.Plan plan : plans.findBySheetIdOrderByIdAsc(sheetId)) {
+            if (!from.equals(plan.getPersonId())) {
+                continue;
+            }
+            net.officefloor.hq.app.plan.Plan moved = plans.saveAndFlush(new net.officefloor.hq.app.plan.Plan(to,
+                    arrivedId, plan.getAmount(), plan.getStart(), plan.getEvery(), plan.getDay(), plan.getEnd()));
+            List<net.officefloor.hq.app.plan.PlanClaim> made = planClaims.findByPlanId(plan.getId());
+            for (net.officefloor.hq.app.plan.PlanClaim m : made) {
+                Long copyId = copyIds.get(m.getClaimId());
+                if (copyId != null) {
+                    planClaims.save(new net.officefloor.hq.app.plan.PlanClaim(moved.getId(), m.getOnDate(), copyId));
+                }
+            }
+            planClaims.deleteAll(made);
+            planClaims.flush();
+            plans.delete(plan);
+            plans.flush();
         }
         claims.deleteAll(theirs);
         claims.flush();

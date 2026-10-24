@@ -18,7 +18,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // claims count in no live total, as a hold's would, unless a statement binds them.
 // `held`: whether they have any hold. `holds`: their holds, earliest from-date first; their OPEN and PENDING
 // claims dated within one count in no live total, unless a statement binds them; their other claims still count.
-// `terms`: their own terms in days (null: none); a claim of theirs is due by its date plus these, ahead of their
+// `terms`: their own terms in days in force on the sheet's today (null: none); a claim of theirs is due by its date plus these, ahead of their
 // grade's terms and the sheet's.
 // `contact`: their contact, trimmed and lower-cased (null: none); no two people on a sheet share one.
 // `aliases`: other names they go by, sorted ignoring case; the quick-add bar and the paste box find them by one too.

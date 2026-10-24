@@ -20,7 +20,7 @@ public class CheckQuickAddDate {
         LocalDate date = sheet.entryDateInForce();
         int terms = PersonAliasRepository.findByNameOrAlias(people.findListed(sheet.getId()),
                         aliases, sheet.getId(), name.name())
-                .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(date), date))
+                .map(p -> sheet.termsFor(p.termsOn(date), grades.gradesOf(p).on(date), date))
                 .orElseGet(() -> sheet.termsFor(null, "A", date));
         if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
             throw new InvalidClaimException("No claim can be added in a closed period.");

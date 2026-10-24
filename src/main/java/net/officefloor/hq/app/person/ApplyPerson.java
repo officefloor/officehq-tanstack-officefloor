@@ -7,7 +7,8 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
-/** Saves the person's name, terms, contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
+/** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
+ *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
  *  replacing the grade recorded for that date and keeping the others; a grade already in force on that date is recorded too,
  *  so a grade later recorded from an earlier date does not reach past it. */
 public class ApplyPerson {
@@ -35,7 +36,11 @@ public class ApplyPerson {
         LocalDate from = request.gradeFrom() == null || request.gradeFrom().isEmpty() ? sheet.getToday()
                 : LocalDate.parse(request.gradeFrom());
         person.setName(request.name());
-        person.setTerms(request.termsDays());
+        if (request.termsFromDate() == null) {
+            person.setTerms(request.termsDays());
+        } else {
+            person.setTermsFrom(request.termsFromDate(), request.termsDays());
+        }
         person.setContact(request.contactOrNull());
         person.setTags(request.tags());
         try {

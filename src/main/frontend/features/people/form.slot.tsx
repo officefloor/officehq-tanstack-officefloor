@@ -9,7 +9,8 @@ import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditin
 // The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
 // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
 // added with applies from the beginning of time. A person's own terms (blank: none) come ahead of their grade's
-// and the sheet's when a claim's due-by is fixed. A contact (blank: none) is kept trimmed and lower-cased and
+// and the sheet's when a claim's due-by is fixed: a save with a terms from-date records them from that date (replacing
+// those recorded for it), without one from the beginning of time; the row shows those in force on the sheet's today. A contact (blank: none) is kept trimmed and lower-cased and
 // must not be another person's on the sheet. Tags (comma separated) are kept trimmed, lower-cased, sorted and without
 // repeats. The
 // editor remembers the version of the person it loaded; when someone else has saved them since, the
@@ -47,13 +48,14 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
   const [grade, setGrade] = useState(person?.grade ?? 'A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState(person?.terms == null ? '' : String(person.terms));
+  const [termsFrom, setTermsFrom] = useState('');
   const [contact, setContact] = useState(person?.contact ?? '');
   const [tags, setTags] = useState((person?.tags ?? []).join(', '));
   const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationKey: personSaveKey,
-    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string }) =>
+    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string }) =>
       person
         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
         : postJson<Person>(peoplePath(sheet), body, user),
@@ -66,6 +68,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setTermsFrom('');
         setContact('');
         setTags('');
       }
@@ -112,7 +115,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
           void queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
           return;
         }
-        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim(), tags });
+        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), termsFrom: termsFrom.trim(), contact: contact.trim(), tags });
       }}
     >
       <h2>{person ? 'Edit person' : 'Add a person'}</h2>
@@ -144,6 +147,12 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         onChange={(e) => { setTerms(e.target.value); save.reset(); setRefused(false); }}
       />
       <input
+        data-testid="person-form-terms-from"
+        placeholder="Terms from (YYYY-MM-DD; blank for always)"
+        value={termsFrom}
+        onChange={(e) => { setTermsFrom(e.target.value); save.reset(); setRefused(false); }}
+      />
+      <input
         data-testid="person-form-contact"
         placeholder="Contact (blank for none)"
         value={contact}
@@ -167,7 +176,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         <span data-testid="person-form-error">
           {conflict
             ? 'Someone else has saved this person since you opened the editor; the form now shows their current values.'
-            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, the grade from-date must be a date, the terms must be a whole number of days or blank, and the contact must not be another person\'s on this sheet.'}
+            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, the grade from-date must be a date, the terms must be a whole number of days or blank, the terms from-date must be a date, and the contact must not be another person\'s on this sheet.'}
         </span>
       )}
     </form>

@@ -56,7 +56,7 @@ public class ApplySplit {
             throw new ClaimStatusException("The amount to split off must be more than 0.00 and less than the claim's.");
         }
         int terms = people.findById(claim.getPersonId())
-                .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
+                .map(p -> sheet.termsFor(p.termsOn(claim.getDate()), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
         LocalDate dueBy = holidays.dueBy(claim.getSheetId(), claim.getDate(), terms);
         String number;
         if (perPeriod) {

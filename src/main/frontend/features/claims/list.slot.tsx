@@ -22,17 +22,21 @@ function PersonClaims({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const [user] = useCurrentUser();
   const [editing, setEditing] = useEditingClaim();
-  // Bumped each time the editor is submitted: the edited claim's lock error then goes.
-  const [submits, setSubmits] = useState(0);
+  // Bumped each time the editor is submitted: the edited claim's lock error then goes. Counted from the editor's
+  // opening, for the claim it opened on, so a submit of the add form (or an earlier editor) does not count.
+  const [submits, setSubmits] = useState<{ id: number | null; count: number }>({ id: null, count: 0 });
   const { selected, toggle } = useSelectedClaims();
   const claims = useClaims();
   const rates = useRates();
   const periods = usePeriods();
   const settings = useSettings();
   const today = useSheetToday();
+  // The editor shows the claim only once the edit button's lock has answered, so a refused lock is never taken
+  // for an open editor.
+  const lockingEditor = useIsMutating({ mutationKey: claimLockKey(sheet ?? '', Number(editing) || 0) }) > 0;
   if (!sheet) return null;
   const mine = (claims.data ?? []).filter((c) => c.personId === person.id);
-  const claim = editing ? mine.find((c) => String(c.id) === editing) : undefined;
+  const claim = editing && !lockingEditor ? mine.find((c) => String(c.id) === editing) : undefined;
   return (
     <td>
       <ul data-testid="claims">
@@ -65,8 +69,8 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
             <span data-testid="claim-tags">{(c.tags ?? []).join(', ')}</span>{' '}
             <span data-testid="claim-batch">{c.settleBatch ?? ''}</span>{' '}
-            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}
-              editorSubmits={claim?.id === c.id ? submits : 0}>
+            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => { setSubmits({ id: c.id, count: 0 }); setEditing(String(c.id)); }}
+              editorSubmits={claim?.id === c.id && submits.id === c.id ? submits.count : 0}>
               {claim?.id === c.id && (
                 <button
                   type="button"
@@ -102,7 +106,7 @@ function PersonClaims({ person }: { person: Person }) {
       </ul>
       {/* Keyed by the claim being edited, so opening an editor fills the form with its values. */}
       <ClaimForm key={`${sheet}:${claim?.id ?? ''}`} sheet={sheet} person={person} claim={claim}
-        onSubmitted={() => setSubmits((n) => n + 1)} />
+        onSubmitted={() => setSubmits((s) => claim && s.id === claim.id ? { ...s, count: s.count + 1 } : s)} />
     </td>
   );
 }
@@ -282,9 +286,15 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   });
   const submitInline = useSubmitOnce(inline);
   const [editRefused, setEditRefused] = useState(false);
+  const [, setEditing] = useEditingClaim();
   const lock = useMutation({
     mutationKey: claimLockKey(sheet, claim.id),
     mutationFn: () => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/lock`, undefined, user),
+    // Another user holds the claim's lock: the editor closes (the claim's error says why), so the form is back to
+    // adding rather than left on a claim this user cannot save.
+    onError: (error) => {
+      if (error instanceof HttpError && error.status === 423) setEditing(undefined);
+    },
   });
   const submitLock = useSubmitOnce(lock);
   // Submitting the claim's editor is the next action on it: a refused lock's error goes.

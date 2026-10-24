@@ -42,6 +42,12 @@ public class Person {
      *  grade's terms and the sheet's. */
     private Integer terms;
 
+    /** Their own terms from dated from-dates on, earliest first; before the first, {@link #terms} applies. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "person_terms", joinColumns = @JoinColumn(name = "person_id"))
+    @OrderBy("fromDate ASC")
+    private List<PersonTerms> datedTerms = new ArrayList<>();
+
     /** Set by an edit that changed their terms, for its audit record; not stored. */
     @Transient
     private boolean termsChanged;
@@ -156,6 +162,43 @@ public class Person {
     public void setTerms(Integer terms) {
         termsChanged = !java.util.Objects.equals(this.terms, terms);
         this.terms = terms;
+    }
+
+    /** Their own terms in force on a date: those of the latest from-date on or before it, else those from the
+     *  beginning of time (null: none). */
+    public Integer termsOn(LocalDate date) {
+        Integer in = terms;
+        for (PersonTerms t : datedTerms) {
+            if (!t.getFromDate().isAfter(date)) {
+                in = t.getTerms();
+            }
+        }
+        return in;
+    }
+
+    public List<PersonTerms> getDatedTerms() {
+        return datedTerms;
+    }
+
+    /** Records their terms from a date on, replacing those recorded for that date, noting whether they differ. */
+    public void setTermsFrom(LocalDate from, Integer days) {
+        for (int i = 0; i < datedTerms.size(); i++) {
+            if (datedTerms.get(i).getFromDate().equals(from)) {
+                if (java.util.Objects.equals(datedTerms.get(i).getTerms(), days)) {
+                    termsChanged = false;
+                    return;
+                }
+                datedTerms.set(i, new PersonTerms(from, days));
+                termsChanged = true;
+                return;
+            }
+        }
+        int at = 0;
+        while (at < datedTerms.size() && datedTerms.get(at).getFromDate().isBefore(from)) {
+            at++;
+        }
+        datedTerms.add(at, new PersonTerms(from, days));
+        termsChanged = true;
     }
 
     public boolean isTermsChanged() {

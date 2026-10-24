@@ -22,6 +22,19 @@ public final class PersonRules {
      * from-date that is not a calendar date, and terms that are not a whole number of days; the contact is trimmed
      * and lower-cased; the tags are normalised as Tags.normalise does.
      */
+    /** Checks the terms from-date: trimmed, blank allowed, otherwise a calendar date. */
+    public static String checkTermsFrom(String termsFrom) throws InvalidPersonException {
+        termsFrom = termsFrom == null ? "" : termsFrom.trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                LocalDate.parse(termsFrom);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("Not a date: " + termsFrom);
+            }
+        }
+        return termsFrom;
+    }
+
     public static PersonRequest check(String name, String grade, Long version, String gradeFrom, String terms,
             String contact, String tags) throws InvalidPersonException {
         name = name == null ? "" : name.trim();
@@ -68,7 +81,11 @@ public final class PersonRules {
         }
         Person person = new Person(sheet.getId(), request.name(), request.grade());
         person.setAddedOn(sheet.getToday());
-        person.setTerms(request.termsDays());
+        if (request.termsFromDate() == null) {
+            person.setTerms(request.termsDays());
+        } else {
+            person.setTermsFrom(request.termsFromDate(), request.termsDays());
+        }
         person.setContact(request.contactOrNull());
         person.setTags(request.tags());
         return person;
@@ -85,9 +102,14 @@ public final class PersonRules {
     /** The PERSON_EDITED record for the edited person, once saved, with the grade in force on the sheet's today, and
      *  their terms when the edit changed them (empty when cleared), and likewise their contact. */
     public static String editedLine(Person person, String grade, String by) {
+        return editedLine(person, grade, person.getTerms(), by);
+    }
+
+    /** The PERSON_EDITED record, with their terms in force on the sheet's today when the edit changed any of theirs. */
+    public static String editedLine(Person person, String grade, Integer termsToday, String by) {
         return "PERSON_EDITED sheet=" + person.getSheetId() + " by=" + by
                 + " name=" + person.getName() + " grade=" + grade
-                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
+                + (person.isTermsChanged() ? " terms=" + (termsToday == null ? "" : termsToday) : "")
                 + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : "");
     }
 }

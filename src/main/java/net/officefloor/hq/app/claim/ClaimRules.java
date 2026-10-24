@@ -67,7 +67,7 @@ public final class ClaimRules {
     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
             PeriodRepository periods, PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
-        int terms = sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date);
+        int terms = sheet.termsFor(person.termsOn(date), grades.gradesOf(person).on(date), date);
         LocalDate dueBy = holidays.dueBy(sheet.getId(), date, terms);
         if (periods.isClosedOn(sheet.getId(), dueBy)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");
