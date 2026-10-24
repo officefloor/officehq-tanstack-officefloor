@@ -8,7 +8,9 @@ import { claimsQueryKey } from '../claims/claims';
 import { peoplePath, peopleQueryKey, type Person } from '../people/people';
 
 // A person's statements: how many were taken, the last one's due-total and date, and the button that takes
-// one — recording their due-total now and binding each of their counted claims to the figure it has now.
+// one — recording their due-total now and binding each of their counted claims to the figure it has now — and the
+// button a steward cancels the last one with, making the claims it bound live again (anyone else, or a person with no
+// statement, shows the row's error).
 function StatementHeader() {
   return <th>Statements</th>;
 }
@@ -27,6 +29,16 @@ function PersonStatement({ person }: { person: Person }) {
   });
   const submit = useSubmitOnce(take);
   const rowAction = useRowAction(`person-${person.id}`);
+  const cancel = useMutation({
+    mutationFn: () => putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}/unstate`, undefined, user),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') }),
+        queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') }),
+      ]),
+  });
+  const submitCancel = useSubmitOnce(cancel);
+  const cancelAction = useRowAction(`person-${person.id}`);
   return (
     <td>
       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
@@ -35,7 +47,11 @@ function PersonStatement({ person }: { person: Person }) {
       <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => { rowAction.take(); submit(undefined); }}>
         Statement
       </button>
+      <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => { cancelAction.take(); submitCancel(undefined); }}>
+        Cancel statement
+      </button>
       {take.isError && rowAction.isLatest && <span data-testid="person-error">The statement could not be taken.</span>}
+      {cancel.isError && cancelAction.isLatest && <span data-testid="person-error">The statement could not be cancelled.</span>}
     </td>
   );
 }

@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Once the sheet's today is changed, with grace days set, closes each open period whose to-date plus the grace
+/** Once the sheet's today is changed, with grace days set, closes each open period (not a soft-closed one, whose totals stay as fixed) whose to-date plus the grace
  *  days is before the new today, in order of their to-dates, fixing its totals exactly as a close by hand would (the
  *  permission matrix governs closing by hand, not this), recording each closing with auto=yes at its end. */
 public class AutoClosePeriods {
@@ -26,7 +26,7 @@ public class AutoClosePeriods {
         }
         String by = AuditUser.decode(user);
         var due = repository.findBySheetIdOrderByFromDateAscIdAsc(sheet.getId()).stream()
-                .filter(p -> !p.isClosed() && p.getToDate().plusDays(grace).isBefore(sheet.getToday()))
+                .filter(p -> !p.isClosed() && !p.isSoftClosed() && p.getToDate().plusDays(grace).isBefore(sheet.getToday()))
                 .sorted(Comparator.comparing(Period::getToDate).thenComparing(Period::getId))
                 .toList();
         for (Period period : due) {
