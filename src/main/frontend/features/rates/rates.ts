@@ -54,7 +54,8 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, hal
 
 /** A claim's due: a settled claim's frozen due, else the greater of the sheet's floor in force on its date and its figure
  *  plus its late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that
- *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure, rounded like a due, added up; a boundary at 0.00 adds
+ *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
+ *  before it, rounded like a due, added up; a boundary at 0.00 adds
  *  nothing ("n/a" when it has no figure). A statement binds only the figure: the charge and the floor keep following the
  *  sheet. A correction takes neither floor nor late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
@@ -70,7 +71,7 @@ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, se
   for (let k = 1; k <= periods; k++) {
     const boundary = new Date(dueBy + k * 30 * 86_400_000).toISOString().slice(0, 10);
     const pct = settingOn(settings, 'late-pct', boundary, '0.00');
-    if (hundredths(pct) !== 0n) charge += hundredths(dueOf(figure, pct, halfUp));
+    if (hundredths(pct) !== 0n) charge += hundredths(dueOf(formatCents(hundredths(figure) + charge), pct, halfUp));
   }
   return atLeast(formatCents(hundredths(figure) + charge), floor);
 }

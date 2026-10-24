@@ -17,7 +17,8 @@ import net.officefloor.hq.app.sheet.Sheet;
  * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
  * the grade its person had on its date, rounded by the sheet's policy; none — n/a — when no rate applies then, or the one that would has ended by then). An
  * overdue claim's due adds, on top of its figure, the late charge: for each full 30 days it is overdue on the sheet's today, the
- * sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure, rounded like a due, and
+ * sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus
+ * the charges of the boundaries before it (compounding), rounded like a due, and
  * the charges added up (a boundary whose percent is 0.00 adds nothing). The floor comes last: an unsettled claim's due is the
  * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the figure only (never
  * the floor or the charge); settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
@@ -71,7 +72,7 @@ public class ClaimFigures {
     }
 
     /** The late charge on a figure: for each full 30 days the claim is overdue, the late percent in force on that
-     *  boundary date of it, rounded like its due, added up; 0.00 when it is not overdue. */
+     *  boundary date of it plus the charges before it, rounded like its due, added up; 0.00 when it is not overdue. */
     public BigDecimal lateCharge(Claim claim, BigDecimal figure) {
         if (figure == null || claim.isCorrection() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
@@ -80,7 +81,8 @@ public class ClaimFigures {
     }
 
     /** The late percent in force on each full 30-day boundary past the claim's due-by plus any grace
-     *  ({@link #lateFrom}), up to the sheet's today, of the figure, each rounded like its due, added up. */
+     *  ({@link #lateFrom}), up to the sheet's today, of the figure plus the charges of the boundaries before it, each
+     *  rounded like its due, added up. */
     private BigDecimal chargeByBoundary(Claim claim, BigDecimal figure) {
         LocalDate from = lateFrom(claim);
         long periods = ChronoUnit.DAYS.between(from, today) / 30;
@@ -88,7 +90,7 @@ public class ClaimFigures {
         for (long k = 1; k <= periods; k++) {
             BigDecimal pct = sheet.latePctOn(from.plusDays(30 * k));
             if (pct.signum() != 0) {
-                charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding(claim)));
+                charge = charge.add(figure.add(charge).multiply(pct).movePointLeft(2).setScale(2, rounding(claim)));
             }
         }
         return charge;
