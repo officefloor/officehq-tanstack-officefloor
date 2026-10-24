@@ -102,6 +102,21 @@ public class ClaimFigures {
                 .map(Rate::getPct);
     }
 
+    /** The due the claim would have today as an open claim bound by no statement: its live figure at today's rates,
+     *  grades and floor, plus the late charge it would carry as an open claim; null when it has none (n/a). */
+    public BigDecimal openDue(Claim claim) {
+        BigDecimal figure = liveFigure(claim);
+        if (figure == null) {
+            return null;
+        }
+        if (claim.isCorrection() || !claim.getDueBy().isBefore(today)) {
+            return figure;
+        }
+        long periods = ChronoUnit.DAYS.between(claim.getDueBy(), today) / 30;
+        return figure.add(figure.multiply(latePct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
+                .setScale(2, rounding(claim)));
+    }
+
     /** The claim's due: its figure, plus the late charge while it is not settled; null when it has none (n/a). */
     public BigDecimal due(Claim claim) {
         if (claim.getDue() != null) {
@@ -119,6 +134,11 @@ public class ClaimFigures {
         if (claim.isBound()) {
             return claim.getStatedDue();
         }
+        return liveFigure(claim);
+    }
+
+    /** The claim's live figure: neither frozen nor bound; null when it has none (n/a). */
+    private BigDecimal liveFigure(Claim claim) {
         return rateOn(grades.on(claim.getDate()), claim.getDate())
                 .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : floor, rounding(claim)))
                 .orElse(null);

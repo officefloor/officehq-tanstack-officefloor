@@ -77,6 +77,7 @@ const ACTIONS = [
   { action: 'approve', label: 'Approve' },
   { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
+  { action: 'resettle', label: 'Re-settle' },
 ] as const;
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
@@ -86,7 +87,8 @@ const ACTIONS = [
 // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
 // instead of opening its editor (an open claim is voided and added anew). A steward moves a DRAFT, OPEN or PENDING
 // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
-// shows the claim's error.
+// shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
+// bound by no statement; anyone else, or any other status, shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
 }) {
@@ -190,6 +192,10 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? 'This claim is dated in a closed period, so its status cannot change.'
             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can approve or reject a pending claim.'
+            : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
+            ? 'Only a steward can re-settle a claim.'
+            : action === 'resettle'
+            ? `Only a settled claim can be re-settled; this one is ${claim.status}.`
             : action === 'settle' && claim.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
             : action === 'approve' && claim.openedBy === user && claim.status === 'PENDING'
