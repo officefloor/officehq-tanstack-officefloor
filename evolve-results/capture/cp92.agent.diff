@@ -1,0 +1,237 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 99e7c942..db1e24ba 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -25,6 +25,8 @@ export type Claim = {
+   number: string | null;
+   due: string | null;
+   openedBy: string | null;
++  /** Who last edited it (its form or its amount entry); null when never edited. */
++  editedBy: string | null;
+   stated: boolean;
+   statedDue: string | null;
+   corrects: string | null;
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 4c4d9d97..370e8cd7 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -535,6 +535,10 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+             ? 'You opened this claim, so someone else must settle it.'
+             : action === 'approve' && claim.openedBy === user && claim.status === 'PENDING'
+             ? 'You opened this claim, so someone else must approve it.'
++            : action === 'settle' && claim.editedBy === user
++            ? 'You last edited this claim, so someone else must settle it.'
++            : action === 'approve' && claim.editedBy === user && claim.status === 'PENDING'
++            ? 'You last edited this claim, so someone else must approve it.'
+             : action === 'reject' && claim.status === 'PENDING' && reason.trim() === ''
+             ? 'Give a reason to reject this claim.'
+             : `That status change is not allowed for a ${claim.status} claim.`}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 8a1be75d..376e06a1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -1,18 +1,21 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
+ 
+ /** Saves the claim's changes; refuses them unless the claim is a DRAFT (an open claim is voided and added anew
+  * instead), when its due-by (fixed when it was created; editing does not move it) is in a closed period, and when it would move after its
+- * person's retirement date, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving closes the
+- * claim's editor: it releases the claim's lock. */
++ * person's retirement date, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving records who
++ * last edited it, and closes the claim's editor: it releases the claim's lock. */
+ public class ApplyClaim {
+     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
+-            PeriodRepository periods, PersonRepository people) throws InvalidClaimException {
++            PeriodRepository periods, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String userHeader) throws InvalidClaimException {
+         if (claim.getStatus() != ClaimStatus.DRAFT) {
+             throw new InvalidClaimException("Only a draft claim can be edited; void it and add a new one.");
+         }
+@@ -33,6 +36,7 @@ public class ApplyClaim {
+         claim.setRef(input.ref());
+         claim.setTags(input.tags());
+         claim.setLockedBy(null);
++        claim.setEditedBy(AuditUser.decode(userHeader));
+         repository.saveAndFlush(claim);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index b86a01f2..1ba770c8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
+  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
+  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
+- * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
++ * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. The one who last edited a claim (its form or its amount entry) cannot settle or approve it either. Settling fixes the claim's due at the rate of the grade its
+  * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due-by is in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
+  * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. While the sheet's list of
+  * void reasons is not empty, a void needs a reason from it, which the claim keeps. Returns the claim's number for the
+@@ -111,6 +111,9 @@ public class ApplyClaimStatus {
+             if (next == ClaimStatus.SETTLED && user.equals(claim.getOpenedBy())) {
+                 throw new ClaimStatusException("The one who opened a claim cannot settle or approve it.");
+             }
++            if (next == ClaimStatus.SETTLED && user.equals(claim.getEditedBy())) {
++                throw new ClaimStatusException("The one who last edited a claim cannot settle or approve it.");
++            }
+             if (next == ClaimStatus.SETTLED) {
+                 BigDecimal due = people.findById(claim.getPersonId())
+                         .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 24204123..1c9dfc6f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -54,6 +54,10 @@ public class Claim {
+     @Column(name = "opened_by")
+     private String openedBy;
+ 
++    /** The signed-in name that last edited the claim (its form or its amount entry); null while it was never edited. */
++    @Column(name = "edited_by")
++    private String editedBy;
++
+     /** Whether the claim is bound by its person's last statement to the figure it had then. */
+     @Column(nullable = false)
+     private boolean stated;
+@@ -238,6 +242,14 @@ public class Claim {
+         this.openedBy = openedBy;
+     }
+ 
++    public String getEditedBy() {
++        return editedBy;
++    }
++
++    public void setEditedBy(String editedBy) {
++        this.editedBy = editedBy;
++    }
++
+     public String getCorrects() {
+         return corrects;
+     }
+@@ -349,6 +361,7 @@ public class Claim {
+         then.number = number;
+         then.due = due;
+         then.openedBy = openedBy;
++        then.editedBy = editedBy;
+         then.dueBy = dueBy;
+         then.dueFrom = dueFrom;
+         then.dueTerms = dueTerms;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 5d70c3dc..d0307834 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -7,12 +7,12 @@ import java.util.List;
+  * whether its person's last statement binds it, and the figure it binds it to (null: none, or n/a); the number of the
+  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
+  * the date of the claim it corrects, else its own); and its due-by (YYYY-MM-DD), fixed when it was created; and its status log, oldest first
+- * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>). */
++ * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy,
+         boolean stated, String statedDue, String corrects, String roundsOn, String dueBy,
+         List<String> log, String deferredUntil, int proofs, String splitFrom, boolean lateEntry, String remindedOn, String ref,
+-        List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments) {
++        List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, String editedBy) {
+ 
+     public static ClaimResponse from(Claim claim, List<String> log, List<String> comments) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),
+@@ -23,6 +23,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getDeferredUntil() == null ? null : claim.getDeferredUntil().toString(), claim.getProofs(),
+                 claim.getSplitFrom(), claim.isLateEntry(),
+                 claim.getRemindedOn() == null ? null : claim.getRemindedOn().toString(), claim.getRef(),
+-                Tags.list(claim.getTags()), Tags.list(claim.getTagsUsed()), claim.getVoidReason(), comments);
++                Tags.list(claim.getTags()), Tags.list(claim.getTagsUsed()), claim.getVoidReason(), comments, claim.getEditedBy());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java b/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
+index 8fbcebab..0aba72d2 100644
+--- a/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
++++ b/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
+@@ -48,6 +48,9 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
+     private final Map<SharedSessionContractImplementor, Map<Object, Boolean>> changed =
+             Collections.synchronizedMap(new IdentityHashMap<>());
+ 
++    /** The date a change is to be recorded on instead of its sheet's today, by entity. */
++    private final Map<Object, java.time.LocalDate> recordedOn = Collections.synchronizedMap(new IdentityHashMap<>());
++
+     private final EntityManagerFactory entityManagerFactory;
+ 
+     private final History history;
+@@ -68,6 +71,11 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
+         registry.appendListeners(EventType.POST_COLLECTION_RECREATE, this);
+     }
+ 
++    /** Records the entity's next saved state on the date, not its sheet's today then. */
++    public void recordOn(Object entity, java.time.LocalDate date) {
++        recordedOn.put(entity, date);
++    }
++
+     @Override
+     public boolean requiresPostCommitHandling(EntityPersister persister) {
+         return false;
+@@ -140,9 +148,13 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
+                 long id = state.get("id").asLong();
+                 String sheetId = state.get("sheetId").asString();
+                 java.sql.Date today = todays.computeIfAbsent(sheetId, k -> todayOf(connection, k));
++                java.time.LocalDate on = recordedOn.remove(entity);
+                 if (today == null) {
+                     continue;
+                 }
++                if (on != null) {
++                    today = java.sql.Date.valueOf(on);
++                }
+                 String kind = History.kindOf(entity.getClass());
+                 if ("claim".equals(kind) && state instanceof ObjectNode claim) {
+                     // A claim's listing key is given by the store, so its saved copy may not hold it.
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index 911ddb48..1a33057f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.HistoryRecorder;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -15,11 +16,12 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+ /** Once the sheet's today is changed, with grace days set, closes each open period (not a soft-closed one, whose totals stay as fixed) whose to-date plus the grace
+  *  days is before the new today, in order of their to-dates, fixing its totals exactly as a close by hand would (the
+- *  permission matrix governs closing by hand, not this), recording each closing with auto=yes at its end. */
++ *  permission matrix governs closing by hand, not this), recording each closing with auto=yes, and keeping it in the sheet's history as of its to-date (its end). */
+ public class AutoClosePeriods {
+     public void close(@Val Sheet sheet, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
+             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, RoleRepository roles,
+-            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit,
++            HistoryRecorder history) {
+         Integer grace = sheet.getGraceDays();
+         if (grace == null) {
+             return;
+@@ -31,6 +33,7 @@ public class AutoClosePeriods {
+                 .toList();
+         for (Period period : due) {
+             ClosePeriod.fix(period, sheet, claims, people, rates, grades, log);
++            history.recordOn(period, period.getToDate());
+             repository.saveAndFlush(period);
+             audit.record("PERIOD_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
+                     + " total=" + period.getClosedTotal().toPlainString() + " auto=yes");
+diff --git a/src/main/resources/db/migration/V55__claim_edited_by.sql b/src/main/resources/db/migration/V55__claim_edited_by.sql
+new file mode 100644
+index 00000000..e553be77
+--- /dev/null
++++ b/src/main/resources/db/migration/V55__claim_edited_by.sql
+@@ -0,0 +1,3 @@
++-- Who last edited a claim (through its form or its amount entry): the signed-in name. Null while it was never edited.
++-- Like its opener, the one who last edited a claim cannot settle or approve it.
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(255);
