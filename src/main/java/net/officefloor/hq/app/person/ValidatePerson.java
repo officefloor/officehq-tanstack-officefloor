@@ -21,6 +21,6 @@ public class ValidatePerson {
         if (!GRADES.contains(grade)) {
             throw new InvalidPersonException("The grade must be A, B or C.");
         }
-        body.set(new PersonRequest(name, grade));
+        body.set(new PersonRequest(name, grade, request.version()));
     }
 }

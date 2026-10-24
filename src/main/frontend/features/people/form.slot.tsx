@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, getJson, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
 
-// The person form: adds a person, or — while a person's editor is open — saves their changes.
+// The person form: adds a person, or — while a person's editor is open — saves their changes. The
+// editor remembers the version of the person it loaded; when someone else has saved them since, the
+// save is refused and the form shows the person's current values (and version) instead.
 function PersonForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -23,11 +26,12 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(person?.name ?? '');
   const [grade, setGrade] = useState(person?.grade ?? 'A');
+  const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: (body: { name: string; grade: string }) =>
       person
-        ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, body, user)
+        ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
         : postJson<Person>(peoplePath(sheet), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
@@ -38,15 +42,30 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
         setGrade('A');
       }
     },
+    onError: async (error) => {
+      if (!person || !(error instanceof HttpError) || error.status !== 409) return;
+      const current = await queryClient.fetchQuery({
+        queryKey: peopleQueryKey(sheet),
+        queryFn: () => getJson<Person[]>(peoplePath(sheet)),
+        staleTime: 0,
+      });
+      const now = current.find((p) => p.id === person.id);
+      if (now) {
+        setName(now.name);
+        setGrade(now.grade);
+        setVersion(now.version);
+      }
+    },
   });
+  const submit = useSubmitOnce(save);
+  const conflict = save.error instanceof HttpError && save.error.status === 409;
 
   return (
     <form
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        save.mutate({ name, grade });
+        submit({ name, grade });
       }}
     >
       <h2>{person ? 'Edit person' : 'Add a person'}</h2>
@@ -73,7 +92,13 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
           Cancel
         </button>
       )}
-      {save.isError && <span data-testid="person-form-error">A name is required and must not already be in use on this sheet, and the grade must be A, B or C.</span>}
+      {save.isError && (
+        <span data-testid="person-form-error">
+          {conflict
+            ? 'Someone else has saved this person since you opened the editor; the form now shows their current values.'
+            : 'A name is required and must not already be in use on this sheet, and the grade must be A, B or C.'}
+        </span>
+      )}
     </form>
   );
 }

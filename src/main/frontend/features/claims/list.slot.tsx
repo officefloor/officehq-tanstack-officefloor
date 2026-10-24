@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/submitOnce';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import type { Person } from '../people/people';
@@ -67,6 +68,7 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
     mutationFn: (action: string) => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/${action}`, undefined, user),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
   });
+  const submitChange = useSubmitOnce(change);
   return (
     <>
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -77,8 +79,7 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
           data-testid={`claim-${action}`}
           disabled={change.isPending}
           onClick={() => {
-            change.reset();
-            change.mutate(action);
+            submitChange(action);
           }}
         >
           {label}
@@ -120,14 +121,14 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
       }
     },
   });
+  const submit = useSubmitOnce(save);
 
   return (
     <form
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.reset();
-        save.mutate({ amount, date, note });
+        submit({ amount, date, note });
       }}
     >
       <input

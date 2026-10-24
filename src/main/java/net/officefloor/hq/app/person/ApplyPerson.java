@@ -1,15 +1,24 @@
 package net.officefloor.hq.app.person;
 
 import net.officefloor.plugin.variable.Val;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, PersonRepository repository)
-            throws InvalidPersonException {
+            throws InvalidPersonException, PersonConflictException {
+        if (request.version() == null || request.version() != person.getVersion()) {
+            throw new PersonConflictException();
+        }
         if (repository.existsBySheetIdAndNameIgnoreCaseAndIdNot(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
         person.setName(request.name());
         person.setGrade(request.grade());
-        repository.saveAndFlush(person);
+        try {
+            repository.saveAndFlush(person);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // saved by someone else between the load and this save
+            throw new PersonConflictException();
+        }
     }
 }

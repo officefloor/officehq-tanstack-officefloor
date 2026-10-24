@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/submitOnce';
 import { AppSession } from '../../slots/defs/appSession';
 import { useCurrentSheet, useCurrentUser } from './session';
 
@@ -17,13 +18,14 @@ function SheetPicker() {
       setSheet(loaded.id);
     },
   });
+  const submit = useSubmitOnce(load);
 
   if (!user) return null;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (id.trim()) load.mutate(id.trim());
+        if (id.trim()) submit(id.trim());
       }}
     >
       <input data-testid="sheet-id-input" placeholder="Sheet id" value={id} onChange={(e) => { setId(e.target.value); load.reset(); }} />

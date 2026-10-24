@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/submitOnce';
 import { AppSession } from '../../slots/defs/appSession';
 import { useCurrentSheet, useCurrentUser, useSheetInfo, sheetQueryKey, type SheetInfo } from './session';
 
@@ -20,13 +21,14 @@ function SheetToday() {
       await queryClient.invalidateQueries({ queryKey: ['sheet', saved.id] });
     },
   });
+  const submit = useSubmitOnce(save);
 
   if (!user || !sheet) return null;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate(date.trim());
+        submit(date.trim());
       }}
     >
       <span>

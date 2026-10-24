@@ -5,7 +5,9 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-export type Person = { id: number; name: string; grade: string };
+// `version` is raised on every save; an edit sends the version it loaded and is refused (409) when
+// someone else has saved the person since.
+export type Person = { id: number; name: string; grade: string; version: number };
 
 export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
