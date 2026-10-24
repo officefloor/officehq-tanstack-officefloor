@@ -20,14 +20,13 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 /** The sheet's pools, in the order they were added, each with its members in the order they were added. A member
- *  with a retirement date set (whatever the date) counts as 0.00 toward the pool's total; a member that is another
- *  pool counts its share. A pool that is a member of none has the sheet's pot; a pool that is a member of another has
+ *  with a retirement date set (whatever the date) counts its share toward the pool's total, as any member does. A pool that is a member of none has the sheet's pot; a pool that is a member of another has
  *  its cut in that pool as its pot (none when that pool has no cuts). Each member of a balanced pool, when it has a
  *  pot, cuts the pot times their share divided by the shares of the members with a cut added up, rounded half to even
- *  to two decimals (a retired member 0.00); a person with a hold covering the sheet's today has no cut, so their share
- *  is spread over the others in proportion to theirs (the pool's total share is unchanged). The remainder, the pot
- *  minus the cuts added up, goes to the member with a cut with the largest share (a retired member's counting as
- *  0.00), the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
+ *  to two decimals; a retired member, and a person with a hold covering the sheet's today, has no cut (0.00), so
+ *  their share is spread over the others in proportion to theirs (the pool's total share is unchanged). A pool whose
+ *  every member is retired shows no cuts. The remainder, the pot minus the cuts added up, goes to the member with a
+ *  cut with the largest share, the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut. */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
@@ -61,6 +60,7 @@ public class RespondWithPools {
             List<BigDecimal> counted = new ArrayList<>();
             List<Boolean> held = new ArrayList<>();
             List<Boolean> dated = new ArrayList<>();
+            List<Boolean> retired = new ArrayList<>();
             for (PoolMember member : membersOf.get(pool.getId())) {
                 BigDecimal share;
                 if (member.getMemberPoolId() != null) {
@@ -69,12 +69,15 @@ public class RespondWithPools {
                     names.add(sub.getName());
                     share = member.getShare();
                     held.add(false);
+                    retired.add(false);
                 } else {
                     Person person = byId.get(member.getPersonId());
                     if (person == null) continue;
                     names.add(person.getName());
-                    share = person.getRetiredFrom() == null ? member.getShare() : BigDecimal.ZERO.setScale(2);
-                    held.add(sheet.getToday() != null && person.heldOn(sheet.getToday()));
+                    share = member.getShare();
+                    boolean isRetired = person.getRetiredFrom() != null;
+                    held.add(isRetired || (sheet.getToday() != null && person.heldOn(sheet.getToday())));
+                    retired.add(isRetired);
                 }
                 boolean in = member.includes(sheet.getToday());
                 dated.add(in);
@@ -86,8 +89,13 @@ public class RespondWithPools {
             }
             boolean balanced = total.compareTo(HUNDRED) == 0;
             List<Boolean> heldIn = new ArrayList<>();
-            for (int i = 0; i < kept.size(); i++) if (dated.get(i)) heldIn.add(held.get(i));
-            List<String> countedCuts = cuts(balanced ? next.getValue() : null, counted, heldIn);
+            boolean allRetired = true;
+            for (int i = 0; i < kept.size(); i++) {
+                if (!dated.get(i)) continue;
+                heldIn.add(held.get(i));
+                if (!retired.get(i)) allRetired = false;
+            }
+            List<String> countedCuts = cuts(balanced && !allRetired ? next.getValue() : null, counted, heldIn);
             List<String> cuts = new ArrayList<>();
             for (int i = 0, j = 0; i < kept.size(); i++) cuts.add(dated.get(i) ? countedCuts.get(j++) : "");
             List<PoolResponse.Member> shown = new ArrayList<>();
