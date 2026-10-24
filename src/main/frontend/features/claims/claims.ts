@@ -27,6 +27,13 @@ export type Claim = {
 /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
+/** The ids of the people on hold. */
+export const heldIds = (people: { id: number; held: boolean }[] | undefined) =>
+  new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
+
+/** Whether a claim counts toward the live totals: as `counts`, except a held person's OPEN claims. */
+export const countsLive = (c: Claim, held: Set<number>) => counts(c) && !(c.status === 'OPEN' && held.has(c.personId));
+
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
 export const claimsPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/claims`;
@@ -47,9 +54,10 @@ export function useClaims() {
 /** An amount ("12.50") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** A sum of the counted (OPEN and SETTLED) claims' amounts, with two decimals. */
-export function sumOf(claims: Claim[]): string {
-  return (claims.filter(counts).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
+/** A sum of the counted (OPEN and SETTLED) claims' amounts, with two decimals; a held person's OPEN claims
+ *  are left out. */
+export function sumOf(claims: Claim[], held: Set<number> = new Set()): string {
+  return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */

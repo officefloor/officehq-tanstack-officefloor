@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.LocalDate;
 
-/** A person on a sheet: a name and a grade (A, B or C), and the date they are retired from (null: not retired). */
+/** A person on a sheet: a name and a grade (A, B or C), the date they are retired from (null: not retired),
+ *  and whether they are on hold. */
 @Entity
 @Table(name = "person")
 public class Person {
@@ -35,6 +36,10 @@ public class Person {
     /** Set: the person counts as retired at once, whatever the date; claims dated after it are refused. */
     @Column(name = "retired_from")
     private LocalDate retiredFrom;
+
+    /** Set: their OPEN claims count in no live total; their SETTLED claims still count. */
+    @Column(nullable = false)
+    private boolean held;
 
     protected Person() {
     }
@@ -79,6 +84,14 @@ public class Person {
 
     public void setRetiredFrom(LocalDate retiredFrom) {
         this.retiredFrom = retiredFrom;
+    }
+
+    public boolean isHeld() {
+        return held;
+    }
+
+    public void setHeld(boolean held) {
+        this.held = held;
     }
 
     /** Whether a claim on this date is refused: it is after their retirement date. */

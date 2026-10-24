@@ -11,6 +11,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // one's due-total and the sheet's today when it was taken (null with none).
 // `retiredFrom` is the date they are retired from (null: not retired); with one set they count as retired at
 // once, whatever the date.
+// `held`: their OPEN claims count in no live total; their SETTLED claims still count.
 export type Person = {
   id: number;
   name: string;
@@ -20,6 +21,7 @@ export type Person = {
   statedTotal: string | null;
   statementDate: string | null;
   retiredFrom: string | null;
+  held: boolean;
 };
 
 export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;

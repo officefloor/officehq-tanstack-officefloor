@@ -18,6 +18,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 /**
  * The sheet's figures at one moment, as the screen shows them: each person's claimed and due-total, in the
  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
+ * A held person's OPEN claims count in none of them.
  */
 public class Rollup {
 
@@ -47,10 +48,10 @@ public class Rollup {
             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
             for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
-                BigDecimal claimed = mine.stream().filter(ClaimFigures::counts).map(Claim::getAmount)
+                BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person.isHeld())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 String due = new ClaimFigures(rates.findBySheetIdAndGrade(id, person.getGrade()))
-                        .dueTotal(mine, sheet.get().getToday());
+                        .dueTotal(mine, sheet.get().getToday(), person.isHeld());
                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due));
                 claimedTotal = claimedTotal.add(claimed);
                 if (!"n/a".equals(due)) {

@@ -5,11 +5,11 @@ import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
-import { counts, useClaims } from '../claims/claims';
+import { countsLive, heldIds, useClaims } from '../claims/claims';
 import { figureOf, sumDue, useRates } from '../rates/rates';
 import { periodClosePath, periodOn, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
-// The sheet's periods, each with its due-total — the figures of the counted claims whose date falls in it,
+// The sheet's periods, each with its due-total — the figures of the counted claims whose date falls in it (not a held person's OPEN ones),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // button that closes it, and the form that adds one.
 function Periods() {
@@ -37,9 +37,10 @@ function Periods() {
 
   if (!user || !sheet) return null;
   const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
+  const held = heldIds(people.data);
   const dueTotal = (period: Period) =>
     period.closedTotal ?? sumDue((claims.data ?? [])
-      .filter((c) => counts(c) && gradeOf.has(c.personId) && periodOn([period], c.date))
+      .filter((c) => countsLive(c, held) && gradeOf.has(c.personId) && periodOn([period], c.date))
       .map((c) => figureOf(c, rates.data, gradeOf.get(c.personId) ?? '')));
   return (
     <section data-testid="periods">

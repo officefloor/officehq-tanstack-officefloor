@@ -11,8 +11,8 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Closes the period, fixing its due-total as it is now: the figures of the counted claims dated in it, added
- *  up, skipping n/a. Refuses a period already closed. */
+/** Closes the period, fixing its due-total as it is now: the figures of the counted claims dated in it (not a held
+ *  person's OPEN ones), added up, skipping n/a. Refuses a period already closed. */
 public class ClosePeriod {
     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
             RateRepository rates) throws InvalidPeriodException {
@@ -22,7 +22,8 @@ public class ClosePeriod {
         Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(period.getSheetId()).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         BigDecimal total = claims.findBySheetIdOrderByIdDesc(period.getSheetId()).stream()
-                .filter(c -> ClaimFigures.counts(c) && byId.containsKey(c.getPersonId()) && period.contains(c.getDate()))
+                .filter(c -> byId.containsKey(c.getPersonId()) && ClaimFigures.countsLive(c, byId.get(c.getPersonId()).isHeld())
+                        && period.contains(c.getDate()))
                 .map(c -> new ClaimFigures(rates.findBySheetIdAndGrade(period.getSheetId(),
                         byId.get(c.getPersonId()).getGrade())).figure(c))
                 .filter(f -> f != null)

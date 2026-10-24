@@ -27,6 +27,11 @@ public class ClaimFigures {
         return claim.getStatus() == ClaimStatus.OPEN || claim.getStatus() == ClaimStatus.SETTLED;
     }
 
+    /** Whether a claim counts toward the live totals: as {@link #counts}, except a held person's OPEN claims. */
+    public static boolean countsLive(Claim claim, boolean held) {
+        return counts(claim) && !(held && claim.getStatus() == ClaimStatus.OPEN);
+    }
+
     private Optional<BigDecimal> rateOn(LocalDate on) {
         return rates.stream()
                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
@@ -50,7 +55,13 @@ public class ClaimFigures {
     /** The person's due-total: their counted claims' figures added up, 0.00 with none; n/a when their grade has
      *  no rate in force on the day, unless a counted claim keeps a fixed figure (settled or bound). */
     public String dueTotal(List<Claim> claims, LocalDate today) {
-        List<Claim> counted = claims.stream().filter(ClaimFigures::counts).toList();
+        return dueTotal(claims, today, false);
+    }
+
+    /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; while they are held their OPEN
+     *  claims do not count. */
+    public String dueTotal(List<Claim> claims, LocalDate today, boolean held) {
+        List<Claim> counted = claims.stream().filter(c -> countsLive(c, held)).toList();
         boolean fixed = counted.stream().anyMatch(c -> c.getDue() != null || (c.isStated() && c.getStatedDue() != null));
         if (rateOn(today).isEmpty() && !fixed) {
             return "n/a";
