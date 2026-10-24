@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor, then the terms, then the late percent, then the policy date (blank when it is the sheet's today), then the period numbering from (blank when off), then each grade's own terms (key terms-<grade>; blank when it uses the sheet's terms). */
+/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor, then the terms, then the late percent, then the policy date (blank when it is the sheet's today), then the period numbering from (blank when off), then each grade's own terms (key terms-<grade>; blank when it uses the sheet's terms), then the cap (blank when there is none). */
 public class AuditSettingChanged {
     public void audit(@Val SettingsInput input, @Val Sheet sheet,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
@@ -32,6 +32,9 @@ public class AuditSettingChanged {
         }
         for (String grade : input.gradeTerms().keySet()) {
             audit.record(head + " key=terms-" + grade + " value=" + SettingsResponse.gradeTerms(sheet, grade));
+        }
+        if (input.setCap()) {
+            audit.record(head + " key=cap value=" + settings.cap());
         }
     }
 }

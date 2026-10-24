@@ -10,10 +10,11 @@ export type Role = { user: string; role: string };
  *  it of its figure for every full 30 days overdue), and its policy date (YYYY-MM-DD; "" when blank: the sheet's today — a claim
  *  dated before it rounds half up, one on or after it half to even), and its period numbering from (YYYY-MM-DD; "" when off — while the sheet's today is
  *  on or after it, a claim opened is numbered within its period), and the own terms in days of grades A, B and C ("" when the
- *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date). */
+ *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
+ *  two decimals ("" when there is none — a person's due-total is at most it). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string;
   latePct: string; policyDate: string; periodNumberingFrom: string;
-  termsA: string; termsB: string; termsC: string };
+  termsA: string; termsB: string; termsC: string; cap: string };
 
 /** The terms a sheet starts at, in days. */
 export const DEFAULT_TERMS = '14';

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off. A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A key left out is not changed. */
+ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A key left out is not changed. */
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -77,9 +77,17 @@ public class ValidateSettings {
             gradeTerms(gradeTerms, "B", request.termsB());
             gradeTerms(gradeTerms, "C", request.termsC());
         }
+        String cap = request == null ? null : request.cap();
+        BigDecimal capValue = null;
+        if (cap != null && !cap.trim().isEmpty()) {
+            if (!AMOUNT.matcher(cap.trim()).matches()) {
+                throw new InvalidSettingsException("The cap must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            }
+            capValue = new BigDecimal(cap.trim()).setScale(2);
+        }
         body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue,
                 late != null, lateValue, policy != null, policyValue,
-                numbering != null, numberingValue, gradeTerms));
+                numbering != null, numberingValue, gradeTerms, cap != null, capValue));
     }
 
     /** Adds a grade's terms when the form sets them: blank is none (the sheet's terms). */

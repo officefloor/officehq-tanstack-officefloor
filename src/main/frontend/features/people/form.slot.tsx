@@ -4,7 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { GRADES, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
+import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
 
 // The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
 // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
@@ -32,6 +32,7 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
   const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
   const save = useMutation({
+    mutationKey: personSaveKey,
     mutationFn: (body: { name: string; grade: string; gradeFrom: string }) =>
       person
         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)

@@ -61,6 +61,10 @@ export function usePeople() {
 }
 
 /** The id of the person whose editor is open (search param `editPerson`), or '' for none. */
+/** The mutation key of a person form save; an editor is not opened while one is on its way, so it never loads
+ *  the person from before the save (nor is closed by it). */
+export const personSaveKey = ['person-save'] as const;
+
 export const useEditingPerson = () => useSearchParam('editPerson', asString);
 
 /** Whether retired people are listed (search param `showRetired`): off when the screen is first opened, and

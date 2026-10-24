@@ -57,6 +57,10 @@ public class Sheet {
     @Column(name = "period_numbering_from")
     private LocalDate periodNumberingFrom;
 
+    /** The cap: a person's due-total is at most it; null (blank) when there is none. */
+    @Column(precision = 19, scale = 2)
+    private BigDecimal cap;
+
     /** The late percent a sheet starts at. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -141,6 +145,14 @@ public class Sheet {
     public int termsFor(String grade) {
         Integer own = grade == null ? null : getGradeTerms(grade);
         return own != null ? own : terms;
+    }
+
+    public BigDecimal getCap() {
+        return cap;
+    }
+
+    public void setCap(BigDecimal cap) {
+        this.cap = cap;
     }
 
     public LocalDate getPolicyDate() {

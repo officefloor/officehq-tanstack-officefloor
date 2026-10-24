@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC';
+type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap';
 
 /** The grades that may have their own terms, and the setting key of each. */
 const GRADE_TERMS = [
@@ -21,7 +21,7 @@ type Drafts = Partial<Record<Key, string>>;
 // claim's due gains it of its figure for every full 30 days overdue), the policy date (a claim dated before it rounds half
 // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
 // the fields typed in (all of them when none was).
 function SheetSettings() {
@@ -51,6 +51,7 @@ function SheetSettings() {
     termsA: settings.data?.termsA ?? '',
     termsB: settings.data?.termsB ?? '',
     termsC: settings.data?.termsC ?? '',
+    cap: settings.data?.cap ?? '',
   };
   const valueOf = (key: Key) => drafts[key] ?? current[key];
   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
@@ -88,6 +89,9 @@ function SheetSettings() {
           <span data-testid={`setting-terms-${grade}-current`}>{settings.data?.[key] ?? ''}</span>
         </p>
       ))}
+      <p>
+        Cap: <span data-testid="setting-cap-current">{settings.data?.cap ?? ''}</span>
+      </p>
       <form
         data-testid="settings-form"
         onSubmit={(e) => {
@@ -159,11 +163,20 @@ function SheetSettings() {
             onFocus={touch(key)}
           />
         ))}
+        <input
+          data-testid="setting-cap"
+          placeholder="Cap (blank: none)"
+          inputMode="decimal"
+          value={valueOf('cap')}
+          onChange={edit('cap')}
+          onInput={edit('cap')}
+          onFocus={touch('cap')}
+        />
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap an amount, 0.00 or more, with up to two decimals, or blank.</span>
         )}
       </form>
     </section>

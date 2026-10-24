@@ -36,6 +36,8 @@ public class ClaimFigures {
 
     private final LocalDate policyDate;
 
+    private final BigDecimal cap;
+
     /** @param rates the sheet's rates.
      *  @param grades the person's grades over time.
      *  @param sheet the sheet: its floor (a live due is at least it), and its late percent and today (the
@@ -47,6 +49,7 @@ public class ClaimFigures {
         this.latePct = sheet.getLatePct();
         this.today = sheet.getToday();
         this.policyDate = sheet.policyDateInForce();
+        this.cap = sheet.getCap();
     }
 
     /** How the claim's live figures round: half up when the date it rounds by is before the policy date, else half
@@ -129,8 +132,17 @@ public class ClaimFigures {
     }
 
     /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims dated within a hold
-     *  of theirs do not count, unless a statement binds them. */
+     *  of theirs do not count, unless a statement binds them. At most the sheet's cap (n/a is not capped). */
     public String dueTotal(List<Claim> claims, LocalDate today, Person person) {
+        String sum = uncappedDueTotal(claims, today, person);
+        if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
+            return sum;
+        }
+        return cap.setScale(2).toPlainString();
+    }
+
+    /** The person's live due-total before the cap: the sum of their figures. */
+    private String uncappedDueTotal(List<Claim> claims, LocalDate today, Person person) {
         List<Claim> counted = claims.stream().filter(c -> countsLive(c, person)).toList();
         String grade = grades.on(today);
         boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
