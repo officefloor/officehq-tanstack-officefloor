@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.ClaimFigures;
+import net.officefloor.hq.app.claim.ClaimLogRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrade;
@@ -18,11 +20,11 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Closes the period, fixing each person's due-total for it as it is now — the dues (with any late charge) of the counted claims dated in it (not a person's
+/** Closes the period, fixing each person's due-total for it as it is now — the dues (with any late charge, as shown now) of the claims dated in it that counted by the status they had at the end of its last day (not a person's
  *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a, 0.00 for one with none — and its own, their sum. Refuses a period already closed. */
 public class ClosePeriod {
     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
-            RateRepository rates, SheetRepository sheets, PersonGradeRepository grades) throws InvalidPeriodException {
+            RateRepository rates, SheetRepository sheets, PersonGradeRepository grades, ClaimLogRepository log) throws InvalidPeriodException {
         if (period.isClosed()) {
             throw new InvalidPeriodException("The period is already closed.");
         }
@@ -31,10 +33,11 @@ public class ClosePeriod {
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(period.getSheetId());
         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(period.getSheetId());
+        Map<Long, ClaimStatus> then = log.statusesOn(period.getSheetId(), period.getToDate());
         Map<Long, BigDecimal> totals = new HashMap<>();
         byId.keySet().forEach(id -> totals.put(id, BigDecimal.ZERO.setScale(2)));
         claims.findBySheetIdOrderByIdDesc(period.getSheetId()).stream()
-                .filter(c -> byId.containsKey(c.getPersonId()) && ClaimFigures.countsLive(c, byId.get(c.getPersonId()), sheet.getToday())
+                .filter(c -> byId.containsKey(c.getPersonId()) && ClaimFigures.countsAsOf(c, then.get(c.getId()), byId.get(c.getPersonId()), sheet.getToday())
                         && period.contains(c.getDate()))
                 .forEach(c -> {
                     BigDecimal due = new ClaimFigures(sheetRates, new PersonGrades(byId.get(c.getPersonId()).getGrade(),

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
 import { gradeOn, type Person } from '../people/people';
-import { countsLive, holdsOf, type Claim } from '../claims/claims';
+import { countsAsOf, holdsOf, type Claim } from '../claims/claims';
 import { chargedOf, sumDue, type Rate } from '../rates/rates';
 import type { Settings } from '../roles/roles';
 
@@ -38,19 +38,20 @@ export function periodOn(periods: Period[] | undefined, date: string): Period | 
   return (periods ?? []).find((p) => p.from <= date && date <= p.to);
 }
 
-/** A period's due-total: the dues (with any late charge) of the counted claims whose date falls in it (not a person's
- *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one fixed when it was closed. */
+/** A period's due-total: the dues (with any late charge, as shown now) of the claims whose date falls in it that counted
+ *  by the status they had at the end of its last day (not a person's unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one fixed when it was closed. */
 export function periodDue(period: Period, people: Person[] | undefined, claims: Claim[], rates: Rate[] | undefined,
   settings: Settings | undefined, today: string | undefined): string {
   if (period.closedTotal !== null) return period.closedTotal;
   const personOf = new Map((people ?? []).map((p) => [p.id, p]));
   const held = holdsOf(people);
   return sumDue(claims
-    .filter((c) => countsLive(c, held, today) && personOf.has(c.personId) && periodOn([period], c.date))
+    .filter((c) => countsAsOf(c, held, today, period.to) && personOf.has(c.personId) && periodOn([period], c.date))
     .map((c) => chargedOf(c, rates, gradeOn(personOf.get(c.personId)!, c.date), settings, today)));
 }
 
-/** A person's due-total for a period: the dues (with any late charge) of their counted claims whose date falls in it
+/** A person's due-total for a period: the dues (with any late charge, as shown now) of their claims whose date falls in
+ *  it that counted by the status they had at the end of its last day
  *  (not their unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one
  *  fixed when it was closed — 0.00 for a person added since. */
 export function personPeriodDue(period: Period, person: Person, people: Person[] | undefined, claims: Claim[],
@@ -58,6 +59,6 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
   const held = holdsOf(people);
   return sumDue(claims
-    .filter((c) => c.personId === person.id && countsLive(c, held, today) && periodOn([period], c.date))
+    .filter((c) => c.personId === person.id && countsAsOf(c, held, today, period.to) && periodOn([period], c.date))
     .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
 }

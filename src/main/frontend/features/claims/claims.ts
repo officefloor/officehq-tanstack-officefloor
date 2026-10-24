@@ -72,6 +72,24 @@ const heldOn = (c: Claim, holds: Holds) =>
  *  within a hold of theirs, unless a statement binds them. */
 export const countsLive = (c: Claim, holds: Holds, today: string | undefined) => counts(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
 
+/** The status a claim had at the end of a day (YYYY-MM-DD), as its status log records it (each line dated the sheet's
+ *  today when the change was made); null when it had not been added by then. */
+export function statusOn(c: Claim, day: string): ClaimStatus | null {
+  let status: ClaimStatus | null = null;
+  for (const line of c.log ?? []) {
+    const m = /^(\S+) by .* on (\d{4}-\d{2}-\d{2}) due=\S+$/.exec(line);
+    if (m && m[2] <= day) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/** Whether a claim counts toward a period's live totals: as `countsLive`, taking the status it had at the end of
+ *  the period's last day — not at all when it had not been added by then. */
+export const countsAsOf = (c: Claim, holds: Holds, today: string | undefined, end: string) => {
+  const status = statusOn(c, end);
+  return status !== null && countsLive({ ...c, status }, holds, today);
+};
+
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
 export const claimsPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/claims`;

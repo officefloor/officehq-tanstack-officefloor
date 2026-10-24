@@ -53,6 +53,14 @@ public class ClaimLog {
         return claimId;
     }
 
+    public String getStatus() {
+        return status;
+    }
+
+    public LocalDate getOnDate() {
+        return onDate;
+    }
+
     /** The line as the screen shows it: <STATUS> by <user> on <date> due=<due>. */
     public String line() {
         return status + " by " + byUser + " on " + onDate + " due=" + (due == null ? "n/a" : due.setScale(2).toPlainString());
