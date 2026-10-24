@@ -19,6 +19,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // claims dated within one count in no live total, unless a statement binds them; their other claims still count.
 // `terms`: their own terms in days (null: none); a claim of theirs is due by its date plus these, ahead of their
 // grade's terms and the sheet's.
+// `contact`: their contact, trimmed and lower-cased (null: none); no two people on a sheet share one.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -34,6 +35,7 @@ export type Person = {
   holds: Hold[];
   patronIds: number[];
   terms: number | null;
+  contact: string | null;
 };
 
 /** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */

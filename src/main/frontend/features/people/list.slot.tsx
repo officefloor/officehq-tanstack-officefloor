@@ -1,10 +1,10 @@
-import { useIsMutating } from '@tanstack/react-query';
+import { useIsFetching, useIsMutating } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { gradeOn, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
+import { gradeOn, peopleQueryKey, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
 
-// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way);
+// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
 // features add their own columns through PeopleColumns / PersonCells.
 function PeopleList() {
   const [user] = useCurrentUser();
@@ -14,6 +14,7 @@ function PeopleList() {
   const [showRetired] = useShowRetired();
   const today = useSheetToday();
   const saving = useIsMutating({ mutationKey: personSaveKey }) > 0;
+  const reading = useIsFetching({ queryKey: peopleQueryKey(sheet ?? '') }) > 0;
   if (!user || !sheet) return null;
   return (
     <table data-testid="people">
@@ -31,7 +32,7 @@ function PeopleList() {
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
             <td data-testid="person-grade">{gradeOn(p, today)}</td>
             <td>
-              <button type="button" data-testid={`person-edit-${p.id}`} disabled={saving}
+              <button type="button" data-testid={`person-edit-${p.id}`} disabled={saving || reading}
                 onClick={() => setEditing(String(p.id))}>
                 Edit
               </button>

@@ -10,9 +10,14 @@ public class BuildPerson {
         if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
+        if (request.contactOrNull() != null
+                && repository.existsBySheetIdAndContact(sheet.getId(), request.contactOrNull())) {
+            throw new InvalidPersonException("The contact is already in use on this sheet.");
+        }
         Person person = new Person(sheet.getId(), request.name(), request.grade());
         person.setAddedOn(sheet.getToday());
         person.setTerms(request.termsDays());
+        person.setContact(request.contactOrNull());
         personOut.set(repository.save(person));
     }
 }

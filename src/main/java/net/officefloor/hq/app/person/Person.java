@@ -44,6 +44,13 @@ public class Person {
     @Transient
     private boolean termsChanged;
 
+    /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
+    private String contact;
+
+    /** Set by an edit that changed their contact, for its audit record; not stored. */
+    @Transient
+    private boolean contactChanged;
+
     /** Raised on every save; an edit naming an older version is refused. */
     @Version
     @Column(nullable = false)
@@ -116,6 +123,20 @@ public class Person {
         return termsChanged;
     }
 
+    public String getContact() {
+        return contact;
+    }
+
+    /** Sets their contact, noting whether it differs from the one they had. */
+    public void setContact(String contact) {
+        contactChanged = !java.util.Objects.equals(this.contact, contact);
+        this.contact = contact;
+    }
+
+    public boolean isContactChanged() {
+        return contactChanged;
+    }
+
     public long getVersion() {
         return version;
     }
@@ -140,6 +161,7 @@ public class Person {
         Person then = new Person(sheetId, name, grade);
         then.id = id;
         then.terms = terms;
+        then.contact = contact;
         then.addedOn = addedOn;
         if (retiredMadeOn == null || !retiredMadeOn.isAfter(date)) {
             then.retiredFrom = retiredFrom;

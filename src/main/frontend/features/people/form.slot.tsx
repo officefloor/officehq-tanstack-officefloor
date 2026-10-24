@@ -9,7 +9,8 @@ import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditin
 // The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
 // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
 // added with applies from the beginning of time. A person's own terms (blank: none) come ahead of their grade's
-// and the sheet's when a claim's due-by is fixed. The
+// and the sheet's when a claim's due-by is fixed. A contact (blank: none) is kept trimmed and lower-cased and
+// must not be another person's on the sheet. The
 // editor remembers the version of the person it loaded; when someone else has saved them since, the
 // save is refused and the form shows the person's current values (and version) instead. Any other refused save
 // closes the editor, its error staying on the form until the form is next changed or submitted, an editor is
@@ -29,12 +30,13 @@ function PersonForm() {
   // Keyed by who is being edited, so opening an editor fills the form with that person's values;
   // an editor for someone not on this sheet falls back to the add form.
   return <PersonFormFields key={`${sheet}:${person?.id ?? ''}`} sheet={sheet} person={person}
-    refused={refused} setRefused={setRefused} />;
+    people={people.data ?? []} refused={refused} setRefused={setRefused} />;
 }
 
-function PersonFormFields({ sheet, person, refused, setRefused }: {
+function PersonFormFields({ sheet, person, people, refused, setRefused }: {
   sheet: string;
   person?: Person;
+  people: Person[];
   refused: boolean;
   setRefused: (refused: boolean) => void;
 }) {
@@ -44,11 +46,12 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
   const [grade, setGrade] = useState(person?.grade ?? 'A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState(person?.terms == null ? '' : String(person.terms));
+  const [contact, setContact] = useState(person?.contact ?? '');
   const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationKey: personSaveKey,
-    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string }) =>
+    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string }) =>
       person
         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
         : postJson<Person>(peoplePath(sheet), body, user),
@@ -61,6 +64,7 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setContact('');
       }
     },
     onError: async (error) => {
@@ -80,6 +84,7 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
         setName(now.name);
         setGrade(now.grade);
         setTerms(now.terms == null ? '' : String(now.terms));
+        setContact(now.contact ?? '');
         setVersion(now.version);
       }
     },
@@ -93,7 +98,17 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
       onSubmit={(e) => {
         e.preventDefault();
         setRefused(false);
-        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim() });
+        const given = contact.trim().toLowerCase();
+        // Refused at once when another person on the sheet as loaded has the contact; the store checks again.
+        if (given !== '' && people.some((p) => p.id !== person?.id && p.contact === given)) {
+          save.reset();
+          setRefused(true);
+          if (person) setEditing(undefined);
+          // what is shown may be stale: read the people again, as a refused save in the store would
+          void queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
+          return;
+        }
+        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim() });
       }}
     >
       <h2>{person ? 'Edit person' : 'Add a person'}</h2>
@@ -124,6 +139,12 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
         value={terms}
         onChange={(e) => { setTerms(e.target.value); save.reset(); setRefused(false); }}
       />
+      <input
+        data-testid="person-form-contact"
+        placeholder="Contact (blank for none)"
+        value={contact}
+        onChange={(e) => { setContact(e.target.value); save.reset(); setRefused(false); }}
+      />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {person ? 'Save' : 'Add person'}
       </button>
@@ -136,7 +157,7 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
         <span data-testid="person-form-error">
           {conflict
             ? 'Someone else has saved this person since you opened the editor; the form now shows their current values.'
-            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, the grade from-date must be a date, and the terms must be a whole number of days or blank.'}
+            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, the grade from-date must be a date, the terms must be a whole number of days or blank, and the contact must not be another person\'s on this sheet.'}
         </span>
       )}
     </form>

@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * Reads the person form from the body, trimming the name; refuses an empty name or a grade other than
- * A, B or C, and a grade from-date that is not a calendar date, and terms that are not a whole number of days.
+ * A, B or C, and a grade from-date that is not a calendar date, and terms that are not a whole number of days;
+ * the contact is trimmed and lower-cased.
  */
 public class ValidatePerson {
 
@@ -38,6 +39,7 @@ public class ValidatePerson {
         if (!terms.isEmpty() && !TERMS.matcher(terms).matches()) {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
         }
-        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms));
+        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
+        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms, contact));
     }
 }
