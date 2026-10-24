@@ -1,0 +1,155 @@
+diff --git a/src/main/frontend/features/rates/calendar.slot.tsx b/src/main/frontend/features/rates/calendar.slot.tsx
+new file mode 100644
+index 00000000..5b429f81
+--- /dev/null
++++ b/src/main/frontend/features/rates/calendar.slot.tsx
+@@ -0,0 +1,45 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { GRADES } from '../people/people';
++import { rateOn, useRates } from './rates';
++
++// The rate calendar: for each grade and each month of the sheet's today's calendar year, the rate in force on the
++// first day of that month (as the rate in force today is found: up the sheet's parents when it has none), n/a when none.
++function RateCalendar() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const today = useSheetToday();
++  const rates = useRates();
++  if (!user || !sheet || today === undefined) return null;
++  const year = today.slice(0, 4);
++  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
++  return (
++    <section data-testid="rate-calendar">
++      <h2>Rate calendar {year}</h2>
++      <table>
++        <thead>
++          <tr>
++            <th>Grade</th>
++            {months.map((m) => (
++              <th key={m}>{m}</th>
++            ))}
++          </tr>
++        </thead>
++        <tbody>
++          {GRADES.map((g) => (
++            <tr key={g}>
++              <td>{g}</td>
++              {months.map((m) => (
++                <td key={m} data-testid={`rate-month-${g}-${m}`}>
++                  {rateOn(rates.data, g, `${m}-01`) ?? 'n/a'}
++                </td>
++              ))}
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 5.2, Component: RateCalendar });
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crew.java b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+index 660b5896..6f9c0d84 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/Crew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+@@ -7,7 +7,8 @@ import jakarta.persistence.GenerationType;
+ import jakarta.persistence.Id;
+ import jakarta.persistence.Table;
+ 
+-/** A sheet's crew: a trimmed name, on the sheet at most once, and its lead, a person of the sheet. */
++/** A sheet's crew: a trimmed name, on the sheet at most once, and its lead, a person of the sheet (null once the lead
++ *  has been transferred away). */
+ @Entity
+ @Table(name = "crew")
+ public class Crew {
+@@ -22,7 +23,7 @@ public class Crew {
+     @Column(name = "name", nullable = false)
+     private String name;
+ 
+-    @Column(name = "lead_id", nullable = false)
++    @Column(name = "lead_id")
+     private Long leadId;
+ 
+     protected Crew() {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index 9ae78144..8d2eca10 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -52,7 +52,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
+  * were added). References are not carried.
+  * Their plans go with them, each keeping the claims it made. They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships,
+- * crew memberships, the crews they lead (with those crews' members) and watchers are dropped.
++ * crew memberships and watchers are dropped; the crews they lead keep their members and have no lead.
+  */
+ public class ApplyTransfer {
+     public void apply(@Val TransferInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
+@@ -236,9 +236,8 @@ public class ApplyTransfer {
+         members.deleteAll(members.findByPersonIdOrderByIdAsc(from));
+         crewMembers.deleteAll(crewMembers.findByPersonIdOrderByIdAsc(from));
+         for (Crew crew : crews.findByLeadIdOrderByIdAsc(from)) {
+-            crewMembers.deleteAll(crewMembers.findByCrewIdOrderByIdAsc(crew.getId()));
+-            crewMembers.flush();
+-            crews.delete(crew);
++            crew.setLeadId(null);
++            crews.save(crew);
+         }
+         crews.flush();
+         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 5531f1cc..384882b2 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -137,11 +137,13 @@ public class RespondWithPools {
+ 
+     /** The crew as a pool (its id the crew's, negated): the lead and the members, in the order they were added, each
+      *  at an equal share of 100.00, rounded half to even to two decimals, the remainder on the lead. A person not on
+-     *  the sheet (as of the date) is left out, keeping their share. */
++     *  the sheet (as of the date) is left out, keeping their share; a crew with no lead (transferred away) shares among
++     *  its members alone. */
+     private static PoolResponse crewPool(Crew crew, List<CrewMember> crewMembers, Map<Long, Person> byId, Sheet sheet) {
+         List<Long> ids = new ArrayList<>();
+-        ids.add(crew.getLeadId());
++        if (crew.getLeadId() != null) ids.add(crew.getLeadId());
+         crewMembers.forEach(m -> ids.add(m.getPersonId()));
++        if (ids.isEmpty()) return new PoolResponse(-crew.getId(), crew.getName(), "0.00", false, true, List.of());
+         BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(ids.size()), 2, RoundingMode.HALF_EVEN);
+         List<BigDecimal> shares = new ArrayList<>();
+         ids.forEach(id -> shares.add(each));
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java b/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java
+index 13d66c55..1bec7b38 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java
+@@ -136,12 +136,18 @@ public class ApplyClone {
+         // Crews, with their leads, then their members.
+         Map<Long, Long> crewIds = new HashMap<>();
+         for (Object[] crew : rows(entityManager, "SELECT id, name, lead_id FROM crew WHERE sheet_id = :from ORDER BY id", from)) {
+-            Long lead = personIds.get(((Number) crew[2]).longValue());
+-            if (lead == null) {
+-                continue;
++            if (crew[2] == null) {
++                // A crew with no lead (transferred away) is copied with none.
++                entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name) VALUES (:to, :name)")
++                        .setParameter("to", to).setParameter("name", crew[1]).executeUpdate();
++            } else {
++                Long lead = personIds.get(((Number) crew[2]).longValue());
++                if (lead == null) {
++                    continue;
++                }
++                entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name, lead_id) VALUES (:to, :name, :lead)")
++                        .setParameter("to", to).setParameter("name", crew[1]).setParameter("lead", lead).executeUpdate();
+             }
+-            entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name, lead_id) VALUES (:to, :name, :lead)")
+-                    .setParameter("to", to).setParameter("name", crew[1]).setParameter("lead", lead).executeUpdate();
+             Long copy = ((Number) entityManager.createNativeQuery(
+                     "SELECT id FROM crew WHERE sheet_id = :to AND name = :name")
+                     .setParameter("to", to).setParameter("name", crew[1]).getSingleResult()).longValue();
+diff --git a/src/main/resources/db/migration/V82__crew_lead_optional.sql b/src/main/resources/db/migration/V82__crew_lead_optional.sql
+new file mode 100644
+index 00000000..1f252c1c
+--- /dev/null
++++ b/src/main/resources/db/migration/V82__crew_lead_optional.sql
+@@ -0,0 +1,2 @@
++-- A crew whose lead has left the sheet (transferred away) keeps its members and has no lead.
++ALTER TABLE crew ALTER COLUMN lead_id DROP NOT NULL;
