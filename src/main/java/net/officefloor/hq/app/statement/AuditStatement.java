@@ -6,12 +6,13 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Records the statement, once it is saved. */
+/** Records the statement, once it is saved; the date it was taken as of last, when one was given. */
 public class AuditStatement {
     public void audit(@Val Statement statement, @Val Person person,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         audit.record("STATEMENT sheet=" + statement.getSheetId() + " by=" + AuditUser.decode(user)
                 + " name=" + person.getName() + " due-total=" + statement.getDueTotal()
-                + " claims=" + statement.getClaims());
+                + " claims=" + statement.getClaims()
+                + (statement.getAsOf() != null ? " asof=" + statement.getAsOf() : ""));
     }
 }

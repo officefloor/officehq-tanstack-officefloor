@@ -61,6 +61,14 @@ public class Person {
     @OrderBy("fromDate ASC, toDate ASC")
     private List<PersonHold> holds = new ArrayList<>();
 
+    /** The sheet's today when they were added (null: not recorded); a statement as of an earlier date is refused. */
+    @Column(name = "added_on")
+    private LocalDate addedOn;
+
+    /** The sheet's today when they were retired (null: not recorded, or not retired). */
+    @Column(name = "retired_made_on")
+    private LocalDate retiredMadeOn;
+
     protected Person() {
     }
 
@@ -112,12 +120,37 @@ public class Person {
         return version;
     }
 
-    public LocalDate getRetiredFrom() {
-        return retiredFrom;
+    public LocalDate getAddedOn() {
+        return addedOn;
     }
 
-    public void setRetiredFrom(LocalDate retiredFrom) {
+    public void setAddedOn(LocalDate addedOn) {
+        this.addedOn = addedOn;
+    }
+
+    /** Retires them from a date, the change made on the sheet's today given. */
+    public void retire(LocalDate retiredFrom, LocalDate madeOn) {
         this.retiredFrom = retiredFrom;
+        this.retiredMadeOn = madeOn;
+    }
+
+    /** A copy of them as they stood at the end of a date: only the holds and retirement made while the sheet's
+     *  today was on or before it. Only worked out, never saved. */
+    public Person asOf(LocalDate date) {
+        Person then = new Person(sheetId, name, grade);
+        then.id = id;
+        then.terms = terms;
+        then.addedOn = addedOn;
+        if (retiredMadeOn == null || !retiredMadeOn.isAfter(date)) {
+            then.retiredFrom = retiredFrom;
+            then.retiredMadeOn = retiredMadeOn;
+        }
+        holds.stream().filter(h -> h.madeBy(date)).forEach(then.holds::add);
+        return then;
+    }
+
+    public LocalDate getRetiredFrom() {
+        return retiredFrom;
     }
 
     public List<PersonHold> getHolds() {

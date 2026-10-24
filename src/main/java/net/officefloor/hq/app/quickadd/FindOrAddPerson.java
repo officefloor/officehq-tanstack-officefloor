@@ -31,7 +31,9 @@ public class FindOrAddPerson {
             personOut.set(found.get());
             return;
         }
-        Person person = people.saveAndFlush(new Person(sheet.getId(), name.name(), "A"));
+        Person added = new Person(sheet.getId(), name.name(), "A");
+        added.setAddedOn(sheet.getToday());
+        Person person = people.saveAndFlush(added);
         String by = AuditUser.decode(user);
         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by + " name=" + person.getName()
                 + " grade=" + person.getGrade());

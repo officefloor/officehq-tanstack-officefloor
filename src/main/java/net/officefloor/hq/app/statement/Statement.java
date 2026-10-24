@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.time.LocalDate;
 
-/** A statement taken for a person: their due-total then (two decimals, or n/a) and the sheet's today then. */
+/** A statement taken for a person: their due-total then (two decimals, or n/a), the date it was taken as of (the
+ *  sheet's today then when none was given) and the sheet's today when it was taken. */
 @Entity
 @Table(name = "statement")
 public class Statement {
@@ -30,6 +31,13 @@ public class Statement {
     @Column(name = "taken_on", nullable = false)
     private LocalDate takenOn;
 
+    @Column(name = "made_on")
+    private LocalDate madeOn;
+
+    /** The date it was taken as of, when one was given; for the audit only. */
+    @Transient
+    private LocalDate asOf;
+
     /** How many of the person's claims counted, and so were bound; for the audit only. */
     @Transient
     private int claims;
@@ -37,11 +45,14 @@ public class Statement {
     protected Statement() {
     }
 
-    public Statement(String sheetId, Long personId, String dueTotal, LocalDate takenOn, int claims) {
+    /** @param asOf the date it is taken as of; null for the sheet's today. */
+    public Statement(String sheetId, Long personId, String dueTotal, LocalDate today, LocalDate asOf, int claims) {
         this.sheetId = sheetId;
         this.personId = personId;
         this.dueTotal = dueTotal;
-        this.takenOn = takenOn;
+        this.takenOn = asOf != null ? asOf : today;
+        this.madeOn = today;
+        this.asOf = asOf;
         this.claims = claims;
     }
 
@@ -63,6 +74,14 @@ public class Statement {
 
     public LocalDate getTakenOn() {
         return takenOn;
+    }
+
+    public LocalDate getMadeOn() {
+        return madeOn;
+    }
+
+    public LocalDate getAsOf() {
+        return asOf;
     }
 
     public int getClaims() {

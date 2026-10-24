@@ -29,6 +29,10 @@ public class PersonGrade {
     @Column(name = "from_date", nullable = false)
     private LocalDate fromDate;
 
+    /** The sheet's today when it was last recorded (null: not recorded). */
+    @Column(name = "made_on")
+    private LocalDate madeOn;
+
     protected PersonGrade() {
     }
 
@@ -37,6 +41,15 @@ public class PersonGrade {
         this.personId = personId;
         this.grade = grade;
         this.fromDate = fromDate;
+    }
+
+    public void setMadeOn(LocalDate madeOn) {
+        this.madeOn = madeOn;
+    }
+
+    /** Whether it was recorded while the sheet's today was on or before the date. */
+    public boolean madeBy(LocalDate date) {
+        return madeOn == null || !madeOn.isAfter(date);
     }
 
     public Long getId() {

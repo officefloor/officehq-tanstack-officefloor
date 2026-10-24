@@ -34,6 +34,7 @@ public class ApplyPerson {
         PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
                 .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));
         dated.setGrade(request.grade());
+        dated.setMadeOn(sheet.getToday());
         grades.saveAndFlush(dated);
     }
 }

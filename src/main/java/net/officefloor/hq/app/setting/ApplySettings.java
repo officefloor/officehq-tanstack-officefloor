@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.sheet.SettingLog;
+import net.officefloor.hq.app.sheet.SettingLogRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
@@ -8,20 +10,27 @@ import net.officefloor.plugin.variable.Val;
 /** Sets the settings the form sets: a setting that carries a figure (the clerk limit, floor, terms, late percent,
  *  each grade's own terms, cap) is recorded from its from-date (the sheet's today when none is given), replacing a
  *  value recorded from that date and keeping the others; the policy date and period numbering from are set; a permission matrix entry
- *  (key perm-<action>) and the grace days are recorded undated. */
+ *  (key perm-<action>) and the grace days are recorded undated. Each is logged with the sheet's today (so the
+ *  settings can be worked out as they stood on an earlier date). */
 public class ApplySettings {
-    public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository) {
+    public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository, SettingLogRepository log) {
         for (SettingsInput.Change change : input.changes()) {
+            LocalDate from = null;
             if (change.dated()) {
-                sheet.record(change.key(), change.from() != null ? change.from() : sheet.getToday(), change.value());
+                from = change.from() != null ? change.from() : sheet.getToday();
+                sheet.record(change.key(), from, change.value());
             } else if (change.key().startsWith("perm-") || Sheet.GRACE_DAYS.equals(change.key())) {
                 sheet.record(change.key(), null, change.value());
-            } else if ("policy-date".equals(change.key())) {
+            } else if (Sheet.POLICY_DATE.equals(change.key())) {
                 sheet.setPolicyDate(change.value() == null ? null : LocalDate.parse(change.value()));
-            } else if ("period-numbering-from".equals(change.key())) {
+            } else if (Sheet.PERIOD_NUMBERING_FROM.equals(change.key())) {
                 sheet.setPeriodNumberingFrom(change.value() == null ? null : LocalDate.parse(change.value()));
+            } else {
+                continue;
             }
+            log.save(new SettingLog(sheet.getId(), change.key(), from, change.value(), sheet.getToday()));
         }
         repository.saveAndFlush(sheet);
+        log.flush();
     }
 }

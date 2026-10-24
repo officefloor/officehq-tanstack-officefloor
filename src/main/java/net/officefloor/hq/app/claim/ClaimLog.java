@@ -61,6 +61,11 @@ public class ClaimLog {
         return onDate;
     }
 
+    /** The claim's due as it was worked out then (null: n/a); a SETTLED line's is the due it was settled at. */
+    public BigDecimal getDue() {
+        return due;
+    }
+
     /** The line as the screen shows it: <STATUS> by <user> on <date> due=<due>. */
     public String line() {
         return status + " by " + byUser + " on " + onDate + " due=" + (due == null ? "n/a" : due.setScale(2).toPlainString());

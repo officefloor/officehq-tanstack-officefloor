@@ -11,6 +11,7 @@ public class BuildPerson {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
         Person person = new Person(sheet.getId(), request.name(), request.grade());
+        person.setAddedOn(sheet.getToday());
         person.setTerms(request.termsDays());
         personOut.set(repository.save(person));
     }

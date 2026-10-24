@@ -279,6 +279,26 @@ public class Claim {
         return lockedBy != null && !lockedBy.equals(user);
     }
 
+    /** A copy of the claim as it stood at the end of an earlier date: the status it had then, its due fixed then
+     *  (null: not settled then) and its binding then. Only worked out, never saved. */
+    public Claim asOf(ClaimStatus status, BigDecimal due, boolean stated, BigDecimal statedDue) {
+        Claim then = new Claim(sheetId, personId, amount, date, note, corrects);
+        then.id = id;
+        then.status = status.name();
+        then.number = number;
+        then.due = due;
+        then.openedBy = openedBy;
+        then.dueBy = dueBy;
+        then.correctsDate = correctsDate;
+        then.listed = listed;
+        then.deferredUntil = deferredUntil;
+        then.proofs = proofs;
+        then.splitFrom = splitFrom;
+        then.lateEntry = lateEntry;
+        then.bind(stated, statedDue);
+        return then;
+    }
+
     public boolean isLateEntry() {
         return lateEntry;
     }

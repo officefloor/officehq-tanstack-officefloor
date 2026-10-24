@@ -27,6 +27,9 @@ public class Sheet {
     /** The key of the grace days: undated, a whole number of days (null: off). */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The keys of the undated dates, as the settings form names them. */
+    public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     /** The setting key of an action's entry in the permission matrix. */
     public static String permKey(String action) {
         return "perm-" + action;

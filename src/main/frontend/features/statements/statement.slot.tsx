@@ -1,14 +1,16 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
 import { peoplePath, peopleQueryKey, type Person } from '../people/people';
 
 // A person's statements: how many were taken, the last one's due-total and date, and the button that takes
-// one — recording their due-total now and binding each of their counted claims to the figure it has now — and the
+// one — recording their due-total now and binding each of their counted claims to the figure it has now; or, with a
+// date in the entry beside it (on or before the sheet's today), as of the end of that date — and the
 // button a steward cancels the last one with, making the claims it bound live again (anyone else, or a person with no
 // statement, shows the row's error).
 function StatementHeader() {
@@ -18,14 +20,20 @@ function StatementHeader() {
 function PersonStatement({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const today = useSheetToday();
+  const [asOf, setAsOf] = useState('');
   const queryClient = useQueryClient();
   const take = useMutation({
-    mutationFn: () => putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}/statement`, undefined, user),
-    onSuccess: () =>
-      Promise.all([
+    mutationFn: (date: string) =>
+      putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}/statement`
+        + (date.trim() ? `?asOf=${encodeURIComponent(date.trim())}` : ''), undefined, user),
+    onSuccess: async () => {
+      await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') }),
         queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') }),
-      ]),
+      ]);
+      setAsOf('');
+    },
   });
   const submit = useSubmitOnce(take);
   const rowAction = useRowAction(`person-${person.id}`);
@@ -44,7 +52,13 @@ function PersonStatement({ person }: { person: Person }) {
       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
       <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
       <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
-      <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => { rowAction.take(); submit(undefined); }}>
+      <input
+        data-testid="person-statement-asof"
+        placeholder={today ?? 'as of'}
+        value={asOf}
+        onChange={(e) => { setAsOf(e.target.value); take.reset(); }}
+      />
+      <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => { rowAction.take(); submit(asOf); }}>
         Statement
       </button>
       <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => { cancelAction.take(); submitCancel(undefined); }}>

@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyHold {
     public void apply(@Val HoldInput input, @Val Sheet sheet, @Val Person person, PersonRepository repository,
             Out<PersonHold> holdOut) throws InvalidPersonException {
-        PersonHold hold = new PersonHold(input.from() == null ? sheet.getToday() : input.from(), input.to());
+        PersonHold hold = new PersonHold(input.from() == null ? sheet.getToday() : input.from(), input.to(), sheet.getToday());
         if (hold.getToDate() != null && hold.getToDate().isBefore(hold.getFromDate())) {
             throw new InvalidPersonException("The hold's to-date is before its from-date.");
         }

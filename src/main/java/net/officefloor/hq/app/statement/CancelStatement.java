@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  */
 public class CancelStatement {
     public void cancel(@Val Sheet sheet, @Val Person person, ClaimRepository claims, StatementRepository statements,
-            RoleRepository roles, EntityManager entityManager,
+            RoleRepository roles, BindingLogRepository bindings, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<Statement> statementOut)
             throws ClerkLimitException, InvalidPersonException {
         if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), AuditUser.decode(userHeader)))) {
@@ -42,6 +42,7 @@ public class CancelStatement {
             claim.bind(false, null);
         }
         claims.saveAllAndFlush(mine);
+        bindings.saveAndFlush(new BindingLog(sheet.getId(), person.getId(), sheet.getToday()));
         statements.delete(last);
         statements.flush();
         statementOut.set(last);
