@@ -1,0 +1,630 @@
+diff --git a/src/main/frontend/api/rowAction.ts b/src/main/frontend/api/rowAction.ts
+new file mode 100644
+index 00000000..cf6c15e8
+--- /dev/null
++++ b/src/main/frontend/api/rowAction.ts
+@@ -0,0 +1,26 @@
++import { useRef, useSyncExternalStore } from 'react';
++
++// The last action taken on each row, by row key. A row's cells come from separate slots, each with its own
++// mutation; an error belongs to the action that raised it, so it is shown only while that action is still the
++// row's latest — taking the next action on the row, in any of its cells, removes an old error.
++const latest = new Map<string, symbol>();
++const listeners = new Set<() => void>();
++
++function subscribe(listener: () => void) {
++  listeners.add(listener);
++  return () => { listeners.delete(listener); };
++}
++
++export function useRowAction(row: string) {
++  const mine = useRef(Symbol(row));
++  const current = useSyncExternalStore(subscribe, () => latest.get(row));
++  return {
++    /** Marks this cell's action as the row's latest; call it as the action is taken. */
++    take: () => {
++      latest.set(row, mine.current);
++      listeners.forEach((l) => l());
++    },
++    /** Whether this cell's action is the row's latest, so its error may show. */
++    isLatest: current === mine.current,
++  };
++}
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index ff9b0fb7..a42ca18e 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { peoplePath, peopleQueryKey, type Person } from './people';
+@@ -30,6 +31,7 @@ function PersonHold({ person }: { person: Person }) {
+     },
+   });
+   const submit = useSubmitOnce(hold);
++  const rowAction = useRowAction(`person-${person.id}`);
+   return (
+     <td>
+       <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>{' '}
+@@ -48,10 +50,10 @@ function PersonHold({ person }: { person: Person }) {
+         value={to}
+         onChange={(e) => { setTo(e.target.value); hold.reset(); }}
+       />
+-      <button type="button" data-testid="person-hold-toggle" disabled={hold.isPending} onClick={() => submit({ from, to })}>
++      <button type="button" data-testid="person-hold-toggle" disabled={hold.isPending} onClick={() => { rowAction.take(); submit({ from, to }); }}>
+         Hold
+       </button>
+-      {hold.isError && <span data-testid="person-error">The hold's dates must be calendar dates, the to-date not before the from-date.</span>}
++      {hold.isError && rowAction.isLatest && <span data-testid="person-error">The hold's dates must be calendar dates, the to-date not before the from-date.</span>}
+     </td>
+   );
+ }
+diff --git a/src/main/frontend/features/people/patrons.slot.tsx b/src/main/frontend/features/people/patrons.slot.tsx
+index 59e348d8..b25e7318 100644
+--- a/src/main/frontend/features/people/patrons.slot.tsx
++++ b/src/main/frontend/features/people/patrons.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { useClaims } from '../claims/claims';
+@@ -41,6 +42,7 @@ function PersonPatrons({ person }: { person: Person }) {
+     },
+   });
+   const submit = useSubmitOnce(add);
++  const rowAction = useRowAction(`person-${person.id}`);
+   const everyone = people.data ?? [];
+   const patrons = person.patronIds
+     .map((id) => everyone.find((p) => p.id === id))
+@@ -68,11 +70,11 @@ function PersonPatrons({ person }: { person: Person }) {
+           type="button"
+           data-testid="person-patron-add"
+           disabled={add.isPending}
+-          onClick={() => submit({ patronId: Number(chosen) })}
++          onClick={() => { rowAction.take(); submit({ patronId: Number(chosen) }); }}
+         >
+           Add patron
+         </button>
+-        {add.isError && <span data-testid="person-patron-error">The patron could not be added.</span>}
++        {add.isError && rowAction.isLatest && <span data-testid="person-patron-error">The patron could not be added.</span>}
+       </td>
+       <td data-testid="person-backing">{backing}</td>
+     </>
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index 37ee7035..e8f2abfc 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { peoplePath, peopleQueryKey, type Person } from './people';
+@@ -26,6 +27,7 @@ function PersonRetired({ person }: { person: Person }) {
+     },
+   });
+   const submit = useSubmitOnce(retire);
++  const rowAction = useRowAction(`person-${person.id}`);
+   return (
+     <td>
+       <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
+@@ -36,10 +38,10 @@ function PersonRetired({ person }: { person: Person }) {
+         value={date}
+         onChange={(e) => { setDate(e.target.value); retire.reset(); }}
+       />
+-      <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={() => submit({ date })}>
++      <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={() => { rowAction.take(); submit({ date }); }}>
+         Retire
+       </button>
+-      {retire.isError && <span data-testid="person-error">The retirement date must be a calendar date.</span>}
++      {retire.isError && rowAction.isLatest && <span data-testid="person-error">The retirement date must be a calendar date.</span>}
+     </td>
+   );
+ }
+diff --git a/src/main/frontend/features/roles/roles.slot.tsx b/src/main/frontend/features/roles/roles.slot.tsx
+index 4bae2cd1..864d2fec 100644
+--- a/src/main/frontend/features/roles/roles.slot.tsx
++++ b/src/main/frontend/features/roles/roles.slot.tsx
+@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { rolesPath, rolesQueryKey, useRoles, type Role } from './roles';
+ 
+ // The sheet's roles: each user name given one, and the form that gives a name a role — clerk (what any
+-// name is by default) or steward.
++// name is by default), steward, or viewer (sees everything, changes nothing — the server refuses each change).
+ function Roles() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -60,7 +60,7 @@ function Roles() {
+         />
+         <input
+           data-testid="role-form-role"
+-          placeholder="Role (clerk or steward)"
++          placeholder="Role (clerk, steward or viewer)"
+           value={role}
+           onChange={(e) => { setRole(e.target.value); save.reset(); }}
+         />
+@@ -68,7 +68,7 @@ function Roles() {
+           Set role
+         </button>
+         {save.isError && (
+-          <span data-testid="role-form-error">The user name must not be blank, and the role must be clerk or steward.</span>
++          <span data-testid="role-form-error">The user name must not be blank, and the role must be clerk, steward or viewer, and a viewer cannot set roles.</span>
+         )}
+       </form>
+     </section>
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index d2fb3591..fca0dc9a 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { useCurrentSheet } from '../session/session';
+ 
+-/** A user name's role on the sheet: clerk or steward. A name with none is a clerk. */
++/** A user name's role on the sheet: clerk, steward or viewer. A name with none is a clerk. */
+ export type Role = { user: string; role: string };
+ 
+ /** The sheet's settings: its clerk limit with two decimals (null when there is none) and its floor with two
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index d110865a..0150a430 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -1,6 +1,7 @@
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { claimsQueryKey } from '../claims/claims';
+@@ -25,15 +26,16 @@ function PersonStatement({ person }: { person: Person }) {
+       ]),
+   });
+   const submit = useSubmitOnce(take);
++  const rowAction = useRowAction(`person-${person.id}`);
+   return (
+     <td>
+       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+       <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
+       <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+-      <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => submit(undefined)}>
++      <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => { rowAction.take(); submit(undefined); }}>
+         Statement
+       </button>
+-      {take.isError && <span data-testid="person-error">The statement could not be taken.</span>}
++      {take.isError && rowAction.isLatest && <span data-testid="person-error">The statement could not be taken.</span>}
+     </td>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/GuardViewer.java b/src/main/java/net/officefloor/hq/app/role/GuardViewer.java
+new file mode 100644
+index 00000000..1a23f806
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/GuardViewer.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.role;
++
++import net.officefloor.hq.app.AuditUser;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** The first step of every change: refuses it, before anything is read or written, when the signed-in name is a
++ *  viewer on the sheet (a viewer sees everything and changes nothing). */
++public class GuardViewer {
++    public void guard(@PathVariable("sheetId") String sheetId,
++            @RequestHeader(name = "X-User", required = false) String user, RoleRepository roles)
++            throws ViewerRefusedException {
++        if (Role.VIEWER.equals(roles.roleOf(sheetId, AuditUser.decode(user)))) {
++            throw new ViewerRefusedException("A viewer cannot change anything on the sheet.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/HandleViewerRefused.java b/src/main/java/net/officefloor/hq/app/role/HandleViewerRefused.java
+new file mode 100644
+index 00000000..80b6b163
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/HandleViewerRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.role;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleViewerRefused {
++    public void handle(@Parameter ViewerRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.FORBIDDEN));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+index 342c97df..841e150d 100644
+--- a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
++++ b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A role form that cannot be saved: a blank user name or a role other than clerk or steward. */
++/** A role form that cannot be saved: a blank user name or a role other than clerk, steward or viewer. */
+ public class InvalidRoleException extends Exception {
+     public InvalidRoleException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index 817d5124..113d6c1c 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -7,7 +7,7 @@ import jakarta.persistence.GenerationType;
+ import jakarta.persistence.Id;
+ import jakarta.persistence.Table;
+ 
+-/** A user name's role on a sheet: clerk or steward. A name with none is a clerk. */
++/** A user name's role on a sheet: clerk, steward or viewer. A name with none is a clerk. */
+ @Entity
+ @Table(name = "sheet_role")
+ public class Role {
+@@ -16,6 +16,9 @@ public class Role {
+ 
+     public static final String STEWARD = "steward";
+ 
++    /** Sees every screen and figure and can change nothing. */
++    public static final String VIEWER = "viewer";
++
+     @Id
+     @GeneratedValue(strategy = GenerationType.IDENTITY)
+     private Long id;
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleInput.java b/src/main/java/net/officefloor/hq/app/role/RoleInput.java
+index f2130935..a414a4cb 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleInput.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleInput.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A validated role form: a non-blank user name and clerk or steward. */
++/** A validated role form: a non-blank user name and clerk, steward or viewer. */
+ public record RoleInput(String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index 2c966f02..3220ec0f 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -4,10 +4,10 @@ import java.util.Set;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Reads the role form from the body; refuses a blank user name and a role other than clerk or steward. */
++/** Reads the role form from the body; refuses a blank user name and a role other than clerk, steward or viewer. */
+ public class ValidateRole {
+ 
+-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
++    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
+ 
+     public void validate(@RequestBody RoleRequest request, Out<RoleInput> body) throws InvalidRoleException {
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+@@ -16,7 +16,7 @@ public class ValidateRole {
+             throw new InvalidRoleException("The user name must not be blank.");
+         }
+         if (!ROLES.contains(role)) {
+-            throw new InvalidRoleException("The role must be clerk or steward.");
++            throw new InvalidRoleException("The role must be clerk, steward or viewer.");
+         }
+         body.set(new RoleInput(user, role));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ViewerRefusedException.java b/src/main/java/net/officefloor/hq/app/role/ViewerRefusedException.java
+new file mode 100644
+index 00000000..1f0faac4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/ViewerRefusedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.role;
++
++/** A change by a viewer, who can change nothing on the sheet. */
++public class ViewerRefusedException extends Exception {
++    public ViewerRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.role.ViewerRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.role.ViewerRefusedException.yml
+new file mode 100644
+index 00000000..5485ce91
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.role.ViewerRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.role.HandleViewerRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
+index 114b1782..5f04871c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId} — load a sheet by id; an id never used before starts an empty sheet.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 0c3e71bc..3b18e352 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim. Body as for adding one.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
+index 2cb55b8d..a9aede9c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/defer?until=YYYY-MM-DD — defer an OPEN claim until a date after the sheet's today.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml
+index 318b52fb..43cbd42b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/person/{personId} — a steward moves a DRAFT, OPEN or PENDING claim to another person.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml
+index 66bb2fc5..656efcde 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/proof — raise a claim's proofs count by one (not on a SETTLED or VOID claim).
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+index d05878c0..8ad9f856 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/resettle — a steward re-settles a SETTLED claim at its figure today.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
+index 86fca270..c52576de 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/{action} — change a claim's status: open, settle, approve, reject or void.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index cf0e5d9a..5025c219 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -1,6 +1,9 @@
+ # POST /api/sheets/{sheetId}/paste-claims — add a DRAFT claim per pasted line of name,amount,date,note, in order,
+ # for the named person on the sheet. Body: { "text": "..." }. Every line is checked by the claim form's rules
+ # before anything is stored, so one refused line adds nothing. Responds { "added": n }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.paste.ValidatePaste
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 09a84f0f..d084834a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,7 @@
+ # POST /api/sheets/{sheetId}/people — add a person. Body: { "name": "...", "grade": "A|B|C" }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 74ce6980..ee4a7069 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,5 +1,8 @@
+ # PUT /api/sheets/{sheetId}/people/{personId} — edit a person. Body: { "name": "...", "grade": "A|B|C", "gradeFrom": "YYYY-MM-DD" (blank: the sheet's today), "version": n }.
+ # Refused with 409 when the person was saved since the editor loaded that version.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index f088941f..4df5fc68 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,5 +1,8 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/claims — add a claim to a person.
+ # Body: { "amount": "12.50", "date": "YYYY-MM-DD" (blank = the sheet's today), "note": "..." }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml
+index c5b5a80a..06de10ef 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml
+@@ -1,5 +1,8 @@
+ # PUT /api/sheets/{sheetId}/people/{personId}/hold — add a hold to the person.
+ # Body: { "from": "YYYY-MM-DD" (blank: the sheet's today), "to": "YYYY-MM-DD" (blank: open-ended) }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateHold
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index bd07c762..e513182e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -1,5 +1,8 @@
+ # POST /api/sheets/{sheetId}/people/{personId}/patrons — name another person on the sheet as the person's patron.
+ # Body: { "patronId": <id> }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePatron
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
+index dd01fb79..2c5583d2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
+@@ -1,5 +1,8 @@
+ # PUT /api/sheets/{sheetId}/people/{personId}/retire — retire the person from a date.
+ # Body: { "date": "YYYY-MM-DD" } (blank = the sheet's today).
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
+index a8b4f7f0..43d1b2ab 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/people/{personId}/statement — take a statement for the person.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index 383ac362..6db1e163 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,4 +1,7 @@
+ # POST /api/sheets/{sheetId}/periods — add a period. Body: { "name": "...", "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriod
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml
+index bd3909b2..d1937b49 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/periods/{periodId}/close — close a period, fixing its due-total.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml
+index cb804e21..0cad713d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/periods/{periodId}/reopen — reopen a closed period (a role the permission matrix allows; a steward by the standing rule), making its due-total live again.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index f48c41a7..c8722420 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -1,6 +1,9 @@
+ # POST /api/sheets/{sheetId}/quick-add — add a DRAFT claim for the named person, dated the sheet's today with
+ # an empty note, adding the person (grade A) first when the name is not on the sheet. Body:
+ # { "name": "...", "amount": "12.50" }. Every check runs before anything is stored, so a refusal adds nobody.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index dbc6be46..d313a2a6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/rates — set a grade's rate. Body: { "grade": "A|B|C", "pct": "12.50", "from": "YYYY-MM-DD" (optional) }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+index fba3a34f..cc3ad773 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+@@ -1,4 +1,7 @@
+-# PUT /api/sheets/{sheetId}/roles — give a user name a role. Body: { "user": "<name>", "role": "clerk|steward" }.
++# PUT /api/sheets/{sheetId}/roles — give a user name a role. Body: { "user": "<name>", "role": "clerk|steward|viewer" }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.role.ValidateRole
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index eafc44d9..6cbe8469 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/settings — set the sheet's clerk limit, floor and terms. Body: { "clerkLimit": "1.50", "floor": "2.00", "terms": "14" }
+ # (clerk limit blank: no limit; floor blank: 1.00; terms blank: 14; a key left out is not changed). A setting that carries
+ # a figure takes its from-date, e.g. "floorFrom": "2026-03-05" (blank: the sheet's today), and is recorded from it on.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSettings
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 51e86632..65bfc32e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,4 +1,7 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. Body: { "today": "YYYY-MM-DD" }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
+   next: before
