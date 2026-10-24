@@ -1,33 +1,23 @@
 package net.officefloor.hq.app.setting;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
-/** Sets the sheet's clerk limit, floor, terms and late percent and policy date and period numbering from, and the grades' own terms, and the cap, those the form sets. */
+/** Sets the settings the form sets: a setting that carries a figure (the clerk limit, floor, terms, late percent,
+ *  each grade's own terms, cap) is recorded from its from-date (the sheet's today when none is given), replacing a
+ *  value recorded from that date and keeping the others; the policy date and period numbering from are set. */
 public class ApplySettings {
     public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository) {
-        if (input.setClerkLimit()) {
-            sheet.setClerkLimit(input.clerkLimit());
-        }
-        if (input.setFloor()) {
-            sheet.setFloor(input.floor());
-        }
-        if (input.setTerms()) {
-            sheet.setTerms(input.terms());
-        }
-        if (input.setLatePct()) {
-            sheet.setLatePct(input.latePct());
-        }
-        if (input.setPolicyDate()) {
-            sheet.setPolicyDate(input.policyDate());
-        }
-        if (input.setPeriodNumberingFrom()) {
-            sheet.setPeriodNumberingFrom(input.periodNumberingFrom());
-        }
-        input.gradeTerms().forEach(sheet::setGradeTerms);
-        if (input.setCap()) {
-            sheet.setCap(input.cap());
+        for (SettingsInput.Change change : input.changes()) {
+            if (change.dated()) {
+                sheet.record(change.key(), change.from() != null ? change.from() : sheet.getToday(), change.value());
+            } else if ("policy-date".equals(change.key())) {
+                sheet.setPolicyDate(change.value() == null ? null : LocalDate.parse(change.value()));
+            } else if ("period-numbering-from".equals(change.key())) {
+                sheet.setPeriodNumberingFrom(change.value() == null ? null : LocalDate.parse(change.value()));
+            }
         }
         repository.saveAndFlush(sheet);
     }

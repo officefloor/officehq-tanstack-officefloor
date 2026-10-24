@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
@@ -6,7 +6,13 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap';
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap';
+
+/** The settings that carry a figure: each is saved from a from-date (blank: the sheet's today). */
+const DATED = ['clerkLimit', 'floor', 'terms', 'latePct', 'termsA', 'termsB', 'termsC', 'cap'] as const;
+type DatedKey = (typeof DATED)[number];
+type FromKey = `${DatedKey}From`;
+type Key = ValueKey | FromKey;
 
 /** The grades that may have their own terms, and the setting key of each. */
 const GRADE_TERMS = [
@@ -23,7 +29,8 @@ type Drafts = Partial<Record<Key, string>>;
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
 // a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
-// the fields typed in (all of them when none was).
+// the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
+// the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -41,7 +48,7 @@ function SheetSettings() {
   const submit = useSubmitOnce(save);
 
   if (!user || !sheet) return null;
-  const current: Record<Key, string> = {
+  const current: Record<ValueKey, string> = {
     clerkLimit: settings.data?.clerkLimit ?? '',
     floor: settings.data?.floor ?? '',
     terms: settings.data?.terms ?? '',
@@ -53,14 +60,35 @@ function SheetSettings() {
     termsC: settings.data?.termsC ?? '',
     cap: settings.data?.cap ?? '',
   };
-  const valueOf = (key: Key) => drafts[key] ?? current[key];
+  const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
     const value = e.currentTarget.value;
     setDrafts((d) => ({ ...d, [key]: value }));
     save.reset();
   };
   // A field focused counts as typed in, even when left as it is (filling a blank field with blank changes nothing).
-  const touch = (key: Key) => () => setDrafts((d) => (key in d ? d : { ...d, [key]: current[key] }));
+  const touch = (key: Key) => () => setDrafts((d) => (key in d ? d : { ...d, [key]: valueOf(key) }));
+  // The from-date field of a setting that carries a figure, after its value field.
+  const fromField = (key: DatedKey, testid: string) => (
+    <input
+      data-testid={`${testid}-from`}
+      placeholder="From YYYY-MM-DD (blank: today)"
+      value={valueOf(`${key}From`)}
+      onChange={edit(`${key}From`)}
+      onInput={edit(`${key}From`)}
+      onFocus={touch(`${key}From`)}
+    />
+  );
+  // What a save sends: the fields typed in (all the values when none was); a from-date typed in sends its setting's
+  // value with it.
+  const body = (): Drafts => {
+    if (Object.keys(drafts).length === 0) return { ...current };
+    const sent: Drafts = { ...drafts };
+    for (const key of DATED) {
+      if ((sent[`${key}From`] ?? '') !== '' && sent[key] === undefined) sent[key] = current[key];
+    }
+    return sent;
+  };
   return (
     <section data-testid="settings">
       <h2>Settings</h2>
@@ -96,7 +124,7 @@ function SheetSettings() {
         data-testid="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit(Object.keys(drafts).length > 0 ? drafts : { ...current });
+          submit(body());
         }}
       >
         <input
@@ -108,6 +136,7 @@ function SheetSettings() {
           onInput={edit('clerkLimit')}
           onFocus={touch('clerkLimit')}
         />
+        {fromField('clerkLimit', 'setting-clerk-limit')}
         <input
           data-testid="setting-floor"
           placeholder="Floor (blank: 1.00)"
@@ -117,6 +146,7 @@ function SheetSettings() {
           onInput={edit('floor')}
           onFocus={touch('floor')}
         />
+        {fromField('floor', 'setting-floor')}
         <input
           data-testid="setting-terms"
           placeholder="Terms in days (blank: 14)"
@@ -126,6 +156,7 @@ function SheetSettings() {
           onInput={edit('terms')}
           onFocus={touch('terms')}
         />
+        {fromField('terms', 'setting-terms')}
         <input
           data-testid="setting-late-pct"
           placeholder="Late percent (blank: 0.00)"
@@ -135,6 +166,7 @@ function SheetSettings() {
           onInput={edit('latePct')}
           onFocus={touch('latePct')}
         />
+        {fromField('latePct', 'setting-late-pct')}
         <input
           data-testid="setting-policy-date"
           placeholder="Policy date YYYY-MM-DD (blank: today)"
@@ -152,16 +184,18 @@ function SheetSettings() {
           onFocus={touch('periodNumberingFrom')}
         />
         {GRADE_TERMS.map(({ grade, key }) => (
-          <input
-            key={grade}
-            data-testid={`setting-terms-${grade}`}
-            placeholder={`Terms of grade ${grade} in days (blank: the sheet's)`}
-            inputMode="numeric"
-            value={valueOf(key)}
-            onChange={edit(key)}
-            onInput={edit(key)}
-            onFocus={touch(key)}
-          />
+          <Fragment key={grade}>
+            <input
+              data-testid={`setting-terms-${grade}`}
+              placeholder={`Terms of grade ${grade} in days (blank: the sheet's)`}
+              inputMode="numeric"
+              value={valueOf(key)}
+              onChange={edit(key)}
+              onInput={edit(key)}
+              onFocus={touch(key)}
+            />
+            {fromField(key, `setting-terms-${grade}`)}
+          </Fragment>
         ))}
         <input
           data-testid="setting-cap"
@@ -172,11 +206,12 @@ function SheetSettings() {
           onInput={edit('cap')}
           onFocus={touch('cap')}
         />
+        {fromField('cap', 'setting-cap')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap an amount, 0.00 or more, with up to two decimals, or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap an amount, 0.00 or more, with up to two decimals, or blank; a from-date a date (YYYY-MM-DD), or blank.</span>
         )}
       </form>
     </section>

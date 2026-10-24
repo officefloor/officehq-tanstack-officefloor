@@ -15,8 +15,8 @@ import net.officefloor.hq.app.sheet.Sheet;
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
  * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
- * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then, or the one that would has ended by then). An
- * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
+ * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor in force on its date; none — n/a — when no rate applies then, or the one that would has ended by then). An
+ * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent in force on its date of the figure for every
  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
  * freezes it in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
  * never takes a late charge. The rounding policy: a claim dated before the sheet's policy date (its today when blank)
@@ -28,9 +28,7 @@ public class ClaimFigures {
 
     private final PersonGrades grades;
 
-    private final BigDecimal floor;
-
-    private final BigDecimal latePct;
+    private final Sheet sheet;
 
     private final LocalDate today;
 
@@ -40,13 +38,12 @@ public class ClaimFigures {
 
     /** @param rates the sheet's rates.
      *  @param grades the person's grades over time.
-     *  @param sheet the sheet: its floor (a live due is at least it), and its late percent and today (the
-     *  late charge). */
+     *  @param sheet the sheet: its floor on a claim's date (a live due is at least it), and its late percent on a
+     *  claim's date and its today (the late charge), and its cap in force on its today. */
     public ClaimFigures(List<Rate> rates, PersonGrades grades, Sheet sheet) {
         this.rates = rates;
         this.grades = grades;
-        this.floor = sheet.getFloor();
-        this.latePct = sheet.getLatePct();
+        this.sheet = sheet;
         this.today = sheet.getToday();
         this.policyDate = sheet.policyDateInForce();
         this.cap = sheet.getCap();
@@ -70,7 +67,7 @@ public class ClaimFigures {
             return BigDecimal.ZERO.setScale(2);
         }
         long periods = ChronoUnit.DAYS.between(claim.getDueBy(), today) / 30;
-        return figure.multiply(latePct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
+        return figure.multiply(sheet.latePctOn(claim.getDate())).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
                 .setScale(2, rounding(claim));
     }
 
@@ -113,7 +110,7 @@ public class ClaimFigures {
             return figure;
         }
         long periods = ChronoUnit.DAYS.between(claim.getDueBy(), today) / 30;
-        return figure.add(figure.multiply(latePct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
+        return figure.add(figure.multiply(sheet.latePctOn(claim.getDate())).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
                 .setScale(2, rounding(claim)));
     }
 
@@ -140,7 +137,7 @@ public class ClaimFigures {
     /** The claim's live figure: neither frozen nor bound; null when it has none (n/a). */
     private BigDecimal liveFigure(Claim claim) {
         return rateOn(grades.on(claim.getDate()), claim.getDate())
-                .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : floor, rounding(claim)))
+                .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : sheet.floorOn(claim.getDate()), rounding(claim)))
                 .orElse(null);
     }
 

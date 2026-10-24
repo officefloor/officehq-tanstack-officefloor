@@ -23,7 +23,7 @@ public class BuildClaim {
         LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
-        claim.setDueBy(date.plusDays(sheet.termsFor(grades.gradesOf(person).on(date))));
+        claim.setDueBy(date.plusDays(sheet.termsFor(grades.gradesOf(person).on(date), date)));
         claimOut.set(repository.save(claim));
     }
 }

@@ -1,18 +1,20 @@
 package net.officefloor.hq.app.setting;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Map;
+import java.util.List;
 
-/** A validated settings form: whether the clerk limit is set and to what (two decimals; null: no limit), and
- *  whether the floor is set and to what (two decimals), and whether the terms are set and to what (days), and whether the late percent is set and to what (two decimals),
- *  and whether the policy date is set and to what (null: the sheet's today),
- *  and whether the period numbering from is set and to what (null: off),
- *  and the grades whose own terms are set, by grade (A, B, C, in that order), to what (days; null: the sheet's terms),
- *  and whether the cap is set and to what (two decimals; null: none). */
-public record SettingsInput(boolean setClerkLimit, BigDecimal clerkLimit, boolean setFloor, BigDecimal floor,
-        boolean setTerms, int terms, boolean setLatePct, BigDecimal latePct,
-        boolean setPolicyDate, LocalDate policyDate,
-        boolean setPeriodNumberingFrom, LocalDate periodNumberingFrom,
-        Map<String, Integer> gradeTerms, boolean setCap, BigDecimal cap) {
+/** A validated settings form: the settings it sets, in the order they are recorded — the clerk limit, the floor, the
+ *  terms, the late percent, the policy date, the period numbering from, the terms of grades A, B and C, the cap. */
+public record SettingsInput(List<Change> changes) {
+
+    /** A setting the form sets: its key (as the audit names it), its value as the screen shows it (null: blank —
+     *  no clerk limit, no cap, a grade on the sheet's terms, the policy date on the sheet's today, the period
+     *  numbering off), and whether it is dated, and the from-date given (null: none given — a dated setting is then
+     *  recorded from the sheet's today). */
+    public record Change(String key, String value, boolean dated, LocalDate from) {
+    }
+
+    public boolean sets(String key) {
+        return changes.stream().anyMatch(c -> c.key().equals(key));
+    }
 }
