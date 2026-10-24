@@ -6,8 +6,32 @@ import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
  *  when it applies from the beginning of time), through a to-date (null when it has no end), and the sheet it is set
- *  on — the sheet's own, or one up its chain of parents; the newest of its versions, with how many it has. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; sheet: string; version: number };
+ *  on — the sheet's own, or one up its chain of parents; the newest of its versions, with how many it has; and each
+ *  time it was set, in order (empty when not known: it applies to every claim as it is). */
+export type Rate = {
+  grade: string; pct: string; from: string | null; to: string | null; sheet: string; version: number;
+  layers?: RateLayer[];
+};
+
+/** One time a rate was set: its percent and to-date then, and, when it was forward-only (a from-date on or after the
+ *  sheet's today then), the highest claim id there was (null: it applies to every claim). */
+export type RateLayer = { pct: string; to: string | null; after: number | null };
+
+/** A rate as it applies to a claim (by its id): the last time it was set that applies to it — not forward-only, or
+ *  forward-only before the claim was added; undefined when none does. As it is when its settings are not known. */
+export function rateForClaim(r: Rate, claimId: number): Rate | undefined {
+  const layers = r.layers ?? [];
+  if (layers.length === 0) return r;
+  let applies: RateLayer | undefined;
+  for (const l of layers) if (l.after === null || claimId > l.after) applies = l;
+  if (applies === layers[layers.length - 1]) return r;
+  return applies && { ...r, pct: applies.pct, to: applies.to };
+}
+
+/** The rates that apply to a claim (by its id), as {@link rateForClaim}. */
+export function ratesForClaim(rates: Rate[] | undefined, claimId: number): Rate[] {
+  return (rates ?? []).flatMap((r) => rateForClaim(r, claimId) ?? []);
+}
 
 export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
@@ -55,12 +79,12 @@ export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: st
 }
 
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to (not while PENDING),
- *  else its rate figure at the rate on its date of the grade (its person's grade on its date) ("n/a" when it has none),
+ *  else its rate figure at the rate on its date (of those that apply to it: a forward-only rate saved after it was added does not) of the grade (its person's grade on its date) ("n/a" when it has none),
  *  rounded by the sheet's policy; no floor (that comes last, in {@link chargedOf}). */
 export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, halfUp = false): string {
   if (c.due !== null) return c.due;
   if (isBound(c)) return c.statedDue ?? 'n/a';
-  return dueOf(c.amount, rateOn(rates, grade, c.date), halfUp);
+  return dueOf(c.amount, rateOn(ratesForClaim(rates, c.id), grade, c.date), halfUp);
 }
 
 /** A claim's due: a settled claim's frozen due, else the greater of the sheet's floor in force on its date and its figure

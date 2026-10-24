@@ -66,7 +66,7 @@ public class ApplyClone {
         copyRows(entityManager, from, to, "sheet_role", "user_name, role");
         copyRows(entityManager, from, to, "rate", "grade, pct, from_date, to_date, version");
         copyRows(entityManager, from, to, "rate_version", "grade, from_date, version, pct, to_date, replaced_on");
-        copyRows(entityManager, from, to, "rate_log", "grade, pct, from_date, to_date, made_on");
+        copyRows(entityManager, from, to, "rate_log", "grade, pct, from_date, to_date, made_on, forward_after");
         copyRows(entityManager, from, to, "holiday", "holiday_date");
         copyRows(entityManager, from, to, "void_reason", "reason");
         copyRows(entityManager, from, to, "claim_template", "name, amount, note");

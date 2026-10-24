@@ -52,7 +52,8 @@ public final class RateRules {
     }
 
     /** Sets the grade's rate as the rate form does, returning it saved: when the grade already has one for the
-     *  from-date, that one is kept as an older version and the new one is its next. */
+     *  from-date, that one is kept as an older version and the new one is its next. One with a from-date on or after the
+     *  sheet's today is forward-only: it applies only to claims added after it is saved. */
     public static Rate set(RateInput input, Sheet sheet, RateRepository repository, RateLogRepository log,
             RateVersionRepository versions) {
         Rate rate = repository.findWithFrom(sheet.getId(), input.grade(), input.from()).orElse(null);
@@ -65,7 +66,8 @@ public final class RateRules {
         rate.setPct(input.pct());
         rate.setToDate(input.to());
         Rate saved = repository.saveAndFlush(rate);
-        log.saveAndFlush(new RateLog(saved, sheet.getToday()));
+        boolean forwardOnly = input.from() != null && !input.from().isBefore(sheet.getToday());
+        log.saveAndFlush(new RateLog(saved, sheet.getToday(), forwardOnly ? log.lastClaimId() : null));
         return saved;
     }
 }

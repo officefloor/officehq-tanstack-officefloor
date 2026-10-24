@@ -148,7 +148,17 @@ public class ClaimFigures {
     /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. When the
      *  sheet has none in force then, the next sheet up its chain's (the rates of each sheet come in chain order). */
     private Optional<BigDecimal> rateOn(String grade, LocalDate on) {
-        List<String> chain = new ArrayList<>(List.of(sheet.getId()));
+        return rateOn(grade, on, rates);
+    }
+
+    /** The percent of the grade's rate that applies to the claim on its date, as {@link #rateOn(String, LocalDate)}:
+     *  a forward-only rate saved after the claim was added does not apply to it ({@link Rate#forClaim}). */
+    private Optional<BigDecimal> rateOn(String grade, Claim claim) {
+        return rateOn(grade, claim.getDate(), rates.stream().flatMap(r -> r.forClaim(claim.getId()).stream()).toList());
+    }
+
+    private static Optional<BigDecimal> rateOn(String grade, LocalDate on, List<Rate> rates) {
+        List<String> chain = new ArrayList<>();
         rates.stream().map(Rate::getSheetId).filter(id -> !chain.contains(id)).forEach(chain::add);
         for (String sheetId : chain) {
             Optional<BigDecimal> pct = rates.stream()
@@ -200,7 +210,7 @@ public class ClaimFigures {
 
     /** The claim's live figure: neither frozen nor bound; null when it has none (n/a). */
     private BigDecimal liveFigure(Claim claim) {
-        return rateOn(grades.on(claim.getDate()), claim.getDate())
+        return rateOn(grades.on(claim.getDate()), claim)
                 .map(pct -> rateFigure(claim.getAmount(), pct, rounding(claim)))
                 .orElse(null);
     }

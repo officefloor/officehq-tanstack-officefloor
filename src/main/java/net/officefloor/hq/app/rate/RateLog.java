@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** One rate set on a sheet, as it was set, with the sheet's today then. */
+/** One rate set on a sheet, as it was set, with the sheet's today then; when forward-only, the highest claim id there
+ *  was then (it applies only to claims with an id above it). */
 @Entity
 @Table(name = "rate_log")
 public class RateLog {
@@ -36,7 +37,15 @@ public class RateLog {
     @Column(name = "made_on", nullable = false)
     private LocalDate madeOn;
 
+    @Column(name = "forward_after")
+    private Long forwardAfter;
+
     protected RateLog() {
+    }
+
+    public RateLog(Rate rate, LocalDate madeOn, Long forwardAfter) {
+        this(rate, madeOn);
+        this.forwardAfter = forwardAfter;
     }
 
     public RateLog(Rate rate, LocalDate madeOn) {
@@ -66,5 +75,10 @@ public class RateLog {
 
     public LocalDate getMadeOn() {
         return madeOn;
+    }
+
+    /** The highest claim id there was when it was set forward-only (null: it applies to every claim). */
+    public Long getForwardAfter() {
+        return forwardAfter;
     }
 }

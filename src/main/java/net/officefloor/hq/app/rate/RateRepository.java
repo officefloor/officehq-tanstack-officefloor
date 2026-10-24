@@ -54,12 +54,19 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
         return chain;
     }
 
+    /** The sheet's rates set, in the order set. */
+    @Query("select l from RateLog l where l.sheetId = :sheetId order by l.id")
+    List<RateLog> logsOf(@Param("sheetId") String sheetId);
+
     /** The sheet's rates (as {@link #findBySheetIdOrderByGradeAscFromDateAscIdAsc}), then those of each sheet up its
-     *  chain ({@link #chainOf}) in turn: a grade with no rate in force on a date on a sheet takes the next one's. */
+     *  chain ({@link #chainOf}) in turn, each with its log lines ({@link Rate#forClaim}): a grade with no rate in force on a date on a sheet takes the next one's. */
     default List<Rate> findInChain(String sheetId) {
         List<Rate> rates = new ArrayList<>();
         for (String id : chainOf(sheetId)) {
-            rates.addAll(findBySheetIdOrderByGradeAscFromDateAscIdAsc(id));
+            List<Rate> own = findBySheetIdOrderByGradeAscFromDateAscIdAsc(id);
+            List<RateLog> lines = logsOf(id);
+            own.forEach(r -> r.setLayers(lines));
+            rates.addAll(own);
         }
         return rates;
     }
