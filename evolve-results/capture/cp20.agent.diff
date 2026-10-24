@@ -1,0 +1,170 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index ef3c4214..79a91871 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -7,7 +7,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
+- *  the number given when it was opened (null for a draft or a voided claim) and the due fixed when it was
++ *  the number given when it was opened (null for a claim never opened; a voided claim keeps it) and the due fixed when it was
+  *  settled (null when it has none: its due is live), and who opened it (null when never opened); whether its person's last statement binds it, and the
+  *  figure it binds it to (null: n/a). */
+ export type Claim = {
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 2674f556..5adfb475 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -37,10 +37,7 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-due">{figureOf(c, rates.data, person.grade)}</span>{' '}
+             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+-            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c}>
+-              <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
+-                Edit
+-              </button>
++            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
+               {claim?.id === c.id && (
+                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
+                   Cancel
+@@ -64,8 +61,11 @@ const ACTIONS = [
+ 
+ // A claim's status and the buttons that change it. A change its status does not allow is refused
+ // by the server and shows the claim's error, as is settling a claim the signed-in user opened; the error goes as soon as the next action on the row
+-// is taken.
+-function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: Claim; children: ReactNode }) {
++// is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
++// instead of opening its editor (an open claim is voided and added anew).
++function ClaimStatusActions({ sheet, claim, onEdit, children }: {
++  sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
++}) {
+   const [user] = useCurrentUser();
+   const queryClient = useQueryClient();
+   const change = useMutation({
+@@ -73,6 +73,7 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim:
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+   });
+   const submitChange = useSubmitOnce(change);
++  const [editRefused, setEditRefused] = useState(false);
+   const periods = usePeriods();
+   const closed = !!periodOn(periods.data, claim.date)?.closed;
+   return (
+@@ -85,16 +86,31 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim:
+           data-testid={`claim-${action}`}
+           disabled={change.isPending}
+           onClick={() => {
++            setEditRefused(false);
+             submitChange(action);
+           }}
+         >
+           {label}
+         </button>
+       ))}{' '}
+-      <span onClickCapture={() => change.reset()}>{children}</span>
+-      {change.isError && (
++      <span onClickCapture={() => { change.reset(); setEditRefused(false); }}>
++        <button
++          type="button"
++          data-testid="claim-edit"
++          onClick={() => {
++            if (claim.status === 'DRAFT') onEdit();
++            else setEditRefused(true);
++          }}
++        >
++          Edit
++        </button>
++        {children}
++      </span>
++      {(change.isError || editRefused) && (
+         <span data-testid="claim-error">
+-          {closed
++          {editRefused
++            ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
++            : closed
+             ? 'This claim is dated in a closed period, so its status cannot change.'
+             : change.variables === 'settle' && claim.openedBy === user
+             ? 'You opened this claim, so someone else must settle it.'
+@@ -164,7 +180,7 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
+       {save.isError && (
+         <span data-testid="claim-form-error">
+           The amount must be a number, 0.00 or more, with up to two decimals, and the date a calendar date
+-          not in a closed period.
++          not in a closed period; only a draft claim can be edited.
+         </span>
+       )}
+     </form>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index f0438c5b..1339c94e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -5,10 +5,14 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Saves the claim's changes; refuses them when its date, or the one it would move to, is in a closed period. */
++/** Saves the claim's changes; refuses them unless the claim is a DRAFT (an open claim is voided and added anew
++ * instead), and when its date, or the one it would move to, is in a closed period. */
+ public class ApplyClaim {
+     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
+             PeriodRepository periods) throws InvalidClaimException {
++        if (claim.getStatus() != ClaimStatus.DRAFT) {
++            throw new InvalidClaimException("Only a draft claim can be edited; void it and add a new one.");
++        }
+         LocalDate date = input.date() != null ? input.date() : sheet.getToday();
+         if (periods.isClosedOn(sheet.getId(), claim.getDate()) || periods.isClosedOn(sheet.getId(), date)) {
+             throw new InvalidClaimException("No claim can be edited in a closed period.");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index c747078e..4655ebce 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+ /**
+  * Moves the claim to the status the action leads to; refuses a change its status does not allow. Opening gives
+- * the claim the sheet's next number and records who opened it; voiding clears the number. The one who opened a
++ * the claim the sheet's next number and records who opened it; a voided claim keeps its number (never reused). The one who opened a
+  * claim cannot settle it. Settling fixes the claim's due at its person's grade's
+- * rate in force on the claim's date (or at the figure its person's last statement bound it to) (none when no rate applies then, so it stays live). A claim dated in a closed period cannot change status. Returns the number the claim had for the
++ * rate in force on the claim's date (or at the figure its person's last statement bound it to) (none when no rate applies then, so it stays live). A claim dated in a closed period cannot change status. Returns the claim's number for the
+  * audit.
+  */
+ public class ApplyClaimStatus {
+@@ -40,12 +40,6 @@ public class ApplyClaimStatus {
+                 throw new ClaimStatusException("The one who opened a claim cannot settle it.");
+             }
+             claim.setStatus(next);
+-            if (claim.getStatus() == ClaimStatus.VOID) {
+-                Integer had = claim.getNumber();
+-                claim.setNumber(null);
+-                repository.saveAndFlush(claim);
+-                return had;
+-            }
+             if (claim.getStatus() == ClaimStatus.SETTLED) {
+                 claim.setDue(claim.isStated() ? claim.getStatedDue() : people.findById(claim.getPersonId())
+                         .flatMap(p -> rates.findInForce(claim.getSheetId(), p.getGrade(), claim.getDate()))
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index fb299583..feea9802 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -8,7 +8,7 @@ import net.officefloor.plugin.section.clazz.Parameter;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Records the claim's status change, once it is saved, with the number the claim had (a void clears it);
++/** Records the claim's status change, once it is saved, with the claim's number when it has one;
+  * a settle adds the due it fixed (n/a when the grade had no rate). */
+ public class AuditClaimStatus {
+     public void audit(@Parameter Integer number, @Val Claim claim, PersonRepository people,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index d2e24245..73175f63 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -37,7 +37,7 @@ public class Claim {
+     @Column(nullable = false)
+     private String status = ClaimStatus.DRAFT.name();
+ 
+-    /** The sheet's number given when the claim was opened; null for a draft or a voided claim. */
++    /** The sheet's number given when the claim was opened; null for a claim never opened; a voided claim keeps it. */
+     @Column(name = "claim_number")
+     private Integer number;
+ 
