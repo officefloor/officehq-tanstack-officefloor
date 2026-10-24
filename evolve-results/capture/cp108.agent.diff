@@ -1,0 +1,179 @@
+diff --git a/src/main/frontend/features/people/patrons.slot.tsx b/src/main/frontend/features/people/patrons.slot.tsx
+index d9b8cb42..5e504bb6 100644
+--- a/src/main/frontend/features/people/patrons.slot.tsx
++++ b/src/main/frontend/features/people/patrons.slot.tsx
+@@ -6,7 +6,7 @@ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { useClaims, type Claim } from '../claims/claims';
+-import { sumDue } from '../rates/rates';
++import { formatCents, sumDue } from '../rates/rates';
+ import { peoplePath, peopleQueryKey, usePeople, type Person } from './people';
+ 
+ /** How many days back from the sheet's today (today included) a patron's settled claim counts toward backing. */
+@@ -16,20 +16,49 @@ const BACKING_DAYS = 90;
+ const daysBefore = (day: string, n: number) =>
+   new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+ 
+-/** A person's backing: their patrons' frozen figures over SETTLED claims dated within the window ending today. */
++/** A whole number divided by a positive one, rounded half to even. */
++const divideHalfEven = (n: bigint, d: bigint) => {
++  const negative = n < 0n;
++  const m = negative ? -n : n;
++  let q = m / d;
++  const rest = (m % d) * 2n;
++  if (rest > d || (rest === d && q % 2n === 1n)) q += 1n;
++  return negative ? -q : q;
++};
++
++/** Each patron's share in hundredths of a percent, in the order they were named: 100.00 split equally, each rounded
++ *  half to even to two decimals, the remainder (100.00 minus the shares added up) going to the first-named. */
++export function sharesOf(count: number): bigint[] {
++  if (count === 0) return [];
++  const each = divideHalfEven(10000n, BigInt(count));
++  const shares = Array.from({ length: count }, () => each);
++  shares[0] += 10000n - each * BigInt(count);
++  return shares;
++}
++
++/** A patron's figure: their frozen figures over SETTLED claims dated within the window ending today, added up. */
++function figureOfPatron(patron: Person, claims: Claim[], today: string, since: string): string {
++  return sumDue(claims
++    .filter((c) => c.personId === patron.id && c.status === 'SETTLED' && c.due !== null && since <= c.date && c.date <= today)
++    .map((c) => c.due as string));
++}
++
++/** A person's backing: over their patrons (in the order they were named), each patron's figure times their share
++ *  divided by 100, added up exactly and rounded half to even to two decimals. */
+ export function backingOf(patrons: Person[], claims: Claim[], today: string | undefined): string {
+   if (today === undefined) return sumDue([]);
+   const since = daysBefore(today, BACKING_DAYS - 1);
+-  const ids = new Set(patrons.map((p) => p.id));
+-  return sumDue(claims
+-    .filter((c) => ids.has(c.personId) && c.status === 'SETTLED' && c.due !== null && since <= c.date && c.date <= today)
+-    .map((c) => c.due as string));
++  const shares = sharesOf(patrons.length);
++  // figure cents times share hundredths-of-a-percent = millionths; dividing by 10000 gives cents.
++  const total = patrons.reduce((n, p, i) =>
++    n + BigInt(Math.round(Number(figureOfPatron(p, claims, today, since)) * 100)) * shares[i], 0n);
++  return formatCents(divideHalfEven(total, 10000n));
+ }
+ 
+ // A person's patrons — other people on the sheet they have named, one at a time, each once; shown by name,
+-// sorted — and the button that names another. Their backing is the sum of their patrons' settled figures over
+-// their SETTLED claims dated within the 90 days up to and including the sheet's today, each at its frozen figure
+-// (0.00 with none).
++// each with their share, sorted by name — and the button that names another. Their backing is, over their patrons,
++// each patron's figure (their SETTLED claims dated within the 90 days up to and including the sheet's today, each at
++// its frozen figure) times their share divided by 100, added up and rounded half to even (0.00 with none).
+ function PatronsHeader() {
+   return (
+     <>
+@@ -61,7 +90,10 @@ function PersonPatrons({ person }: { person: Person }) {
+   const patrons = person.patronIds
+     .map((id) => everyone.find((p) => p.id === id))
+     .filter((p): p is Person => p !== undefined);
+-  const names = patrons.map((p) => p.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  const shares = sharesOf(patrons.length);
++  const names = patrons.map((p, i) => ({ name: p.name, share: formatCents(shares[i]) }))
++    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
++    .map((p) => `${p.name} ${p.share}`);
+   const backing = backingOf(patrons, claims.data ?? [], today);
+   return (
+     <>
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index 27ddefbf..af8ecc6c 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -15,6 +15,8 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Patron;
+ import net.officefloor.hq.app.person.PatronRepository;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonAlias;
++import net.officefloor.hq.app.person.PersonAliasRepository;
+ import net.officefloor.hq.app.person.PersonGrade;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -49,6 +51,7 @@ public class AsOf {
+     private final PersonRepository people;
+     private final PersonGradeRepository grades;
+     private final PatronRepository patrons;
++    private final PersonAliasRepository aliases;
+     private final StatementRepository statements;
+     private final ClaimRepository claims;
+     private final ClaimLogRepository claimLogs;
+@@ -59,7 +62,7 @@ public class AsOf {
+ 
+     public AsOf(History history, SettingLogRepository settingLogs, RateLogRepository rateLogs, RateRepository rates,
+             PersonRepository people, PersonGradeRepository grades, PatronRepository patrons,
+-            StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
++            PersonAliasRepository aliases, StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
+             PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches) {
+         this.history = history;
+         this.settingLogs = settingLogs;
+@@ -68,6 +71,7 @@ public class AsOf {
+         this.people = people;
+         this.grades = grades;
+         this.patrons = patrons;
++        this.aliases = aliases;
+         this.statements = statements;
+         this.claims = claims;
+         this.claimLogs = claimLogs;
+@@ -118,6 +122,14 @@ public class AsOf {
+                 : sorted(history.asOf(sheetId, Patron.class, date, now, Patron::getId), Comparator.comparing(Patron::getId));
+     }
+ 
++    /** The sheet's aliases, in the order they were given. */
++    public List<PersonAlias> aliases(String sheetId, LocalDate date) {
++        List<PersonAlias> now = aliases.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, PersonAlias.class, date, now, PersonAlias::getId),
++                        Comparator.comparing(PersonAlias::getId));
++    }
++
+     /** The sheet's statements, oldest first. */
+     public List<Statement> statements(String sheetId, LocalDate date) {
+         List<Statement> now = statements.findBySheetIdOrderByIdAsc(sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/history/History.java b/src/main/java/net/officefloor/hq/app/history/History.java
+index b7a67426..30057100 100644
+--- a/src/main/java/net/officefloor/hq/app/history/History.java
++++ b/src/main/java/net/officefloor/hq/app/history/History.java
+@@ -15,6 +15,7 @@ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.person.Patron;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonAlias;
+ import net.officefloor.hq.app.person.PersonGrade;
+ import net.officefloor.hq.app.role.Delegation;
+ import net.officefloor.hq.app.role.Role;
+@@ -38,7 +39,8 @@ public class History {
+     /** The kind each kept entity is recorded under. */
+     private static final Map<Class<?>, String> KINDS = Map.of(Claim.class, "claim", Person.class, "person",
+             PersonGrade.class, "person-grade", Period.class, "period", Patron.class, "patron", Watch.class, "watch",
+-            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement");
++            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement", PersonAlias.class,
++            "person-alias");
+ 
+     /** An entity's state as its fields hold it: every field, no getter. */
+     private final JsonMapper json = JsonMapper.builder()
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index c8f84913..bac0369e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** The sheet's people; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithPeople {
+     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+-            PersonAliasRepository aliases,
+             ObjectResponse<List<PersonResponse>> response) throws InvalidTodayException {
+         LocalDate date = AsOf.dateOf(asOfParam);
+         Sheet view = asOf.sheet(sheet, date);
+@@ -23,7 +22,7 @@ public class RespondWithPeople {
+                 .collect(Collectors.groupingBy(Statement::getPersonId));
+         Map<Long, List<Patron>> patronsOf = asOf.patrons(sheet.getId(), date).stream()
+                 .collect(Collectors.groupingBy(Patron::getPersonId));
+-        Map<Long, List<PersonAlias>> aliasesOf = aliases.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++        Map<Long, List<PersonAlias>> aliasesOf = asOf.aliases(sheet.getId(), date).stream()
+                 .collect(Collectors.groupingBy(PersonAlias::getPersonId));
+         Map<Long, List<PersonGrade>> gradesOf = asOf.grades(sheet.getId(), date);
+         response.send(asOf.people(sheet.getId(), date).stream()
