@@ -17,4 +17,10 @@ public interface PeriodRepository extends JpaRepository<Period, Long> {
         return date != null && findBySheetIdOrderByFromDateAscIdAsc(sheetId).stream()
                 .anyMatch(p -> p.isClosed() && p.contains(date));
     }
+
+    /** Whether a date falls in one of the sheet's soft-closed periods. */
+    default boolean isSoftClosedOn(String sheetId, LocalDate date) {
+        return date != null && findBySheetIdOrderByFromDateAscIdAsc(sheetId).stream()
+                .anyMatch(p -> p.isSoftClosed() && p.contains(date));
+    }
 }

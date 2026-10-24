@@ -57,6 +57,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
             <span data-testid="claim-proofs">{c.proofs}</span>{' '}
             <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+            <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}
               editorSubmits={claim?.id === c.id ? submits : 0}>
               {claim?.id === c.id && (

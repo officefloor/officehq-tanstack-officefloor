@@ -5,7 +5,6 @@ import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.Claim;
-import net.officefloor.hq.app.claim.ClaimAudit;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRules;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -51,7 +50,7 @@ public class AddPastedClaims {
         String by = AuditUser.decode(user);
         for (int i = 0; i < made.size(); i++) {
             Claim claim = claims.saveAndFlush(made.get(i));
-            audit.record(ClaimAudit.line("CLAIM_ADDED", claim, persons.get(i).getName(), by));
+            ClaimRules.auditAdded(claim, persons.get(i).getName(), by, audit);
             ClaimRules.log(claim, sheet, log, people, rates, grades, by);
         }
         addedOut.set(new PastedClaims(made.size()));

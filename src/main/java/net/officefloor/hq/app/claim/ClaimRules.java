@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -65,8 +66,17 @@ public final class ClaimRules {
         LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
+        claim.setLateEntry(periods.isSoftClosedOn(sheet.getId(), date));
         claim.setDueBy(date.plusDays(sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date)));
         return claim;
+    }
+
+    /** Records the claim's adding, and after it, when it is a late entry, its LATE_ENTRY. */
+    public static void auditAdded(Claim claim, String personName, String by, Audit audit) {
+        audit.record(ClaimAudit.line("CLAIM_ADDED", claim, personName, by));
+        if (claim.isLateEntry()) {
+            audit.record(ClaimAudit.line("LATE_ENTRY", claim, personName, by));
+        }
     }
 
     /** Writes the claim's status log entry as LogClaimStatus does, made by the given user. */

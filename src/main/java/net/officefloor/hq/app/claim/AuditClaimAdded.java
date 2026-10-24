@@ -6,10 +6,10 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Records the added claim, once it is saved. */
+/** Records the added claim, once it is saved, and its late entry when it is one. */
 public class AuditClaimAdded {
     public void audit(@Val Claim claim, @Val Person person,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
-        audit.record(ClaimAudit.line("CLAIM_ADDED", claim, person.getName(), AuditUser.decode(user)));
+        ClaimRules.auditAdded(claim, person.getName(), AuditUser.decode(user), audit);
     }
 }
