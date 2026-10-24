@@ -7,8 +7,9 @@ import { useCurrentSheet } from '../session/session';
  *  (one with a retirement date set, whatever the date) counting as 0.00; `balanced` is whether it is exactly 100.00. */
 export type Pool = { id: number; name: string; totalShare: string; balanced: boolean; members: PoolMember[] };
 
-/** A pool's member: the person, their name and their share (two decimals). */
-export type PoolMember = { personId: number; name: string; share: string };
+/** A pool's member: the person, their name, their share (two decimals) and their cut of the sheet's pot (two
+ *  decimals; "" when the pool is not balanced or the sheet has no pot). */
+export type PoolMember = { personId: number; name: string; share: string; cut: string };
 
 export const poolsQueryKey = (sheetId: string) => ['sheet', sheetId, 'pools'] as const;
 

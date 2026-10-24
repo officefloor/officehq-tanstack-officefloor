@@ -6,7 +6,8 @@ import java.util.List;
  *  0.00) and whether that total is exactly 100.00. */
 public record PoolResponse(long id, String name, String totalShare, boolean balanced, List<Member> members) {
 
-    /** A member: the person, their name and their share. */
-    public record Member(long personId, String name, String share) {
+    /** A member: the person, their name, their share and their cut of the sheet's pot ("" when the pool is not
+     *  balanced or there is no pot). */
+    public record Member(long personId, String name, String share, String cut) {
     }
 }

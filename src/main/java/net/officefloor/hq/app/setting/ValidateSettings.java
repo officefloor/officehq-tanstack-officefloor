@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -69,6 +69,7 @@ public class ValidateSettings {
                     "The proof threshold of grade B must be an amount, 0.00 or more, with up to two decimals, or blank.");
             amount(changes, Sheet.proofThresholdKey("C"), request.proofThresholdC(), null, request.proofThresholdCFrom(),
                     "The proof threshold of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            pot(changes, request.pot());
         }
         body.set(new SettingsInput(changes));
     }
@@ -160,6 +161,21 @@ public class ValidateSettings {
             days = String.valueOf(Integer.parseInt(value.trim()));
         }
         changes.add(new SettingsInput.Change(Sheet.GRACE_DAYS, days, false, null));
+    }
+
+    /** Adds the pot when the form sets it: an amount with up to two decimals, or blank (none). Undated. */
+    private static void pot(List<SettingsInput.Change> changes, String value) throws InvalidSettingsException {
+        if (value == null) {
+            return;
+        }
+        String pot = null;
+        if (!value.trim().isEmpty()) {
+            if (!AMOUNT.matcher(value.trim()).matches()) {
+                throw new InvalidSettingsException("The pot must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            }
+            pot = new BigDecimal(value.trim()).setScale(2).toPlainString();
+        }
+        changes.add(new SettingsInput.Change(Sheet.POT, pot, false, null));
     }
 
     /** A setting's from-date: null when blank or left out (the sheet's today). */

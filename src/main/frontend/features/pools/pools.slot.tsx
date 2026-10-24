@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { poolsPath, poolsQueryKey, usePools, type Pool } from './pools';
 
-// The sheet's pools, each with its members, total share and whether it is balanced, and the entry that adds a pool.
+// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced), total share and whether it is balanced, and the entry that adds a pool.
 // A blank name, or one already a pool's, is refused by the server and shows the error beside the entry, which goes
 // as soon as the entry changes.
 function Pools() {
@@ -88,7 +88,8 @@ function PoolRow({ pool }: { pool: Pool }) {
           {pool.members.map((m) => (
             <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
               <span data-testid="pool-member-name">{m.name}</span>{' '}
-              <span data-testid="pool-share">{m.share}</span>
+              <span data-testid="pool-share">{m.share}</span>{' '}
+              <span data-testid="pool-cut">{m.cut}</span>
             </li>
           ))}
         </ul>

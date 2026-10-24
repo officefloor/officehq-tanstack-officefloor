@@ -27,6 +27,9 @@ public class Sheet {
     /** The key of the grace days: undated, a whole number of days (null: off). */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The key of the pot: undated, an amount with two decimals (null: none). */
+    public static final String POT = "pot";
+
     /** The keys of the undated dates, as the settings form names them. */
     public static final String POLICY_DATE = "policy-date", PERIOD_NUMBERING_FROM = "period-numbering-from",
             ENTRY_DATE = "entry-date";
@@ -254,6 +257,11 @@ public class Sheet {
     public Integer getGraceDays() {
         String days = valueOn(GRACE_DAYS, today);
         return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */
+    public BigDecimal getPot() {
+        return amountOn(POT, today);
     }
 
     public boolean isArchived() {
