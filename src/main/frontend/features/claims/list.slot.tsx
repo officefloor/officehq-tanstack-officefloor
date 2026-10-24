@@ -52,6 +52,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+            <span data-testid="claim-proofs">{c.proofs}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
@@ -92,7 +93,9 @@ const ACTIONS = [
 // shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
 // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
 // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
-// in a closed period shows the claim's error. A deferred claim cannot be settled.
+// in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
+// proofs count by one; on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
+// threshold in force on its date cannot be settled or approved while it has no proof: that shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
 }) {
@@ -133,6 +136,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
     },
   });
   const submitDefer = useSubmitOnce(defer);
+  const proof = useMutation({
+    mutationFn: () => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/proof`, undefined, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+  });
+  const submitProof = useSubmitOnce(proof);
   const [editRefused, setEditRefused] = useState(false);
   const action = change.variables?.action;
   const periods = usePeriods();
@@ -144,7 +152,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); setEditRefused(false); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}
       />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
@@ -156,6 +164,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             setEditRefused(false);
             move.reset();
             defer.reset();
+            proof.reset();
             submitChange(action === 'reject' ? { action, reason } : { action });
           }}
         >
@@ -165,7 +174,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); setEditRefused(false); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -178,6 +187,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         onClick={() => {
           change.reset();
           defer.reset();
+          proof.reset();
           setEditRefused(false);
           if (target) submitMove(target.id);
         }}
@@ -188,7 +198,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         data-testid="claim-defer-date"
         placeholder="Defer until YYYY-MM-DD"
         value={deferTo}
-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); change.reset(); move.reset(); setEditRefused(false); }}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); change.reset(); move.reset(); proof.reset(); setEditRefused(false); }}
       />{' '}
       <button
         type="button"
@@ -197,13 +207,28 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         onClick={() => {
           change.reset();
           move.reset();
+          proof.reset();
           setEditRefused(false);
           submitDefer(deferTo);
         }}
       >
         Defer
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); setEditRefused(false); }}>
+      <button
+        type="button"
+        data-testid="claim-proof"
+        disabled={proof.isPending}
+        onClick={() => {
+          change.reset();
+          move.reset();
+          defer.reset();
+          setEditRefused(false);
+          submitProof(undefined);
+        }}
+      >
+        Add proof
+      </button>{' '}
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}>
         <button
           type="button"
           data-testid="claim-edit"
@@ -216,9 +241,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || defer.isError || editRefused) && (
+      {(change.isError || move.isError || defer.isError || proof.isError || editRefused) && (
         <span data-testid="claim-error">
-          {defer.isError
+          {proof.isError
+            ? `A ${claim.status} claim cannot gain a proof.`
+            : defer.isError
             ? closed
               ? 'This claim is dated in a closed period, so it cannot be deferred.'
               : claim.status !== 'OPEN'
@@ -238,6 +265,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? 'Only a steward can re-settle a claim.'
             : action === 'resettle'
             ? `Only a settled claim can be re-settled; this one is ${claim.status}.`
+            : (action === 'settle' || action === 'approve') && change.error instanceof HttpError && change.error.status === 422
+            ? 'This claim\'s due is above the proof threshold, so it needs a proof before it can be settled or approved.'
             : action === 'settle' && isDeferred(claim, today)
             ? `This claim is deferred until ${claim.deferredUntil}, so it cannot be settled before then.`
             : action === 'settle' && claim.openedBy === user

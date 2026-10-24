@@ -10,10 +10,10 @@ import net.officefloor.hq.app.sheet.SheetSetting;
 /** The sheet's settings as the screen shows them, each in force on the sheet's today: the clerk limit with two decimals (null: no limit) and the
  *  floor with two decimals, and the terms in days, and the late percent with two decimals, and the policy date (YYYY-MM-DD; "" when
  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
- *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none); and the values recorded
+ *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date. */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
-        String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
+        String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
         Map<String, List<Dated>> dated) {
 
     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
@@ -32,7 +32,9 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 sheet.getPolicyDate() == null ? "" : sheet.getPolicyDate().toString(),
                 sheet.getPeriodNumberingFrom() == null ? "" : sheet.getPeriodNumberingFrom().toString(),
                 gradeTerms(sheet, "A"), gradeTerms(sheet, "B"), gradeTerms(sheet, "C"),
-                sheet.getCap() == null ? "" : sheet.getCap().toPlainString(), dated);
+                sheet.getCap() == null ? "" : sheet.getCap().toPlainString(),
+                sheet.proofThresholdOn(sheet.getToday()) == null ? "" : sheet.proofThresholdOn(sheet.getToday()).toPlainString(),
+                dated);
     }
 
     /** The grade's own terms in days in force on the sheet's today; "" when it uses the sheet's terms. */

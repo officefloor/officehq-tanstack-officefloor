@@ -4,7 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /** A validated settings form: the settings it sets, in the order they are recorded — the clerk limit, the floor, the
- *  terms, the late percent, the policy date, the period numbering from, the terms of grades A, B and C, the cap. */
+ *  terms, the late percent, the policy date, the period numbering from, the terms of grades A, B and C, the cap, the proof threshold. */
 public record SettingsInput(List<Change> changes) {
 
     /** A setting the form sets: its key (as the audit names it), its value as the screen shows it (null: blank —

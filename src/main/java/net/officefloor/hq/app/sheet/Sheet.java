@@ -22,7 +22,7 @@ public class Sheet {
 
     /** The keys of the dated settings: those that carry a figure. */
     public static final String FLOOR = "floor", LATE_PCT = "late-pct", TERMS = "terms", CLERK_LIMIT = "clerk-limit",
-            CAP = "cap";
+            CAP = "cap", PROOF_THRESHOLD = "proof-threshold";
 
     @Id
     private String id;
@@ -34,7 +34,9 @@ public class Sheet {
     /** The dated settings: each setting that carries a figure — the clerk limit (a clerk settles a claim only when
      *  its due is at or below it), the floor (a claim's live due is at least it), the terms and each grade's own terms
      *  (key terms-&lt;grade&gt;; a claim is due by its date plus that many days), the late percent (an overdue claim's due
-     *  gains it of its figure for every full 30 days overdue) and the cap (a person's due-total is at most it) —
+     *  gains it of its figure for every full 30 days overdue), the cap (a person's due-total is at most it) and the
+     *  proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved
+     *  without a proof) —
      *  recorded from a from-date on. */
     @OneToMany(mappedBy = "sheet", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<SheetSetting> settings = new ArrayList<>();
@@ -155,6 +157,11 @@ public class Sheet {
     /** The cap in force on the sheet's today; null when there is none. */
     public BigDecimal getCap() {
         return amountOn(CAP, today);
+    }
+
+    /** The proof threshold in force on a date; null when there is none. */
+    public BigDecimal proofThresholdOn(LocalDate on) {
+        return amountOn(PROOF_THRESHOLD, on);
     }
 
     public LocalDate getPolicyDate() {

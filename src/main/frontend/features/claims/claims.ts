@@ -34,6 +34,8 @@ export type Claim = {
   log: string[];
   /** The date it is deferred until (YYYY-MM-DD), or null when it was never deferred. */
   deferredUntil: string | null;
+  /** How many proofs it has: raised by one at a time (not on a SETTLED or VOID claim). */
+  proofs: number;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

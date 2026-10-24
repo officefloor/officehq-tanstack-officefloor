@@ -81,6 +81,10 @@ public class Claim {
     @Column(name = "deferred_until")
     private LocalDate deferredUntil;
 
+    /** How many proofs the claim has: raised by one at a time; 0 for a new claim. */
+    @Column(nullable = false)
+    private int proofs;
+
     protected Claim() {
     }
 
@@ -231,5 +235,14 @@ public class Claim {
      *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
     public boolean isDeferredOn(LocalDate today) {
         return getStatus() == ClaimStatus.OPEN && deferredUntil != null && deferredUntil.isAfter(today);
+    }
+
+    public int getProofs() {
+        return proofs;
+    }
+
+    /** Raises the claim's proofs count by one. */
+    public void addProof() {
+        proofs++;
     }
 }

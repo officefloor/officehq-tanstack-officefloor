@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim dated in a closed period cannot change status. Returns the claim's number for the
+ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim dated in a closed period cannot change status. Returns the claim's number for the
  * audit.
  */
 public class ApplyClaimStatus {
@@ -32,7 +32,7 @@ public class ApplyClaimStatus {
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
             @Val Sheet sheet, RoleRepository roles,
             @RequestHeader(name = "X-User", required = false) String userHeader,
-            @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException {
+            @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         String user = AuditUser.decode(userHeader);
         if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
             throw new ClaimStatusException("A claim in a closed period cannot change status.");
@@ -77,6 +77,10 @@ public class ApplyClaimStatus {
                         .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
                                 grades.gradesOf(p), sheet).due(claim))
                         .orElse(null);
+                BigDecimal threshold = sheet.proofThresholdOn(claim.getDate());
+                if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
+                    throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof to be settled or approved.");
+                }
                 BigDecimal limit = sheet.getClerkLimit();
                 if ("settle".equals(action) && limit != null && due != null && due.compareTo(limit) > 0 && !steward) {
                     next = ClaimStatus.PENDING;
