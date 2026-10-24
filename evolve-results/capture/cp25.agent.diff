@@ -1,0 +1,388 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index b673dae4..194c5ed8 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -60,5 +60,16 @@ export function sumOf(claims: Claim[], held: Set<number> = new Set()): string {
+   return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
+ }
+ 
++/** A claim's due-by (YYYY-MM-DD): its date plus the terms in force, in days. */
++export function dueByOf(c: Claim, terms: string): string {
++  const d = new Date(`${c.date}T00:00:00Z`);
++  d.setUTCDate(d.getUTCDate() + Number(terms));
++  return d.toISOString().slice(0, 10);
++}
++
++/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's today. */
++export const isOverdue = (c: Claim, terms: string, today: string | undefined) =>
++  c.status === 'OPEN' && today !== undefined && dueByOf(c, terms) < today;
++
+ /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
+ export const useEditingClaim = () => useSearchParam('editClaim', asString);
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index b3676577..0ad0ca36 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -7,8 +7,8 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import type { Person } from '../people/people';
+ import { figureOf, useRates } from '../rates/rates';
+ import { periodOn, usePeriods } from '../periods/periods';
+-import { useSettings } from '../roles/roles';
+-import { claimsPath, claimsQueryKey, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
++import { DEFAULT_TERMS, useSettings } from '../roles/roles';
++import { claimsPath, claimsQueryKey, dueByOf, isOverdue, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
+ 
+ // A person's claims, newest first, with the claim form that adds one — or, while one of their
+ // claims' editor is open, saves its changes.
+@@ -23,6 +23,8 @@ function PersonClaims({ person }: { person: Person }) {
+   const rates = useRates();
+   const periods = usePeriods();
+   const settings = useSettings();
++  const today = useSheetToday();
++  const terms = settings.data?.terms ?? DEFAULT_TERMS;
+   if (!sheet) return null;
+   const mine = (claims.data ?? []).filter((c) => c.personId === person.id);
+   const claim = editing ? mine.find((c) => String(c.id) === editing) : undefined;
+@@ -39,6 +41,8 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-due">{figureOf(c, rates.data, person.grade, settings.data?.floor)}</span>{' '}
+             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
++            <span data-testid="claim-due-by">{dueByOf(c, terms)}</span>{' '}
++            <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
+               {claim?.id === c.id && (
+                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
+diff --git a/src/main/frontend/features/claims/overdue.slot.tsx b/src/main/frontend/features/claims/overdue.slot.tsx
+new file mode 100644
+index 00000000..3d1d8059
+--- /dev/null
++++ b/src/main/frontend/features/claims/overdue.slot.tsx
+@@ -0,0 +1,66 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { usePeople, type Person } from '../people/people';
++import { DEFAULT_TERMS, useSettings } from '../roles/roles';
++import { figureOf, sumDue, useRates, type Rate } from '../rates/rates';
++import { countsLive, heldIds, isOverdue, useClaims, type Claim } from './claims';
++
++// A person's overdue count and overdue-total: their counted claims that are overdue (OPEN, due-by before the
++// sheet's today; a held person's OPEN claims do not count), and those claims' figures added up, skipping n/a.
++// The sheet's are everyone's added up.
++function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, terms: string, today: string | undefined,
++  floor: string | undefined): { count: number; total: string } {
++  const held = heldIds([person]);
++  const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, terms, today));
++  return { count: mine.length, total: sumDue(mine.map((c) => figureOf(c, rates, person.grade, floor))) };
++}
++
++function useOverdue() {
++  const claims = useClaims();
++  const rates = useRates();
++  const today = useSheetToday();
++  const settings = useSettings();
++  return (person: Person) => overdueOf(person, claims.data ?? [], rates.data, settings.data?.terms ?? DEFAULT_TERMS,
++    today, settings.data?.floor);
++}
++
++function OverdueHeader() {
++  return (
++    <>
++      <th>Overdue</th>
++      <th>Overdue total</th>
++    </>
++  );
++}
++
++function PersonOverdue({ person }: { person: Person }) {
++  const { count, total } = useOverdue()(person);
++  return (
++    <>
++      <td data-testid="person-overdue-count">{count}</td>
++      <td data-testid="person-overdue-total">{total}</td>
++    </>
++  );
++}
++
++function OverdueTotal() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople();
++  const overdue = useOverdue();
++  if (!user || !sheet) return null;
++  const each = (people.data ?? []).map(overdue);
++  return (
++    <p>
++      Overdue <strong data-testid="rollup-overdue-count">{each.reduce((n, o) => n + o.count, 0)}</strong>{' '}
++      totalling <strong data-testid="rollup-overdue-total">{sumDue(each.map((o) => o.total))}</strong>
++    </p>
++  );
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 16, Component: OverdueHeader }),
++  PersonCells.fill({ order: 16, Component: PersonOverdue }),
++  HomeMain.fill({ order: 32, Component: OverdueTotal }),
++];
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 2dc7aee1..ea925fcf 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -6,8 +6,11 @@ import { useCurrentSheet } from '../session/session';
+ export type Role = { user: string; role: string };
+ 
+ /** The sheet's settings: its clerk limit with two decimals (null when there is none) and its floor with two
+- *  decimals (a claim's live due is at least it). */
+-export type Settings = { clerkLimit: string | null; floor: string };
++ *  decimals (a claim's live due is at least it), and its terms in days (a claim is due by its date plus them). */
++export type Settings = { clerkLimit: string | null; floor: string; terms: string };
++
++/** The terms a sheet starts at, in days. */
++export const DEFAULT_TERMS = '14';
+ 
+ export const rolesQueryKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
+ export const rolesPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/roles`;
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index 4b811536..ce74a5d8 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -6,11 +6,11 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+-type Key = 'clerkLimit' | 'floor';
++type Key = 'clerkLimit' | 'floor' | 'terms';
+ type Drafts = Partial<Record<Key, string>>;
+ 
+ // The sheet's settings: the clerk limit in force (blank when there is none), the floor in force (a claim's live
+-// due is at least it), and the form that sets them. A clerk settles a claim only when its due is at or below the
++// due is at least it), the terms in force (a claim is due by its date plus that many days), and the form that sets them. A clerk settles a claim only when its due is at or below the
+ // limit; a steward settles anything. Each field shows the value in force until it is typed in; saving sets only
+ // the fields typed in (all of them when none was).
+ function SheetSettings() {
+@@ -32,6 +32,7 @@ function SheetSettings() {
+   const current: Record<Key, string> = {
+     clerkLimit: settings.data?.clerkLimit ?? '',
+     floor: settings.data?.floor ?? '',
++    terms: settings.data?.terms ?? '',
+   };
+   const valueOf = (key: Key) => drafts[key] ?? current[key];
+   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
+@@ -48,6 +49,9 @@ function SheetSettings() {
+       <p>
+         Floor: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
+       </p>
++      <p>
++        Terms (days): <span data-testid="setting-terms-current">{settings.data?.terms ?? ''}</span>
++      </p>
+       <form
+         data-testid="settings-form"
+         onSubmit={(e) => {
+@@ -71,11 +75,19 @@ function SheetSettings() {
+           onChange={edit('floor')}
+           onInput={edit('floor')}
+         />
++        <input
++          data-testid="setting-terms"
++          placeholder="Terms in days (blank: 14)"
++          inputMode="numeric"
++          value={valueOf('terms')}
++          onChange={edit('terms')}
++          onInput={edit('terms')}
++        />
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+         </button>
+         {save.isError && (
+-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank.</span>
++          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank.</span>
+         )}
+       </form>
+     </section>
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index eff1cc25..e26bfec8 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -4,7 +4,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Sets the sheet's clerk limit and floor, those the form sets. */
++/** Sets the sheet's clerk limit, floor and terms, those the form sets. */
+ public class ApplySettings {
+     public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository) {
+         if (input.setClerkLimit()) {
+@@ -13,6 +13,9 @@ public class ApplySettings {
+         if (input.setFloor()) {
+             sheet.setFloor(input.floor());
+         }
++        if (input.setTerms()) {
++            sheet.setTerms(input.terms());
++        }
+         repository.saveAndFlush(sheet);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index 7d815766..5fefbbf3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor. */
++/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor, then the terms. */
+ public class AuditSettingChanged {
+     public void audit(@Val SettingsInput input, @Val Sheet sheet,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+@@ -18,5 +18,8 @@ public class AuditSettingChanged {
+         if (input.setFloor()) {
+             audit.record(head + " key=floor value=" + settings.floor());
+         }
++        if (input.setTerms()) {
++            audit.record(head + " key=terms value=" + settings.terms());
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index 2b42ba25..46ccf5f4 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.setting;
+ import java.math.BigDecimal;
+ 
+ /** A validated settings form: whether the clerk limit is set and to what (two decimals; null: no limit), and
+- *  whether the floor is set and to what (two decimals). */
+-public record SettingsInput(boolean setClerkLimit, BigDecimal clerkLimit, boolean setFloor, BigDecimal floor) {
++ *  whether the floor is set and to what (two decimals), and whether the terms are set and to what (days). */
++public record SettingsInput(boolean setClerkLimit, BigDecimal clerkLimit, boolean setFloor, BigDecimal floor,
++        boolean setTerms, int terms) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 9c309011..cf96de2a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** The settings form as submitted: the clerk limit (blank: no limit) and the floor (blank: 1.00); a key left out
+- *  (null) is not changed. */
+-public record SettingsRequest(String clerkLimit, String floor) {
++/** The settings form as submitted: the clerk limit (blank: no limit), the floor (blank: 1.00) and the terms in
++ *  days (blank: 14); a key left out (null) is not changed. */
++public record SettingsRequest(String clerkLimit, String floor, String terms) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index c302cb13..ef355f40 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -3,11 +3,11 @@ package net.officefloor.hq.app.setting;
+ import net.officefloor.hq.app.sheet.Sheet;
+ 
+ /** The sheet's settings as the screen shows them: the clerk limit with two decimals (null: no limit) and the
+- *  floor with two decimals. */
+-public record SettingsResponse(String clerkLimit, String floor) {
++ *  floor with two decimals, and the terms in days. */
++public record SettingsResponse(String clerkLimit, String floor, String terms) {
+ 
+     public static SettingsResponse from(Sheet sheet) {
+         return new SettingsResponse(sheet.getClerkLimit() == null ? null : sheet.getClerkLimit().setScale(2).toPlainString(),
+-                sheet.getFloor().setScale(2).toPlainString());
++                sheet.getFloor().setScale(2).toPlainString(), String.valueOf(sheet.getTerms()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 15da7943..5aab06e8 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -7,9 +7,12 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
+- *  decimals. A blank clerk limit means no limit; a blank floor is 1.00. A key left out is not changed. */
++ *  decimals, and terms that are not a whole number of days. A blank clerk limit means no limit; a blank floor is
++ *  1.00; blank terms are 14. A key left out is not changed. */
+ public class ValidateSettings {
+ 
++    private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
++
+     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body) throws InvalidSettingsException {
+@@ -29,6 +32,14 @@ public class ValidateSettings {
+             }
+             floorValue = new BigDecimal(floor.trim()).setScale(2);
+         }
+-        body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue));
++        String terms = request == null ? null : request.terms();
++        int termsValue = Sheet.DEFAULT_TERMS;
++        if (terms != null && !terms.trim().isEmpty()) {
++            if (!DAYS.matcher(terms.trim()).matches()) {
++                throw new InvalidSettingsException("The terms must be a whole number of days, 0 or more, or blank.");
++            }
++            termsValue = Integer.parseInt(terms.trim());
++        }
++        body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 3f349e82..728f47d3 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -27,6 +27,13 @@ public class Sheet {
+     @Column(nullable = false, precision = 19, scale = 2)
+     private BigDecimal floor = Sheet.DEFAULT_FLOOR;
+ 
++    /** The terms: a claim is due by its date plus this many days; a sheet starts at 14. */
++    @Column(nullable = false)
++    private int terms = Sheet.DEFAULT_TERMS;
++
++    /** The terms a sheet starts at. */
++    public static final int DEFAULT_TERMS = 14;
++
+     /** The floor a sheet starts at. */
+     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+ 
+@@ -65,4 +72,12 @@ public class Sheet {
+     public void setFloor(BigDecimal floor) {
+         this.floor = floor;
+     }
++
++    public int getTerms() {
++        return terms;
++    }
++
++    public void setTerms(int terms) {
++        this.terms = terms;
++    }
+ }
+diff --git a/src/main/resources/db/migration/V20__sheet_terms.sql b/src/main/resources/db/migration/V20__sheet_terms.sql
+new file mode 100644
+index 00000000..be27bba0
+--- /dev/null
++++ b/src/main/resources/db/migration/V20__sheet_terms.sql
+@@ -0,0 +1,2 @@
++-- The sheet's terms: a claim is due by its date plus this many days. A sheet starts at 14.
++ALTER TABLE sheet ADD COLUMN terms INT DEFAULT 14 NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+index 270e6d55..8d94b70a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+@@ -1,4 +1,4 @@
+-# GET /api/sheets/{sheetId}/settings — the sheet's settings: its clerk limit and floor.
++# GET /api/sheets/{sheetId}/settings — the sheet's settings: its clerk limit, floor and terms.
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index af0a1754..a861e14a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,5 +1,5 @@
+-# PUT /api/sheets/{sheetId}/settings — set the sheet's clerk limit and floor. Body: { "clerkLimit": "1.50", "floor": "2.00" }
+-# (clerk limit blank: no limit; floor blank: 1.00; a key left out is not changed).
++# PUT /api/sheets/{sheetId}/settings — set the sheet's clerk limit, floor and terms. Body: { "clerkLimit": "1.50", "floor": "2.00", "terms": "14" }
++# (clerk limit blank: no limit; floor blank: 1.00; terms blank: 14; a key left out is not changed).
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSettings
+   next: before
