@@ -12,14 +12,15 @@ export type Role = { user: string; role: string };
  *  on or after it, a claim opened is numbered within its period), and the own terms in days of grades A, B and C ("" when the
  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
  *  two decimals ("" when there is none — a person's due-total is at most it), and its proof threshold with two decimals ("" when there is none — a claim whose due is
- *  above the one in force on its date cannot be settled or approved without a proof). Each of those is the value in force on the
+ *  above the one in force on its date cannot be settled or approved without a proof), and its grace days ("" when off; not dated). Each of those is the value in force on the
  *  sheet's today; `dated` holds the values recorded for each setting that carries a figure, by key (floor, late-pct,
  *  terms, terms-A/B/C, clerk-limit, cap, proof-threshold), each from its from-date on (null: from the beginning of time; a null value is blank). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string;
   latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string; proofThreshold: string;
   dated: Record<string, { from: string | null; value: string | null }[]>;
-  permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string };
+  permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string;
+  graceDays: string };
 
 /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
  *  before it, else `start` (the sheet's starting value). */

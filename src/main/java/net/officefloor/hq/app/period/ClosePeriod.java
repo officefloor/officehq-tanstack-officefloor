@@ -38,6 +38,13 @@ public class ClosePeriod {
         if (period.isClosed()) {
             throw new InvalidPeriodException("The period is already closed.");
         }
+        fix(period, sheet, claims, people, rates, grades, log);
+        repository.saveAndFlush(period);
+    }
+
+    /** Closes the period on the sheet, fixing each person's due-total for it as it is now (see above). */
+    static void fix(Period period, Sheet sheet, ClaimRepository claims, PersonRepository people, RateRepository rates,
+            PersonGradeRepository grades, ClaimLogRepository log) {
         Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(period.getSheetId()).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(period.getSheetId());
@@ -57,6 +64,5 @@ public class ClosePeriod {
                 });
         totals.replaceAll((id, t) -> t.setScale(2));
         period.close(totals);
-        repository.saveAndFlush(period);
     }
 }

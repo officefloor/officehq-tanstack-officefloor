@@ -24,6 +24,9 @@ public class Sheet {
     public static final String FLOOR = "floor", LATE_PCT = "late-pct", TERMS = "terms", CLERK_LIMIT = "clerk-limit",
             CAP = "cap", PROOF_THRESHOLD = "proof-threshold";
 
+    /** The key of the grace days: undated, a whole number of days (null: off). */
+    public static final String GRACE_DAYS = "grace-days";
+
     /** The setting key of an action's entry in the permission matrix. */
     public static String permKey(String action) {
         return "perm-" + action;
@@ -184,6 +187,13 @@ public class Sheet {
             return "steward".equals(role) || !("reassign".equals(action) || "reopen".equals(action));
         }
         return List.of(roles.split(",")).contains(role);
+    }
+
+    /** The grace days: once the sheet's today is changed, an open period whose to-date plus them is before it is
+     *  closed. Not dated; null when off. */
+    public Integer getGraceDays() {
+        String days = valueOn(GRACE_DAYS, today);
+        return days == null ? null : Integer.valueOf(days);
     }
 
     public LocalDate getPolicyDate() {

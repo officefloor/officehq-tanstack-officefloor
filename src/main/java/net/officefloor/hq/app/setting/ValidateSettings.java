@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -53,6 +53,7 @@ public class ValidateSettings {
             roles(changes, "reassign", request.permReassign());
             roles(changes, "close", request.permClose());
             roles(changes, "reopen", request.permReopen());
+            graceDays(changes, request.graceDays());
         }
         body.set(new SettingsInput(changes));
     }
@@ -129,6 +130,21 @@ public class ValidateSettings {
             roles = String.join(",", each);
         }
         changes.add(new SettingsInput.Change(Sheet.permKey(action), roles, false, null));
+    }
+
+    /** Adds the grace days when the form sets them: a whole number of days, or blank (off). Undated. */
+    private static void graceDays(List<SettingsInput.Change> changes, String value) throws InvalidSettingsException {
+        if (value == null) {
+            return;
+        }
+        String days = null;
+        if (!value.trim().isEmpty()) {
+            if (!DAYS.matcher(value.trim()).matches()) {
+                throw new InvalidSettingsException("The grace days must be a whole number of days, 0 or more, or blank.");
+            }
+            days = String.valueOf(Integer.parseInt(value.trim()));
+        }
+        changes.add(new SettingsInput.Change(Sheet.GRACE_DAYS, days, false, null));
     }
 
     /** A setting's from-date: null when blank or left out (the sheet's today). */
