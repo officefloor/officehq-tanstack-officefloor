@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the rate form from the body; refuses a grade other than A, B or C and a percent that is missing, negative or has more than two decimals,
- * and a from-date that is not a calendar date. A blank from-date means from the beginning of time. */
+ * a from-date or to-date that is not a calendar date, and a to-date before the from-date. A blank from-date means from the beginning of time. */
 public class ValidateRate {
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
@@ -34,6 +34,18 @@ public class ValidateRate {
                 throw new InvalidRateException("The from-date must be a calendar date.");
             }
         }
-        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), parsed));
+        String to = request == null || request.to() == null ? "" : request.to().trim();
+        LocalDate until = null;
+        if (!to.isEmpty()) {
+            try {
+                until = LocalDate.parse(to);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The to-date must be a calendar date.");
+            }
+        }
+        if (parsed != null && until != null && until.isBefore(parsed)) {
+            throw new InvalidRateException("The to-date must not be before the from-date.");
+        }
+        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), parsed, until));
     }
 }

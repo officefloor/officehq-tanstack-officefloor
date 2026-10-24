@@ -15,7 +15,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
  * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
- * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then). An
+ * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then, or the one that would has ended by then). An
  * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
  * freezes it in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
@@ -89,12 +89,13 @@ public class ClaimFigures {
                 && person.heldOn(claim.getDate()));
     }
 
-    /** The percent of the grade's rate in force on a date. */
+    /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. */
     private Optional<BigDecimal> rateOn(String grade, LocalDate on) {
         return rates.stream()
                 .filter(r -> r.getGrade().equals(grade))
                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
                 .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .filter(r -> !r.endedBy(on))
                 .map(Rate::getPct);
     }
 
@@ -122,7 +123,7 @@ public class ClaimFigures {
 
     /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade
      *  in force on the day has no rate in force then, unless a counted claim keeps a figure: a fixed one (settled or bound), or a
-     *  live one at another grade they had on its date. */
+     *  live one at another grade they had on its date, or one dated on or before the day (at a rate that has ended since). */
     public String dueTotal(List<Claim> claims, LocalDate today) {
         return dueTotal(claims, today, null);
     }
@@ -133,7 +134,7 @@ public class ClaimFigures {
         List<Claim> counted = claims.stream().filter(c -> countsLive(c, person)).toList();
         String grade = grades.on(today);
         boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
-                || (!c.isBound() && !grade.equals(grades.on(c.getDate())) && figure(c) != null));
+                || (!c.isBound() && (!grade.equals(grades.on(c.getDate())) || !c.getDate().isAfter(today)) && figure(c) != null));
         if (rateOn(grade, today).isEmpty() && !kept) {
             return "n/a";
         }

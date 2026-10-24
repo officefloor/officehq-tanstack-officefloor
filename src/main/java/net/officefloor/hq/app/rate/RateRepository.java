@@ -21,10 +21,11 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
     }
 
     /** The grade's rate in force on a date: the one whose from-date is the latest on or before it, a rate with
-     *  no from-date applying from the beginning of time; empty when none applies. */
+     *  no from-date applying from the beginning of time; empty when none applies, or when that one's to-date is before it. */
     default Optional<Rate> findInForce(String sheetId, String grade, LocalDate on) {
         return findBySheetIdAndGrade(sheetId, grade).stream()
                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
-                .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
+                .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .filter(r -> !r.endedBy(on));
     }
 }

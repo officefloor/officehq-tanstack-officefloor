@@ -10,13 +10,14 @@ import { chargedOf, rateOn, sumDue, useRates, type Rate } from './rates';
 // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
 // an overdue claim's late charge; each claim at the grade they had on its date) — 0.00 with nothing that counts.
 // When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
-// a figure — settled, bound, or live at another grade they had on its date: then it is the sum of the figures there are. Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
+// a figure — settled, bound, or live at another grade they had on its date, or live
+// on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
 export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): string {
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person])));
   const grade = gradeOn(person, today);
   const kept = (c: Claim) => c.due !== null || (isBound(c) && c.statedDue !== null)
-    || (!isBound(c) && gradeOn(person, c.date) !== grade && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
+    || (!isBound(c) && (gradeOn(person, c.date) !== grade || (today !== undefined && c.date <= today)) && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
   if (rateOn(rates, grade, today) === undefined && !mine.some(kept)) {
     return 'n/a';
   }

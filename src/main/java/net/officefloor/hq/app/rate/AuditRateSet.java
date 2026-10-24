@@ -10,6 +10,7 @@ public class AuditRateSet {
     public void audit(@Val Rate rate, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         audit.record("RATE_SET sheet=" + rate.getSheetId() + " by=" + AuditUser.decode(user)
                 + " grade=" + rate.getGrade() + " rate=" + rate.getPct().setScale(2).toPlainString()
-                + (rate.getFromDate() == null ? "" : " from=" + rate.getFromDate()));
+                + (rate.getFromDate() == null ? "" : " from=" + rate.getFromDate())
+                + (rate.getToDate() == null ? "" : " to=" + rate.getToDate()));
     }
 }

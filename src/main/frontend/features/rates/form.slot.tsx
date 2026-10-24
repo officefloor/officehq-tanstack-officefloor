@@ -8,7 +8,7 @@ import { GRADES } from '../people/people';
 import { rateOn, ratesPath, ratesQueryKey, useRates, type Rate } from './rates';
 
 // The sheet's rates: each grade's rate in force on the sheet's today (n/a for a grade with none), every
-// rate with its from-date (a grade's rate from the start shows n/a when it has none), and the form that
+// rate with its from-date and to-date (a grade's rate from the start shows n/a when it has none), and the form that
 // sets one — replacing the grade's rate with the same from-date.
 function Rates() {
   const [user] = useCurrentUser();
@@ -18,14 +18,16 @@ function Rates() {
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: (body: { grade: string; pct: string; from: string }) =>
+    mutationFn: (body: { grade: string; pct: string; from: string; to: string }) =>
       putJson<Rate>(ratesPath(sheet ?? ''), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesQueryKey(sheet ?? '') });
       setPct('');
       setFrom('');
+      setTo('');
     },
   });
   const submit = useSubmitOnce(save);
@@ -39,6 +41,7 @@ function Rates() {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate (%)</th>
             <th>In force today (%)</th>
           </tr>
@@ -52,6 +55,7 @@ function Rates() {
               <tr key={`${g}-start`} data-testid={`rate-row-${g}-start`}>
                 <td>{g}</td>
                 <td>start</td>
+                <td data-testid="rate-to">{start?.to ?? ''}</td>
                 <td data-testid="rate-pct">{start?.pct ?? 'n/a'}</td>
                 <td rowSpan={dated.length + 1} data-testid={`rate-current-${g}`}>
                   {rateOn(rates.data, g, today) ?? 'n/a'}
@@ -61,6 +65,7 @@ function Rates() {
                 <tr key={`${g}-${r.from}`} data-testid={`rate-row-${g}-${r.from}`}>
                   <td>{g}</td>
                   <td data-testid="rate-from">{r.from}</td>
+                  <td data-testid="rate-to">{r.to ?? ''}</td>
                   <td data-testid="rate-pct">{r.pct}</td>
                 </tr>
               )),
@@ -72,7 +77,7 @@ function Rates() {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ grade, pct, from });
+          submit({ grade, pct, from, to });
         }}
       >
         <select
@@ -97,11 +102,17 @@ function Rates() {
           value={from}
           onChange={(e) => { setFrom(e.target.value); save.reset(); }}
         />
+        <input
+          data-testid="rate-form-to"
+          placeholder="To (YYYY-MM-DD, blank: no end)"
+          value={to}
+          onChange={(e) => { setTo(e.target.value); save.reset(); }}
+        />
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
         {save.isError && (
-          <span data-testid="rate-form-error">The rate must be a percent, 0.00 or more, with up to two decimals, and the from-date a calendar date or blank.</span>
+          <span data-testid="rate-form-error">The rate must be a percent, 0.00 or more, with up to two decimals, the from-date a calendar date or blank, and the to-date a calendar date on or after the from-date, or blank.</span>
         )}
       </form>
     </section>

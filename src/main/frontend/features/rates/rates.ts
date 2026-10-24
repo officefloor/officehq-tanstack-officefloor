@@ -5,8 +5,8 @@ import type { Settings } from '../roles/roles';
 import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
- *  when it applies from the beginning of time). */
-export type Rate = { grade: string; pct: string; from: string | null };
+ *  when it applies from the beginning of time), through a to-date (null when it has no end). */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
 
 export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
@@ -24,7 +24,7 @@ export function useRates() {
 
 /** The percent ("12.50") of a grade's rate in force on a date (YYYY-MM-DD): the one whose from-date is the
  *  latest on or before it, a rate with no from-date applying from the beginning of time — or undefined when
- *  no rate applies then. */
+ *  no rate applies then, or when that one's to-date is before the date. */
 export function rateOn(rates: Rate[] | undefined, grade: string, date: string | undefined): string | undefined {
   if (date === undefined) return undefined;
   let found: Rate | undefined;
@@ -32,6 +32,7 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
     if (!found || (found.from ?? '') <= (r.from ?? '')) found = r;
   }
+  if (found?.to != null && found.to < date) return undefined;
   return found?.pct;
 }
 

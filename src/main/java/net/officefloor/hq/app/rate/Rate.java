@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A sheet's rate for a grade: a percent with two decimals, from a date on (null: from the beginning of time). */
+/** A sheet's rate for a grade: a percent with two decimals, from a date on (null: from the beginning of time),
+ *  through a to-date (null: no end). */
 @Entity
 @Table(name = "rate")
 public class Rate {
@@ -30,14 +31,18 @@ public class Rate {
     @Column(name = "from_date")
     private LocalDate fromDate;
 
+    @Column(name = "to_date")
+    private LocalDate toDate;
+
     protected Rate() {
     }
 
-    public Rate(String sheetId, String grade, BigDecimal pct, LocalDate fromDate) {
+    public Rate(String sheetId, String grade, BigDecimal pct, LocalDate fromDate, LocalDate toDate) {
         this.sheetId = sheetId;
         this.grade = grade;
         this.pct = pct;
         this.fromDate = fromDate;
+        this.toDate = toDate;
     }
 
     public Long getId() {
@@ -62,5 +67,19 @@ public class Rate {
 
     public LocalDate getFromDate() {
         return fromDate;
+    }
+
+    /** The last date it applies on (null: no end). */
+    public LocalDate getToDate() {
+        return toDate;
+    }
+
+    public void setToDate(LocalDate toDate) {
+        this.toDate = toDate;
+    }
+
+    /** Whether it has ended by a date: it has a to-date before it. */
+    public boolean endedBy(LocalDate on) {
+        return toDate != null && toDate.isBefore(on);
     }
 }
