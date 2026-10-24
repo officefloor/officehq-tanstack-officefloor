@@ -1,0 +1,60 @@
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+new file mode 100644
+index 00000000..a8913000
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.rollup;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** When the sheet's today changes, records each person's due-total as it stood on the day being left, before the
++ *  change takes effect (so before any period closes and before the change's rollup lines). */
++public class AuditSnapshot {
++    public void audit(@Val LocalDate today, @Val Sheet sheet, @Val Rollup before,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        if (today.equals(sheet.getToday())) {
++            return;
++        }
++        before.snapshot(sheet.getId(), AuditUser.decode(user)).forEach(audit::record);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 8e95e6ff..0281e6f0 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -88,6 +88,14 @@ public class Rollup {
+         return kept.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
+     }
+ 
++    /** One SNAPSHOT line per person, in list order, with the due-total as it stands in these figures. */
++    public List<String> snapshot(String sheetId, String user) {
++        String head = " sheet=" + sheetId.trim() + " by=" + user;
++        List<String> lines = new ArrayList<>();
++        people.values().forEach(f -> lines.add("SNAPSHOT" + head + " name=" + f.name() + " due-total=" + f.dueTotal()));
++        return lines;
++    }
++
+     /** The audit lines telling how the figures moved from before to now: one per person whose figures changed
+      *  (or who is new), then the totals when they changed; none when nothing moved. */
+     public List<String> changesSince(Rollup before, String sheetId, String user) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 7885374a..fb3d58d6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -15,6 +15,10 @@ before:
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.rollup.AuditSnapshot
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplyToday
