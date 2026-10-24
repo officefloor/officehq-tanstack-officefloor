@@ -19,3 +19,11 @@ export function postJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 }
+
+export function putJson<T>(path: string, body?: unknown): Promise<T> {
+  return send<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}

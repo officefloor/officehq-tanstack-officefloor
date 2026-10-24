@@ -1,6 +1,7 @@
 import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { AppNav } from '../slots/defs/appNav';
+import { AppSession } from '../slots/defs/appSession';
 
 // The shell. It renders the nav region (filled from app.nav) and the matched route's component
 // (from routes/); it reads no page list and holds no view state — URL search params carry what is
@@ -18,6 +19,9 @@ function AppShell() {
       <nav data-testid="app-nav">
         <AppNav.Slot />
       </nav>
+      <header data-testid="app-session">
+        <AppSession.Slot />
+      </header>
       <main data-testid="app-home">
         <Outlet />
       </main>
