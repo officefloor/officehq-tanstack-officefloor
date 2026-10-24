@@ -9,6 +9,7 @@ import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
 import { useSettings } from '../roles/roles';
 import { useVoidReasons } from '../voidreasons/voidreasons';
+import { templateClaimsPath, useTemplates } from '../templates/templates';
 import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
@@ -583,6 +584,15 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
     },
   });
   const submit = useSubmitOnce(save);
+  // A new claim can instead be made from a template (picked beside the form): its amount and note as they are now,
+  // and no date, by every rule of the form; a refusal shows the form's error.
+  const templates = useTemplates();
+  const [template, setTemplate] = useState('');
+  const fromTemplate = useMutation({
+    mutationFn: (body: { template: string }) => postJson<Claim>(templateClaimsPath(sheet, person.id), body, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+  });
+  const submitTemplate = useSubmitOnce(fromTemplate);
   // The editor cannot save until the edit button's lock has answered (taken, or refused).
   const locking = useIsMutating({ mutationKey: claimLockKey(sheet, claim?.id ?? 0) }) > 0 && !!claim;
 
@@ -592,6 +602,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
       onSubmit={(e) => {
         e.preventDefault();
         onSubmitted();
+        fromTemplate.reset();
         submit({ amount, date, note, corrects, ref, tags });
       }}
     >
@@ -600,49 +611,72 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
         placeholder="Amount"
         inputMode="decimal"
         value={amount}
-        onChange={(e) => { setAmount(e.target.value); save.reset(); }}
+        onChange={(e) => { setAmount(e.target.value); save.reset(); fromTemplate.reset(); }}
       />
       <input
         data-testid="claim-form-date"
         placeholder={today ?? 'YYYY-MM-DD'}
         value={date}
-        onChange={(e) => { setDate(e.target.value); save.reset(); }}
+        onChange={(e) => { setDate(e.target.value); save.reset(); fromTemplate.reset(); }}
       />
       <input
         data-testid="claim-form-note"
         placeholder="Note"
         value={note}
-        onChange={(e) => { setNote(e.target.value); save.reset(); }}
+        onChange={(e) => { setNote(e.target.value); save.reset(); fromTemplate.reset(); }}
       />
       <input
         data-testid="claim-form-corrects"
         placeholder="Corrects claim no."
         inputMode="numeric"
         value={corrects}
-        onChange={(e) => { setCorrects(e.target.value); save.reset(); }}
+        onChange={(e) => { setCorrects(e.target.value); save.reset(); fromTemplate.reset(); }}
       />
       <input
         data-testid="claim-form-ref"
         placeholder="Reference"
         value={ref}
-        onChange={(e) => { setRef(e.target.value); save.reset(); }}
+        onChange={(e) => { setRef(e.target.value); save.reset(); fromTemplate.reset(); }}
       />
       <input
         data-testid="claim-form-tags"
         placeholder="Tags (comma separated)"
         value={tags}
-        onChange={(e) => { setTags(e.target.value); save.reset(); }}
+        onChange={(e) => { setTags(e.target.value); save.reset(); fromTemplate.reset(); }}
       />
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
         {claim ? 'Save claim' : 'Add claim'}
       </button>
-      {save.isError && (
+      {!claim && (
+        <>
+          {' '}
+          <select
+            data-testid="claim-template-select"
+            value={template}
+            onChange={(e) => { setTemplate(e.target.value); save.reset(); fromTemplate.reset(); }}
+          >
+            <option value="">Template…</option>
+            {(templates.data ?? []).map((t) => (
+              <option key={t.id} value={t.name}>{t.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            data-testid="claim-template-add"
+            disabled={fromTemplate.isPending}
+            onClick={() => { save.reset(); submitTemplate({ template }); }}
+          >
+            Add from template
+          </button>
+        </>
+      )}
+      {(save.isError || fromTemplate.isError) && (
         <span data-testid="claim-form-error">
           {save.error instanceof HttpError && save.error.status === 423 && 'Another user is editing this claim. '}
           The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
           terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
           number, a settled claim of this person (only a correction may); a reference must not already be used on this sheet
-          (ignoring case); only a draft claim can be edited.
+          (ignoring case); only a draft claim can be edited; a claim from a template needs a template chosen.
         </span>
       )}
     </form>
