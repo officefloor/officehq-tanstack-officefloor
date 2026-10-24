@@ -1,0 +1,222 @@
+diff --git a/src/main/frontend/features/claims/tags.slot.tsx b/src/main/frontend/features/claims/tags.slot.tsx
+index 5e9e9d80..9e02e12d 100644
+--- a/src/main/frontend/features/claims/tags.slot.tsx
++++ b/src/main/frontend/features/claims/tags.slot.tsx
+@@ -1,11 +1,11 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useSheetInfo, useSheetToday } from '../session/session';
+ import { gradeOn, usePeople } from '../people/people';
+ import { useSettings } from '../roles/roles';
+ import { chargedOf, sumDue, useRates } from '../rates/rates';
+ import { countsLive, holdsOf, useClaims } from './claims';
+ 
+-// Per tag ever used on the sheet (by any of its claims) or carried by one of its people now, sorted, its due-total: the
++// Per tag ever used on the sheet (by any of its claims, including those since transferred away) or carried by one of its people now, sorted, its due-total: the
+ // dues (with any late charge, as shown now, each at the grade its person had on its date) of the claims that count
+ // live and carry it now, themselves or through their person, added up once each, skipping n/a. A claim with two tags
+ // counts in both.
+@@ -17,11 +17,12 @@ function TagTotals() {
+   const rates = useRates();
+   const settings = useSettings();
+   const today = useSheetToday();
++  const sheetInfo = useSheetInfo();
+   if (!user || !sheet) return null;
+   const allClaims = claims.data ?? [];
+   const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
+   const held = holdsOf(people.data);
+-  const tags = [...new Set([...allClaims.flatMap((c) => c.tagsUsed ?? []),
++  const tags = [...new Set([...allClaims.flatMap((c) => c.tagsUsed ?? []), ...(sheetInfo.data?.departedTags ?? []),
+     ...(people.data ?? []).flatMap((p) => p.tags ?? [])])].sort();
+   const carries = (c: (typeof allClaims)[number], t: string) =>
+     (c.tags ?? []).includes(t) || (personOf.get(c.personId)?.tags ?? []).includes(t);
+diff --git a/src/main/frontend/features/people/inlinegrade.slot.tsx b/src/main/frontend/features/people/inlinegrade.slot.tsx
+new file mode 100644
+index 00000000..437b6b4c
+--- /dev/null
++++ b/src/main/frontend/features/people/inlinegrade.slot.tsx
+@@ -0,0 +1,60 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { claimsQueryKey } from '../claims/claims';
++import { GRADES, peoplePath, peopleQueryKey, type Person } from './people';
++
++// A grade select and save button on each person's row: gives them the chosen grade from the sheet's today. It is
++// saved exactly as the person form would save it (same name, terms, contact and tags, the version the row was
++// loaded with), so the server writes the same PERSON_EDITED and rollup lines, and refuses it the same way.
++function InlineGradeHeader() {
++  return <th>Regrade</th>;
++}
++
++function PersonInlineGrade({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [grade, setGrade] = useState(person.grade);
++  const queryClient = useQueryClient();
++  const save = useMutation({
++    mutationFn: (body: { grade: string }) =>
++      putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}`, {
++        name: person.name,
++        grade: body.grade,
++        gradeFrom: '',
++        terms: person.terms == null ? '' : String(person.terms),
++        contact: person.contact ?? '',
++        tags: (person.tags ?? []).join(', '),
++        version: person.version,
++      }, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
++      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') });
++    },
++  });
++  const submit = useSubmitOnce(save);
++  const rowAction = useRowAction(`person-${person.id}`);
++  return (
++    <td>
++      <select data-testid="person-inline-grade" value={grade} onChange={(e) => { setGrade(e.target.value); save.reset(); }}>
++        {GRADES.map((g) => (
++          <option key={g} value={g}>{g}</option>
++        ))}
++      </select>{' '}
++      <button type="button" data-testid="person-inline-grade-save" disabled={save.isPending}
++        onClick={() => { rowAction.take(); submit({ grade }); }}>
++        Save grade
++      </button>
++      {save.isError && rowAction.isLatest && <span data-testid="person-error">The grade could not be saved.</span>}
++    </td>
++  );
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 4.5, Component: InlineGradeHeader }),
++  PersonCells.fill({ order: 4.5, Component: PersonInlineGrade }),
++];
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 4f75a213..613a52c6 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -12,8 +12,11 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
+ // change on it is refused). Every date decision and default
+ // date in the app uses the sheet's today (useSheetToday), never the browser's clock. In an as-of view
+ // (asof.slot.tsx) it is the sheet as it stood at the end of `asOf`, and that date is its today. Its
+-// lastBatch is the number of its last bulk settle batch (null while it has had none).
+-export type SheetInfo = { id: string; today: string; archived: boolean; asOf: string | null; lastBatch: number | null };
++// lastBatch is the number of its last bulk settle batch (null while it has had none). departedTags are the tags of
++// claims that have left the sheet (with a person transferred away), sorted; empty as of a date.
++export type SheetInfo = {
++  id: string; today: string; archived: boolean; asOf: string | null; lastBatch: number | null; departedTags: string[];
++};
+ 
+ export const sheetQueryKey = (sheetId: string) => ['sheet', sheetId, 'info'] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index b95ea4b5..6dac578f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -195,7 +195,12 @@ public class ApplyTransfer {
+         statements.moveAll(from, to, arrivedId);
+         BindingLogs.record(bindings, claims, sheets, to, arrivedId);
+ 
+-        // They leave this sheet entirely.
++        // They leave this sheet entirely; the tags their claims carried are still listed as used on it.
++        Sheet here = sheets.findById(sheetId).orElse(null);
++        if (here != null) {
++            theirs.forEach(c -> here.addDepartedTags(c.getTagsUsed()));
++            sheets.save(here);
++        }
+         claims.deleteAll(theirs);
+         claims.flush();
+         patrons.deleteAll(patrons.findByPersonIdOrderByIdAsc(from));
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 2d6a13eb..79835018 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
++import java.util.List;
+ import java.util.Objects;
++import net.officefloor.hq.app.claim.Tags;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.plugin.variable.Val;
+@@ -13,8 +15,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class RespondWithSheet {
+ 
+     /** @param asOf the date the sheet is shown as of (null: as it stands now).
+-     *  @param lastBatch the number of the sheet's last bulk settle batch (null: none yet). */
+-    public record SheetResponse(String id, String today, boolean archived, String asOf, Integer lastBatch) {
++     *  @param lastBatch the number of the sheet's last bulk settle batch (null: none yet).
++     *  @param departedTags the tags of claims that have left the sheet, sorted (empty as of a date). */
++    public record SheetResponse(String id, String today, boolean archived, String asOf, Integer lastBatch,
++            List<String> departedTags) {
+     }
+ 
+     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+@@ -26,6 +30,7 @@ public class RespondWithSheet {
+                 : asOf.claims(sheet.getId(), date).stream().map(Claim::getSettleBatch).filter(Objects::nonNull)
+                         .max(Integer::compare).orElse(null);
+         response.send(new SheetResponse(view.getId(), view.getToday().toString(), view.isArchived(),
+-                date == null ? null : date.toString(), lastBatch));
++                date == null ? null : date.toString(), lastBatch,
++                date == null ? Tags.list(sheet.getDepartedTags()) : List.of()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index c5e7599b..394966c7 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -14,6 +14,8 @@ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Objects;
+ import java.util.Optional;
++import java.util.TreeSet;
++import net.officefloor.hq.app.claim.Tags;
+ 
+ /** A sheet, chosen by its id; everything else in the app is kept per sheet. */
+ @Entity
+@@ -87,6 +89,11 @@ public class Sheet {
+     @Column(name = "last_settle_batch", nullable = false, insertable = false, updatable = false)
+     private int lastSettleBatch;
+ 
++    /** Every tag carried by a claim that has since left the sheet (sorted, comma separated; null: none), so the tag
++     *  totals still list it as a tag used on the sheet. */
++    @Column(name = "departed_tags")
++    private String departedTags;
++
+     /** The late percent a sheet starts at. */
+     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+ 
+@@ -273,6 +280,17 @@ public class Sheet {
+         return valueOn(PARENT, today);
+     }
+ 
++    public String getDepartedTags() {
++        return departedTags;
++    }
++
++    /** Remembers the tags a claim leaving the sheet has ever carried (stored form; null: none). */
++    public void addDepartedTags(String tagsUsed) {
++        TreeSet<String> all = new TreeSet<>(Tags.list(departedTags));
++        all.addAll(Tags.list(tagsUsed));
++        this.departedTags = all.isEmpty() ? null : String.join(",", all);
++    }
++
+     public boolean isArchived() {
+         return archived;
+     }
+diff --git a/src/main/resources/db/migration/V71__sheet_departed_tags.sql b/src/main/resources/db/migration/V71__sheet_departed_tags.sql
+new file mode 100644
+index 00000000..aa79ea8e
+--- /dev/null
++++ b/src/main/resources/db/migration/V71__sheet_departed_tags.sql
+@@ -0,0 +1,3 @@
++-- Every tag carried by a claim that has since left the sheet (with a person transferred away), sorted and comma
++-- separated; null while none has. The tag totals still list these as tags used on the sheet.
++ALTER TABLE sheet ADD COLUMN departed_tags VARCHAR(1024);
