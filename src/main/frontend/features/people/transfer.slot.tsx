@@ -8,8 +8,8 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peoplePath, type Person } from './people';
 
 // The id of the sheet to transfer this person to, and the button that transfers them (a steward only; not a
-// retired person, nor to this sheet). They arrive there with their grades, terms, contact, aliases and claims, and
-// leave this sheet's list.
+// retired person, nor to this sheet). They arrive there with their grades, terms, contact, aliases and claims — or are
+// merged into the person there going by their name or an alias — and leave this sheet's list.
 function TransferHeader() {
   return <th>Transfer</th>;
 }

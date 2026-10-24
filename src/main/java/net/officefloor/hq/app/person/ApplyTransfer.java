@@ -34,8 +34,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Transfers the person to another sheet by id; only a steward may, not a retired person, not to this sheet itself,
- * nor to an archived sheet, nor when their name, an alias of theirs or their contact is already on the other sheet
- * (among its names and aliases, ignoring case, or its contacts). They arrive there with every grade they were given
+ * nor to an archived sheet, nor when their contact is already on the other sheet. When their name or an alias of theirs
+ * is already someone's name or alias there (ignoring case), they are merged into that person instead, exactly as a
+ * merge does (not into a retired person): their claims are listed after that person's, each losing any figure a
+ * statement bound it to, their name and aliases become that person's aliases, and their grades, terms and contact are
+ * dropped. Otherwise they arrive there with every grade they were given
  * (and its from-date), their terms, contact and aliases, and their claims with their status, dates, notes, tags,
  * frozen dues, status logs and comments, listed in the same order. Each claim that had a number takes the other
  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
@@ -74,12 +77,18 @@ public class ApplyTransfer {
         List<String> names = new ArrayList<>();
         names.add(person.getName());
         theirAliases.forEach(a -> names.add(a.getAlias()));
+        List<Person> onTarget = people.findListed(to);
+        Person into = null;
         for (String name : names) {
-            if (people.existsBySheetIdAndNameIgnoreCase(to, name) || aliases.existsBySheetIdAndAliasIgnoreCase(to, name)) {
-                throw new InvalidPersonException("The name " + name + " is already in use on the other sheet.");
+            into = PersonAliasRepository.findByNameOrAlias(onTarget, aliases, to, name).orElse(null);
+            if (into != null) {
+                break;
             }
         }
-        if (person.getContact() != null && people.existsBySheetIdAndContact(to, person.getContact())) {
+        if (into != null && into.getRetiredFrom() != null) {
+            throw new InvalidPersonException("A retired person cannot be merged.");
+        }
+        if (into == null && person.getContact() != null && people.existsBySheetIdAndContact(to, person.getContact())) {
             throw new InvalidPersonException("The contact is already in use on the other sheet.");
         }
 
@@ -90,30 +99,41 @@ public class ApplyTransfer {
         claims.lockSheet(to);
         LocalDate today = target.getToday();
 
-        // The person, with their grades over time and their aliases.
-        Person arrived = new Person(to, person.getName(), person.getGrade());
-        arrived.setAddedOn(today);
-        arrived.setTerms(person.getTerms());
-        arrived.setContact(person.getContact());
-        arrived.setOriginSheet(sheetId);
-        arrived = people.saveAndFlush(arrived);
+        // The person, with their grades over time and their aliases; or, merging, their name and aliases become the
+        // other's aliases.
         List<PersonGrade> theirGrades = grades.findByPersonIdOrderByFromDateAsc(from);
-        for (PersonGrade grade : theirGrades) {
-            PersonGrade copy = new PersonGrade(to, arrived.getId(), grade.getGrade(), grade.getFromDate());
-            copy.setMadeOn(today);
-            grades.save(copy);
-        }
-        for (PersonAlias alias : theirAliases) {
-            aliases.save(new PersonAlias(to, arrived.getId(), alias.getAlias()));
+        Person arrived;
+        if (into != null) {
+            arrived = into;
+            Long intoId = into.getId();
+            aliases.save(new PersonAlias(to, intoId, person.getName()));
+            theirAliases.forEach(a -> aliases.save(new PersonAlias(to, intoId, a.getAlias())));
+        } else {
+            arrived = new Person(to, person.getName(), person.getGrade());
+            arrived.setAddedOn(today);
+            arrived.setTerms(person.getTerms());
+            arrived.setContact(person.getContact());
+            arrived.setOriginSheet(sheetId);
+            arrived = people.saveAndFlush(arrived);
+            for (PersonGrade grade : theirGrades) {
+                PersonGrade copy = new PersonGrade(to, arrived.getId(), grade.getGrade(), grade.getFromDate());
+                copy.setMadeOn(today);
+                grades.save(copy);
+            }
+            for (PersonAlias alias : theirAliases) {
+                aliases.save(new PersonAlias(to, arrived.getId(), alias.getAlias()));
+            }
         }
 
-        // Claims: copied in the order they are listed, so they keep it, each with its log and comments.
+        // Claims: copied in the order they are listed, so they keep it (after the other's, merging), each with its log
+        // and comments.
+        Long arrivedId = arrived.getId();
         List<Claim> theirs = new ArrayList<>(claims.findBySheetIdAndPersonIdOrderByIdDesc(sheetId, from));
         theirs.sort(Comparator.comparing(Claim::getListed).thenComparing(Claim::getId));
         Map<Claim, Claim> copies = new LinkedHashMap<>();
         Map<Long, LocalDate> openedOn = new HashMap<>();
         for (Claim claim : theirs) {
-            Claim copy = claims.saveAndFlush(claim.transferTo(to, arrived.getId()));
+            Claim copy = claims.saveAndFlush(claim.transferTo(to, arrivedId));
             copies.put(claim, copy);
             List<ClaimLog> lines = logs.findByClaimIdOrderByIdAsc(claim.getId());
             lines.stream().filter(l -> ClaimStatus.OPEN.name().equals(l.getStatus())).map(ClaimLog::getOnDate)
@@ -171,6 +191,10 @@ public class ApplyTransfer {
         aliases.flush();
         people.delete(person);
         people.flush();
-        transferred.set(new PersonTransferred(person.getName(), sheetId, to, toBefore));
+        if (into != null) {
+            entityManager.refresh(into);
+        }
+        transferred.set(new PersonTransferred(person.getName(), sheetId, to, toBefore,
+                into == null ? null : into.getName()));
     }
 }
