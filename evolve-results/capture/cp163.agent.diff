@@ -1,0 +1,112 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 0ce8d9b7..2f5ba62d 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -31,6 +31,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ // claim of theirs for these as well as for the claim's own.
+ // `snapshots`: one per SNAPSHOT written for them as the sheet's today moved on, oldest first: the day being left
+ // and their due-total on it (n/a with none).
++// `statements`: their statements still standing (a cancelled one is gone), by the date each was taken as of,
++// oldest first (those a merge or transfer brought over among them): that date and the due-total it recorded.
+ // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
+ export type Person = {
+   id: number;
+@@ -53,8 +55,12 @@ export type Person = {
+   retirements: Retirement[];
+   tags: string[];
+   snapshots: Snapshot[];
++  statements: StatementLine[];
+ };
+ 
++/** A statement still standing: the date it was taken as of (YYYY-MM-DD) and the due-total it recorded. */
++export type StatementLine = { date: string; dueTotal: string };
++
+ /** A snapshot: the day being left (YYYY-MM-DD) and the person's due-total on it. */
+ export type Snapshot = { date: string; dueTotal: string };
+ 
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 479571fc..b2cf00f6 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -9,7 +9,7 @@ import { claimsQueryKey } from '../claims/claims';
+ import { peoplePath, peopleQueryKey, type Person } from '../people/people';
+ import { useColumnShown } from '../people/columns';
+ 
+-// A person's statements: how many were taken, the last one's due-total and date, and the button that takes
++// A person's statements: one line per statement still standing, oldest first, as <date> <due-total>; how many were taken, the last one's due-total and date, and the button that takes
+ // one — recording their due-total now and binding each of their counted claims to the figure it has now; or, with a
+ // date in the entry beside it (on or before the sheet's today), as of the end of that date — and the
+ // button a steward cancels the last one with, making the claims it bound live again (anyone else, or a person with no
+@@ -57,6 +57,11 @@ function PersonStatement({ person }: { person: Person }) {
+       {countShown && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
+       {totalShown && <><span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}</>}
+       {dateShown && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
++      <div>
++        {person.statements.map((s, i) => (
++          <div key={i} data-testid="person-statement-line-line">{s.date} {s.dueTotal}</div>
++        ))}
++      </div>
+       <input
+         data-testid="person-statement-asof"
+         placeholder={today ?? 'as of'}
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index b68ec394..515c21b3 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -170,14 +170,16 @@ public class AsOf {
+     }
+ 
+     /** The sheet's rates, by grade, then from-date (one from the beginning of time first); then, in turn, those of each
+-     *  sheet up its chain of parents (each as of the date too), as {@link RateRepository#findInChain}. */
++     *  sheet up its chain of parents, as {@link RateRepository#findInChain}. As of a date, only the sheet's own are as
++     *  of it: each parent keeps its own today, so its rates are as the store holds them now. */
+     public List<Rate> rates(String sheetId, LocalDate date) {
++        List<Rate> chain = rates.findInChain(sheetId);
+         if (date == null) {
+-            return rates.findInChain(sheetId);
++            return chain;
+         }
+-        return rates.chainOf(sheetId).stream()
+-                .flatMap(id -> sorted(rateLogs.ratesAsOf(id, date), Comparator.comparing(Rate::getGrade)
+-                        .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder()))).stream())
++        List<Rate> own = sorted(rateLogs.ratesAsOf(sheetId, date), Comparator.comparing(Rate::getGrade)
++                .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
++        return java.util.stream.Stream.concat(own.stream(), chain.stream().filter(r -> !sheetId.equals(r.getSheetId())))
+                 .toList();
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 9382c33f..d324dd3f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -10,12 +10,18 @@ import net.officefloor.hq.app.statement.Statement;
+  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
+  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
+  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
+- *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first. */
++ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, by
++ *  the date each was taken as of (in the order they stand on the same date). */
+ public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
+         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
+         List<Hold> holds, List<Long> patronIds, Integer terms,
+         String contact, List<String> aliases, boolean clashing, String origin,
+-        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots) {
++        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots,
++        List<StatementLine> statements) {
++
++    /** A statement still standing: the date it was taken as of and the due-total it recorded. */
++    public record StatementLine(String date, String dueTotal) {
++    }
+ 
+     /** A past retirement, from a date to the day they were unretired. */
+     public record Retirement(String from, String to) {
+@@ -63,6 +69,8 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
+                         r.getToDate().toString())).toList(),
+                 net.officefloor.hq.app.claim.Tags.list(person.getTags()),
+                 person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
+-                        .toList());
++                        .toList(),
++                statements.stream().sorted(java.util.Comparator.comparing(Statement::getTakenOn))
++                        .map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList());
+     }
+ }
