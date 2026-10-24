@@ -53,6 +53,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
             <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+            <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
@@ -98,6 +99,9 @@ const ACTIONS = [
 // in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
 // proofs count by one; on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
 // threshold in force on its date cannot be settled or approved while it has no proof: that shows the claim's error.
+// An OPEN claim splits off an amount (typed beside the split button; more than 0.00 and less than its amount) into a
+// new OPEN claim; any other status, a deferred claim, a claim in a closed period or an amount out of range shows the
+// claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
 }) {
@@ -143,6 +147,16 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
   });
   const submitProof = useSubmitOnce(proof);
+  const [splitAmount, setSplitAmount] = useState('');
+  const split = useMutation({
+    mutationFn: (amount: string) =>
+      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/split?amount=${encodeURIComponent(amount)}`, undefined, user),
+    onSuccess: () => {
+      setSplitAmount('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
+  });
+  const submitSplit = useSubmitOnce(split);
   const [editRefused, setEditRefused] = useState(false);
   const action = change.variables?.action;
   const periods = usePeriods();
@@ -154,7 +168,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); split.reset(); proof.reset(); setEditRefused(false); }}
       />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
@@ -165,7 +179,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
           onClick={() => {
             setEditRefused(false);
             move.reset();
-            defer.reset();
+            defer.reset(); split.reset();
             proof.reset();
             submitChange(action === 'reject' ? { action, reason } : { action });
           }}
@@ -176,7 +190,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); split.reset(); proof.reset(); setEditRefused(false); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -188,7 +202,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         disabled={move.isPending || !target}
         onClick={() => {
           change.reset();
-          defer.reset();
+          defer.reset(); split.reset();
           proof.reset();
           setEditRefused(false);
           if (target) submitMove(target.id);
@@ -200,7 +214,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         data-testid="claim-defer-date"
         placeholder="Defer until YYYY-MM-DD"
         value={deferTo}
-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); change.reset(); move.reset(); proof.reset(); setEditRefused(false); }}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); setEditRefused(false); }}
       />{' '}
       <button
         type="button"
@@ -210,6 +224,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
           change.reset();
           move.reset();
           proof.reset();
+          split.reset();
           setEditRefused(false);
           submitDefer(deferTo);
         }}
@@ -223,14 +238,36 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         onClick={() => {
           change.reset();
           move.reset();
-          defer.reset();
+          defer.reset(); split.reset();
           setEditRefused(false);
           submitProof(undefined);
         }}
       >
         Add proof
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}>
+      <input
+        data-testid="claim-split-amount"
+        placeholder="Amount to split off"
+        inputMode="decimal"
+        value={splitAmount}
+        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); proof.reset(); setEditRefused(false); }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-split"
+        disabled={split.isPending}
+        onClick={() => {
+          change.reset();
+          move.reset();
+          defer.reset();
+          proof.reset();
+          setEditRefused(false);
+          submitSplit(splitAmount);
+        }}
+      >
+        Split
+      </button>{' '}
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); split.reset(); proof.reset(); setEditRefused(false); }}>
         <button
           type="button"
           data-testid="claim-edit"
@@ -243,9 +280,15 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || defer.isError || proof.isError || editRefused) && (
+      {(change.isError || move.isError || defer.isError || proof.isError || split.isError || editRefused) && (
         <span data-testid="claim-error">
-          {proof.isError
+          {split.isError
+            ? closed
+              ? 'This claim is dated in a closed period, so it cannot be split.'
+              : claim.status !== 'OPEN' || isDeferred(claim, today)
+              ? `Only an open claim that is not deferred can be split; this one is ${isDeferred(claim, today) ? 'deferred' : claim.status}.`
+              : `The amount to split off must be more than 0.00 and less than the claim's ${claim.amount}.`
+            : proof.isError
             ? `A ${claim.status} claim cannot gain a proof.`
             : defer.isError
             ? closed

@@ -36,6 +36,8 @@ export type Claim = {
   deferredUntil: string | null;
   /** How many proofs it has: raised by one at a time (not on a SETTLED or VOID claim). */
   proofs: number;
+  /** The number of the claim it was split off from, or null when it was not made by a split. */
+  splitFrom: string | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
