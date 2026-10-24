@@ -8,6 +8,8 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClerkLimitException;
+import net.officefloor.hq.app.plan.Plan;
+import net.officefloor.hq.app.plan.PlanRepository;
 import net.officefloor.hq.app.pool.PoolMember;
 import net.officefloor.hq.app.pool.PoolMemberRepository;
 import net.officefloor.hq.app.role.Role;
@@ -27,7 +29,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * order they were added, each keeping any figure a statement bound it to. Their name and aliases become aliases of the
  * other. Their patrons are added to the other's (not the other themselves, no repeats); anyone naming them as patron
  * names the other instead (not themselves, no repeats). Their pool memberships move to the other (shares added when the
- * other is already a member). Their statements become the other's, standing before the other's own, so the other's
+ * other is already a member). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
  * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
  * are dropped, and they leave the sheet.
  */
@@ -35,6 +37,7 @@ public class ApplyMerge {
     public void apply(@Val MergeInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
             PersonAliasRepository aliases, PatronRepository patrons, PoolMemberRepository members,
             StatementRepository statements, BindingLogRepository bindings, SheetRepository sheets, WatchRepository watches, PersonGradeRepository grades,
+            PlanRepository plans,
             RoleRepository roles, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMerged> merged)
             throws InvalidPersonException, ClerkLimitException {
@@ -64,6 +67,14 @@ public class ApplyMerge {
             claim.setPersonId(to);
             claims.saveAndFlush(claim);
             claims.relist(claim.getId());
+        }
+
+        // Plans move to the other.
+        for (Plan plan : plans.findBySheetIdOrderByIdAsc(sheetId)) {
+            if (from.equals(plan.getPersonId())) {
+                plan.setPersonId(to);
+                plans.saveAndFlush(plan);
+            }
         }
 
         // Name and aliases become the other's aliases.

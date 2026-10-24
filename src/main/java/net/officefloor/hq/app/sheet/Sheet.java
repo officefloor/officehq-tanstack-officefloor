@@ -30,6 +30,9 @@ public class Sheet {
     /** The key of the grace days: undated, a whole number of days (null: off). */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The key of the escalation gap: undated, a whole number of days (null: off). */
+    public static final String ESCALATE_AFTER = "escalate-after";
+
     /** The key of the pot: undated, an amount with two decimals (null: none). */
     public static final String POT = "pot";
 
@@ -282,6 +285,13 @@ public class Sheet {
      *  closed. Not dated; null when off. */
     public Integer getGraceDays() {
         String days = valueOn(GRACE_DAYS, today);
+        return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** The escalation gap: reminding a claim whose previous reminder was at least this many days before the sheet's
+     *  today escalates it (once per claim). Not dated; null when off. */
+    public Integer getEscalateAfter() {
+        String days = valueOn(ESCALATE_AFTER, today);
         return days == null ? null : Integer.valueOf(days);
     }
 

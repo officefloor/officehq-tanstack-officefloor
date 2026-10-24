@@ -106,6 +106,10 @@ public class Claim {
     @Column(name = "reminded_on")
     private LocalDate remindedOn;
 
+    /** Whether a reminder ever escalated the claim; a claim is escalated once at most. */
+    @Column(nullable = false)
+    private boolean escalated;
+
     /** How many proofs the claim has: raised by one at a time; 0 for a new claim. */
     @Column(nullable = false)
     private int proofs;
@@ -328,6 +332,14 @@ public class Claim {
         this.remindedOn = remindedOn;
     }
 
+    public boolean isEscalated() {
+        return escalated;
+    }
+
+    public void setEscalated(boolean escalated) {
+        this.escalated = escalated;
+    }
+
     /** Whether the claim is deferred on a day: it is OPEN and deferred until a date after that day. Until then it counts
      *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
     public boolean isDeferredOn(LocalDate today) {
@@ -382,6 +394,7 @@ public class Claim {
         then.listed = listed;
         then.deferredUntil = deferredUntil;
         then.remindedOn = remindedOn;
+        then.escalated = escalated;
         then.proofs = proofs;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
@@ -408,6 +421,7 @@ public class Claim {
         moved.correctsDate = correctsDate;
         moved.deferredUntil = deferredUntil;
         moved.remindedOn = remindedOn;
+        moved.escalated = escalated;
         moved.proofs = proofs;
         moved.lateEntry = lateEntry;
         moved.tags = tags;

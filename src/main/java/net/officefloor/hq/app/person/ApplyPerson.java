@@ -8,7 +8,8 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 /** Saves the person's name, terms, contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
- *  replacing the grade recorded for that date and keeping the others; a grade already in force on that date records nothing. */
+ *  replacing the grade recorded for that date and keeping the others; a grade already in force on that date is recorded too,
+ *  so a grade later recorded from an earlier date does not reach past it. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
             PersonAliasRepository aliases, TreeNames tree,
@@ -44,9 +45,6 @@ public class ApplyPerson {
         } catch (ObjectOptimisticLockingFailureException | jakarta.persistence.OptimisticLockException e) {
             // saved by someone else between the load and this save
             throw new PersonConflictException();
-        }
-        if (request.grade().equals(grades.gradesOf(person).on(from))) {
-            return; // the grade in force from that date is unchanged: nothing to record
         }
         PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
                 .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));
