@@ -1,0 +1,142 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index d6124ac1..5d398d31 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -143,8 +143,9 @@ const ACTIONS = [
+ // not allow, or rejecting one without a reason (typed beside the reject
+ // button), or a review by anyone but a steward. A claim whose due is above the review threshold in force on its date goes to
+ // REVIEW when opened; a steward's review button opens it (it is numbered then). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
+-// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim, or of a claim whose due-by is in a
+-// closed period, shows the claim's error instead of opening its editor (an open claim is voided and added anew). Opening a
++// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error instead of opening
++// its editor (an open claim is voided and added anew); that of a DRAFT whose due-by is in a closed period opens its
++// editor but shows the claim's error, and the editor cannot save. Opening a
+ // DRAFT's editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes: another
+ // user's edit button on a locked claim (and a viewer's) shows the claim's error, and their editor cannot save. A DRAFT's
+ // amount can also be saved in the row (the amount typed beside the edit button), by the claim form's rules: a refusal
+@@ -524,9 +525,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           type="button"
+           data-testid="claim-edit"
+           onClick={() => {
+-            if (claim.status !== 'DRAFT' || closed) {
++            if (claim.status !== 'DRAFT') {
+               setEditRefused(true);
+             } else {
++              // A DRAFT whose due-by is in a closed period opens its editor, but the lock refuses it (the
++              // claim's error) and the editor cannot save.
+               onEdit();
+               submitLock(undefined);
+             }
+@@ -779,7 +782,8 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
+           {save.error instanceof HttpError && save.error.status === 423 && 'Another user is editing this claim. '}
+           The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
+           terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
+-          number, a settled claim of this person (only a correction may); a reference must not already be used on this sheet
++          number, a settled claim of this person (only a correction may) and not exceed what remains of it (its amount less the
++          corrections already made against it that are not void or deleted); a reference must not already be used on this sheet
+           (ignoring case); only a draft claim can be edited, and one with lines keeps their total as its amount; a claim from a template needs a template chosen.
+         </span>
+       )}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 00c817e4..13b3681a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -44,7 +44,8 @@ public class ApplyClaim {
+         if (person != null && person.retiredOn(date)) {
+             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
+         }
+-        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), claim.getPersonId(), input.corrects());
++        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), claim.getPersonId(), input.corrects(),
++                input.amount(), claim.getId());
+         repository.checkRef(sheet.getId(), claim.getId(), input.ref());
+         claim.setAmount(input.amount());
+         claim.setCorrects(input.corrects());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index f8512d1f..347047b8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -32,17 +32,39 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
+     /** The person's claims given this number (at most one: numbers are never reused on a sheet). */
+     List<Claim> findBySheetIdAndPersonIdAndNumber(String sheetId, Long personId, String number);
+ 
+-    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person; gives that
+-     *  claim's date (null when it is not a correction). */
+-    default LocalDate checkCorrects(String sheetId, Long personId, String corrects) throws InvalidClaimException {
++    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person, and a correction
++     *  of the amount given (negative) larger than what remains of the claim it corrects: its amount less the
++     *  corrections already made against it, VOID or DELETED ones and the claim being edited (null: none) left out.
++     *  Gives the corrected claim's date (null when it is not a correction). */
++    default LocalDate checkCorrects(String sheetId, Long personId, String corrects, java.math.BigDecimal amount,
++            Long claimId) throws InvalidClaimException {
+         if (corrects == null) {
+             return null;
+         }
++        Claim target = settledTarget(sheetId, personId, corrects);
++        java.math.BigDecimal remaining = target.getAmount();
++        for (Claim c : findBySheetIdAndCorrects(sheetId, corrects)) {
++            if (!c.getId().equals(claimId) && c.getStatus() != ClaimStatus.VOID
++                    && c.getStatus() != ClaimStatus.DELETED) {
++                remaining = remaining.add(c.getAmount());
++            }
++        }
++        if (amount.negate().compareTo(remaining) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of " + corrects + " ("
++                    + remaining.max(java.math.BigDecimal.ZERO).setScale(2).toPlainString() + ").");
++        }
++        return target.getDate();
++    }
++
++    private Claim settledTarget(String sheetId, Long personId, String corrects) throws InvalidClaimException {
+         return findBySheetIdAndPersonIdAndNumber(sheetId, personId, corrects).stream()
+-                .filter(c -> c.getStatus() == ClaimStatus.SETTLED).map(Claim::getDate).findFirst()
++                .filter(c -> c.getStatus() == ClaimStatus.SETTLED).findFirst()
+                 .orElseThrow(() -> new InvalidClaimException("A correction must name a settled claim of the same person."));
+     }
+ 
++    /** The sheet's corrections of the claim given this number. */
++    List<Claim> findBySheetIdAndCorrects(String sheetId, String corrects);
++
+     /** Whether a claim on the sheet other than the given one (null: none) has the reference, ignoring case. */
+     boolean existsBySheetIdAndRefIgnoreCaseAndIdNot(String sheetId, String ref, Long id);
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+index c3bac169..64038996 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+@@ -75,7 +75,8 @@ public final class ClaimRules {
+         if (person.retiredOn(date)) {
+             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
+         }
+-        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
++        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects(),
++                input.amount(), null);
+         repository.checkRef(sheet.getId(), null, input.ref());
+         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
+         claim.setCorrectsDate(correctsDate);
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index 515c21b3..e6bd9f44 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -170,16 +170,15 @@ public class AsOf {
+     }
+ 
+     /** The sheet's rates, by grade, then from-date (one from the beginning of time first); then, in turn, those of each
+-     *  sheet up its chain of parents, as {@link RateRepository#findInChain}. As of a date, only the sheet's own are as
+-     *  of it: each parent keeps its own today, so its rates are as the store holds them now. */
++     *  sheet up its chain of parents, as {@link RateRepository#findInChain}. As of a date, every sheet of the chain's
++     *  are as of it: the rates set while that sheet's own today was on or before it. */
+     public List<Rate> rates(String sheetId, LocalDate date) {
+-        List<Rate> chain = rates.findInChain(sheetId);
+         if (date == null) {
+-            return chain;
++            return rates.findInChain(sheetId);
+         }
+-        List<Rate> own = sorted(rateLogs.ratesAsOf(sheetId, date), Comparator.comparing(Rate::getGrade)
+-                .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
+-        return java.util.stream.Stream.concat(own.stream(), chain.stream().filter(r -> !sheetId.equals(r.getSheetId())))
++        return rates.chainOf(sheetId).stream()
++                .flatMap(id -> sorted(rateLogs.ratesAsOf(id, date), Comparator.comparing(Rate::getGrade)
++                        .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder()))).stream())
+                 .toList();
+     }
+ 
