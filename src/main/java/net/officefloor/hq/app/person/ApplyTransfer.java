@@ -173,8 +173,7 @@ public class ApplyTransfer {
                 String seq = prefix == null ? "X" : "P:" + prefix;
                 number = (prefix == null ? "X" : prefix) + "-" + claims.takeNextInSequence(to, seq);
             } else {
-                claims.takeNextNumber(to);
-                number = String.valueOf(claims.lastNumber(to));
+                number = claims.takeNextInFiscalYear(to, target.getFiscalStartMonth(), copy.getDueBy());
             }
             copy.setNumber(number);
             renumbered.put(claim.getNumber(), number);

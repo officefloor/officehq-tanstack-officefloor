@@ -65,14 +65,7 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
      *  last number (read with {@link #lastNumber}). The tree's top sheet's row is locked, then the sheet's own, until the
      *  transaction ends, so two claims opened at once anywhere in the tree are numbered one after the other. */
     default int takeNextNumber(String sheetId) {
-        java.util.Set<String> up = new java.util.LinkedHashSet<>();
-        String top = sheetId;
-        for (String id = sheetId; id != null && up.add(id); ) {
-            top = id;
-            id = parentOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
-        }
-        lockSheet(top);
-        lockSheet(sheetId);
+        String top = lockTree(sheetId);
         java.util.Set<String> tree = new java.util.LinkedHashSet<>();
         java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(top));
         while (!todo.isEmpty()) {
@@ -84,6 +77,36 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
         int next = lastNumberIn(tree) + 1;
         setLastNumber(sheetId, next);
         return next;
+    }
+
+    /** The sheet's tree's top sheet: its top ancestor (itself when it has no parent). */
+    default String topOf(String sheetId) {
+        java.util.Set<String> up = new java.util.LinkedHashSet<>();
+        String top = sheetId;
+        for (String id = sheetId; id != null && up.add(id); ) {
+            top = id;
+            id = parentOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
+        }
+        return top;
+    }
+
+    /** Locks the sheet's tree's top sheet's row, then the sheet's own, until the transaction ends; gives the top sheet. */
+    default String lockTree(String sheetId) {
+        String top = topOf(sheetId);
+        lockSheet(top);
+        lockSheet(sheetId);
+        return top;
+    }
+
+    /** Takes the sheet's next sheet-wide claim number: FY<year>-<n>, counting from 1 within the fiscal year (named by
+     *  the calendar year its first day falls in, from the sheet's fiscal year start month) of the date given — the
+     *  date that places the claim in a period, its due-by. The sheets of a tree share each fiscal year's sequence,
+     *  kept on the tree's top sheet; the tree is locked (see {@link #lockTree}) so claims opened at once are numbered
+     *  one after the other. */
+    default String takeNextInFiscalYear(String sheetId, int fiscalStartMonth, LocalDate on) {
+        String top = lockTree(sheetId);
+        int year = on.getMonthValue() >= fiscalStartMonth ? on.getYear() : on.getYear() - 1;
+        return "FY" + year + "-" + takeNextInSequence(top, "FY:" + year);
     }
 
     @Query(value = "SELECT setting_value FROM sheet_setting WHERE sheet_id = :sheetId AND setting_key = 'parent'",

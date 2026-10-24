@@ -52,8 +52,7 @@ public class ApplyReassign {
                 String seq = prefix == null ? "X" : "P:" + prefix;
                 claim.setNumber((prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq));
             } else {
-                repository.takeNextNumber(claim.getSheetId());
-                claim.setNumber(String.valueOf(repository.lastNumber(claim.getSheetId())));
+                claim.setNumber(repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), claim.getDueBy()));
             }
         }
         claim.bind(false, null);

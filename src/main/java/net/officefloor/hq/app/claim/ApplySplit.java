@@ -46,7 +46,7 @@ public class ApplySplit {
         if (perPeriod) {
             repository.lockSheet(claim.getSheetId());
         } else {
-            repository.takeNextNumber(claim.getSheetId());
+            repository.lockTree(claim.getSheetId());
         }
         entityManager.refresh(claim);
         if (claim.getStatus() != ClaimStatus.OPEN || claim.isDeferredOn(sheet.getToday())) {
@@ -65,7 +65,7 @@ public class ApplySplit {
             String seq = prefix == null ? "X" : "P:" + prefix;
             number = (prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq);
         } else {
-            number = String.valueOf(repository.lastNumber(claim.getSheetId()));
+            number = repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), dueBy);
         }
         claim.setAmount(claim.getAmount().subtract(amount));
         claim.bind(false, null);

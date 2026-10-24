@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Moves the claim to the status the action leads to; refuses a change its status does not allow, and an open,
  * settle or void by a role the sheet's permission matrix does not allow it to. Opening gives
- * the claim the sheet's next number (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
+ * the claim the sheet's next number in the fiscal year of its due-by (FY<year>-<n>, shared across the sheet's tree) (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
  * X-<n> for a claim in no period) and records who opened it; a voided claim keeps its number (never reused). The one who opened a
  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
@@ -72,7 +72,7 @@ public class ApplyClaimStatus {
             if (perPeriod) {
                 repository.lockSheet(claim.getSheetId());
             } else {
-                repository.takeNextNumber(claim.getSheetId());
+                repository.lockTree(claim.getSheetId());
             }
             entityManager.refresh(claim);
             ClaimStatus next = check(claim, action);
@@ -92,7 +92,7 @@ public class ApplyClaimStatus {
                 String seq = prefix == null ? "X" : "P:" + prefix;
                 claim.setNumber((prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq));
             } else {
-                claim.setNumber(String.valueOf(repository.lastNumber(claim.getSheetId())));
+                claim.setNumber(repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), claim.getDueBy()));
             }
             claim.setStatus(next);
             claim.setOpenedBy(user);
