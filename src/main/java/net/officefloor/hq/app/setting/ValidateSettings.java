@@ -3,6 +3,8 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
@@ -11,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off. A key left out is not changed. */
+ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off. A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A key left out is not changed. */
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -69,8 +71,29 @@ public class ValidateSettings {
                 throw new InvalidSettingsException("The period numbering from must be a date (YYYY-MM-DD), or blank.");
             }
         }
+        Map<String, Integer> gradeTerms = new LinkedHashMap<>();
+        if (request != null) {
+            gradeTerms(gradeTerms, "A", request.termsA());
+            gradeTerms(gradeTerms, "B", request.termsB());
+            gradeTerms(gradeTerms, "C", request.termsC());
+        }
         body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue,
                 late != null, lateValue, policy != null, policyValue,
-                numbering != null, numberingValue));
+                numbering != null, numberingValue, gradeTerms));
+    }
+
+    /** Adds a grade's terms when the form sets them: blank is none (the sheet's terms). */
+    private static void gradeTerms(Map<String, Integer> gradeTerms, String grade, String terms) throws InvalidSettingsException {
+        if (terms == null) {
+            return;
+        }
+        Integer value = null;
+        if (!terms.trim().isEmpty()) {
+            if (!DAYS.matcher(terms.trim()).matches()) {
+                throw new InvalidSettingsException("The terms of grade " + grade + " must be a whole number of days, 0 or more, or blank.");
+            }
+            value = Integer.parseInt(terms.trim());
+        }
+        gradeTerms.put(grade, value);
     }
 }

@@ -28,6 +28,8 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   roundsOn: string;
+  /** Its due-by (YYYY-MM-DD), fixed when it was created: its date plus the terms of its person's grade then. */
+  dueBy: string;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
@@ -73,16 +75,12 @@ export function sumOf(claims: Claim[], held: Set<number> = new Set()): string {
   return (claims.filter((c) => countsLive(c, held)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 
-/** A claim's due-by (YYYY-MM-DD): its date plus the terms in force, in days. */
-export function dueByOf(c: Claim, terms: string): string {
-  const d = new Date(`${c.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + Number(terms));
-  return d.toISOString().slice(0, 10);
-}
+/** A claim's due-by (YYYY-MM-DD), fixed when it was created. */
+export const dueByOf = (c: Claim): string => c.dueBy;
 
 /** Whether a claim is overdue: it is OPEN or PENDING and its due-by is before the sheet's today. */
-export const isOverdue = (c: Claim, terms: string, today: string | undefined) =>
-  isOpen(c) && today !== undefined && dueByOf(c, terms) < today;
+export const isOverdue = (c: Claim, today: string | undefined) =>
+  isOpen(c) && today !== undefined && dueByOf(c) < today;
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);

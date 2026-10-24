@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/people';
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
-import { DEFAULT_TERMS, useSettings } from '../roles/roles';
+import { useSettings } from '../roles/roles';
 import { claimsPath, claimsQueryKey, dueByOf, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
@@ -25,7 +25,6 @@ function PersonClaims({ person }: { person: Person }) {
   const periods = usePeriods();
   const settings = useSettings();
   const today = useSheetToday();
-  const terms = settings.data?.terms ?? DEFAULT_TERMS;
   if (!sheet) return null;
   const mine = (claims.data ?? []).filter((c) => c.personId === person.id);
   const claim = editing ? mine.find((c) => String(c.id) === editing) : undefined;
@@ -48,9 +47,9 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-due">{chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)}</span>{' '}
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
-            <span data-testid="claim-due-by">{dueByOf(c, terms)}</span>{' '}
+            <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}
             <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
-            <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+            <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}>
               {claim?.id === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>

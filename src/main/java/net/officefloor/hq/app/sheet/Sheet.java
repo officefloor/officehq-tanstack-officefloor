@@ -31,6 +31,18 @@ public class Sheet {
     @Column(nullable = false)
     private int terms = Sheet.DEFAULT_TERMS;
 
+    /** Grade A's own terms in days; null (blank) when it uses the sheet's terms. */
+    @Column(name = "terms_a")
+    private Integer termsA;
+
+    /** Grade B's own terms in days; null (blank) when it uses the sheet's terms. */
+    @Column(name = "terms_b")
+    private Integer termsB;
+
+    /** Grade C's own terms in days; null (blank) when it uses the sheet's terms. */
+    @Column(name = "terms_c")
+    private Integer termsC;
+
     /** The late percent: an overdue claim's due gains it of its figure for every full 30 days overdue; a sheet starts at 0.00. */
     @Column(name = "late_pct", nullable = false, precision = 19, scale = 2)
     private BigDecimal latePct = Sheet.DEFAULT_LATE_PCT;
@@ -104,6 +116,31 @@ public class Sheet {
 
     public void setLatePct(BigDecimal latePct) {
         this.latePct = latePct;
+    }
+
+    /** The grade's own terms in days (grades A, B and C); null when it has none and uses the sheet's terms. */
+    public Integer getGradeTerms(String grade) {
+        return switch (grade) {
+            case "A" -> termsA;
+            case "B" -> termsB;
+            case "C" -> termsC;
+            default -> null;
+        };
+    }
+
+    public void setGradeTerms(String grade, Integer terms) {
+        switch (grade) {
+            case "A" -> termsA = terms;
+            case "B" -> termsB = terms;
+            case "C" -> termsC = terms;
+            default -> throw new IllegalArgumentException("No such grade: " + grade);
+        }
+    }
+
+    /** The terms in force for a grade: its own, else the sheet's. */
+    public int termsFor(String grade) {
+        Integer own = grade == null ? null : getGradeTerms(grade);
+        return own != null ? own : terms;
     }
 
     public LocalDate getPolicyDate() {

@@ -11,7 +11,7 @@ import java.time.LocalDate;
 
 /** A claim by a person on a sheet: an amount (negative only for a correction, which names the number of the
  * settled claim it corrects), a date, a note (may be empty)
- * a status (DRAFT to start), a number (given when opened), who opened it and a due (fixed when settled). */
+ * a status (DRAFT to start), a number (given when opened), who opened it, a due-by (fixed when created) and a due (fixed when settled). */
 @Entity
 @Table(name = "claim")
 public class Claim {
@@ -58,6 +58,11 @@ public class Claim {
     /** The figure the claim was bound to by its person's last statement; null while unbound or when it had none (n/a). */
     @Column(name = "stated_due", precision = 19, scale = 2)
     private BigDecimal statedDue;
+
+    /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on its
+     *  date then. It does not change when the terms or its date change later. */
+    @Column(name = "due_by", nullable = false)
+    private LocalDate dueBy;
 
     /** The number of the settled claim of the same person this correction corrects; null for any other claim. */
     @Column(name = "corrects")
@@ -114,6 +119,14 @@ public class Claim {
 
     public void setDate(LocalDate date) {
         this.date = date;
+    }
+
+    public LocalDate getDueBy() {
+        return dueBy;
+    }
+
+    public void setDueBy(LocalDate dueBy) {
+        this.dueBy = dueBy;
     }
 
     public String getNote() {

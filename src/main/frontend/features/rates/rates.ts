@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { dueByOf, isBound, isOverdue, type Claim } from '../claims/claims';
-import { DEFAULT_TERMS, type Settings } from '../roles/roles';
+import type { Settings } from '../roles/roles';
 import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
@@ -62,9 +62,8 @@ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, se
   const halfUp = roundsHalfUp(c, settings, today);
   const figure = figureOf(c, rates, grade, settings?.floor, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
-  const terms = settings?.terms ?? DEFAULT_TERMS;
-  if (today === undefined || !isOverdue(c, terms, today)) return figure;
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueByOf(c, terms)}T00:00:00Z`)) / 86_400_000;
+  if (today === undefined || !isOverdue(c, today)) return figure;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueByOf(c)}T00:00:00Z`)) / 86_400_000;
   const periods = Math.floor(days / 30);
   const charge = dueOf(formatCents(hundredths(figure) * BigInt(periods)), settings?.latePct ?? '0.00', halfUp);
   return formatCents(hundredths(figure) + hundredths(charge));

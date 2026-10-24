@@ -3,15 +3,16 @@ package net.officefloor.hq.app.claim;
 import java.time.LocalDate;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Adds the claim; refuses one dated in a closed period, or after the person's retirement date, and a correction
+/** Adds the claim, fixing its due-by: its date plus the terms of its person's grade in force on its date; refuses one dated in a closed period, or after the person's retirement date, and a correction
  * that does not name a settled claim of the person. */
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, ClaimRepository repository,
-            PeriodRepository periods, Out<Claim> claimOut) throws InvalidClaimException {
+            PeriodRepository periods, PersonGradeRepository grades, Out<Claim> claimOut) throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheet.getToday();
         if (periods.isClosedOn(sheet.getId(), date)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");
@@ -22,6 +23,7 @@ public class BuildClaim {
         LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
+        claim.setDueBy(date.plusDays(sheet.termsFor(grades.gradesOf(person).on(date))));
         claimOut.set(repository.save(claim));
     }
 }

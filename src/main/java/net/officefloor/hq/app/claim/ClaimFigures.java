@@ -31,22 +31,19 @@ public class ClaimFigures {
 
     private final BigDecimal latePct;
 
-    private final int terms;
-
     private final LocalDate today;
 
     private final LocalDate policyDate;
 
     /** @param rates the sheet's rates.
      *  @param grades the person's grades over time.
-     *  @param sheet the sheet: its floor (a live due is at least it), and its late percent, terms and today (the
+     *  @param sheet the sheet: its floor (a live due is at least it), and its late percent and today (the
      *  late charge). */
     public ClaimFigures(List<Rate> rates, PersonGrades grades, Sheet sheet) {
         this.rates = rates;
         this.grades = grades;
         this.floor = sheet.getFloor();
         this.latePct = sheet.getLatePct();
-        this.terms = sheet.getTerms();
         this.today = sheet.getToday();
         this.policyDate = sheet.policyDateInForce();
     }
@@ -57,9 +54,9 @@ public class ClaimFigures {
         return claim.getRoundsOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether a claim is overdue: it is OPEN or PENDING and its due-by (its date plus the terms) is before the sheet's today. */
+    /** Whether a claim is overdue: it is OPEN or PENDING and its due-by (fixed when it was created) is before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return claim.getStatus().isOpen() && claim.getDate().plusDays(terms).isBefore(today);
+        return claim.getStatus().isOpen() && claim.getDueBy().isBefore(today);
     }
 
     /** The late charge on a figure: the late percent of it for every full 30 days the claim is overdue, rounded
@@ -68,7 +65,7 @@ public class ClaimFigures {
         if (figure == null || claim.isCorrection() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
-        long periods = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today) / 30;
+        long periods = ChronoUnit.DAYS.between(claim.getDueBy(), today) / 30;
         return figure.multiply(latePct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
                 .setScale(2, rounding(claim));
     }
