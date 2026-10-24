@@ -8,6 +8,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { useClaims, type Claim } from '../claims/claims';
 import { formatCents, sumDue } from '../rates/rates';
 import { peoplePath, peopleQueryKey, usePeople, type Person } from './people';
+import { useColumnShown } from './columns';
 
 /** How many days back from the sheet's today (today included) a patron's settled claim counts toward backing. */
 const BACKING_DAYS = 90;
@@ -60,15 +61,18 @@ export function backingOf(patrons: Person[], claims: Claim[], today: string | un
 // each patron's figure (their SETTLED claims dated within the 90 days up to and including the sheet's today, each at
 // its frozen figure) times their share divided by 100, added up and rounded half to even (0.00 with none).
 function PatronsHeader() {
+  const backingShown = useColumnShown('backing');
   return (
     <>
       <th>Patrons</th>
-      <th>Backing</th>
+      {backingShown && <th>Backing</th>}
     </>
   );
 }
 
 function PersonPatrons({ person }: { person: Person }) {
+  const patronsShown = useColumnShown('patrons');
+  const backingShown = useColumnShown('backing');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople();
@@ -98,7 +102,7 @@ function PersonPatrons({ person }: { person: Person }) {
   return (
     <>
       <td>
-        <span data-testid="person-patrons">{names.join(', ')}</span>{' '}
+        {patronsShown && <><span data-testid="person-patrons">{names.join(', ')}</span>{' '}</>}
         <select
           data-testid="person-patron-select"
           value={chosen}
@@ -122,7 +126,7 @@ function PersonPatrons({ person }: { person: Person }) {
         </button>
         {add.isError && rowAction.isLatest && <span data-testid="person-patron-error">The patron could not be added.</span>}
       </td>
-      <td data-testid="person-backing">{backing}</td>
+      {backingShown && <td data-testid="person-backing">{backing}</td>}
     </>
   );
 }

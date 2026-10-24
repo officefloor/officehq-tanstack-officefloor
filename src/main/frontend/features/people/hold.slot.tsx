@@ -6,6 +6,7 @@ import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
+import { useColumnShown } from './columns';
 
 // Whether a person has any hold, a line for each of their holds, and the from-date (blank: the sheet's today),
 // to-date (blank: open-ended) and button that add a hold. Their OPEN claims dated within a hold count in no live
@@ -15,6 +16,7 @@ function HoldHeader() {
 }
 
 function PersonHold({ person }: { person: Person }) {
+  const shown = useColumnShown('hold');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const today = useSheetToday();
@@ -34,7 +36,7 @@ function PersonHold({ person }: { person: Person }) {
   const rowAction = useRowAction(`person-${person.id}`);
   return (
     <td>
-      <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>{' '}
+      {shown && <><span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>{' '}</>}
       {person.holds.map((h, i) => (
         <span key={i} data-testid="person-hold-line">{h.from} – {h.to ?? 'open'}{' '}</span>
       ))}

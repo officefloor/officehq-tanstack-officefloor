@@ -5,6 +5,7 @@ import { gradeOn, usePeople, type Person } from '../people/people';
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, sumDue, trimmedSum, useRates, type Rate } from '../rates/rates';
 import { countsLive, holdsOf, isOverdue, useClaims, type Claim } from './claims';
+import { useColumnShown } from '../people/columns';
 
 // A person's overdue count and overdue-total: their counted claims that are overdue (OPEN or PENDING, due-by plus their grade's grace before the
 // sheet's today; their unbound OPEN and PENDING claims dated within a hold of theirs do not count), and those claims' dues (with their late charge) added up, skipping n/a.
@@ -26,20 +27,24 @@ function useOverdue() {
 }
 
 function OverdueHeader() {
+  const count = useColumnShown('overdue-count');
+  const total = useColumnShown('overdue-total');
   return (
     <>
-      <th>Overdue</th>
-      <th>Overdue total</th>
+      {count && <th>Overdue</th>}
+      {total && <th>Overdue total</th>}
     </>
   );
 }
 
 function PersonOverdue({ person }: { person: Person }) {
   const { count, total } = useOverdue()(person);
+  const countShown = useColumnShown('overdue-count');
+  const totalShown = useColumnShown('overdue-total');
   return (
     <>
-      <td data-testid="person-overdue-count">{count}</td>
-      <td data-testid="person-overdue-total">{total}</td>
+      {countShown && <td data-testid="person-overdue-count">{count}</td>}
+      {totalShown && <td data-testid="person-overdue-total">{total}</td>}
     </>
   );
 }

@@ -7,6 +7,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
 import { peoplePath, peopleQueryKey, type Person } from '../people/people';
+import { useColumnShown } from '../people/columns';
 
 // A person's statements: how many were taken, the last one's due-total and date, and the button that takes
 // one — recording their due-total now and binding each of their counted claims to the figure it has now; or, with a
@@ -18,6 +19,9 @@ function StatementHeader() {
 }
 
 function PersonStatement({ person }: { person: Person }) {
+  const countShown = useColumnShown('statement-count');
+  const totalShown = useColumnShown('stated-total');
+  const dateShown = useColumnShown('statement-date');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const today = useSheetToday();
@@ -50,9 +54,9 @@ function PersonStatement({ person }: { person: Person }) {
   const cancelAction = useRowAction(`person-${person.id}`);
   return (
     <td>
-      <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
-      <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
-      <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+      {countShown && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
+      {totalShown && <><span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}</>}
+      {dateShown && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
       <input
         data-testid="person-statement-asof"
         placeholder={today ?? 'as of'}

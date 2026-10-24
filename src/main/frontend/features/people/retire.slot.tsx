@@ -7,6 +7,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
 import { poolsQueryKey } from '../pools/pools';
+import { useColumnShown } from './columns';
 
 // Whether a person is retired and from when, and the date and button that retire them (a blank date is the
 // sheet's today). A person with a date set counts as retired at once, whatever the date. A retired person can be
@@ -16,6 +17,7 @@ function RetiredHeader() {
 }
 
 function PersonRetired({ person }: { person: Person }) {
+  const shown = useColumnShown('retired');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const today = useSheetToday();
@@ -41,7 +43,7 @@ function PersonRetired({ person }: { person: Person }) {
   const rowAction = useRowAction(`person-${person.id}`);
   return (
     <td>
-      <span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}
+      {shown && <><span data-testid="person-retired">{person.retiredFrom !== null ? 'yes' : 'no'}</span>{' '}</>}
       <span data-testid="person-retired-from">{person.retiredFrom ?? ''}</span>{' '}
       <input
         data-testid="person-retire-date"

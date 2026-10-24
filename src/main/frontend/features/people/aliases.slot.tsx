@@ -6,6 +6,7 @@ import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
+import { useColumnShown } from './columns';
 
 // A person's aliases — other names they go by, sorted ignoring case (the server sorts them) — and the entry and
 // button that add another. An alias must not equal, ignoring case, any name or alias on the sheet or on another
@@ -15,6 +16,7 @@ function AliasesHeader() {
 }
 
 function PersonAliases({ person }: { person: Person }) {
+  const shown = useColumnShown('aliases');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [alias, setAlias] = useState('');
@@ -31,7 +33,7 @@ function PersonAliases({ person }: { person: Person }) {
   const rowAction = useRowAction(`person-${person.id}`);
   return (
     <td>
-      <span data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</span>{' '}
+      {shown && <><span data-testid="person-aliases">{(person.aliases ?? []).join(', ')}</span>{' '}</>}
       <input
         data-testid="person-alias-input"
         placeholder="Alias"

@@ -5,6 +5,7 @@ import { gradeOn, usePeople, type Person } from '../people/people';
 import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, formatCents, rateOn, sumDue, trimmedSum, useRates, type Rate } from './rates';
+import { useColumnShown } from '../people/columns';
 
 // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
 // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
@@ -51,26 +52,32 @@ function personFigures(person: Person, claims: Claim[], rates: Rate[] | undefine
 }
 
 function DueHeader() {
+  if (!useColumnShown('due-total')) return null;
   return <th>Due</th>;
 }
 
 function PersonDue({ person }: { person: Person }) {
+  const shown = useColumnShown('due-total');
   const claims = useClaims();
   const rates = useRates();
   const today = useSheetToday();
   const settings = useSettings();
+  if (!shown) return null;
   return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data)}</td>;
 }
 
 function ExcessHeader() {
+  if (!useColumnShown('excess')) return null;
   return <th>Excess</th>;
 }
 
 function PersonExcess({ person }: { person: Person }) {
+  const shown = useColumnShown('excess');
   const claims = useClaims();
   const rates = useRates();
   const today = useSheetToday();
   const settings = useSettings();
+  if (!shown) return null;
   return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data)}</td>;
 }
 
