@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateClaim {
 
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> body) throws InvalidClaimException {
-        body.set(request == null ? ClaimRules.check(null, null, null, null, null)
-                : ClaimRules.check(request.amount(), request.date(), request.note(), request.corrects(), request.ref()));
+        body.set(request == null ? ClaimRules.check(null, null, null, null, null, null)
+                : ClaimRules.check(request.amount(), request.date(), request.note(), request.corrects(), request.ref(),
+                        request.tags()));
     }
 }

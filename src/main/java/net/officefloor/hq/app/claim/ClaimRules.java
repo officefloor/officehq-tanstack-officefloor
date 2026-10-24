@@ -23,9 +23,15 @@ public final class ClaimRules {
     private ClaimRules() {
     }
 
-    /** Checks one claim form's fields as ValidateClaim does; a null field is blank. */
+    /** Checks one claim form's fields, with no tags, as ValidateClaim does; a null field is blank. */
     public static ClaimInput check(String amountField, String dateField, String noteField, String correctsField,
             String refField) throws InvalidClaimException {
+        return check(amountField, dateField, noteField, correctsField, refField, null);
+    }
+
+    /** Checks one claim form's fields as ValidateClaim does; a null field is blank. */
+    public static ClaimInput check(String amountField, String dateField, String noteField, String correctsField,
+            String refField, String tagsField) throws InvalidClaimException {
         String amount = amountField == null ? "" : amountField.trim();
         String date = dateField == null ? "" : dateField.trim();
         String note = noteField == null ? "" : noteField.trim();
@@ -53,7 +59,7 @@ public final class ClaimRules {
             }
         }
         return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects,
-                ref.isEmpty() ? null : ref);
+                ref.isEmpty() ? null : ref, Tags.normalise(tagsField));
     }
 
     /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is the
@@ -74,15 +80,17 @@ public final class ClaimRules {
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
         claim.setRef(input.ref());
+        claim.setTags(input.tags());
         claim.setLateEntry(periods.isSoftClosedOn(sheet.getId(), dueBy));
         claim.fixDue(date, terms, holidays.datesOf(sheet.getId()));
         return claim;
     }
 
-    /** Records the claim's adding (its ref at the end, when it has one), and after it, when it is a late entry, its LATE_ENTRY. */
+    /** Records the claim's adding (its ref, then its tags, at the end, when it has them), and after it, when it is a late entry, its LATE_ENTRY. */
     public static void auditAdded(Claim claim, String personName, String by, Audit audit) {
         audit.record(ClaimAudit.line("CLAIM_ADDED", claim, personName, by)
-                + (claim.getRef() == null ? "" : " ref=" + claim.getRef()));
+                + (claim.getRef() == null ? "" : " ref=" + claim.getRef())
+                + (claim.getTags() == null ? "" : " tags=" + claim.getTags()));
         if (claim.isLateEntry()) {
             audit.record(ClaimAudit.line("LATE_ENTRY", claim, personName, by));
         }

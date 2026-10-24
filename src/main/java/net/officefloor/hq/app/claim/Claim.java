@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Set;
+import java.util.TreeSet;
 import net.officefloor.hq.app.holiday.BusinessDays;
 
 /** A claim by a person on a sheet: an amount (negative only for a correction, which names the number of the
@@ -116,6 +117,14 @@ public class Claim {
     /** The claim's external reference, trimmed; unique on its sheet ignoring case; null for a claim with none. */
     @Column(name = "ref")
     private String ref;
+
+    /** The claim's tags, trimmed, lower-cased, without repeats, sorted and comma separated; null for a claim with none. */
+    @Column(name = "tags")
+    private String tags;
+
+    /** Every tag the claim has ever carried, sorted and comma separated; null while it never had any. */
+    @Column(name = "tags_used")
+    private String tagsUsed;
 
     protected Claim() {
     }
@@ -347,6 +356,8 @@ public class Claim {
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.ref = ref;
+        then.tags = tags;
+        then.tagsUsed = tagsUsed;
         then.bind(stated, statedDue);
         return then;
     }
@@ -357,6 +368,22 @@ public class Claim {
 
     public void setRef(String ref) {
         this.ref = ref;
+    }
+
+    public String getTags() {
+        return tags;
+    }
+
+    /** Gives the claim its tags (null: none), adding them to every tag it has ever carried. */
+    public void setTags(String tags) {
+        this.tags = tags;
+        TreeSet<String> used = new TreeSet<>(Tags.list(tagsUsed));
+        used.addAll(Tags.list(tags));
+        this.tagsUsed = used.isEmpty() ? null : String.join(",", used);
+    }
+
+    public String getTagsUsed() {
+        return tagsUsed;
     }
 
     public boolean isLateEntry() {

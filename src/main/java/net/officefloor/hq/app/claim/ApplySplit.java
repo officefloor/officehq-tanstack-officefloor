@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Splits an amount (more than 0.00 and less than the claim's amount) off an OPEN claim. The claim keeps the rest and
  * loses any figure a statement bound it to; a new OPEN claim of the same person gets the split-off amount, the same
  * date and note, the next number (as opening gives one), the signed-in user as who opened it, a due-by fixed now from
- * the terms in force on the date, and the original's number as the one it was split from. A PENDING, deferred, settled
+ * the terms in force on the date, the original's number as the one it was split from, and the original's tags. A PENDING, deferred, settled
  * or any other non-OPEN claim, or one whose due-by is in a closed period, is refused. The new claim is numbered in the period its own due-by falls in, and is a late entry when that period is soft-closed. Returns the split, for the audit.
  */
 public class ApplySplit {
@@ -76,6 +76,7 @@ public class ApplySplit {
         made.setNumber(number);
         made.setOpenedBy(user);
         made.setSplitFrom(claim.getNumber());
+        made.setTags(claim.getTags());
         made.fixDue(claim.getDate(), terms, holidays.datesOf(claim.getSheetId()));
         made.setLateEntry(periods.isSoftClosedOn(claim.getSheetId(), dueBy));
         made = repository.saveAndFlush(made);

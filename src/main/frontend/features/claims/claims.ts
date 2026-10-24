@@ -44,6 +44,10 @@ export type Claim = {
   remindedOn: string | null;
   /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
   ref: string | null;
+  /** Its tags, trimmed, lower-cased and sorted, without repeats; empty when it has none. */
+  tags: string[];
+  /** Every tag it has ever carried, sorted: the sheet's tags are those of all its claims. */
+  tagsUsed: string[];
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

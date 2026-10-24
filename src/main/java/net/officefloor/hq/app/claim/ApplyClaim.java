@@ -31,6 +31,7 @@ public class ApplyClaim {
         claim.setDate(date);
         claim.setNote(input.note());
         claim.setRef(input.ref());
+        claim.setTags(input.tags());
         claim.setLockedBy(null);
         repository.saveAndFlush(claim);
     }
