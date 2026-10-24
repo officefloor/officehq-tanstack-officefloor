@@ -3,7 +3,7 @@ import { useSheetToday } from '../session/session';
 import type { Person } from '../people/people';
 import { holdsOf, sumOf, useClaims } from './claims';
 
-// A person's claimed: the sum of their OPEN, PENDING and SETTLED claims' amounts (not unbound OPEN ones dated within a hold of theirs).
+// A person's claimed: the sum of their OPEN, PENDING and SETTLED claims' amounts (not corrections, nor unbound OPEN ones dated within a hold of theirs).
 function ClaimedHeader() {
   return <th>Claimed</th>;
 }

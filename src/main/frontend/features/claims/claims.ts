@@ -139,10 +139,10 @@ export function useClaims() {
 /** An amount ("12.50") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; unbound OPEN claims dated
- *  within a hold of their person are left out. */
+/** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; corrections (claims that
+ *  correct another) and unbound OPEN claims dated within a hold of their person are left out. */
 export function sumOf(claims: Claim[], held: Holds, today: string | undefined): string {
-  return (claims.filter((c) => countsLive(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
+  return (claims.filter((c) => c.corrects === null && countsLive(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 
 /** A claim's due-by (YYYY-MM-DD), fixed when it was created. */

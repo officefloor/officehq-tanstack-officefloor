@@ -19,7 +19,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
 /**
- * The sheet's figures at one moment, as the screen shows them: each person's claimed and due-total, in the
+ * The sheet's figures at one moment, as the screen shows them: each person's claimed (their counted claims, not corrections) and due-total, in the
  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a), and each
  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
@@ -63,7 +63,8 @@ public class Rollup {
             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
             for (Person person : persons.findListed(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
-                BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
+                BigDecimal claimed = mine.stream()
+                        .filter(c -> c.getCorrects() == null && ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 ClaimFigures figures = new ClaimFigures(sheetRates,
                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
