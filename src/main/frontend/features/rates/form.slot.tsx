@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { getJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { GRADES } from '../people/people';
-import { rateOn, ratesPath, ratesQueryKey, useRates, type Rate } from './rates';
+import { rateOn, ratesPath, ratesPreviewPath, ratesQueryKey, useRates, type Rate } from './rates';
 
 // The sheet's rates: each grade's rate in force on the sheet's today (n/a for a grade with none), every
 // rate with its from-date and to-date (a grade's rate from the start shows n/a when it has none), and the form that
@@ -31,6 +31,14 @@ function Rates() {
     },
   });
   const submit = useSubmitOnce(save);
+  const [previewGrade, setPreviewGrade] = useState<string>(GRADES[0]);
+  const [previewPct, setPreviewPct] = useState('');
+  // Nothing is saved: the store works out what the candidate rate would change and the screen shows it.
+  const preview = useMutation({
+    mutationFn: (q: { grade: string; pct: string }) =>
+      getJson<{ count: number; diff: string }>(
+        `${ratesPreviewPath(sheet ?? '')}?grade=${encodeURIComponent(q.grade)}&pct=${encodeURIComponent(q.pct)}`),
+  });
 
   if (!user || !sheet) return null;
   return (
@@ -113,6 +121,43 @@ function Rates() {
         </button>
         {save.isError && (
           <span data-testid="rate-form-error">The rate must be a percent, 0.00 or more, with up to two decimals, the from-date a calendar date or blank, and the to-date a calendar date on or after the from-date, or blank.</span>
+        )}
+      </form>
+      <form
+        data-testid="rate-preview-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          preview.reset();
+          preview.mutate({ grade: previewGrade, pct: previewPct });
+        }}
+      >
+        <select
+          data-testid="rate-preview-grade"
+          value={previewGrade}
+          onChange={(e) => { setPreviewGrade(e.target.value); preview.reset(); }}
+        >
+          {GRADES.map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
+        </select>
+        <input
+          data-testid="rate-preview-pct"
+          placeholder="Candidate percent"
+          inputMode="decimal"
+          value={previewPct}
+          onChange={(e) => { setPreviewPct(e.target.value); preview.reset(); }}
+        />
+        <button type="submit" data-testid="rate-preview" disabled={preview.isPending}>
+          Preview
+        </button>
+        {preview.isSuccess && (
+          <span>
+            {' '}<span data-testid="rate-preview-count">{preview.data.count}</span> claims would change by{' '}
+            <span data-testid="rate-preview-diff">{preview.data.diff}</span>
+          </span>
+        )}
+        {preview.isError && (
+          <span data-testid="rate-preview-error">The candidate rate must be a percent, 0.00 or more, with up to two decimals.</span>
         )}
       </form>
     </section>

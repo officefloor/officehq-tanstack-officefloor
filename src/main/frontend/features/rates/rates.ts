@@ -12,6 +12,9 @@ export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as
 
 export const ratesPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rates`;
 
+/** Where a candidate rate is previewed: what it would change, saving nothing. */
+export const ratesPreviewPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rate-preview`;
+
 /** The sheet's rates, by grade, then by from-date (a rate with none first). */
 export function useRates() {
   const [sheet] = useCurrentSheet();
