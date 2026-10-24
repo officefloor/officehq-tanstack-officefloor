@@ -1,0 +1,159 @@
+diff --git a/src/main/frontend/features/claims/export.slot.tsx b/src/main/frontend/features/claims/export.slot.tsx
+index 7f467e76..474d885e 100644
+--- a/src/main/frontend/features/claims/export.slot.tsx
++++ b/src/main/frontend/features/claims/export.slot.tsx
+@@ -1,34 +1,40 @@
++import { useQueryClient } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+-import { gradeOn, usePeople } from '../people/people';
+-import { csvValue } from '../people/export.slot';
+-import { chargedOf, useRates } from '../rates/rates';
+-import { periodOn, usePeriods } from '../periods/periods';
+-import { useSettings } from '../roles/roles';
+-import { dueByOf, useClaims } from './claims';
++import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
++import { gradeOn, peoplePath, peopleQueryKey, type Person } from '../people/people';
++import { csvValue, readFresh, sheetInfoPath } from '../people/export.slot';
++import { chargedOf, ratesPath, ratesQueryKey, type Rate } from '../rates/rates';
++import { periodOn, periodsPath, periodsQueryKey, type Period } from '../periods/periods';
++import { settingsPath, settingsQueryKey, type Settings } from '../roles/roles';
++import { claimsPath, claimsQueryKey, dueByOf, type Claim } from './claims';
+ 
+ // The claims export button: downloads every claim on the sheet as CSV — people in list order (retired people
+ // included, shown or not), each person's claims oldest first — with person, number, date, amount, due, status and
+-// period as the claim's row shows them. Quoting and line ends as the people export.
++// period as the claim's row shows them. Quoting and line ends as the people export. Its inputs are re-read from the
++// store when pressed, as the people export's, so in an as-of view it has the claims and figures as of that date.
+ function ExportClaims() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const people = usePeople();
+-  const claims = useClaims();
+-  const rates = useRates();
+-  const periods = usePeriods();
+-  const settings = useSettings();
+-  const today = useSheetToday();
++  const queryClient = useQueryClient();
+   if (!user || !sheet) return null;
+-  const download = () => {
++  const download = async () => {
++    const [info, people, claims, rates, periods, settings] = await Promise.all([
++      readFresh<SheetInfo>(queryClient, sheetQueryKey(sheet), sheetInfoPath(sheet)),
++      readFresh<Person[]>(queryClient, peopleQueryKey(sheet), peoplePath(sheet)),
++      readFresh<Claim[]>(queryClient, claimsQueryKey(sheet), claimsPath(sheet)),
++      readFresh<Rate[]>(queryClient, ratesQueryKey(sheet), ratesPath(sheet)),
++      readFresh<Period[]>(queryClient, periodsQueryKey(sheet), periodsPath(sheet)),
++      readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
++    ]);
++    const today = info.today;
+     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
+-    for (const p of people.data ?? []) {
++    for (const p of people) {
+       // The sheet's claims come newest first.
+-      const mine = (claims.data ?? []).filter((c) => c.personId === p.id).reverse();
++      const mine = claims.filter((c) => c.personId === p.id).reverse();
+       for (const c of mine) {
+         lines.push([p.name, c.number ?? '', c.date, c.amount,
+-          chargedOf(c, rates.data, gradeOn(p, c.date), settings.data, today), c.status,
+-          periodOn(periods.data, dueByOf(c))?.name ?? '']);
++          chargedOf(c, rates, gradeOn(p, c.date), settings, today), c.status,
++          periodOn(periods, dueByOf(c))?.name ?? '']);
+       }
+     }
+     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+@@ -42,7 +48,7 @@ function ExportClaims() {
+     setTimeout(() => URL.revokeObjectURL(url), 1000);
+   };
+   return (
+-    <button type="button" data-testid="export-claims" onClick={download}>
++    <button type="button" data-testid="export-claims" onClick={() => { void download(); }}>
+       Export claims (CSV)
+     </button>
+   );
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index 5ffcfe64..d8d60c4d 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -1,31 +1,45 @@
++import { useQueryClient, type QueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+-import { useClaims } from '../claims/claims';
+-import { useSettings } from '../roles/roles';
+-import { useRates } from '../rates/rates';
++import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
++import { claimsPath, claimsQueryKey, type Claim } from '../claims/claims';
++import { settingsPath, settingsQueryKey, type Settings } from '../roles/roles';
++import { ratesPath, ratesQueryKey, type Rate } from '../rates/rates';
+ import { personDue } from '../rates/due.slot';
+-import { gradeOn, usePeople } from './people';
++import { gradeOn, peoplePath, peopleQueryKey, type Person } from './people';
+ 
+ // The export button: downloads every person on the sheet (retired people included, in list order) as CSV —
+ // name, grade in force on the sheet's today, retired-from date (blank when not retired) and due-total as shown.
++// Its inputs are re-read from the store when pressed, so in an as-of view they are the as-of figures (the as-of
++// date standing in for today) even while the screen is still re-reading them after the as-of date was changed.
+ export function csvValue(value: string): string {
+   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+ }
+ 
++/** A sheet read made afresh from the store (as of the screen's as-of date, when one is set) for an export. */
++export function readFresh<T>(queryClient: QueryClient, queryKey: readonly unknown[], path: string): Promise<T> {
++  return queryClient.fetchQuery({ queryKey, queryFn: () => getJson<T>(path), staleTime: 0 });
++}
++
++export const sheetInfoPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
++
+ function ExportPeople() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const people = usePeople();
+-  const claims = useClaims();
+-  const rates = useRates();
+-  const today = useSheetToday();
+-  const settings = useSettings();
++  const queryClient = useQueryClient();
+   if (!user || !sheet) return null;
+-  const download = () => {
++  const download = async () => {
++    const [info, people, claims, rates, settings] = await Promise.all([
++      readFresh<SheetInfo>(queryClient, sheetQueryKey(sheet), sheetInfoPath(sheet)),
++      readFresh<Person[]>(queryClient, peopleQueryKey(sheet), peoplePath(sheet)),
++      readFresh<Claim[]>(queryClient, claimsQueryKey(sheet), claimsPath(sheet)),
++      readFresh<Rate[]>(queryClient, ratesQueryKey(sheet), ratesPath(sheet)),
++      readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
++    ]);
++    const today = info.today;
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+-    for (const p of people.data ?? []) {
+-      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '',
+-        personDue(p, claims.data ?? [], rates.data, today, settings.data)]);
++    for (const p of people) {
++      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings)]);
+     }
+     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+@@ -38,7 +52,7 @@ function ExportPeople() {
+     setTimeout(() => URL.revokeObjectURL(url), 1000);
+   };
+   return (
+-    <button type="button" data-testid="export-people" onClick={download}>
++    <button type="button" data-testid="export-people" onClick={() => { void download(); }}>
+       Export people (CSV)
+     </button>
+   );
+diff --git a/src/main/frontend/features/pools/export.slot.tsx b/src/main/frontend/features/pools/export.slot.tsx
+index 9d7e384f..4b2888c1 100644
+--- a/src/main/frontend/features/pools/export.slot.tsx
++++ b/src/main/frontend/features/pools/export.slot.tsx
+@@ -7,7 +7,7 @@ import { poolsPath, poolsQueryKey, type Pool } from './pools';
+ 
+ // The pools export button: downloads the sheet's pools as CSV — pools in the order added, each pool's members in the
+ // order added — with pool, member (a member pool as pool:<name>), share and cut as the pool's row shows them (empty
+-// when none). The pools are re-read from the store first, so the cuts are current. Quoting and line ends as the
++// when none). The pools are re-read from the store first, so the cuts are current (as of the as-of date, in an as-of view). Quoting and line ends as the
+ // people export.
+ function ExportPools() {
+   const [user] = useCurrentUser();
