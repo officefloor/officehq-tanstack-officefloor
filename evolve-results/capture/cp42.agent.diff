@@ -1,0 +1,381 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index e7a6b2f4..f6e1b2a2 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -10,13 +10,14 @@ import { chargedOf, rateOn, sumDue, useRates, type Rate } from './rates';
+ // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
+ // an overdue claim's late charge; each claim at the grade they had on its date) — 0.00 with nothing that counts.
+ // When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
+-// a figure — settled, bound, or live at another grade they had on its date: then it is the sum of the figures there are. Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
++// a figure — settled, bound, or live at another grade they had on its date, or live
++// on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
+ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined): string {
+   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person])));
+   const grade = gradeOn(person, today);
+   const kept = (c: Claim) => c.due !== null || (isBound(c) && c.statedDue !== null)
+-    || (!isBound(c) && gradeOn(person, c.date) !== grade && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
++    || (!isBound(c) && (gradeOn(person, c.date) !== grade || (today !== undefined && c.date <= today)) && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
+   if (rateOn(rates, grade, today) === undefined && !mine.some(kept)) {
+     return 'n/a';
+   }
+diff --git a/src/main/frontend/features/rates/form.slot.tsx b/src/main/frontend/features/rates/form.slot.tsx
+index a986045c..811d07bb 100644
+--- a/src/main/frontend/features/rates/form.slot.tsx
++++ b/src/main/frontend/features/rates/form.slot.tsx
+@@ -8,7 +8,7 @@ import { GRADES } from '../people/people';
+ import { rateOn, ratesPath, ratesQueryKey, useRates, type Rate } from './rates';
+ 
+ // The sheet's rates: each grade's rate in force on the sheet's today (n/a for a grade with none), every
+-// rate with its from-date (a grade's rate from the start shows n/a when it has none), and the form that
++// rate with its from-date and to-date (a grade's rate from the start shows n/a when it has none), and the form that
+ // sets one — replacing the grade's rate with the same from-date.
+ function Rates() {
+   const [user] = useCurrentUser();
+@@ -18,14 +18,16 @@ function Rates() {
+   const [grade, setGrade] = useState<string>(GRADES[0]);
+   const [pct, setPct] = useState('');
+   const [from, setFrom] = useState('');
++  const [to, setTo] = useState('');
+   const queryClient = useQueryClient();
+   const save = useMutation({
+-    mutationFn: (body: { grade: string; pct: string; from: string }) =>
++    mutationFn: (body: { grade: string; pct: string; from: string; to: string }) =>
+       putJson<Rate>(ratesPath(sheet ?? ''), body, user),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: ratesQueryKey(sheet ?? '') });
+       setPct('');
+       setFrom('');
++      setTo('');
+     },
+   });
+   const submit = useSubmitOnce(save);
+@@ -39,6 +41,7 @@ function Rates() {
+           <tr>
+             <th>Grade</th>
+             <th>From</th>
++            <th>To</th>
+             <th>Rate (%)</th>
+             <th>In force today (%)</th>
+           </tr>
+@@ -52,6 +55,7 @@ function Rates() {
+               <tr key={`${g}-start`} data-testid={`rate-row-${g}-start`}>
+                 <td>{g}</td>
+                 <td>start</td>
++                <td data-testid="rate-to">{start?.to ?? ''}</td>
+                 <td data-testid="rate-pct">{start?.pct ?? 'n/a'}</td>
+                 <td rowSpan={dated.length + 1} data-testid={`rate-current-${g}`}>
+                   {rateOn(rates.data, g, today) ?? 'n/a'}
+@@ -61,6 +65,7 @@ function Rates() {
+                 <tr key={`${g}-${r.from}`} data-testid={`rate-row-${g}-${r.from}`}>
+                   <td>{g}</td>
+                   <td data-testid="rate-from">{r.from}</td>
++                  <td data-testid="rate-to">{r.to ?? ''}</td>
+                   <td data-testid="rate-pct">{r.pct}</td>
+                 </tr>
+               )),
+@@ -72,7 +77,7 @@ function Rates() {
+         data-testid="rate-form"
+         onSubmit={(e) => {
+           e.preventDefault();
+-          submit({ grade, pct, from });
++          submit({ grade, pct, from, to });
+         }}
+       >
+         <select
+@@ -97,11 +102,17 @@ function Rates() {
+           value={from}
+           onChange={(e) => { setFrom(e.target.value); save.reset(); }}
+         />
++        <input
++          data-testid="rate-form-to"
++          placeholder="To (YYYY-MM-DD, blank: no end)"
++          value={to}
++          onChange={(e) => { setTo(e.target.value); save.reset(); }}
++        />
+         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
+           Set rate
+         </button>
+         {save.isError && (
+-          <span data-testid="rate-form-error">The rate must be a percent, 0.00 or more, with up to two decimals, and the from-date a calendar date or blank.</span>
++          <span data-testid="rate-form-error">The rate must be a percent, 0.00 or more, with up to two decimals, the from-date a calendar date or blank, and the to-date a calendar date on or after the from-date, or blank.</span>
+         )}
+       </form>
+     </section>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 861a65c6..d3834df6 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -5,8 +5,8 @@ import type { Settings } from '../roles/roles';
+ import { useCurrentSheet } from '../session/session';
+ 
+ /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
+- *  when it applies from the beginning of time). */
+-export type Rate = { grade: string; pct: string; from: string | null };
++ *  when it applies from the beginning of time), through a to-date (null when it has no end). */
++export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
+ 
+ export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
+ 
+@@ -24,7 +24,7 @@ export function useRates() {
+ 
+ /** The percent ("12.50") of a grade's rate in force on a date (YYYY-MM-DD): the one whose from-date is the
+  *  latest on or before it, a rate with no from-date applying from the beginning of time — or undefined when
+- *  no rate applies then. */
++ *  no rate applies then, or when that one's to-date is before the date. */
+ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | undefined): string | undefined {
+   if (date === undefined) return undefined;
+   let found: Rate | undefined;
+@@ -32,6 +32,7 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string |
+     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+     if (!found || (found.from ?? '') <= (r.from ?? '')) found = r;
+   }
++  if (found?.to != null && found.to < date) return undefined;
+   return found?.pct;
+ }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index f5f4c839..f0855f3b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -15,7 +15,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ /**
+  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
+  * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
+- * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then). An
++ * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then, or the one that would has ended by then). An
+  * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
+  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
+  * freezes it in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
+@@ -89,12 +89,13 @@ public class ClaimFigures {
+                 && person.heldOn(claim.getDate()));
+     }
+ 
+-    /** The percent of the grade's rate in force on a date. */
++    /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. */
+     private Optional<BigDecimal> rateOn(String grade, LocalDate on) {
+         return rates.stream()
+                 .filter(r -> r.getGrade().equals(grade))
+                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
+                 .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
++                .filter(r -> !r.endedBy(on))
+                 .map(Rate::getPct);
+     }
+ 
+@@ -122,7 +123,7 @@ public class ClaimFigures {
+ 
+     /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade
+      *  in force on the day has no rate in force then, unless a counted claim keeps a figure: a fixed one (settled or bound), or a
+-     *  live one at another grade they had on its date. */
++     *  live one at another grade they had on its date, or one dated on or before the day (at a rate that has ended since). */
+     public String dueTotal(List<Claim> claims, LocalDate today) {
+         return dueTotal(claims, today, null);
+     }
+@@ -133,7 +134,7 @@ public class ClaimFigures {
+         List<Claim> counted = claims.stream().filter(c -> countsLive(c, person)).toList();
+         String grade = grades.on(today);
+         boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
+-                || (!c.isBound() && !grade.equals(grades.on(c.getDate())) && figure(c) != null));
++                || (!c.isBound() && (!grade.equals(grades.on(c.getDate())) || !c.getDate().isAfter(today)) && figure(c) != null));
+         if (rateOn(grade, today).isEmpty() && !kept) {
+             return "n/a";
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java b/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
+index e080089f..efd1009b 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
+@@ -8,8 +8,9 @@ import net.officefloor.plugin.variable.Val;
+ public class ApplyRate {
+     public void apply(@Val RateInput input, @Val Sheet sheet, RateRepository repository, Out<Rate> rateOut) {
+         Rate rate = repository.findWithFrom(sheet.getId(), input.grade(), input.from())
+-                .orElseGet(() -> new Rate(sheet.getId(), input.grade(), input.pct(), input.from()));
++                .orElseGet(() -> new Rate(sheet.getId(), input.grade(), input.pct(), input.from(), input.to()));
+         rate.setPct(input.pct());
++        rate.setToDate(input.to());
+         rateOut.set(repository.saveAndFlush(rate));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/AuditRateSet.java b/src/main/java/net/officefloor/hq/app/rate/AuditRateSet.java
+index 2202a226..cbc3d35b 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/AuditRateSet.java
++++ b/src/main/java/net/officefloor/hq/app/rate/AuditRateSet.java
+@@ -10,6 +10,7 @@ public class AuditRateSet {
+     public void audit(@Val Rate rate, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+         audit.record("RATE_SET sheet=" + rate.getSheetId() + " by=" + AuditUser.decode(user)
+                 + " grade=" + rate.getGrade() + " rate=" + rate.getPct().setScale(2).toPlainString()
+-                + (rate.getFromDate() == null ? "" : " from=" + rate.getFromDate()));
++                + (rate.getFromDate() == null ? "" : " from=" + rate.getFromDate())
++                + (rate.getToDate() == null ? "" : " to=" + rate.getToDate()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java b/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java
+index f713255a..efa24056 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java
++++ b/src/main/java/net/officefloor/hq/app/rate/InvalidRateException.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rate;
+ 
+-/** A rate form that cannot be saved: a grade other than A, B or C, or a percent that is missing, negative or has more than two decimals. */
++/** A rate form that cannot be saved: a grade other than A, B or C, or a percent that is missing, negative or has more than two decimals,
++ *  or a to-date before its from-date. */
+ public class InvalidRateException extends Exception {
+     public InvalidRateException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index e543c7bc..3d35f834 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A sheet's rate for a grade: a percent with two decimals, from a date on (null: from the beginning of time). */
++/** A sheet's rate for a grade: a percent with two decimals, from a date on (null: from the beginning of time),
++ *  through a to-date (null: no end). */
+ @Entity
+ @Table(name = "rate")
+ public class Rate {
+@@ -30,14 +31,18 @@ public class Rate {
+     @Column(name = "from_date")
+     private LocalDate fromDate;
+ 
++    @Column(name = "to_date")
++    private LocalDate toDate;
++
+     protected Rate() {
+     }
+ 
+-    public Rate(String sheetId, String grade, BigDecimal pct, LocalDate fromDate) {
++    public Rate(String sheetId, String grade, BigDecimal pct, LocalDate fromDate, LocalDate toDate) {
+         this.sheetId = sheetId;
+         this.grade = grade;
+         this.pct = pct;
+         this.fromDate = fromDate;
++        this.toDate = toDate;
+     }
+ 
+     public Long getId() {
+@@ -63,4 +68,18 @@ public class Rate {
+     public LocalDate getFromDate() {
+         return fromDate;
+     }
++
++    /** The last date it applies on (null: no end). */
++    public LocalDate getToDate() {
++        return toDate;
++    }
++
++    public void setToDate(LocalDate toDate) {
++        this.toDate = toDate;
++    }
++
++    /** Whether it has ended by a date: it has a to-date before it. */
++    public boolean endedBy(LocalDate on) {
++        return toDate != null && toDate.isBefore(on);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateInput.java b/src/main/java/net/officefloor/hq/app/rate/RateInput.java
+index e71dc645..52613dfc 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateInput.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateInput.java
+@@ -3,6 +3,6 @@ package net.officefloor.hq.app.rate;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+-/** A validated rate form: the grade, its percent with two decimals and its from-date (null when none). */
+-public record RateInput(String grade, BigDecimal pct, LocalDate from) {
++/** A validated rate form: the grade, its percent with two decimals and its from-date and to-date (null when none). */
++public record RateInput(String grade, BigDecimal pct, LocalDate from, LocalDate to) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 670463f3..19fc1638 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -21,10 +21,11 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
+     }
+ 
+     /** The grade's rate in force on a date: the one whose from-date is the latest on or before it, a rate with
+-     *  no from-date applying from the beginning of time; empty when none applies. */
++     *  no from-date applying from the beginning of time; empty when none applies, or when that one's to-date is before it. */
+     default Optional<Rate> findInForce(String sheetId, String grade, LocalDate on) {
+         return findBySheetIdAndGrade(sheetId, grade).stream()
+                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
+-                .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
++                .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
++                .filter(r -> !r.endedBy(on));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+index 7cce7c56..8a150755 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.rate;
+ 
+-/** The rate form as submitted: a grade, its percent and its from-date (blank: from the beginning of time). */
+-public record RateRequest(String grade, String pct, String from) {
++/** The rate form as submitted: a grade, its percent and its from-date (blank: from the beginning of time)
++ *  and its to-date (blank: no end). */
++public record RateRequest(String grade, String pct, String from, String to) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index 3712707e..fb9527a1 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,10 +1,11 @@
+ package net.officefloor.hq.app.rate;
+ 
+-/** A grade's rate as the screen shows it: the percent with two decimals and its from-date (null when none). */
+-public record RateResponse(String grade, String pct, String from) {
++/** A grade's rate as the screen shows it: the percent with two decimals and its from-date and to-date (null when none). */
++public record RateResponse(String grade, String pct, String from, String to) {
+ 
+     public static RateResponse from(Rate rate) {
+         return new RateResponse(rate.getGrade(), rate.getPct().setScale(2).toPlainString(),
+-                rate.getFromDate() == null ? null : rate.getFromDate().toString());
++                rate.getFromDate() == null ? null : rate.getFromDate().toString(),
++                rate.getToDate() == null ? null : rate.getToDate().toString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 7b8b7b54..06d72855 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Reads the rate form from the body; refuses a grade other than A, B or C and a percent that is missing, negative or has more than two decimals,
+- * and a from-date that is not a calendar date. A blank from-date means from the beginning of time. */
++ * a from-date or to-date that is not a calendar date, and a to-date before the from-date. A blank from-date means from the beginning of time. */
+ public class ValidateRate {
+ 
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+@@ -34,6 +34,18 @@ public class ValidateRate {
+                 throw new InvalidRateException("The from-date must be a calendar date.");
+             }
+         }
+-        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), parsed));
++        String to = request == null || request.to() == null ? "" : request.to().trim();
++        LocalDate until = null;
++        if (!to.isEmpty()) {
++            try {
++                until = LocalDate.parse(to);
++            } catch (DateTimeParseException e) {
++                throw new InvalidRateException("The to-date must be a calendar date.");
++            }
++        }
++        if (parsed != null && until != null && until.isBefore(parsed)) {
++            throw new InvalidRateException("The to-date must not be before the from-date.");
++        }
++        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), parsed, until));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V31__rate_to.sql b/src/main/resources/db/migration/V31__rate_to.sql
+new file mode 100644
+index 00000000..86ee8695
+--- /dev/null
++++ b/src/main/resources/db/migration/V31__rate_to.sql
+@@ -0,0 +1,3 @@
++-- A rate can carry a to-date: it applies through that date (none: on and on). A claim dated after the to-date
++-- of the rate that would apply to it has no rate (n/a), unless a later rate is in force then.
++ALTER TABLE rate ADD COLUMN to_date DATE;
