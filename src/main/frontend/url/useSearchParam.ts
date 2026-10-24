@@ -13,12 +13,12 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 export function useSearchParam<T>(
   key: string,
   decode: (raw: unknown) => T,
-): [T, (value: T | undefined) => void] {
+): [T, (value: T | undefined) => Promise<void>] {
   const search = useSearch({ strict: false }) as Record<string, unknown>;
   const navigate = useNavigate();
 
   const set = (value: T | undefined) => {
-    void navigate({
+    return navigate({
       to: '.', // stay on the current route; only the search changes
       // Only the one key changes; every other param is left exactly as it was, so two controls
       // never clobber each other.

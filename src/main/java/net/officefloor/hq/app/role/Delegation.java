@@ -44,6 +44,10 @@ public class Delegation {
         this.toDate = toDate;
     }
 
+    public Long getId() {
+        return id;
+    }
+
     public String getSheetId() {
         return sheetId;
     }

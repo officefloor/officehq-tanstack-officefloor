@@ -66,6 +66,10 @@ public class Sheet {
     @Column(nullable = false)
     private boolean archived;
 
+    /** The sheet's today when it was archived; null while it is not, or when that was not recorded. */
+    @Column(name = "archived_on")
+    private LocalDate archivedOn;
+
     /** The late percent a sheet starts at. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -214,6 +218,18 @@ public class Sheet {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    /** Archives the sheet, on its today. */
+    public void archive() {
+        this.archived = true;
+        this.archivedOn = today;
+    }
+
+    /** Whether the sheet had been archived by the end of a date: it was archived while its today was on or before
+     *  it (one archived before that was recorded, on any date). */
+    public boolean archivedBy(LocalDate date) {
+        return archived && (archivedOn == null || !archivedOn.isAfter(date));
     }
 
     public LocalDate getPolicyDate() {

@@ -41,6 +41,10 @@ public class Role {
         this.role = role;
     }
 
+    public Long getId() {
+        return id;
+    }
+
     public String getSheetId() {
         return sheetId;
     }

@@ -14,7 +14,7 @@ public interface SettingLogRepository extends JpaRepository<SettingLog, Long> {
     default Sheet sheetAsOf(Sheet sheet, LocalDate date) {
         Sheet then = new Sheet(sheet.getId());
         then.setToday(date);
-        then.setArchived(sheet.isArchived());
+        then.setArchived(sheet.archivedBy(date));
         for (SettingLog set : findBySheetIdOrderByIdAsc(sheet.getId())) {
             if (set.getMadeOn().isAfter(date)) {
                 continue;

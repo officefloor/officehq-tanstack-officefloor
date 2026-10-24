@@ -7,7 +7,32 @@ export class HttpError extends Error {
   }
 }
 
+// The as-of view: while the screen's `asof` search param holds a date, every read of a sheet asks for the
+// sheet as it stood at the end of that date, and every change is refused here, before it reaches the store
+// (so each form and action shows its usual error). Loading a sheet (PUT /api/sheets/<id>) is not a change.
+export const ASOF_PARAM = 'asof';
+
+/** The date the screen shows the sheet as of (YYYY-MM-DD), or '' while it shows the sheet as it is now. */
+export function currentAsOf(): string {
+  const raw = new URLSearchParams(window.location.search).get(ASOF_PARAM) ?? '';
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed : raw;
+  } catch {
+    return raw;
+  }
+}
+
+const isSheetLoad = (path: string) => /^\/api\/sheets\/[^/?]+$/.test(path);
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
+  const asOf = currentAsOf();
+  if (asOf && init?.method && init.method !== 'GET' && !isSheetLoad(path)) {
+    throw new HttpError(`${init.method} ${path} -> refused while the sheet is shown as of ${asOf}`, 400);
+  }
+  if (asOf && !init?.method && path.startsWith('/api/sheets/')) {
+    path += `${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
+  }
   const res = await fetch(path, init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);

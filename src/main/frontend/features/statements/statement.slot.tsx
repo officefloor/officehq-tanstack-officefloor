@@ -32,8 +32,9 @@ function PersonStatement({ person }: { person: Person }) {
         queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') }),
         queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') }),
       ]);
-      setAsOf('');
     },
+    // A date typed for one statement, taken or refused, never carries into the next.
+    onSettled: () => setAsOf(''),
   });
   const submit = useSubmitOnce(take);
   const rowAction = useRowAction(`person-${person.id}`);

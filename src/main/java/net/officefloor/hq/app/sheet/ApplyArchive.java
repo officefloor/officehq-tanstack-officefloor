@@ -13,7 +13,7 @@ public class ApplyArchive {
         if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), AuditUser.decode(user)))) {
             throw new SheetArchivedException("Only a steward can archive the sheet.");
         }
-        sheet.setArchived(true);
+        sheet.archive();
         repository.save(sheet);
     }
 }

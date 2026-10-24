@@ -235,6 +235,10 @@ public class Claim {
         this.statedDue = stated ? statedDue : null;
     }
 
+    public Long getListed() {
+        return listed;
+    }
+
     public LocalDate getDeferredUntil() {
         return deferredUntil;
     }
