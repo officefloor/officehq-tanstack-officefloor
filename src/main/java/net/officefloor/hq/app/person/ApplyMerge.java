@@ -12,6 +12,9 @@ import net.officefloor.hq.app.pool.PoolMember;
 import net.officefloor.hq.app.pool.PoolMemberRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.statement.BindingLogRepository;
+import net.officefloor.hq.app.statement.BindingLogs;
 import net.officefloor.hq.app.statement.StatementRepository;
 import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Out;
@@ -21,16 +24,17 @@ import org.springframework.web.bind.annotation.RequestHeader;
 /**
  * Merges the person into another of the sheet; only a steward may, and not into themselves, nor when either of them is
  * retired. Their claims move to the other, keeping their numbers and dates, listed after the other's claims in the
- * order they were added, each losing any figure a statement bound it to. Their name and aliases become aliases of the
+ * order they were added, each keeping any figure a statement bound it to. Their name and aliases become aliases of the
  * other. Their patrons are added to the other's (not the other themselves, no repeats); anyone naming them as patron
  * names the other instead (not themselves, no repeats). Their pool memberships move to the other (shares added when the
- * other is already a member). Their statements, holds, dated grades, watchers and contact are dropped, and they leave
- * the sheet.
+ * other is already a member). Their statements become the other's, standing before the other's own, so the other's
+ * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
+ * are dropped, and they leave the sheet.
  */
 public class ApplyMerge {
     public void apply(@Val MergeInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
             PersonAliasRepository aliases, PatronRepository patrons, PoolMemberRepository members,
-            StatementRepository statements, WatchRepository watches, PersonGradeRepository grades,
+            StatementRepository statements, BindingLogRepository bindings, SheetRepository sheets, WatchRepository watches, PersonGradeRepository grades,
             RoleRepository roles, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMerged> merged)
             throws InvalidPersonException, ClerkLimitException {
@@ -58,7 +62,6 @@ public class ApplyMerge {
         moved.sort(Comparator.comparing(Claim::getId));
         for (Claim claim : moved) {
             claim.setPersonId(to);
-            claim.bind(false, null);
             claims.saveAndFlush(claim);
             claims.relist(claim.getId());
         }
@@ -100,8 +103,11 @@ public class ApplyMerge {
             }
         }
 
-        // Dropped: statements, watchers, dated grades; holds and contact go with the person.
-        statements.deleteAll(statements.findByPersonIdOrderByIdAsc(from));
+        // Statements move to the other, before their own; the claims bound now are recorded as the other's binding.
+        statements.moveAll(from, sheetId, to);
+        BindingLogs.record(bindings, claims, sheets, sheetId, to);
+
+        // Dropped: watchers, dated grades; holds and contact go with the person.
         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));
         grades.deleteAll(grades.findByPersonIdOrderByFromDateAsc(from));
         statements.flush();

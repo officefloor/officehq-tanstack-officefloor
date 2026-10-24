@@ -31,7 +31,7 @@ public class CancelStatement {
         }
         // Lock the person so a cancel and a statement (or two cancels) are taken one after the other.
         entityManager.refresh(person, LockModeType.PESSIMISTIC_WRITE);
-        List<Statement> taken = statements.findByPersonIdOrderByIdAsc(person.getId());
+        List<Statement> taken = statements.ofPerson(person.getId());
         if (taken.isEmpty()) {
             throw new InvalidPersonException("The person has no statement to cancel.");
         }

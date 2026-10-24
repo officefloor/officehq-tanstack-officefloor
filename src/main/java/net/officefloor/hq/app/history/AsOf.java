@@ -134,12 +134,11 @@ public class AsOf {
                         Comparator.comparing(PersonAlias::getId));
     }
 
-    /** The sheet's statements, oldest first. */
+    /** The sheet's statements, each person's in the order they stand, oldest first. */
     public List<Statement> statements(String sheetId, LocalDate date) {
-        List<Statement> now = statements.findBySheetIdOrderByIdAsc(sheetId);
+        List<Statement> now = statements.ofSheet(sheetId);
         return date == null ? now
-                : sorted(history.asOf(sheetId, Statement.class, date, now, Statement::getId),
-                        Comparator.comparing(Statement::getId));
+                : sorted(history.asOf(sheetId, Statement.class, date, now, Statement::getId), Statement.ORDER);
     }
 
     /** The sheet's claims in the order they are listed: newest first, a moved claim as its new person's newest. */

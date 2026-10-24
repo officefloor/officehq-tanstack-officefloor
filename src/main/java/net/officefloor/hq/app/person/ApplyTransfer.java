@@ -26,6 +26,8 @@ import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.statement.BindingLogRepository;
+import net.officefloor.hq.app.statement.BindingLogs;
 import net.officefloor.hq.app.statement.StatementRepository;
 import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Out;
@@ -36,20 +38,21 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * Transfers the person to another sheet by id; only a steward may, not a retired person, not to this sheet itself,
  * nor to an archived sheet, nor when their contact is already on the other sheet. When their name or an alias of theirs
  * is already someone's name or alias there (ignoring case), they are merged into that person instead, exactly as a
- * merge does (not into a retired person): their claims are listed after that person's, each losing any figure a
- * statement bound it to, their name and aliases become that person's aliases, and their grades, terms and contact are
+ * merge does (not into a retired person): their claims are listed after that person's, each keeping any figure a
+ * statement bound it to, their statements become that person's (before that person's own), their name and aliases become that person's aliases, and their grades, terms and contact are
  * dropped. Otherwise they arrive there with every grade they were given
  * (and its from-date), their terms, contact and aliases, and their claims with their status, dates, notes, tags,
- * frozen dues, status logs and comments, listed in the same order. Each claim that had a number takes the other
+ * frozen dues, the figures a statement bound them to, status logs and comments, listed in the same order, and their
+ * statements. Each claim that had a number takes the other
  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
- * were added). Figures a statement bound are lost (they have no statements there) and references are not carried.
- * They leave this sheet entirely: their claims, statements, holds, patron links (both ways), pool memberships and
+ * were added). References are not carried.
+ * They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships and
  * watchers are dropped.
  */
 public class ApplyTransfer {
     public void apply(@Val TransferInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
             ClaimLogRepository logs, ClaimCommentRepository comments, PersonAliasRepository aliases,
-            PatronRepository patrons, PoolMemberRepository members, StatementRepository statements,
+            PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
             RateRepository rates, PeriodRepository periods, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonTransferred> transferred)
@@ -134,7 +137,9 @@ public class ApplyTransfer {
         Map<Claim, Claim> copies = new LinkedHashMap<>();
         Map<Long, LocalDate> openedOn = new HashMap<>();
         for (Claim claim : theirs) {
-            Claim copy = claims.saveAndFlush(claim.transferTo(to, arrivedId));
+            Claim moved = claim.transferTo(to, arrivedId);
+            moved.bind(claim.isStated(), claim.getStatedDue());
+            Claim copy = claims.saveAndFlush(moved);
             copies.put(claim, copy);
             List<ClaimLog> lines = logs.findByClaimIdOrderByIdAsc(claim.getId());
             lines.stream().filter(l -> ClaimStatus.OPEN.name().equals(l.getStatus())).map(ClaimLog::getOnDate)
@@ -179,6 +184,11 @@ public class ApplyTransfer {
         });
         claims.flush();
 
+        // Statements go with them, before the other's own when merging; the claims bound there now are recorded as
+        // their binding there.
+        statements.moveAll(from, to, arrivedId);
+        BindingLogs.record(bindings, claims, sheets, to, arrivedId);
+
         // They leave this sheet entirely.
         claims.deleteAll(theirs);
         claims.flush();
@@ -186,7 +196,6 @@ public class ApplyTransfer {
         patrons.deleteAll(patrons.findByPatronIdOrderByIdAsc(from));
         members.deleteAll(members.findByPersonIdOrderByIdAsc(from));
         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));
-        statements.deleteAll(statements.findByPersonIdOrderByIdAsc(from));
         grades.deleteAll(theirGrades);
         aliases.deleteAll(theirAliases);
         aliases.flush();

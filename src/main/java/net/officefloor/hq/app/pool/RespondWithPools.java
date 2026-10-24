@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -14,10 +15,12 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.person.Person;
-import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.history.AsOf;
+import net.officefloor.hq.app.sheet.InvalidTodayException;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's pools, in the order they were added, each with its members in the order they were added. A member
  *  with a retirement date set (whatever the date) counts its share toward the pool's total, as any member does. A pool that is a member of none has the sheet's pot; a pool that is a member of another has
@@ -27,13 +30,18 @@ import net.officefloor.web.ObjectResponse;
  *  their share is spread over the others in proportion to theirs (the pool's total share is unchanged). A pool whose
  *  every member is retired shows no cuts. The remainder, the pot minus the cuts added up, goes to the member with a
  *  cut with the largest share, the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
- *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut. */
+ *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
+ *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
+ *  sheet is left out. */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
-    public void respond(@Val Sheet sheet, PoolRepository pools, PoolMemberRepository members, PersonRepository people,
-            ObjectResponse<List<PoolResponse>> response) {
-        Map<Long, Person> byId = people.findListed(sheet.getId()).stream()
+    public void respond(@Val Sheet current, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+            PoolRepository pools, PoolMemberRepository members, ObjectResponse<List<PoolResponse>> response)
+            throws InvalidTodayException {
+        LocalDate date = AsOf.dateOf(asOfParam);
+        Sheet sheet = asOf.sheet(current, date);
+        Map<Long, Person> byId = asOf.people(current.getId(), date).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         List<Pool> sheetPools = pools.findBySheetIdOrderByIdAsc(sheet.getId());
         Map<Long, Pool> poolsById = sheetPools.stream().collect(Collectors.toMap(Pool::getId, Function.identity()));

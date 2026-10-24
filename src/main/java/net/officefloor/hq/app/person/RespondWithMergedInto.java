@@ -13,7 +13,7 @@ public class RespondWithMergedInto {
             ObjectResponse<PersonResponse> response) {
         Person into = merged.into();
         Sheet sheet = sheets.findById(into.getSheetId()).orElseGet(() -> new Sheet(into.getSheetId()));
-        response.send(PersonResponse.from(into, statements.findByPersonIdOrderByIdAsc(into.getId()),
+        response.send(PersonResponse.from(into, statements.ofPerson(into.getId()),
                 patrons.findByPersonIdOrderByIdAsc(into.getId()),
                 aliases.findByPersonIdOrderByIdAsc(into.getId()), grades.gradesOf(into), sheet.getToday(),
                 tree.usedAround(sheet.getId())));

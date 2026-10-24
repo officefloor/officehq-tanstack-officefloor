@@ -8,9 +8,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.time.LocalDate;
+import java.util.Comparator;
 
 /** A statement taken for a person: their due-total then (two decimals, or n/a), the date it was taken as of (the
- *  sheet's today then when none was given) and the sheet's today when it was taken. */
+ *  sheet's today then when none was given) and the sheet's today when it was taken. A person's statements stand in
+ *  the order of their places (by id when none is given); the last one is their last statement. */
 @Entity
 @Table(name = "statement")
 public class Statement {
@@ -34,6 +36,14 @@ public class Statement {
     @Column(name = "made_on")
     private LocalDate madeOn;
 
+    /** Where it stands among its person's statements (null: by its id); given when it is moved to another person. */
+    @Column(name = "place")
+    private Long place;
+
+    /** A person's statements in the order they stand, oldest first. */
+    public static final Comparator<Statement> ORDER = Comparator.comparing(Statement::getPlace)
+            .thenComparing(Statement::getId);
+
     /** The date it was taken as of, when one was given; for the audit only. */
     @Transient
     private LocalDate asOf;
@@ -54,6 +64,20 @@ public class Statement {
         this.madeOn = today;
         this.asOf = asOf;
         this.claims = claims;
+    }
+
+    /** The statement moved to another person (and sheet), standing at a place among theirs. */
+    public Statement moveTo(String toSheetId, Long toPersonId, long toPlace) {
+        Statement moved = new Statement(toSheetId, toPersonId, dueTotal, madeOn, null, 0);
+        moved.takenOn = takenOn;
+        moved.madeOn = madeOn;
+        moved.place = toPlace;
+        return moved;
+    }
+
+    /** Where it stands among its person's statements. */
+    public long getPlace() {
+        return place != null ? place : id;
     }
 
     public Long getId() {
