@@ -62,10 +62,16 @@ export function postJson<T>(path: string, body: unknown, user?: string): Promise
   });
 }
 
-export function putJson<T>(path: string, body?: unknown, user?: string): Promise<T> {
+export function putJson<T>(path: string, body?: unknown, user?: string, live = false): Promise<T> {
   return send<T>(path, {
     method: 'PUT',
     headers: jsonHeaders(user),
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  }, live);
+}
+
+// A change that is not a change to the sheet (a user's own preference): made whatever date the screen shows the
+// sheet as of.
+export function putJsonLive<T>(path: string, body?: unknown, user?: string): Promise<T> {
+  return putJson<T>(path, body, user, true);
 }
