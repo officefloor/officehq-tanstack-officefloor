@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
-import { HttpError, postJson, putJson } from '../../api/http';
+import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
@@ -96,6 +96,7 @@ function PersonClaims({ person }: { person: Person }) {
                 <li key={i} data-testid="claim-log-line">{line}</li>
               ))}
             </ol>
+            <ClaimTimeline key={`timeline:${sheet}:${c.id}`} sheet={sheet} claimId={c.id} />
           </li>
         ))}
       </ul>
@@ -103,6 +104,24 @@ function PersonClaims({ person }: { person: Person }) {
       <ClaimForm key={`${sheet}:${claim?.id ?? ''}`} sheet={sheet} person={person} claim={claim}
         onSubmitted={() => setSubmits((n) => n + 1)} />
     </td>
+  );
+}
+
+// A claim's timeline: the audit lines about it, newest first, exactly as the audit file holds them. It reads the
+// file each time the button is pressed; while a read runs the old lines are gone, so two reads are told apart.
+function ClaimTimeline({ sheet, claimId }: { sheet: string; claimId: number }) {
+  const show = useMutation({
+    mutationFn: () => getJson<string[]>(`${claimsPath(sheet)}/${claimId}/timeline`),
+  });
+  return (
+    <>
+      <button type="button" data-testid="claim-timeline" onClick={() => show.mutate()}>Timeline</button>
+      <ol data-testid="claim-timeline-lines">
+        {(show.isPending ? [] : show.data ?? []).map((line, i) => (
+          <li key={i} data-testid="claim-timeline-line">{line}</li>
+        ))}
+      </ol>
+    </>
   );
 }
 
