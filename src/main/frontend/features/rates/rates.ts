@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import type { Claim } from '../claims/claims';
+import { dueByOf, isOverdue, type Claim } from '../claims/claims';
+import { DEFAULT_TERMS, type Settings } from '../roles/roles';
 import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
@@ -40,6 +41,21 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, flo
   if (c.due !== null) return c.due;
   if (c.stated) return c.statedDue ?? 'n/a';
   return atLeast(dueOf(c.amount, rateOn(rates, grade, c.date)), floor);
+}
+
+/** A claim's due: a settled claim's frozen due, else its figure plus its late charge — the sheet's late percent
+ *  of the figure for every full 30 days it is overdue on the sheet's today, rounded like a due ("n/a" when it
+ *  has no figure). A statement binds only the figure: the charge keeps following the sheet's today. */
+export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
+  today: string | undefined): string {
+  const figure = figureOf(c, rates, grade, settings?.floor);
+  if (c.due !== null || figure === 'n/a') return figure;
+  const terms = settings?.terms ?? DEFAULT_TERMS;
+  if (today === undefined || !isOverdue(c, terms, today)) return figure;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueByOf(c, terms)}T00:00:00Z`)) / 86_400_000;
+  const periods = Math.floor(days / 30);
+  const charge = dueOf(formatCents(hundredths(figure) * BigInt(periods)), settings?.latePct ?? '0.00');
+  return formatCents(hundredths(figure) + hundredths(charge));
 }
 
 /** A due raised to the floor when below it ("n/a" stays n/a; no floor leaves it as it is). */

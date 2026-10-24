@@ -50,7 +50,7 @@ public class Rollup {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
                 BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person.isHeld())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
-                String due = new ClaimFigures(rates.findBySheetIdAndGrade(id, person.getGrade()), sheet.get().getFloor())
+                String due = new ClaimFigures(rates.findBySheetIdAndGrade(id, person.getGrade()), sheet.get())
                         .dueTotal(mine, sheet.get().getToday(), person.isHeld());
                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due));
                 claimedTotal = claimedTotal.add(claimed);

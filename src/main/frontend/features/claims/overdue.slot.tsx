@@ -2,18 +2,18 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { usePeople, type Person } from '../people/people';
-import { DEFAULT_TERMS, useSettings } from '../roles/roles';
-import { figureOf, sumDue, useRates, type Rate } from '../rates/rates';
+import { DEFAULT_TERMS, useSettings, type Settings } from '../roles/roles';
+import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
 import { countsLive, heldIds, isOverdue, useClaims, type Claim } from './claims';
 
 // A person's overdue count and overdue-total: their counted claims that are overdue (OPEN, due-by before the
-// sheet's today; a held person's OPEN claims do not count), and those claims' figures added up, skipping n/a.
+// sheet's today; a held person's OPEN claims do not count), and those claims' dues (with their late charge) added up, skipping n/a.
 // The sheet's are everyone's added up.
 function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, terms: string, today: string | undefined,
-  floor: string | undefined): { count: number; total: string } {
+  settings: Settings | undefined): { count: number; total: string } {
   const held = heldIds([person]);
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, terms, today));
-  return { count: mine.length, total: sumDue(mine.map((c) => figureOf(c, rates, person.grade, floor))) };
+  return { count: mine.length, total: sumDue(mine.map((c) => chargedOf(c, rates, person.grade, settings, today))) };
 }
 
 function useOverdue() {
@@ -22,7 +22,7 @@ function useOverdue() {
   const today = useSheetToday();
   const settings = useSettings();
   return (person: Person) => overdueOf(person, claims.data ?? [], rates.data, settings.data?.terms ?? DEFAULT_TERMS,
-    today, settings.data?.floor);
+    today, settings.data);
 }
 
 function OverdueHeader() {

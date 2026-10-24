@@ -3,14 +3,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { usePeople } from '../people/people';
 import { countsLive, heldIds, useClaims } from '../claims/claims';
-import { figureOf, sumDue, useRates } from '../rates/rates';
+import { chargedOf, sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { periodClosePath, periodOn, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
-// The sheet's periods, each with its due-total — the figures of the counted claims whose date falls in it (not a held person's OPEN ones),
+// The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a held person's OPEN ones),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // button that closes it, and the form that adds one.
 function Periods() {
@@ -21,6 +21,7 @@ function Periods() {
   const claims = useClaims();
   const rates = useRates();
   const settings = useSettings();
+  const today = useSheetToday();
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -43,7 +44,7 @@ function Periods() {
   const dueTotal = (period: Period) =>
     period.closedTotal ?? sumDue((claims.data ?? [])
       .filter((c) => countsLive(c, held) && gradeOf.has(c.personId) && periodOn([period], c.date))
-      .map((c) => figureOf(c, rates.data, gradeOf.get(c.personId) ?? '', settings.data?.floor)));
+      .map((c) => chargedOf(c, rates.data, gradeOf.get(c.personId) ?? '', settings.data, today)));
   return (
     <section data-testid="periods">
       <h2>Periods</h2>

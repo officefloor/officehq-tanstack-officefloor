@@ -15,7 +15,7 @@ function SheetToday() {
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: (today: string) =>
-      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/today`, { today }),
+      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/today`, { today }, user),
     onSuccess: async (saved) => {
       queryClient.setQueryData(sheetQueryKey(saved.id), saved);
       await queryClient.invalidateQueries({ queryKey: ['sheet', saved.id] });

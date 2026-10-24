@@ -15,7 +15,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Takes a statement for the person: records their due-total now, on the sheet's today, and binds each of
- * their claims that counts to the figure it has now; their claims that do not count are unbound (live again).
+ * their claims that counts to the figure it has now (never its late charge, which keeps following the sheet's today); their claims that do not count (a held person's OPEN ones
+ * among them) are unbound (live again).
  */
 public class TakeStatement {
     public void take(@Val Sheet sheet, @Val Person person, ClaimRepository claims, RateRepository rates,
@@ -23,11 +24,11 @@ public class TakeStatement {
         // Lock the person so two statements (or a statement and an edit) are taken one after the other.
         entityManager.refresh(person, LockModeType.PESSIMISTIC_WRITE);
         List<Claim> mine = claims.findBySheetIdAndPersonIdOrderByIdDesc(sheet.getId(), person.getId());
-        ClaimFigures figures = new ClaimFigures(rates.findBySheetIdAndGrade(sheet.getId(), person.getGrade()), sheet.getFloor());
-        String dueTotal = figures.dueTotal(mine, sheet.getToday());
+        ClaimFigures figures = new ClaimFigures(rates.findBySheetIdAndGrade(sheet.getId(), person.getGrade()), sheet);
+        String dueTotal = figures.dueTotal(mine, sheet.getToday(), person.isHeld());
         int counted = 0;
         for (Claim claim : mine) {
-            if (ClaimFigures.counts(claim)) {
+            if (ClaimFigures.countsLive(claim, person.isHeld())) {
                 BigDecimal figure = figures.figure(claim);
                 claim.bind(true, figure);
                 counted++;

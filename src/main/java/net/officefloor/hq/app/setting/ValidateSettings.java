@@ -7,8 +7,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
- *  decimals, and terms that are not a whole number of days. A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14. A key left out is not changed. */
+ *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals. A blank clerk limit means no limit; a blank floor is
+ *  1.00; blank terms are 14; a blank late percent is 0.00. A key left out is not changed. */
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -40,6 +40,15 @@ public class ValidateSettings {
             }
             termsValue = Integer.parseInt(terms.trim());
         }
-        body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue));
+        String late = request == null ? null : request.latePct();
+        BigDecimal lateValue = Sheet.DEFAULT_LATE_PCT;
+        if (late != null && !late.trim().isEmpty()) {
+            if (!AMOUNT.matcher(late.trim()).matches()) {
+                throw new InvalidSettingsException("The late percent must be a percent, 0.00 or more, with up to two decimals, or blank.");
+            }
+            lateValue = new BigDecimal(late.trim()).setScale(2);
+        }
+        body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue,
+                late != null, lateValue));
     }
 }
