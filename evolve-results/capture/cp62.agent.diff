@@ -1,0 +1,634 @@
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 95dea7d6..843ed39e 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -8,9 +8,10 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
+ export const useCurrentUser = () => useSearchParam('user', asString);
+ export const useCurrentSheet = () => useSearchParam('sheet', asString);
+ 
+-// The active sheet as the store holds it: its id and its today. Every date decision and default
++// The active sheet as the store holds it: its id, its today and whether it is archived (then every
++// change on it is refused). Every date decision and default
+ // date in the app uses the sheet's today (useSheetToday), never the browser's clock.
+-export type SheetInfo = { id: string; today: string };
++export type SheetInfo = { id: string; today: string; archived: boolean };
+ 
+ export const sheetQueryKey = (sheetId: string) => ['sheet', sheetId, 'info'] as const;
+ 
+diff --git a/src/main/frontend/features/session/today.slot.tsx b/src/main/frontend/features/session/today.slot.tsx
+index 0771747f..b2410bd2 100644
+--- a/src/main/frontend/features/session/today.slot.tsx
++++ b/src/main/frontend/features/session/today.slot.tsx
+@@ -6,7 +6,8 @@ import { AppSession } from '../../slots/defs/appSession';
+ import { useCurrentSheet, useCurrentUser, useSheetInfo, sheetQueryKey, type SheetInfo } from './session';
+ 
+ // The sheet's today: shown and changeable here. Changing it re-reads the whole sheet, since every
+-// date decision in the app depends on it.
++// date decision in the app depends on it. The sheet is archived here too (a steward only); the two
++// share the sheet's one error element, which either action clears.
+ function SheetToday() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -22,28 +23,47 @@ function SheetToday() {
+     },
+   });
+   const submit = useSubmitOnce(save);
++  const archive = useMutation({
++    mutationFn: () => putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/archive`, undefined, user),
++    onSuccess: (saved) => queryClient.setQueryData(sheetQueryKey(saved.id), saved),
++  });
++  const submitArchive = useSubmitOnce(archive);
++  const shown = info.data?.id === sheet ? info.data : undefined;
+ 
+   if (!user || !sheet) return null;
+   return (
+     <form
+       onSubmit={(e) => {
+         e.preventDefault();
++        archive.reset();
+         submit(date.trim());
+       }}
+     >
+       <span>
+-        Today <strong data-testid="sheet-today">{info.data?.id === sheet ? info.data.today : ''}</strong>
++        Today <strong data-testid="sheet-today">{shown ? shown.today : ''}</strong>
+       </span>
+       <input
+         data-testid="sheet-today-input"
+         placeholder="YYYY-MM-DD"
+         value={date}
+-        onChange={(e) => { setDate(e.target.value); save.reset(); }}
++        onChange={(e) => { setDate(e.target.value); save.reset(); archive.reset(); }}
+       />
+       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
+         Set today
+       </button>
++      <span>
++        Archived <strong data-testid="sheet-archived">{shown ? (shown.archived ? 'yes' : 'no') : ''}</strong>
++      </span>
++      <button
++        type="button"
++        data-testid="sheet-archive"
++        disabled={archive.isPending}
++        onClick={() => { save.reset(); submitArchive(undefined); }}
++      >
++        Archive sheet
++      </button>
+       {save.isError && <span data-testid="sheet-error">Could not change the sheet's today.</span>}
++      {archive.isError && <span data-testid="sheet-error">Could not archive the sheet.</span>}
+     </form>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java b/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java
+new file mode 100644
+index 00000000..d0e58c37
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Archives the sheet. Only a steward may (one already archived is refused before, by GuardArchived). */
++public class ApplyArchive {
++    public void apply(@Val Sheet sheet, @RequestHeader(name = "X-User", required = false) String user,
++            RoleRepository roles, SheetRepository repository) throws SheetArchivedException {
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), AuditUser.decode(user)))) {
++            throw new SheetArchivedException("Only a steward can archive the sheet.");
++        }
++        sheet.setArchived(true);
++        repository.save(sheet);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AuditSheetArchived.java b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetArchived.java
+new file mode 100644
+index 00000000..69d09714
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetArchived.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the sheet archived, once it is saved. */
++public class AuditSheetArchived {
++    public void audit(@Val Sheet sheet, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        audit.record("SHEET_ARCHIVED sheet=" + sheet.getId() + " by=" + AuditUser.decode(user));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/GuardArchived.java b/src/main/java/net/officefloor/hq/app/sheet/GuardArchived.java
+new file mode 100644
+index 00000000..c922233f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/GuardArchived.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The step after GuardViewer on every change: refuses it, before anything is read or written, when the sheet is
++ *  archived (an archived sheet shows everything and changes nothing). */
++public class GuardArchived {
++    public void guard(@PathVariable("sheetId") String sheetId, SheetRepository repository)
++            throws SheetArchivedException {
++        if (repository.findById(sheetId.trim()).map(Sheet::isArchived).orElse(false)) {
++            throw new SheetArchivedException("The sheet is archived: nothing on it can be changed.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleSheetArchived.java b/src/main/java/net/officefloor/hq/app/sheet/HandleSheetArchived.java
+new file mode 100644
+index 00000000..00d96b70
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleSheetArchived.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleSheetArchived {
++    public void handle(@Parameter SheetArchivedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.FORBIDDEN));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index d44f97c3..eda82d84 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -5,10 +5,10 @@ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithSheet {
+ 
+-    public record SheetResponse(String id, String today) {
++    public record SheetResponse(String id, String today, boolean archived) {
+     }
+ 
+     public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
+-        response.send(new SheetResponse(sheet.getId(), sheet.getToday().toString()));
++        response.send(new SheetResponse(sheet.getId(), sheet.getToday().toString(), sheet.isArchived()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 294306d1..498f96d4 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -59,6 +59,10 @@ public class Sheet {
+     @Column(name = "period_numbering_from")
+     private LocalDate periodNumberingFrom;
+ 
++    /** Whether the sheet is archived: everything on it stays visible and every change is refused. */
++    @Column(nullable = false)
++    private boolean archived;
++
+     /** The late percent a sheet starts at. */
+     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+ 
+@@ -196,6 +200,14 @@ public class Sheet {
+         return days == null ? null : Integer.valueOf(days);
+     }
+ 
++    public boolean isArchived() {
++        return archived;
++    }
++
++    public void setArchived(boolean archived) {
++        this.archived = archived;
++    }
++
+     public LocalDate getPolicyDate() {
+         return policyDate;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetArchivedException.java b/src/main/java/net/officefloor/hq/app/sheet/SheetArchivedException.java
+new file mode 100644
+index 00000000..bb45fc8f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetArchivedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++/** A change to an archived sheet, which can change nothing; or an archive asked for by anyone but a steward, or of
++ *  a sheet already archived. */
++public class SheetArchivedException extends Exception {
++    public SheetArchivedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/db/migration/V40__sheet_archived.sql b/src/main/resources/db/migration/V40__sheet_archived.sql
+new file mode 100644
+index 00000000..a20aa9e6
+--- /dev/null
++++ b/src/main/resources/db/migration/V40__sheet_archived.sql
+@@ -0,0 +1,3 @@
++-- Whether the sheet is archived: a steward archives it, and from then on everything stays visible and every change
++-- is refused.
++ALTER TABLE sheet ADD COLUMN archived BOOLEAN DEFAULT FALSE NOT NULL;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetArchivedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetArchivedException.yml
+new file mode 100644
+index 00000000..0dab9f28
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetArchivedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleSheetArchived
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.PUT.yml
+new file mode 100644
+index 00000000..ed43277a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.PUT.yml
+@@ -0,0 +1,22 @@
++# PUT /api/sheets/{sheetId}/archive — archive the sheet (a steward only); from then on every change is refused.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.sheet.ApplyArchive
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.sheet.AuditSheetArchived
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 3b18e352..e840e97f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim. Body as for adding one.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
+index a9aede9c..2a6cd7dd 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/defer?until=YYYY-MM-DD — defer an OPEN claim until a date after the sheet's today.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml
+index 43cbd42b..5736aa15 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person/{personId}.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/person/{personId} — a steward moves a DRAFT, OPEN or PENDING claim to another person.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml
+index 656efcde..d0d2b21f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/proof — raise a claim's proofs count by one (not on a SETTLED or VOID claim).
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+index 7332374e..6c8bf823 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/resettle — a steward re-settles a SETTLED claim at its figure today.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.PUT.yml
+index 5279d55e..f1804c56 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/split?amount=N.NN — split an amount off an OPEN claim into a new OPEN claim.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
+index 0cb6f3c6..b52fecf3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/{action} — change a claim's status: open, settle, approve, reject or void.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
+index a45fb69c..cff4ecfc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
+@@ -1,6 +1,9 @@
+ # POST /api/sheets/{sheetId}/delegations — a steward delegates the steward role. Body: { "user", "from", "to" }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.role.ValidateDelegation
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml
+index 33d00e45..5a3f3a26 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml
+@@ -4,6 +4,9 @@
+ # (a blank date is the sheet's today). A to-date before the from-date is refused. Responds { "generated": n }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidateGeneratePeriods
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index 5025c219..8956dc21 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -3,6 +3,9 @@
+ # before anything is stored, so one refused line adds nothing. Responds { "added": n }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.paste.ValidatePaste
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index d084834a..1adfda50 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,6 +1,9 @@
+ # POST /api/sheets/{sheetId}/people — add a person. Body: { "name": "...", "grade": "A|B|C" }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index ee4a7069..ac3a3ff5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -2,6 +2,9 @@
+ # Refused with 409 when the person was saved since the editor loaded that version.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 4df5fc68..9acf99bd 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -2,6 +2,9 @@
+ # Body: { "amount": "12.50", "date": "YYYY-MM-DD" (blank = the sheet's today), "note": "..." }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml
+index 06de10ef..c41fb0b2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.PUT.yml
+@@ -2,6 +2,9 @@
+ # Body: { "from": "YYYY-MM-DD" (blank: the sheet's today), "to": "YYYY-MM-DD" (blank: open-ended) }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateHold
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index e513182e..854055f8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -2,6 +2,9 @@
+ # Body: { "patronId": <id> }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePatron
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
+index 2c5583d2..7bb5bb79 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.PUT.yml
+@@ -2,6 +2,9 @@
+ # Body: { "date": "YYYY-MM-DD" } (blank = the sheet's today).
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
+index 43d1b2ab..c3c8b1d0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/people/{personId}/statement — take a statement for the person.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+ before:
+   class: net.officefloor.hq.app.rollup.TakeRollup
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.PUT.yml
+index d28da228..2c783408 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/watch.PUT.yml
+@@ -2,6 +2,9 @@
+ # Body: { "on": true | false }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.watch.ValidateWatch
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index 6db1e163..b73d4a37 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,6 +1,9 @@
+ # POST /api/sheets/{sheetId}/periods — add a period. Body: { "name": "...", "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriod
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml
+index d1937b49..b22735cb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/periods/{periodId}/close — close a period, fixing its due-total.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml
+index 0cad713d..223aa88e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/periods/{periodId}/reopen — reopen a closed period (a role the permission matrix allows; a steward by the standing rule), making its due-total live again.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index c8722420..f369a0b0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -3,6 +3,9 @@
+ # { "name": "...", "amount": "12.50" }. Every check runs before anything is stored, so a refusal adds nobody.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index d313a2a6..8a2a6dd4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/rates — set a grade's rate. Body: { "grade": "A|B|C", "pct": "12.50", "from": "YYYY-MM-DD" (optional) }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+index cc3ad773..d70057c1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/roles — give a user name a role. Body: { "user": "<name>", "role": "clerk|steward|viewer" }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.role.ValidateRole
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index 6cbe8469..d5827607 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -3,6 +3,9 @@
+ # a figure takes its from-date, e.g. "floorFrom": "2026-03-05" (blank: the sheet's today), and is recorded from it on.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSettings
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index d0a5c1ea..7885374a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,6 +1,9 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. Body: { "today": "YYYY-MM-DD" }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
