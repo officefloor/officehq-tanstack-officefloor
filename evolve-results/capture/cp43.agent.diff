@@ -1,0 +1,439 @@
+diff --git a/src/main/frontend/features/people/form.slot.tsx b/src/main/frontend/features/people/form.slot.tsx
+index ac682638..7b1085d6 100644
+--- a/src/main/frontend/features/people/form.slot.tsx
++++ b/src/main/frontend/features/people/form.slot.tsx
+@@ -4,7 +4,7 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { GRADES, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
++import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
+ 
+ // The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
+ // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
+@@ -32,6 +32,7 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
+   const [version, setVersion] = useState(person?.version);
+   const queryClient = useQueryClient();
+   const save = useMutation({
++    mutationKey: personSaveKey,
+     mutationFn: (body: { name: string; grade: string; gradeFrom: string }) =>
+       person
+         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 1ea54936..235da841 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -1,9 +1,10 @@
++import { useIsMutating } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+-import { gradeOn, usePeople, useEditingPerson, useShowRetired } from './people';
++import { gradeOn, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
+ 
+-// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button;
++// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way);
+ // features add their own columns through PeopleColumns / PersonCells.
+ function PeopleList() {
+   const [user] = useCurrentUser();
+@@ -12,6 +13,7 @@ function PeopleList() {
+   const people = usePeople();
+   const [showRetired] = useShowRetired();
+   const today = useSheetToday();
++  const saving = useIsMutating({ mutationKey: personSaveKey }) > 0;
+   if (!user || !sheet) return null;
+   return (
+     <table data-testid="people">
+@@ -29,7 +31,8 @@ function PeopleList() {
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+             <td data-testid="person-grade">{gradeOn(p, today)}</td>
+             <td>
+-              <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
++              <button type="button" data-testid={`person-edit-${p.id}`} disabled={saving}
++                onClick={() => setEditing(String(p.id))}>
+                 Edit
+               </button>
+             </td>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 64faf56d..8ce3eb8b 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -61,6 +61,10 @@ export function usePeople() {
+ }
+ 
+ /** The id of the person whose editor is open (search param `editPerson`), or '' for none. */
++/** The mutation key of a person form save; an editor is not opened while one is on its way, so it never loads
++ *  the person from before the save (nor is closed by it). */
++export const personSaveKey = ['person-save'] as const;
++
+ export const useEditingPerson = () => useSearchParam('editPerson', asString);
+ 
+ /** Whether retired people are listed (search param `showRetired`): off when the screen is first opened, and
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index f6e1b2a2..538ef816 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -4,15 +4,41 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import { gradeOn, usePeople, type Person } from '../people/people';
+ import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
+ import { useSettings, type Settings } from '../roles/roles';
+-import { chargedOf, rateOn, sumDue, useRates, type Rate } from './rates';
++import { chargedOf, formatCents, rateOn, sumDue, useRates, type Rate } from './rates';
+ 
+ // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
+ // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
+ // an overdue claim's late charge; each claim at the grade they had on its date) — 0.00 with nothing that counts.
+ // When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
+ // a figure — settled, bound, or live at another grade they had on its date, or live
+-// on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
++// on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
++// the sheet's cap: above it, it shows the cap and their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
+ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++  settings: Settings | undefined): string {
++  return capped(personFigures(person, claims, rates, today, settings), settings).due;
++}
++
++/** A person's excess: how much the sum of their figures is above the sheet's cap; 0.00 when it is not (or n/a). */
++export function personExcess(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++  settings: Settings | undefined): string {
++  return capped(personFigures(person, claims, rates, today, settings), settings).excess;
++}
++
++/** A sum of figures held to the sheet's cap ("" for none), and how much it was above it; n/a is not capped. */
++function capped(sum: string, settings: Settings | undefined): { due: string; excess: string } {
++  const cap = settings?.cap ?? '';
++  if (sum === 'n/a' || cap === '' || Number(sum) <= Number(cap)) return { due: sum, excess: '0.00' };
++  return { due: sumDue([cap]), excess: subtract(sum, cap) };
++}
++
++/** The difference of two two-decimal amounts, exactly. */
++function subtract(a: string, b: string): string {
++  const cents = (s: string) => BigInt(Math.round(Number(s) * 100));
++  return formatCents(cents(a) - cents(b));
++}
++
++/** The sum of a person's figures, before the cap. */
++function personFigures(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined): string {
+   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person])));
+   const grade = gradeOn(person, today);
+@@ -36,6 +62,18 @@ function PersonDue({ person }: { person: Person }) {
+   return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data)}</td>;
+ }
+ 
++function ExcessHeader() {
++  return <th>Excess</th>;
++}
++
++function PersonExcess({ person }: { person: Person }) {
++  const claims = useClaims();
++  const rates = useRates();
++  const today = useSheetToday();
++  const settings = useSettings();
++  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data)}</td>;
++}
++
+ function DueTotal() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -56,5 +94,7 @@ function DueTotal() {
+ export const contributions = [
+   PeopleColumns.fill({ order: 15, Component: DueHeader }),
+   PersonCells.fill({ order: 15, Component: PersonDue }),
++  PeopleColumns.fill({ order: 15.5, Component: ExcessHeader }),
++  PersonCells.fill({ order: 15.5, Component: PersonExcess }),
+   HomeMain.fill({ order: 31, Component: DueTotal }),
+ ];
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index f7bfc4ab..6260a758 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -10,10 +10,11 @@ export type Role = { user: string; role: string };
+  *  it of its figure for every full 30 days overdue), and its policy date (YYYY-MM-DD; "" when blank: the sheet's today — a claim
+  *  dated before it rounds half up, one on or after it half to even), and its period numbering from (YYYY-MM-DD; "" when off — while the sheet's today is
+  *  on or after it, a claim opened is numbered within its period), and the own terms in days of grades A, B and C ("" when the
+- *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date). */
++ *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
++ *  two decimals ("" when there is none — a person's due-total is at most it). */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string;
+   latePct: string; policyDate: string; periodNumberingFrom: string;
+-  termsA: string; termsB: string; termsC: string };
++  termsA: string; termsB: string; termsC: string; cap: string };
+ 
+ /** The terms a sheet starts at, in days. */
+ export const DEFAULT_TERMS = '14';
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index 401c5d65..fceb5262 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+-type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC';
++type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap';
+ 
+ /** The grades that may have their own terms, and the setting key of each. */
+ const GRADE_TERMS = [
+@@ -21,7 +21,7 @@ type Drafts = Partial<Record<Key, string>>;
+ // claim's due gains it of its figure for every full 30 days overdue), the policy date (a claim dated before it rounds half
+ // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
+ // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
+-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), and the form that sets them. A clerk settles a claim only when its due is at or below the
++// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), and the form that sets them. A clerk settles a claim only when its due is at or below the
+ // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
+ // the fields typed in (all of them when none was).
+ function SheetSettings() {
+@@ -51,6 +51,7 @@ function SheetSettings() {
+     termsA: settings.data?.termsA ?? '',
+     termsB: settings.data?.termsB ?? '',
+     termsC: settings.data?.termsC ?? '',
++    cap: settings.data?.cap ?? '',
+   };
+   const valueOf = (key: Key) => drafts[key] ?? current[key];
+   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
+@@ -88,6 +89,9 @@ function SheetSettings() {
+           <span data-testid={`setting-terms-${grade}-current`}>{settings.data?.[key] ?? ''}</span>
+         </p>
+       ))}
++      <p>
++        Cap: <span data-testid="setting-cap-current">{settings.data?.cap ?? ''}</span>
++      </p>
+       <form
+         data-testid="settings-form"
+         onSubmit={(e) => {
+@@ -159,11 +163,20 @@ function SheetSettings() {
+             onFocus={touch(key)}
+           />
+         ))}
++        <input
++          data-testid="setting-cap"
++          placeholder="Cap (blank: none)"
++          inputMode="decimal"
++          value={valueOf('cap')}
++          onChange={edit('cap')}
++          onInput={edit('cap')}
++          onFocus={touch('cap')}
++        />
+         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
+           Save settings
+         </button>
+         {save.isError && (
+-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank.</span>
++          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap an amount, 0.00 or more, with up to two decimals, or blank.</span>
+         )}
+       </form>
+     </section>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index f0855f3b..3aec7114 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -36,6 +36,8 @@ public class ClaimFigures {
+ 
+     private final LocalDate policyDate;
+ 
++    private final BigDecimal cap;
++
+     /** @param rates the sheet's rates.
+      *  @param grades the person's grades over time.
+      *  @param sheet the sheet: its floor (a live due is at least it), and its late percent and today (the
+@@ -47,6 +49,7 @@ public class ClaimFigures {
+         this.latePct = sheet.getLatePct();
+         this.today = sheet.getToday();
+         this.policyDate = sheet.policyDateInForce();
++        this.cap = sheet.getCap();
+     }
+ 
+     /** How the claim's live figures round: half up when the date it rounds by is before the policy date, else half
+@@ -129,8 +132,17 @@ public class ClaimFigures {
+     }
+ 
+     /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims dated within a hold
+-     *  of theirs do not count, unless a statement binds them. */
++     *  of theirs do not count, unless a statement binds them. At most the sheet's cap (n/a is not capped). */
+     public String dueTotal(List<Claim> claims, LocalDate today, Person person) {
++        String sum = uncappedDueTotal(claims, today, person);
++        if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
++            return sum;
++        }
++        return cap.setScale(2).toPlainString();
++    }
++
++    /** The person's live due-total before the cap: the sum of their figures. */
++    private String uncappedDueTotal(List<Claim> claims, LocalDate today, Person person) {
+         List<Claim> counted = claims.stream().filter(c -> countsLive(c, person)).toList();
+         String grade = grades.on(today);
+         boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isBound() && c.getStatedDue() != null)
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index 78a46528..95a49c36 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -4,7 +4,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Sets the sheet's clerk limit, floor, terms and late percent and policy date and period numbering from, and the grades' own terms, those the form sets. */
++/** Sets the sheet's clerk limit, floor, terms and late percent and policy date and period numbering from, and the grades' own terms, and the cap, those the form sets. */
+ public class ApplySettings {
+     public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository) {
+         if (input.setClerkLimit()) {
+@@ -26,6 +26,9 @@ public class ApplySettings {
+             sheet.setPeriodNumberingFrom(input.periodNumberingFrom());
+         }
+         input.gradeTerms().forEach(sheet::setGradeTerms);
++        if (input.setCap()) {
++            sheet.setCap(input.cap());
++        }
+         repository.saveAndFlush(sheet);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index 5d252a90..33f6fd2c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor, then the terms, then the late percent, then the policy date (blank when it is the sheet's today), then the period numbering from (blank when off), then each grade's own terms (key terms-<grade>; blank when it uses the sheet's terms). */
++/** Records each setting the form set, once it is saved: the clerk limit (blank when there is none), then the floor, then the terms, then the late percent, then the policy date (blank when it is the sheet's today), then the period numbering from (blank when off), then each grade's own terms (key terms-<grade>; blank when it uses the sheet's terms), then the cap (blank when there is none). */
+ public class AuditSettingChanged {
+     public void audit(@Val SettingsInput input, @Val Sheet sheet,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+@@ -33,5 +33,8 @@ public class AuditSettingChanged {
+         for (String grade : input.gradeTerms().keySet()) {
+             audit.record(head + " key=terms-" + grade + " value=" + SettingsResponse.gradeTerms(sheet, grade));
+         }
++        if (input.setCap()) {
++            audit.record(head + " key=cap value=" + settings.cap());
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index 15d8a65d..a1fa745c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -8,10 +8,11 @@ import java.util.Map;
+  *  whether the floor is set and to what (two decimals), and whether the terms are set and to what (days), and whether the late percent is set and to what (two decimals),
+  *  and whether the policy date is set and to what (null: the sheet's today),
+  *  and whether the period numbering from is set and to what (null: off),
+- *  and the grades whose own terms are set, by grade (A, B, C, in that order), to what (days; null: the sheet's terms). */
++ *  and the grades whose own terms are set, by grade (A, B, C, in that order), to what (days; null: the sheet's terms),
++ *  and whether the cap is set and to what (two decimals; null: none). */
+ public record SettingsInput(boolean setClerkLimit, BigDecimal clerkLimit, boolean setFloor, BigDecimal floor,
+         boolean setTerms, int terms, boolean setLatePct, BigDecimal latePct,
+         boolean setPolicyDate, LocalDate policyDate,
+         boolean setPeriodNumberingFrom, LocalDate periodNumberingFrom,
+-        Map<String, Integer> gradeTerms) {
++        Map<String, Integer> gradeTerms, boolean setCap, BigDecimal cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index e6d5b90c..d5bfcfd8 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -2,7 +2,7 @@ package net.officefloor.hq.app.setting;
+ 
+ /** The settings form as submitted: the clerk limit (blank: no limit), the floor (blank: 1.00) and the terms in
+  *  days (blank: 14) and the late percent
+- *  (blank: 0.00) and the policy date (YYYY-MM-DD; blank: the sheet's today) and the period numbering from (YYYY-MM-DD; blank: off) and the terms of grades A, B and C in days (blank: the sheet's terms); a key left out (null) is not changed. */
++ *  (blank: 0.00) and the policy date (YYYY-MM-DD; blank: the sheet's today) and the period numbering from (YYYY-MM-DD; blank: off) and the terms of grades A, B and C in days (blank: the sheet's terms) and the cap (blank: none); a key left out (null) is not changed. */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+-        String termsA, String termsB, String termsC) {
++        String termsA, String termsB, String termsC, String cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 7e1bf948..f759d8ba 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -5,9 +5,9 @@ import net.officefloor.hq.app.sheet.Sheet;
+ /** The sheet's settings as the screen shows them: the clerk limit with two decimals (null: no limit) and the
+  *  floor with two decimals, and the terms in days, and the late percent with two decimals, and the policy date (YYYY-MM-DD; "" when
+  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
+- *  ("" when the grade uses the sheet's terms). */
++ *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+-        String periodNumberingFrom, String termsA, String termsB, String termsC) {
++        String periodNumberingFrom, String termsA, String termsB, String termsC, String cap) {
+ 
+     public static SettingsResponse from(Sheet sheet) {
+         return new SettingsResponse(sheet.getClerkLimit() == null ? null : sheet.getClerkLimit().setScale(2).toPlainString(),
+@@ -15,7 +15,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 sheet.getLatePct().setScale(2).toPlainString(),
+                 sheet.getPolicyDate() == null ? "" : sheet.getPolicyDate().toString(),
+                 sheet.getPeriodNumberingFrom() == null ? "" : sheet.getPeriodNumberingFrom().toString(),
+-                gradeTerms(sheet, "A"), gradeTerms(sheet, "B"), gradeTerms(sheet, "C"));
++                gradeTerms(sheet, "A"), gradeTerms(sheet, "B"), gradeTerms(sheet, "C"),
++                sheet.getCap() == null ? "" : sheet.getCap().setScale(2).toPlainString());
+     }
+ 
+     /** The grade's own terms in days; "" when it uses the sheet's terms. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index e3bc4b12..ce068868 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
+  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
+  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
+- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off. A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A key left out is not changed. */
++ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A key left out is not changed. */
+ public class ValidateSettings {
+ 
+     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+@@ -77,9 +77,17 @@ public class ValidateSettings {
+             gradeTerms(gradeTerms, "B", request.termsB());
+             gradeTerms(gradeTerms, "C", request.termsC());
+         }
++        String cap = request == null ? null : request.cap();
++        BigDecimal capValue = null;
++        if (cap != null && !cap.trim().isEmpty()) {
++            if (!AMOUNT.matcher(cap.trim()).matches()) {
++                throw new InvalidSettingsException("The cap must be an amount, 0.00 or more, with up to two decimals, or blank.");
++            }
++            capValue = new BigDecimal(cap.trim()).setScale(2);
++        }
+         body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue,
+                 late != null, lateValue, policy != null, policyValue,
+-                numbering != null, numberingValue, gradeTerms));
++                numbering != null, numberingValue, gradeTerms, cap != null, capValue));
+     }
+ 
+     /** Adds a grade's terms when the form sets them: blank is none (the sheet's terms). */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 392d787e..7c0f3a47 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -57,6 +57,10 @@ public class Sheet {
+     @Column(name = "period_numbering_from")
+     private LocalDate periodNumberingFrom;
+ 
++    /** The cap: a person's due-total is at most it; null (blank) when there is none. */
++    @Column(precision = 19, scale = 2)
++    private BigDecimal cap;
++
+     /** The late percent a sheet starts at. */
+     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+ 
+@@ -143,6 +147,14 @@ public class Sheet {
+         return own != null ? own : terms;
+     }
+ 
++    public BigDecimal getCap() {
++        return cap;
++    }
++
++    public void setCap(BigDecimal cap) {
++        this.cap = cap;
++    }
++
+     public LocalDate getPolicyDate() {
+         return policyDate;
+     }
+diff --git a/src/main/resources/db/migration/V32__sheet_cap.sql b/src/main/resources/db/migration/V32__sheet_cap.sql
+new file mode 100644
+index 00000000..8b6ee13a
+--- /dev/null
++++ b/src/main/resources/db/migration/V32__sheet_cap.sql
+@@ -0,0 +1,2 @@
++-- The sheet's cap: a person's due-total is at most it. Two decimals; null (blank) when there is none.
++ALTER TABLE sheet ADD COLUMN cap DECIMAL(19, 2);
