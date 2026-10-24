@@ -1,16 +1,23 @@
 package net.officefloor.hq.app.period;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.MapKeyColumn;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 
 /** A sheet's period: a name (unique on the sheet) and a from and to date, inclusive; once closed, its due-total
- *  is fixed at what it was on closing, until a steward reopens it. */
+ *  and each person's are fixed at what they were on closing, until a steward reopens it. */
 @Entity
 @Table(name = "period")
 public class Period {
@@ -38,6 +45,13 @@ public class Period {
     /** The due-total fixed when the period was closed; null while it is open. */
     @Column(name = "closed_total", precision = 19, scale = 2)
     private BigDecimal closedTotal;
+
+    /** Each person's due-total fixed when the period was closed, by person id; empty while it is open. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "period_person_total", joinColumns = @JoinColumn(name = "period_id"))
+    @MapKeyColumn(name = "person_id")
+    @Column(name = "total", precision = 19, scale = 2)
+    private Map<Long, BigDecimal> personTotals = new HashMap<>();
 
     protected Period() {
     }
@@ -77,16 +91,23 @@ public class Period {
         return closedTotal;
     }
 
-    /** Closes the period, fixing its due-total. */
-    public void close(BigDecimal total) {
+    public Map<Long, BigDecimal> getPersonTotals() {
+        return personTotals;
+    }
+
+    /** Closes the period, fixing each person's due-total for it and its own, their sum. */
+    public void close(Map<Long, BigDecimal> personTotals) {
         this.closed = true;
-        this.closedTotal = total;
+        this.personTotals.clear();
+        this.personTotals.putAll(personTotals);
+        this.closedTotal = personTotals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 
     /** Reopens the period, so its due-total is live again. */
     public void reopen() {
         this.closed = false;
         this.closedTotal = null;
+        this.personTotals.clear();
     }
 
     /** Whether a date falls in this period (inclusive). */
