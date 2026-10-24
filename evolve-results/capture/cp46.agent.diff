@@ -1,0 +1,202 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 5c186f23..ace0e035 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -77,6 +77,7 @@ const ACTIONS = [
+   { action: 'approve', label: 'Approve' },
+   { action: 'reject', label: 'Reject' },
+   { action: 'void', label: 'Void' },
++  { action: 'resettle', label: 'Re-settle' },
+ ] as const;
+ 
+ // A claim's status and the buttons that change it. A change its status does not allow is refused
+@@ -86,7 +87,8 @@ const ACTIONS = [
+ // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
+ // instead of opening its editor (an open claim is voided and added anew). A steward moves a DRAFT, OPEN or PENDING
+ // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
+-// shows the claim's error.
++// shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
++// bound by no statement; anyone else, or any other status, shows the claim's error.
+ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
+   sheet: string; claim: Claim; onEdit: () => void; children: ReactNode;
+ }) {
+@@ -190,6 +192,10 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
+             ? 'This claim is dated in a closed period, so its status cannot change.'
+             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
+             ? 'Only a steward can approve or reject a pending claim.'
++            : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
++            ? 'Only a steward can re-settle a claim.'
++            : action === 'resettle'
++            ? `Only a settled claim can be re-settled; this one is ${claim.status}.`
+             : action === 'settle' && claim.openedBy === user
+             ? 'You opened this claim, so someone else must settle it.'
+             : action === 'approve' && claim.openedBy === user && claim.status === 'PENDING'
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+new file mode 100644
+index 00000000..aad9eb3d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/**
++ * Re-settles a SETTLED claim: freezes its due again at the figure it would have today as an open claim bound by no
++ * statement (today's rates, grades, floor and late charge; n/a leaves it live). Only a steward re-settles, and a claim
++ * dated in a closed period, or in any other status, cannot be. Returns the due it had before, for the audit.
++ */
++public class ApplyResettle {
++    public Resettled apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository, PersonRepository people,
++            RateRepository rates, PersonGradeRepository grades, PeriodRepository periods, RoleRepository roles,
++            @RequestHeader(name = "X-User", required = false) String userHeader)
++            throws ClaimStatusException, ClerkLimitException {
++        String user = AuditUser.decode(userHeader);
++        if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
++            throw new ClaimStatusException("A claim in a closed period cannot be re-settled.");
++        }
++        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user))) {
++            throw new ClerkLimitException("Only a steward can re-settle a claim.");
++        }
++        if (claim.getStatus() != ClaimStatus.SETTLED) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be re-settled.");
++        }
++        BigDecimal old = claim.getDue();
++        BigDecimal due = people.findById(claim.getPersonId())
++                .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
++                        grades.gradesOf(p), sheet).openDue(claim))
++                .orElse(null);
++        claim.setDue(due);
++        repository.saveAndFlush(claim);
++        return new Resettled(old, due);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+new file mode 100644
+index 00000000..c96555e2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the re-settle, once it is saved: the claim's line, then the due it had and the one it has now. */
++public class AuditClaimResettled {
++    public void audit(@Parameter Resettled resettled, @Val Claim claim, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
++        audit.record(ClaimAudit.line("CLAIM_RESETTLED", claim, person, AuditUser.decode(user))
++                + " old=" + shown(resettled.old()) + " new=" + shown(resettled.now()));
++    }
++
++    private static String shown(BigDecimal due) {
++        return due == null ? "n/a" : due.setScale(2).toPlainString();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 3aec7114..4cb64d33 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -102,6 +102,21 @@ public class ClaimFigures {
+                 .map(Rate::getPct);
+     }
+ 
++    /** The due the claim would have today as an open claim bound by no statement: its live figure at today's rates,
++     *  grades and floor, plus the late charge it would carry as an open claim; null when it has none (n/a). */
++    public BigDecimal openDue(Claim claim) {
++        BigDecimal figure = liveFigure(claim);
++        if (figure == null) {
++            return null;
++        }
++        if (claim.isCorrection() || !claim.getDueBy().isBefore(today)) {
++            return figure;
++        }
++        long periods = ChronoUnit.DAYS.between(claim.getDueBy(), today) / 30;
++        return figure.add(figure.multiply(latePct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
++                .setScale(2, rounding(claim)));
++    }
++
+     /** The claim's due: its figure, plus the late charge while it is not settled; null when it has none (n/a). */
+     public BigDecimal due(Claim claim) {
+         if (claim.getDue() != null) {
+@@ -119,6 +134,11 @@ public class ClaimFigures {
+         if (claim.isBound()) {
+             return claim.getStatedDue();
+         }
++        return liveFigure(claim);
++    }
++
++    /** The claim's live figure: neither frozen nor bound; null when it has none (n/a). */
++    private BigDecimal liveFigure(Claim claim) {
+         return rateOn(grades.on(claim.getDate()), claim.getDate())
+                 .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : floor, rounding(claim)))
+                 .orElse(null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Resettled.java b/src/main/java/net/officefloor/hq/app/claim/Resettled.java
+new file mode 100644
+index 00000000..57bf92e9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Resettled.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** A re-settle's figures: the due the claim had before and the one it was frozen at (null: n/a). */
++public record Resettled(BigDecimal old, BigDecimal now) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+new file mode 100644
+index 00000000..d05878c0
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.PUT.yml
+@@ -0,0 +1,32 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/resettle — a steward re-settles a SETTLED claim at its figure today.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: claim
++claim:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyResettle
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimResettled
++  govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
