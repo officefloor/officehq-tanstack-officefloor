@@ -2,20 +2,25 @@ package net.officefloor.hq.app.claim;
 
 import jakarta.persistence.EntityManager;
 import java.math.RoundingMode;
+import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Moves the claim to the status the action leads to; refuses a change its status does not allow. Opening gives
- * the claim the sheet's next number; voiding clears it. Settling fixes the claim's due at its person's grade's
+ * the claim the sheet's next number and records who opened it; voiding clears the number. The one who opened a
+ * claim cannot settle it. Settling fixes the claim's due at its person's grade's
  * rate in force on the claim's date (none when no rate applies then, so it stays live). Returns the number the claim had for the audit.
  */
 public class ApplyClaimStatus {
     public Integer apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
-            EntityManager entityManager, PersonRepository people, RateRepository rates) throws ClaimStatusException {
+            EntityManager entityManager, PersonRepository people, RateRepository rates,
+            @RequestHeader(name = "X-User", required = false) String userHeader) throws ClaimStatusException {
+        String user = AuditUser.decode(userHeader);
         if ("open".equals(action) && claim.getStatus().after(action) != null) {
             // Take the number first: it locks the sheet, then re-read the claim so a concurrent open is seen.
             repository.takeNextNumber(claim.getSheetId());
@@ -23,8 +28,13 @@ public class ApplyClaimStatus {
             ClaimStatus next = check(claim, action);
             claim.setNumber(repository.lastNumber(claim.getSheetId()));
             claim.setStatus(next);
+            claim.setOpenedBy(user);
         } else {
-            claim.setStatus(check(claim, action));
+            ClaimStatus next = check(claim, action);
+            if (next == ClaimStatus.SETTLED && user.equals(claim.getOpenedBy())) {
+                throw new ClaimStatusException("The one who opened a claim cannot settle it.");
+            }
+            claim.setStatus(next);
             if (claim.getStatus() == ClaimStatus.VOID) {
                 Integer had = claim.getNumber();
                 claim.setNumber(null);

@@ -31,6 +31,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
             <span data-testid="claim-due">{c.due ?? dueOf(c.amount, rateOn(rates.data, person.grade, c.date))}</span>{' '}
+            <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c}>
               <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
                 Edit
@@ -57,7 +58,7 @@ const ACTIONS = [
 ] as const;
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
-// by the server and shows the claim's error; the error goes as soon as the next action on the row
+// by the server and shows the claim's error, as is settling a claim the signed-in user opened; the error goes as soon as the next action on the row
 // is taken.
 function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: Claim; children: ReactNode }) {
   const [user] = useCurrentUser();
@@ -85,7 +86,11 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
       ))}{' '}
       <span onClickCapture={() => change.reset()}>{children}</span>
       {change.isError && (
-        <span data-testid="claim-error">That status change is not allowed for a {claim.status} claim.</span>
+        <span data-testid="claim-error">
+          {change.variables === 'settle' && claim.openedBy === user
+            ? 'You opened this claim, so someone else must settle it.'
+            : `That status change is not allowed for a ${claim.status} claim.`}
+        </span>
       )}
     </>
   );
