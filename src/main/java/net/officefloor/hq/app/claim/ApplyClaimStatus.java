@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim dated in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
+ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim dated in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
  * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. Returns the claim's number for the
  * audit.
  */
@@ -58,6 +58,16 @@ public class ApplyClaimStatus {
             }
             entityManager.refresh(claim);
             ClaimStatus next = check(claim, action);
+            BigDecimal noteThreshold = sheet.noteThresholdOn(claim.getDate());
+            if (noteThreshold != null && (claim.getNote() == null || claim.getNote().isBlank())) {
+                BigDecimal due = people.findById(claim.getPersonId())
+                        .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
+                                grades.gradesOf(p), sheet).due(claim))
+                        .orElse(null);
+                if (due != null && due.compareTo(noteThreshold) > 0) {
+                    throw new ClaimStatusException("A claim whose due is above the note threshold needs a note to be opened.");
+                }
+            }
             if (perPeriod) {
                 String prefix = periods.findBySheetIdOrderByFromDateAscIdAsc(claim.getSheetId()).stream()
                         .filter(p -> p.contains(claim.getDate())).map(Period::getName).findFirst().orElse(null);

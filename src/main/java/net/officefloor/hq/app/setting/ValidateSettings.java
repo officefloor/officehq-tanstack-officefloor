@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
+ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
  *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
@@ -54,6 +54,8 @@ public class ValidateSettings {
             roles(changes, "close", request.permClose());
             roles(changes, "reopen", request.permReopen());
             graceDays(changes, request.graceDays());
+            amount(changes, Sheet.NOTE_THRESHOLD, request.noteThreshold(), null, request.noteThresholdFrom(),
+                    "The note threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");
         }
         body.set(new SettingsInput(changes));
     }

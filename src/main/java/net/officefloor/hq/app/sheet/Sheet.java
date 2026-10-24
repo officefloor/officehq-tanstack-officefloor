@@ -22,7 +22,7 @@ public class Sheet {
 
     /** The keys of the dated settings: those that carry a figure. */
     public static final String FLOOR = "floor", LATE_PCT = "late-pct", TERMS = "terms", CLERK_LIMIT = "clerk-limit",
-            CAP = "cap", PROOF_THRESHOLD = "proof-threshold";
+            CAP = "cap", PROOF_THRESHOLD = "proof-threshold", NOTE_THRESHOLD = "note-threshold";
 
     /** The key of the grace days: undated, a whole number of days (null: off). */
     public static final String GRACE_DAYS = "grace-days";
@@ -186,6 +186,11 @@ public class Sheet {
     /** The proof threshold in force on a date; null when there is none. */
     public BigDecimal proofThresholdOn(LocalDate on) {
         return amountOn(PROOF_THRESHOLD, on);
+    }
+
+    /** The note threshold in force on a date; null when there is none. */
+    public BigDecimal noteThresholdOn(LocalDate on) {
+        return amountOn(NOTE_THRESHOLD, on);
     }
 
     /** The permission matrix entry for an action as recorded: its comma separated roles; "" when blank (the
