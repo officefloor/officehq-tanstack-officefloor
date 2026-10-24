@@ -8,10 +8,10 @@ import net.officefloor.hq.app.statement.Statement;
 /** A person as the screen shows them: their grade in force on the sheet's today, and every grade they were given
  *  with its from-date (null for the first, which applies from the beginning of time), with their statement count
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
- *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named. */
+ *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none). */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
-        List<Hold> holds, List<Long> patronIds) {
+        List<Hold> holds, List<Long> patronIds, Integer terms) {
 
     /** A hold from a date on, to a date (inclusive; null: open-ended). */
     public record Hold(String from, String to) {
@@ -37,6 +37,6 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                 person.getRetiredFrom() == null ? null : person.getRetiredFrom().toString(), person.isHeld(),
                 person.getHolds().stream().map(h -> new Hold(h.getFromDate().toString(),
                         h.getToDate() == null ? null : h.getToDate().toString())).toList(),
-                patrons.stream().map(Patron::getPatronId).toList());
+                patrons.stream().map(Patron::getPatronId).toList(), person.getTerms());
     }
 }

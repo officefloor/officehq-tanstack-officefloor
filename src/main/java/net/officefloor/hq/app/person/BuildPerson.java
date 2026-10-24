@@ -10,6 +10,8 @@ public class BuildPerson {
         if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
-        personOut.set(repository.save(new Person(sheet.getId(), request.name(), request.grade())));
+        Person person = new Person(sheet.getId(), request.name(), request.grade());
+        person.setTerms(request.termsDays());
+        personOut.set(repository.save(person));
     }
 }

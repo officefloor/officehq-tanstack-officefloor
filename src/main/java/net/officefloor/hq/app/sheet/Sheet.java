@@ -160,6 +160,11 @@ public class Sheet {
         return terms != null ? Integer.valueOf(terms) : null;
     }
 
+    /** The terms for a person on a date: their own terms when they have any, else their grade's in force then. */
+    public int termsFor(Integer own, String grade, LocalDate on) {
+        return own != null ? own : termsFor(grade, on);
+    }
+
     /** The terms in force for a grade on a date: its own, else the sheet's. */
     public int termsFor(String grade, LocalDate on) {
         Integer own = grade == null ? null : gradeTermsOn(grade, on);

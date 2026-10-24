@@ -16,6 +16,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // once, whatever the date.
 // `held`: whether they have any hold. `holds`: their holds, earliest from-date first; their OPEN and PENDING
 // claims dated within one count in no live total, unless a statement binds them; their other claims still count.
+// `terms`: their own terms in days (null: none); a claim of theirs is due by its date plus these, ahead of their
+// grade's terms and the sheet's.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -30,6 +32,7 @@ export type Person = {
   held: boolean;
   holds: Hold[];
   patronIds: number[];
+  terms: number | null;
 };
 
 /** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */

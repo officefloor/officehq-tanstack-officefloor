@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -34,6 +35,14 @@ public class Person {
 
     @Column(nullable = false)
     private String grade;
+
+    /** Their own terms in days (null: none): a claim of theirs is due by its date plus these, ahead of their
+     *  grade's terms and the sheet's. */
+    private Integer terms;
+
+    /** Set by an edit that changed their terms, for its audit record; not stored. */
+    @Transient
+    private boolean termsChanged;
 
     /** Raised on every save; an edit naming an older version is refused. */
     @Version
@@ -82,6 +91,20 @@ public class Person {
 
     public void setGrade(String grade) {
         this.grade = grade;
+    }
+
+    public Integer getTerms() {
+        return terms;
+    }
+
+    /** Sets their terms, noting whether they differ from the terms they had. */
+    public void setTerms(Integer terms) {
+        termsChanged = !java.util.Objects.equals(this.terms, terms);
+        this.terms = terms;
+    }
+
+    public boolean isTermsChanged() {
+        return termsChanged;
     }
 
     public long getVersion() {

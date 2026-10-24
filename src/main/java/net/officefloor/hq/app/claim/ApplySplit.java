@@ -72,7 +72,7 @@ public class ApplySplit {
         made.setOpenedBy(user);
         made.setSplitFrom(claim.getNumber());
         int terms = people.findById(claim.getPersonId())
-                .map(p -> sheet.termsFor(grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
+                .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
         made.setDueBy(claim.getDate().plusDays(terms));
         made = repository.saveAndFlush(made);
         entityManager.refresh(made);
