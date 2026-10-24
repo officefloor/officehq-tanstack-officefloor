@@ -1,0 +1,183 @@
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 0150a430..c26e2e35 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -8,7 +8,9 @@ import { claimsQueryKey } from '../claims/claims';
+ import { peoplePath, peopleQueryKey, type Person } from '../people/people';
+ 
+ // A person's statements: how many were taken, the last one's due-total and date, and the button that takes
+-// one — recording their due-total now and binding each of their counted claims to the figure it has now.
++// one — recording their due-total now and binding each of their counted claims to the figure it has now — and the
++// button a steward cancels the last one with, making the claims it bound live again (anyone else, or a person with no
++// statement, shows the row's error).
+ function StatementHeader() {
+   return <th>Statements</th>;
+ }
+@@ -27,6 +29,16 @@ function PersonStatement({ person }: { person: Person }) {
+   });
+   const submit = useSubmitOnce(take);
+   const rowAction = useRowAction(`person-${person.id}`);
++  const cancel = useMutation({
++    mutationFn: () => putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}/unstate`, undefined, user),
++    onSuccess: () =>
++      Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') }),
++        queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') }),
++      ]),
++  });
++  const submitCancel = useSubmitOnce(cancel);
++  const cancelAction = useRowAction(`person-${person.id}`);
+   return (
+     <td>
+       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+@@ -35,7 +47,11 @@ function PersonStatement({ person }: { person: Person }) {
+       <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => { rowAction.take(); submit(undefined); }}>
+         Statement
+       </button>
++      <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => { cancelAction.take(); submitCancel(undefined); }}>
++        Cancel statement
++      </button>
+       {take.isError && rowAction.isLatest && <span data-testid="person-error">The statement could not be taken.</span>}
++      {cancel.isError && cancelAction.isLatest && <span data-testid="person-error">The statement could not be cancelled.</span>}
+     </td>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index ade1d397..911ddb48 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Once the sheet's today is changed, with grace days set, closes each open period whose to-date plus the grace
++/** Once the sheet's today is changed, with grace days set, closes each open period (not a soft-closed one, whose totals stay as fixed) whose to-date plus the grace
+  *  days is before the new today, in order of their to-dates, fixing its totals exactly as a close by hand would (the
+  *  permission matrix governs closing by hand, not this), recording each closing with auto=yes at its end. */
+ public class AutoClosePeriods {
+@@ -26,7 +26,7 @@ public class AutoClosePeriods {
+         }
+         String by = AuditUser.decode(user);
+         var due = repository.findBySheetIdOrderByFromDateAscIdAsc(sheet.getId()).stream()
+-                .filter(p -> !p.isClosed() && p.getToDate().plusDays(grace).isBefore(sheet.getToday()))
++                .filter(p -> !p.isClosed() && !p.isSoftClosed() && p.getToDate().plusDays(grace).isBefore(sheet.getToday()))
+                 .sorted(Comparator.comparing(Period::getToDate).thenComparing(Period::getId))
+                 .toList();
+         for (Period period : due) {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/AuditStatementCancelled.java b/src/main/java/net/officefloor/hq/app/statement/AuditStatementCancelled.java
+new file mode 100644
+index 00000000..72db2210
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/AuditStatementCancelled.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.statement;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the cancelled statement, once it is removed. */
++public class AuditStatementCancelled {
++    public void audit(@Val Statement statement, @Val Person person,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        audit.record("STATEMENT_CANCELLED sheet=" + statement.getSheetId() + " by=" + AuditUser.decode(user)
++                + " name=" + person.getName() + " due-total=" + statement.getDueTotal());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java b/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
+new file mode 100644
+index 00000000..d38608b7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/CancelStatement.java
+@@ -0,0 +1,49 @@
++package net.officefloor.hq.app.statement;
++
++import jakarta.persistence.EntityManager;
++import jakarta.persistence.LockModeType;
++import java.util.List;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClerkLimitException;
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/**
++ * Cancels the person's last statement: it is removed, and the claims it bound are live again (a figure bound by a
++ * statement before it is not restored). Only a steward cancels, and a person with no statement has none to cancel.
++ * Returns the cancelled statement, for the audit.
++ */
++public class CancelStatement {
++    public void cancel(@Val Sheet sheet, @Val Person person, ClaimRepository claims, StatementRepository statements,
++            RoleRepository roles, EntityManager entityManager,
++            @RequestHeader(name = "X-User", required = false) String userHeader, Out<Statement> statementOut)
++            throws ClerkLimitException, InvalidPersonException {
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), AuditUser.decode(userHeader)))) {
++            throw new ClerkLimitException("Only a steward can cancel a statement.");
++        }
++        // Lock the person so a cancel and a statement (or two cancels) are taken one after the other.
++        entityManager.refresh(person, LockModeType.PESSIMISTIC_WRITE);
++        List<Statement> taken = statements.findByPersonIdOrderByIdAsc(person.getId());
++        if (taken.isEmpty()) {
++            throw new InvalidPersonException("The person has no statement to cancel.");
++        }
++        Statement last = taken.get(taken.size() - 1);
++        // A statement binds or unbinds every claim of its person, so the claims bound now are the ones it bound.
++        List<Claim> mine = claims.findBySheetIdAndPersonIdOrderByIdDesc(sheet.getId(), person.getId());
++        for (Claim claim : mine) {
++            claim.bind(false, null);
++        }
++        claims.saveAllAndFlush(mine);
++        statements.delete(last);
++        statements.flush();
++        statementOut.set(last);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unstate.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unstate.PUT.yml
+new file mode 100644
+index 00000000..d83774e4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unstate.PUT.yml
+@@ -0,0 +1,34 @@
++# PUT /api/sheets/{sheetId}/people/{personId}/unstate — a steward cancels the person's last statement.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: person
++person:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: cancel
++cancel:
++  class: net.officefloor.hq.app.statement.CancelStatement
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.statement.AuditStatementCancelled
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
