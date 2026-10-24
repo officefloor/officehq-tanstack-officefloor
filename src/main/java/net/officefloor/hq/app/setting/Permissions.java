@@ -8,17 +8,18 @@ import net.officefloor.hq.app.role.Role;
 
 /** A sheet's permission matrix: for each action the roles that may take it, as a comma separated list ('' when
  *  blank: the standing rule applies — open, settle, void and close by clerk and steward; reassign and reopen by
- *  steward). */
+ *  steward; changing the sheet's today by anyone but a viewer). */
 public record Permissions(Map<String, String> roles) {
 
     /** The actions the matrix covers, in order. */
-    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     /** The standing rule for each action, used while its entry is blank. */
     private static final Map<String, List<String>> STANDING = Map.of(
             "open", List.of(Role.CLERK, Role.STEWARD), "settle", List.of(Role.CLERK, Role.STEWARD),
             "void", List.of(Role.CLERK, Role.STEWARD), "close", List.of(Role.CLERK, Role.STEWARD),
-            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD));
+            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD),
+            "today", List.of(Role.CLERK, Role.STEWARD, Role.RESTRICTED));
 
     /** The entry for each action, in order ('' when blank). */
     public Map<String, String> entries() {

@@ -46,8 +46,9 @@ type Changes = { clerkLimit?: string; floor?: string; terms?: string; latePct?: 
  *  a claim whose person's grade on its date has one in force on that date takes it instead of the sheet's. A claim whose due is above the note threshold (blank: none) in
  *  force on its date cannot be opened while its note is empty; the server enforces it. A claim whose due is above
  *  the review threshold (blank: none) in force on its date goes to REVIEW when opened; a steward reviews it to OPEN.
- *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles that may take
- *  it (comma separated; blank: the standing rule); it is not dated, and the server enforces it.
+ *  The permission matrix gives, for each of open, settle, void, reassign, close, reopen and today (changing the
+ *  sheet's today), the roles that may take it (comma separated; blank: the standing rule); it is not dated, and the
+ *  server enforces it.
  *  The grace days (blank: off; not dated): when the sheet's today is changed, each open period whose to-date plus
  *  them is before the new today is closed by the server.
  *  The entry date (blank: off; not dated): while it is set, a new claim given no date (the claim form, the quick-add

@@ -6,7 +6,7 @@ import type { Person } from '../people/people';
 import { overdueDues, type Rate } from '../rates/rates';
 import { useActingRole } from '../roles/roles.slot';
 import { floorOf, lateOf, type Settings } from '../settings/settings';
-import { useAsOf, usePreview, type Sheet } from '../sheet/sheet';
+import { usePreview, type Sheet } from '../sheet/sheet';
 
 /** One read of a sheet as the store holds it now (given a preview date, figured on it). Keyed under the sheet, so a
  *  load of that sheet re-reads it. */
@@ -81,11 +81,10 @@ function Shown({ counts, steward }: { counts: Counts; steward: boolean }) {
 /** The steward's dashboard: over the sheet and all its descendants (its children — the sheets naming it as their
  *  parent — theirs, and so on), as the store holds them now, how many claims are PENDING, how many REVIEW, and how
  *  many overdue claims count (as each sheet's overdue rollup counts them). Anyone not acting as a steward sees the
- *  cells empty, and so does everyone while the screen shows the sheet as of a date. */
+ *  cells empty; a steward sees them, as the store holds them now, even while the screen shows the sheet as of a date. */
 function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
-  const [asOf] = useAsOf();
   const [preview] = usePreview();
-  const steward = useActingRole(sheetId, user) === 'steward' && !asOf;
+  const steward = useActingRole(sheetId, user) === 'steward';
   const descendants = useNow<string[]>(sheetId, 'descendants').data ?? [];
   return <Accumulate sheets={[sheetId, ...descendants]} at={0} sum={NONE} steward={steward} preview={preview} />;
 }

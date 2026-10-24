@@ -69,7 +69,7 @@ export function valueOn(values: Dated[] | undefined, start: string, date: string
 }
 
 /** The actions the permission matrix covers, in order. */
-export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
 
 /** The grades that may have terms of their own. */
 export const GRADES = ['A', 'B', 'C'] as const;
