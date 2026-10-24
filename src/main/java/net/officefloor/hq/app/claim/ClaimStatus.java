@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
 /**
  * A claim's status: it starts DRAFT, is opened (OPEN) and then settled (SETTLED); a clerk settling one above the
  * clerk limit leaves it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). A DRAFT, OPEN or
- * PENDING claim can be voided (VOID). SETTLED and VOID are final. Only OPEN, PENDING and SETTLED claims count toward
+ * PENDING claim can be voided (VOID), and a steward may void a SETTLED one within 7 days of its settlement. VOID is final. Only OPEN, PENDING and SETTLED claims count toward
  * totals.
  */
 public enum ClaimStatus {
@@ -17,7 +17,7 @@ public enum ClaimStatus {
             case "settle" -> this == OPEN ? SETTLED : null;
             case "approve" -> this == PENDING ? SETTLED : null;
             case "reject" -> this == PENDING ? OPEN : null;
-            case "void" -> this == DRAFT || this == OPEN || this == PENDING ? VOID : null;
+            case "void" -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED ? VOID : null;
             default -> null;
         };
     }

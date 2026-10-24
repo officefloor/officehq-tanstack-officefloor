@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -25,13 +26,18 @@ import org.springframework.web.bind.annotation.RequestParam;
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim dated in a closed period cannot change status. Returns the claim's number for the
+ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim dated in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
+ * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. Returns the claim's number for the
  * audit.
  */
 public class ApplyClaimStatus {
+
+    /** How many days after its settlement a steward may still void a SETTLED claim. */
+    static final int VOID_DAYS = 7;
+
     public String apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
-            @Val Sheet sheet, RoleRepository roles,
+            @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log,
             @RequestHeader(name = "X-User", required = false) String userHeader,
             @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         String user = AuditUser.decode(userHeader);
@@ -67,6 +73,15 @@ public class ApplyClaimStatus {
             boolean steward = Role.STEWARD.equals(role);
             if (("approve".equals(action) || "reject".equals(action)) && !steward) {
                 throw new ClerkLimitException("Only a steward can approve or reject a pending claim.");
+            }
+            if ("void".equals(action) && claim.getStatus() == ClaimStatus.SETTLED) {
+                if (!steward) {
+                    throw new ClerkLimitException("Only a steward can void a settled claim.");
+                }
+                LocalDate settled = log.settledOn(claim);
+                if (settled == null || sheet.getToday().isAfter(settled.plusDays(VOID_DAYS))) {
+                    throw new ClaimStatusException("A settled claim can be voided only within " + VOID_DAYS + " days of its settlement.");
+                }
             }
             if ("reject".equals(action) && (reason == null || reason.isBlank())) {
                 throw new ClaimStatusException("A rejection needs a reason.");

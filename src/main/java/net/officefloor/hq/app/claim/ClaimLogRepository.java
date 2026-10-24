@@ -15,6 +15,12 @@ public interface ClaimLogRepository extends JpaRepository<ClaimLog, Long> {
     /** The claim's log lines, oldest first. */
     List<ClaimLog> findByClaimIdOrderByIdAsc(Long claimId);
 
+    /** The sheet's today when the claim was last settled (its latest SETTLED log line); null when it never was. */
+    default LocalDate settledOn(Claim claim) {
+        return findByClaimIdOrderByIdAsc(claim.getId()).stream().filter(l -> ClaimStatus.SETTLED.name().equals(l.getStatus()))
+                .map(ClaimLog::getOnDate).reduce((a, b) -> b).orElse(null);
+    }
+
     /** The claim's log as the screen shows it, oldest first. */
     default List<String> linesOf(Claim claim) {
         return findByClaimIdOrderByIdAsc(claim.getId()).stream().map(ClaimLog::line).toList();

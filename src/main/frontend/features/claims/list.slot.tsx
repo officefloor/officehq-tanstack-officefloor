@@ -93,7 +93,8 @@ const ACTIONS = [
 // instead of opening its editor (an open claim is voided and added anew). A role the permission matrix allows (a steward, by the standing
 // rule) moves a DRAFT, OPEN or PENDING
 // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
-// shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
+// shows the claim's error. A steward voids a SETTLED claim within 7 days of its settlement (its frozen due leaves
+// the totals); anyone else, or a later day, shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
 // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
 // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
 // in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
@@ -306,8 +307,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? 'This claim is dated in a closed period, so its status cannot change.'
             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can approve or reject a pending claim.'
+            : action === 'void' && claim.status === 'SETTLED' && change.error instanceof HttpError && change.error.status === 403
+            ? 'Only a steward can void a settled claim.'
             : (action === 'open' || action === 'settle' || action === 'void') && change.error instanceof HttpError && change.error.status === 403
             ? `Your role is not allowed to ${action} a claim.`
+            : action === 'void' && claim.status === 'SETTLED'
+            ? 'A settled claim can be voided only within 7 days of its settlement.'
             : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can re-settle a claim.'
             : action === 'resettle'
