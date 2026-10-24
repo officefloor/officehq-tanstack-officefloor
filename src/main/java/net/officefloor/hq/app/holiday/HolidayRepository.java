@@ -13,14 +13,13 @@ public interface HolidayRepository extends JpaRepository<Holiday, Long> {
 
     boolean existsBySheetIdAndDate(String sheetId, LocalDate date);
 
-    /** The date itself when it is not one of the sheet's holidays, else the next day that is not. */
-    default LocalDate nextNonHoliday(String sheetId, LocalDate date) {
-        Set<LocalDate> holidays = findBySheetIdOrderByDateAsc(sheetId).stream().map(Holiday::getDate)
-                .collect(Collectors.toSet());
-        LocalDate day = date;
-        while (holidays.contains(day)) {
-            day = day.plusDays(1);
-        }
-        return day;
+    /** The dates of the sheet's holidays. */
+    default Set<LocalDate> datesOf(String sheetId) {
+        return findBySheetIdOrderByDateAsc(sheetId).stream().map(Holiday::getDate).collect(Collectors.toSet());
+    }
+
+    /** The terms-th business day after a date, skipping the weekends and the sheet's holidays now on its list. */
+    default LocalDate dueBy(String sheetId, LocalDate from, int terms) {
+        return BusinessDays.after(from, terms, datesOf(sheetId));
     }
 }

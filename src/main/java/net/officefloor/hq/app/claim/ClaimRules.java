@@ -54,13 +54,13 @@ public final class ClaimRules {
         return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects);
     }
 
-    /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is its
-     *  date plus its terms, moved past the sheet's holidays now on its list to the next day that is not one. */
+    /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is the
+     *  terms-th business day after its date, skipping weekends and the sheet's holidays now on its list. */
     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
             PeriodRepository periods, PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
-        LocalDate dueBy = holidays.nextNonHoliday(sheet.getId(),
-                date.plusDays(sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date)));
+        int terms = sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date);
+        LocalDate dueBy = holidays.dueBy(sheet.getId(), date, terms);
         if (periods.isClosedOn(sheet.getId(), dueBy)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");
         }
@@ -71,7 +71,7 @@ public final class ClaimRules {
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
         claim.setLateEntry(periods.isSoftClosedOn(sheet.getId(), dueBy));
-        claim.setDueBy(dueBy);
+        claim.fixDue(date, terms, holidays.datesOf(sheet.getId()));
         return claim;
     }
 

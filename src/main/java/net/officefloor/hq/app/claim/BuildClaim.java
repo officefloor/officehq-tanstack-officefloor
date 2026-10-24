@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Adds the claim, fixing its due-by: its date plus its person's own terms, else the terms of their grade in force on its date, moved past the sheet's holidays to the next day that is not one; refuses one whose due-by falls in a closed period, or one dated after the person's retirement date, and a correction
+/** Adds the claim, fixing its due-by: the business day its person's own terms, else the terms of their grade in force on its date, count to after its date, skipping weekends and the sheet's holidays; refuses one whose due-by falls in a closed period, or one dated after the person's retirement date, and a correction
  * that does not name a settled claim of the person. */
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, ClaimRepository repository,

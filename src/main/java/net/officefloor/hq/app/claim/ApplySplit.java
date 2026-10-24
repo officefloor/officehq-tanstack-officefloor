@@ -57,7 +57,7 @@ public class ApplySplit {
         }
         int terms = people.findById(claim.getPersonId())
                 .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
-        LocalDate dueBy = holidays.nextNonHoliday(claim.getSheetId(), claim.getDate().plusDays(terms));
+        LocalDate dueBy = holidays.dueBy(claim.getSheetId(), claim.getDate(), terms);
         String number;
         if (perPeriod) {
             String prefix = periods.findBySheetIdOrderByFromDateAscIdAsc(claim.getSheetId()).stream()
@@ -76,7 +76,7 @@ public class ApplySplit {
         made.setNumber(number);
         made.setOpenedBy(user);
         made.setSplitFrom(claim.getNumber());
-        made.setDueBy(dueBy);
+        made.fixDue(claim.getDate(), terms, holidays.datesOf(claim.getSheetId()));
         made.setLateEntry(periods.isSoftClosedOn(claim.getSheetId(), dueBy));
         made = repository.saveAndFlush(made);
         entityManager.refresh(made);

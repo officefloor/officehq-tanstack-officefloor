@@ -28,7 +28,7 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   roundsOn: string;
-  /** Its due-by (YYYY-MM-DD), fixed when it was created: its date plus the terms of its person's grade then. */
+  /** Its due-by (YYYY-MM-DD): the business day its terms (fixed when it was created) count to after its date then, past the holidays now. */
   dueBy: string;
   /** Its status log, oldest first: one line per status it has had, `<STATUS> by <user> on <date> due=<due>`. */
   log: string[];

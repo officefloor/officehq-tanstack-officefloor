@@ -8,6 +8,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
+import net.officefloor.hq.app.holiday.BusinessDays;
 
 /** A claim by a person on a sheet: an amount (negative only for a correction, which names the number of the
  * settled claim it corrects), a date, a note (may be empty)
@@ -59,10 +61,20 @@ public class Claim {
     @Column(name = "stated_due", precision = 19, scale = 2)
     private BigDecimal statedDue;
 
-    /** The claim's due-by, fixed when it was created: its date plus the terms of its person's grade in force on its
-     *  date then. It does not change when the terms or its date change later. */
+    /** The claim's due-by: the due-terms-th business day after its due-from, skipping weekends and the sheet's
+     *  holidays now on its list; worked out again whenever the holidays change. */
     @Column(name = "due_by", nullable = false)
     private LocalDate dueBy;
+
+    /** The date its due-by counts from, fixed when it was created (its date then). It does not change when its date
+     *  changes later. */
+    @Column(name = "due_from", nullable = false)
+    private LocalDate dueFrom;
+
+    /** The terms its due-by was fixed with when it was created: its person's own, else their grade's in force on its
+     *  date, else the sheet's. It does not change when the terms change later. */
+    @Column(name = "due_terms", nullable = false)
+    private int dueTerms;
 
     /** The number of the settled claim of the same person this correction corrects; null for any other claim. */
     @Column(name = "corrects")
@@ -149,8 +161,24 @@ public class Claim {
         return dueBy;
     }
 
-    public void setDueBy(LocalDate dueBy) {
-        this.dueBy = dueBy;
+    public LocalDate getDueFrom() {
+        return dueFrom;
+    }
+
+    public int getDueTerms() {
+        return dueTerms;
+    }
+
+    /** Fixes the date and terms the due-by counts from, and works it out for the sheet's holidays. */
+    public void fixDue(LocalDate from, int terms, Set<LocalDate> holidays) {
+        this.dueFrom = from;
+        this.dueTerms = terms;
+        reworkDueBy(holidays);
+    }
+
+    /** Works the due-by out again for the sheet's holidays now. */
+    public void reworkDueBy(Set<LocalDate> holidays) {
+        this.dueBy = BusinessDays.after(dueFrom, dueTerms, holidays);
     }
 
     public String getNote() {
@@ -305,6 +333,8 @@ public class Claim {
         then.due = due;
         then.openedBy = openedBy;
         then.dueBy = dueBy;
+        then.dueFrom = dueFrom;
+        then.dueTerms = dueTerms;
         then.correctsDate = correctsDate;
         then.listed = listed;
         then.deferredUntil = deferredUntil;
