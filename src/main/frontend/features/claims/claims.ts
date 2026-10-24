@@ -8,7 +8,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
- *  the number given when it was opened (null for a claim never opened; a voided claim keeps it) and the due fixed when it was
+ *  the number given when it was opened (the sheet's next, or the next in its period: P1-1, X-1; null for a claim never opened; a voided claim keeps it) and the due fixed when it was
  *  settled (null when it has none: its due is live), and who opened it (null when never opened); whether its person's last statement binds it, and the
  *  figure it binds it to (null: n/a); the number of the settled claim of the same person it corrects (null when it is not
  *  a correction — a correction is a claim with a negative amount); the date its rounding goes by (a correction's is the
@@ -20,12 +20,12 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  number: number | null;
+  number: string | null;
   due: string | null;
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
-  corrects: number | null;
+  corrects: string | null;
   roundsOn: string;
 };
 

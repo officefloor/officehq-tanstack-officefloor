@@ -6,8 +6,8 @@ package net.officefloor.hq.app.claim;
  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
  * the date of the claim it corrects, else its own). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
-        Integer number, String due, String openedBy,
-        boolean stated, String statedDue, Integer corrects, String roundsOn) {
+        String number, String due, String openedBy,
+        boolean stated, String statedDue, String corrects, String roundsOn) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),

@@ -38,9 +38,10 @@ public class Claim {
     @Column(nullable = false)
     private String status = ClaimStatus.DRAFT.name();
 
-    /** The sheet's number given when the claim was opened; null for a claim never opened; a voided claim keeps it. */
+    /** The number given when the claim was opened (the sheet's next, or the next in its period: P1-1, X-1); null for a
+     *  claim never opened; a voided claim keeps it. */
     @Column(name = "claim_number")
-    private Integer number;
+    private String number;
 
     /** The due fixed when the claim was settled; null while it is not settled or its grade had no rate then. */
     @Column(precision = 19, scale = 2)
@@ -60,7 +61,7 @@ public class Claim {
 
     /** The number of the settled claim of the same person this correction corrects; null for any other claim. */
     @Column(name = "corrects")
-    private Integer corrects;
+    private String corrects;
 
     /** The date of the claim this correction corrects (it rounds by that date); null for any other claim. */
     @Column(name = "corrects_date")
@@ -69,7 +70,7 @@ public class Claim {
     protected Claim() {
     }
 
-    public Claim(String sheetId, Long personId, BigDecimal amount, LocalDate date, String note, Integer corrects) {
+    public Claim(String sheetId, Long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         this.corrects = corrects;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -122,11 +123,11 @@ public class Claim {
         this.status = status.name();
     }
 
-    public Integer getNumber() {
+    public String getNumber() {
         return number;
     }
 
-    public void setNumber(Integer number) {
+    public void setNumber(String number) {
         this.number = number;
     }
 
@@ -146,11 +147,11 @@ public class Claim {
         this.openedBy = openedBy;
     }
 
-    public Integer getCorrects() {
+    public String getCorrects() {
         return corrects;
     }
 
-    public void setCorrects(Integer corrects) {
+    public void setCorrects(String corrects) {
         this.corrects = corrects;
     }
 

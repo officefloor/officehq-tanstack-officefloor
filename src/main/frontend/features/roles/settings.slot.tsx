@@ -6,13 +6,14 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate';
+type Key = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom';
 type Drafts = Partial<Record<Key, string>>;
 
 // The sheet's settings: the clerk limit in force (blank when there is none), the floor in force (a claim's live
 // due is at least it), the terms in force (a claim is due by its date plus that many days), the late percent in force (an overdue
 // claim's due gains it of its figure for every full 30 days overdue), the policy date (a claim dated before it rounds half
-// up, one on or after it half to even; blank: the sheet's today), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
+// opened is numbered within its period: P1-1, X-1 for no period; blank: off), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
 // the fields typed in (all of them when none was).
 function SheetSettings() {
@@ -38,6 +39,7 @@ function SheetSettings() {
     terms: settings.data?.terms ?? '',
     latePct: settings.data?.latePct ?? '',
     policyDate: settings.data?.policyDate ?? '',
+    periodNumberingFrom: settings.data?.periodNumberingFrom ?? '',
   };
   const valueOf = (key: Key) => drafts[key] ?? current[key];
   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
@@ -64,6 +66,10 @@ function SheetSettings() {
       </p>
       <p>
         Policy date: <span data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</span>
+      </p>
+      <p>
+        Period numbering from:{' '}
+        <span data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</span>
       </p>
       <form
         data-testid="settings-form"
@@ -116,11 +122,19 @@ function SheetSettings() {
           onInput={edit('policyDate')}
           onFocus={touch('policyDate')}
         />
+        <input
+          data-testid="setting-period-numbering-from"
+          placeholder="Period numbering from YYYY-MM-DD (blank: off)"
+          value={valueOf('periodNumberingFrom')}
+          onChange={edit('periodNumberingFrom')}
+          onInput={edit('periodNumberingFrom')}
+          onFocus={touch('periodNumberingFrom')}
+        />
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date a date (YYYY-MM-DD), or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank.</span>
         )}
       </form>
     </section>

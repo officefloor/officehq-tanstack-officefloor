@@ -9,9 +9,9 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
- *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date that is not a calendar date
+ *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today. A key left out is not changed. */
+ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off. A key left out is not changed. */
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -60,7 +60,17 @@ public class ValidateSettings {
                 throw new InvalidSettingsException("The policy date must be a date (YYYY-MM-DD), or blank.");
             }
         }
+        String numbering = request == null ? null : request.periodNumberingFrom();
+        LocalDate numberingValue = null;
+        if (numbering != null && !numbering.trim().isEmpty()) {
+            try {
+                numberingValue = LocalDate.parse(numbering.trim());
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingsException("The period numbering from must be a date (YYYY-MM-DD), or blank.");
+            }
+        }
         body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue,
-                late != null, lateValue, policy != null, policyValue));
+                late != null, lateValue, policy != null, policyValue,
+                numbering != null, numberingValue));
     }
 }

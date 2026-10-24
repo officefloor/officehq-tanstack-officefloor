@@ -40,6 +40,11 @@ public class Sheet {
     @Column(name = "policy_date")
     private LocalDate policyDate;
 
+    /** The period numbering from: while the sheet's today is on or after it, a claim opened is numbered within its
+     *  period; null (blank) for off. */
+    @Column(name = "period_numbering_from")
+    private LocalDate periodNumberingFrom;
+
     /** The late percent a sheet starts at. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -112,5 +117,18 @@ public class Sheet {
     /** The policy date in force: the one set, else the sheet's today. */
     public LocalDate policyDateInForce() {
         return policyDate != null ? policyDate : today;
+    }
+
+    public LocalDate getPeriodNumberingFrom() {
+        return periodNumberingFrom;
+    }
+
+    public void setPeriodNumberingFrom(LocalDate periodNumberingFrom) {
+        this.periodNumberingFrom = periodNumberingFrom;
+    }
+
+    /** Whether a claim opened now is numbered within its period: the period numbering is set and today is on or after it. */
+    public boolean periodNumberingOn() {
+        return periodNumberingFrom != null && !today.isBefore(periodNumberingFrom);
     }
 }

@@ -16,7 +16,7 @@ public class ValidateClaim {
 
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
 
-    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
+    private static final Pattern NUMBER = Pattern.compile("(.+-)?\\d{1,9}");
 
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> body) throws InvalidClaimException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
@@ -44,6 +44,6 @@ public class ValidateClaim {
                 throw new InvalidClaimException("Not a date: " + date);
             }
         }
-        body.set(new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : Integer.valueOf(corrects)));
+        body.set(new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects));
     }
 }
