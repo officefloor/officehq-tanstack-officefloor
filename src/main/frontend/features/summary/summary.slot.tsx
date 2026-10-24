@@ -8,7 +8,7 @@ import { useSettings } from '../roles/roles';
 import { periodDue, usePeriods } from '../periods/periods';
 
 /** The statuses the summary counts claims by. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
 // the sheet's today and their due-totals added up (skipping n/a); per period, its due-total; per status, how

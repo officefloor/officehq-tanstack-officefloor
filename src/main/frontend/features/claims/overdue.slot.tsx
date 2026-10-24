@@ -9,7 +9,7 @@ import { countsLive, holdsOf, isOverdue, useClaims, type Claim } from './claims'
 // A person's overdue count and overdue-total: their counted claims that are overdue (OPEN or PENDING, due-by before the
 // sheet's today; their unbound OPEN and PENDING claims dated within a hold of theirs do not count), and those claims' dues (with their late charge) added up, skipping n/a.
 // The sheet's are everyone's added up.
-function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+export function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): { count: number; total: string } {
   const held = holdsOf([person]);
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, today));
