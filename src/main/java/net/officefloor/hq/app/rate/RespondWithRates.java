@@ -7,6 +7,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithRates {
     public void respond(@Val Sheet sheet, RateRepository repository, ObjectResponse<List<RateResponse>> response) {
-        response.send(repository.findBySheetIdOrderByGradeAsc(sheet.getId()).stream().map(RateResponse::from).toList());
+        response.send(repository.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheet.getId()).stream().map(RateResponse::from).toList());
     }
 }

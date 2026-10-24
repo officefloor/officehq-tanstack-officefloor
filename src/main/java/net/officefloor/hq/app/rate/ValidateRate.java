@@ -1,12 +1,15 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Reads the rate form from the body; refuses a grade other than A, B or C and a percent that is missing, negative or has more than two decimals. */
+/** Reads the rate form from the body; refuses a grade other than A, B or C and a percent that is missing, negative or has more than two decimals,
+ * and a from-date that is not a calendar date. A blank from-date means from the beginning of time. */
 public class ValidateRate {
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
@@ -22,6 +25,15 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidRateException("The rate must be a percent, 0.00 or more, with up to two decimals.");
         }
-        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2)));
+        String from = request == null || request.from() == null ? "" : request.from().trim();
+        LocalDate parsed = null;
+        if (!from.isEmpty()) {
+            try {
+                parsed = LocalDate.parse(from);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The from-date must be a calendar date.");
+            }
+        }
+        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), parsed));
     }
 }
