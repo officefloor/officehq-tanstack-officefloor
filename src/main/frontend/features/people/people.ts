@@ -29,6 +29,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // day they were unretired; a claim dated after the from and before the to is refused, as one after a retirement is.
 // `tags`: their tags, trimmed, lower-cased and sorted, without repeats (empty: none); the tag totals count each
 // claim of theirs for these as well as for the claim's own.
+// `snapshots`: one per SNAPSHOT written for them as the sheet's today moved on, oldest first: the day being left
+// and their due-total on it (n/a with none).
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -50,7 +52,11 @@ export type Person = {
   origin: string | null;
   retirements: Retirement[];
   tags: string[];
+  snapshots: Snapshot[];
 };
+
+/** A snapshot: the day being left (YYYY-MM-DD) and the person's due-total on it. */
+export type Snapshot = { date: string; dueTotal: string };
 
 /** A past retirement: from a date to the day they were unretired (YYYY-MM-DD). */
 export type Retirement = { from: string; to: string };

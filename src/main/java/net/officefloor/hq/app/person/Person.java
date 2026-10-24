@@ -10,12 +10,14 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderBy;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.OptimisticLock;
 
 /** A person on a sheet: a name and a grade (A, B or C), the date they are retired from (null: not retired),
  *  and their holds over time. */
@@ -81,6 +83,13 @@ public class Person {
     @CollectionTable(name = "person_retirement", joinColumns = @JoinColumn(name = "person_id"))
     @OrderBy("fromDate ASC, toDate ASC")
     private List<PersonRetirement> retirements = new ArrayList<>();
+
+    /** Their snapshots, oldest first: one per SNAPSHOT written for them. Taking one is no edit of them. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "person_snapshot", joinColumns = @JoinColumn(name = "person_id"))
+    @OrderColumn(name = "seq")
+    @OptimisticLock(excluded = true)
+    private List<PersonSnapshot> snapshots = new ArrayList<>();
 
     /** The sheet's today when they were added (null: not recorded); a statement as of an earlier date is refused. */
     @Column(name = "added_on")
@@ -231,6 +240,7 @@ public class Person {
             }
         }
         holds.stream().filter(h -> h.madeBy(date)).forEach(then.holds::add);
+        snapshots.stream().filter(s -> !s.getTakenOn().isAfter(date)).forEach(then.snapshots::add);
         return then;
     }
 
@@ -240,6 +250,15 @@ public class Person {
 
     public List<PersonRetirement> getRetirements() {
         return retirements;
+    }
+
+    public List<PersonSnapshot> getSnapshots() {
+        return snapshots;
+    }
+
+    /** Records their due-total on the day being left as the sheet's today moves on. */
+    public void addSnapshot(PersonSnapshot snapshot) {
+        snapshots.add(snapshot);
     }
 
     public List<PersonHold> getHolds() {

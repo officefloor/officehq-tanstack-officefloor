@@ -10,15 +10,19 @@ import net.officefloor.hq.app.statement.Statement;
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
- *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted. */
+ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first. */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
         List<Hold> holds, List<Long> patronIds, Integer terms,
         String contact, List<String> aliases, boolean clashing, String origin,
-        List<Retirement> retirements, List<String> tags) {
+        List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots) {
 
     /** A past retirement, from a date to the day they were unretired. */
     public record Retirement(String from, String to) {
+    }
+
+    /** A snapshot: the day being left when the sheet's today moved on, and their due-total on it. */
+    public record Snapshot(String date, String dueTotal) {
     }
 
     /** A hold from a date on, to a date (inclusive; null: open-ended). */
@@ -57,6 +61,8 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                 person.getOriginSheet(),
                 person.getRetirements().stream().map(r -> new Retirement(r.getFromDate().toString(),
                         r.getToDate().toString())).toList(),
-                net.officefloor.hq.app.claim.Tags.list(person.getTags()));
+                net.officefloor.hq.app.claim.Tags.list(person.getTags()),
+                person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
+                        .toList());
     }
 }

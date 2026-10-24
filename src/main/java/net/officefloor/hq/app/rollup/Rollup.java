@@ -100,6 +100,13 @@ public class Rollup {
         return lines;
     }
 
+    /** Each person's due-total as it stands in these figures, by their id, in list order. */
+    public Map<Long, String> dueTotals() {
+        Map<Long, String> dues = new LinkedHashMap<>();
+        people.forEach((id, f) -> dues.put(id, f.dueTotal()));
+        return dues;
+    }
+
     /** The audit lines stating the figures in full: one per person, in list order, then the totals. */
     public List<String> lines(String sheetId, String user) {
         String head = " sheet=" + sheetId.trim() + " by=" + user;
