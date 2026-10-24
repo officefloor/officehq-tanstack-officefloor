@@ -195,7 +195,12 @@ public class ApplyTransfer {
         statements.moveAll(from, to, arrivedId);
         BindingLogs.record(bindings, claims, sheets, to, arrivedId);
 
-        // They leave this sheet entirely.
+        // They leave this sheet entirely; the tags their claims carried are still listed as used on it.
+        Sheet here = sheets.findById(sheetId).orElse(null);
+        if (here != null) {
+            theirs.forEach(c -> here.addDepartedTags(c.getTagsUsed()));
+            sheets.save(here);
+        }
         claims.deleteAll(theirs);
         claims.flush();
         patrons.deleteAll(patrons.findByPersonIdOrderByIdAsc(from));

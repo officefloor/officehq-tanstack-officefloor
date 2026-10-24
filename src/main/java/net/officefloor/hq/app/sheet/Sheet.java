@@ -14,6 +14,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeSet;
+import net.officefloor.hq.app.claim.Tags;
 
 /** A sheet, chosen by its id; everything else in the app is kept per sheet. */
 @Entity
@@ -86,6 +88,11 @@ public class Sheet {
     /** The number of the sheet's last bulk settle batch; 0 while it has had none. Taken through ClaimRepository. */
     @Column(name = "last_settle_batch", nullable = false, insertable = false, updatable = false)
     private int lastSettleBatch;
+
+    /** Every tag carried by a claim that has since left the sheet (sorted, comma separated; null: none), so the tag
+     *  totals still list it as a tag used on the sheet. */
+    @Column(name = "departed_tags")
+    private String departedTags;
 
     /** The late percent a sheet starts at. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
@@ -271,6 +278,17 @@ public class Sheet {
     /** The id of the parent sheet. Not dated; null when none. */
     public String getParent() {
         return valueOn(PARENT, today);
+    }
+
+    public String getDepartedTags() {
+        return departedTags;
+    }
+
+    /** Remembers the tags a claim leaving the sheet has ever carried (stored form; null: none). */
+    public void addDepartedTags(String tagsUsed) {
+        TreeSet<String> all = new TreeSet<>(Tags.list(departedTags));
+        all.addAll(Tags.list(tagsUsed));
+        this.departedTags = all.isEmpty() ? null : String.join(",", all);
     }
 
     public boolean isArchived() {

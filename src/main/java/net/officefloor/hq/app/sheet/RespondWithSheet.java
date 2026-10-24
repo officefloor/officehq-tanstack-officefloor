@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.sheet;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Objects;
+import net.officefloor.hq.app.claim.Tags;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.plugin.variable.Val;
@@ -13,8 +15,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class RespondWithSheet {
 
     /** @param asOf the date the sheet is shown as of (null: as it stands now).
-     *  @param lastBatch the number of the sheet's last bulk settle batch (null: none yet). */
-    public record SheetResponse(String id, String today, boolean archived, String asOf, Integer lastBatch) {
+     *  @param lastBatch the number of the sheet's last bulk settle batch (null: none yet).
+     *  @param departedTags the tags of claims that have left the sheet, sorted (empty as of a date). */
+    public record SheetResponse(String id, String today, boolean archived, String asOf, Integer lastBatch,
+            List<String> departedTags) {
     }
 
     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
@@ -26,6 +30,7 @@ public class RespondWithSheet {
                 : asOf.claims(sheet.getId(), date).stream().map(Claim::getSettleBatch).filter(Objects::nonNull)
                         .max(Integer::compare).orElse(null);
         response.send(new SheetResponse(view.getId(), view.getToday().toString(), view.isArchived(),
-                date == null ? null : date.toString(), lastBatch));
+                date == null ? null : date.toString(), lastBatch,
+                date == null ? Tags.list(sheet.getDepartedTags()) : List.of()));
     }
 }

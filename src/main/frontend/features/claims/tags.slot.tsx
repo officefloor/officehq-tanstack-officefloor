@@ -1,11 +1,11 @@
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetInfo, useSheetToday } from '../session/session';
 import { gradeOn, usePeople } from '../people/people';
 import { useSettings } from '../roles/roles';
 import { chargedOf, sumDue, useRates } from '../rates/rates';
 import { countsLive, holdsOf, useClaims } from './claims';
 
-// Per tag ever used on the sheet (by any of its claims) or carried by one of its people now, sorted, its due-total: the
+// Per tag ever used on the sheet (by any of its claims, including those since transferred away) or carried by one of its people now, sorted, its due-total: the
 // dues (with any late charge, as shown now, each at the grade its person had on its date) of the claims that count
 // live and carry it now, themselves or through their person, added up once each, skipping n/a. A claim with two tags
 // counts in both.
@@ -17,11 +17,12 @@ function TagTotals() {
   const rates = useRates();
   const settings = useSettings();
   const today = useSheetToday();
+  const sheetInfo = useSheetInfo();
   if (!user || !sheet) return null;
   const allClaims = claims.data ?? [];
   const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
   const held = holdsOf(people.data);
-  const tags = [...new Set([...allClaims.flatMap((c) => c.tagsUsed ?? []),
+  const tags = [...new Set([...allClaims.flatMap((c) => c.tagsUsed ?? []), ...(sheetInfo.data?.departedTags ?? []),
     ...(people.data ?? []).flatMap((p) => p.tags ?? [])])].sort();
   const carries = (c: (typeof allClaims)[number], t: string) =>
     (c.tags ?? []).includes(t) || (personOf.get(c.personId)?.tags ?? []).includes(t);

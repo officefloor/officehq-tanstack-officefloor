@@ -12,8 +12,11 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
 // change on it is refused). Every date decision and default
 // date in the app uses the sheet's today (useSheetToday), never the browser's clock. In an as-of view
 // (asof.slot.tsx) it is the sheet as it stood at the end of `asOf`, and that date is its today. Its
-// lastBatch is the number of its last bulk settle batch (null while it has had none).
-export type SheetInfo = { id: string; today: string; archived: boolean; asOf: string | null; lastBatch: number | null };
+// lastBatch is the number of its last bulk settle batch (null while it has had none). departedTags are the tags of
+// claims that have left the sheet (with a person transferred away), sorted; empty as of a date.
+export type SheetInfo = {
+  id: string; today: string; archived: boolean; asOf: string | null; lastBatch: number | null; departedTags: string[];
+};
 
 export const sheetQueryKey = (sheetId: string) => ['sheet', sheetId, 'info'] as const;
 
