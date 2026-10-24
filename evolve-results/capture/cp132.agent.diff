@@ -1,0 +1,57 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 80c5e9a8..db414c99 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -60,12 +60,47 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
+         }
+     }
+ 
+-    /** Takes the sheet's next claim number; the update locks the sheet's row until the transaction ends, so
+-     * two claims opened at once are numbered one after the other. */
+-    @Modifying
+-    @Query(value = "UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = :sheetId",
++    /** Takes the sheet's next claim number: the sheets of a tree (the sheet's top ancestor and every sheet under it)
++     *  share one sequence, so it is the next after the last number given on any sheet of the tree, kept as the sheet's
++     *  last number (read with {@link #lastNumber}). The tree's top sheet's row is locked, then the sheet's own, until the
++     *  transaction ends, so two claims opened at once anywhere in the tree are numbered one after the other. */
++    default int takeNextNumber(String sheetId) {
++        java.util.Set<String> up = new java.util.LinkedHashSet<>();
++        String top = sheetId;
++        for (String id = sheetId; id != null && up.add(id); ) {
++            top = id;
++            id = parentOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
++        }
++        lockSheet(top);
++        lockSheet(sheetId);
++        java.util.Set<String> tree = new java.util.LinkedHashSet<>();
++        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(top));
++        while (!todo.isEmpty()) {
++            String id = todo.pop();
++            if (tree.add(id)) {
++                todo.addAll(childrenOf(id));
++            }
++        }
++        int next = lastNumberIn(tree) + 1;
++        setLastNumber(sheetId, next);
++        return next;
++    }
++
++    @Query(value = "SELECT setting_value FROM sheet_setting WHERE sheet_id = :sheetId AND setting_key = 'parent'",
++            nativeQuery = true)
++    List<String> parentOf(@Param("sheetId") String sheetId);
++
++    @Query(value = "SELECT DISTINCT sheet_id FROM sheet_setting WHERE setting_key = 'parent' AND setting_value = :sheetId",
+             nativeQuery = true)
+-    int takeNextNumber(@Param("sheetId") String sheetId);
++    List<String> childrenOf(@Param("sheetId") String sheetId);
++
++    /** The last number given on any of the sheets. */
++    @Query(value = "SELECT COALESCE(MAX(last_claim_number), 0) FROM sheet WHERE id IN (:sheetIds)", nativeQuery = true)
++    int lastNumberIn(@Param("sheetIds") java.util.Collection<String> sheetIds);
++
++    @Modifying
++    @Query(value = "UPDATE sheet SET last_claim_number = :number WHERE id = :sheetId", nativeQuery = true)
++    int setLastNumber(@Param("sheetId") String sheetId, @Param("number") int number);
+ 
+     @Query(value = "SELECT last_claim_number FROM sheet WHERE id = :sheetId", nativeQuery = true)
+     int lastNumber(@Param("sheetId") String sheetId);
