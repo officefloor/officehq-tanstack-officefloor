@@ -9,7 +9,7 @@ import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
 // For every period on the sheet, a person's due-total for it: the dues of their counted claims whose due-by falls in it; for a
 // closed period, the one fixed when it was closed (0.00 for a person added since). A period's due-total is the sum
 // of these. Then, for every period, a person's carried figure: the dues of their counted claims whose due-by falls in an
-// earlier period and that were still OPEN or PENDING at the end of it.
+// earlier period and that were still OPEN or PENDING at the end of it; for a closed period, the one fixed when it was closed.
 function PeriodHeaders() {
   const periods = usePeriods();
   return (

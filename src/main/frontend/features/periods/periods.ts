@@ -9,12 +9,12 @@ import type { Settings } from '../roles/roles';
 /** A sheet's period as the store holds it: its name (unique on the sheet) and its from and to date
  *  (YYYY-MM-DD), inclusive. No two periods overlap. A closed period keeps the due-total fixed when it was closed
  *  (`closedTotal`, null while open), and each person's fixed then (`personTotals`, by person id; empty while
- *  open), until a steward reopens it. A soft-closed period (`softClosed`) keeps them fixed the same way, while claims
+ *  open), and each person's carried figure fixed then (`personCarried`, by person id; empty while open), until a steward reopens it. A soft-closed period (`softClosed`) keeps them fixed the same way, while claims
  *  whose due-by falls in it can still be added, edited and change status; it can be closed (fixing them afresh) or reopened.
  *  A period's `cap` (null for none) is the most OPEN or PENDING claims a person may have whose due-by falls in it: opening one more is refused. */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; softClosed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>; cap: number | null;
+  personTotals: Record<string, string>; cap: number | null; personCarried: Record<string, string>;
 };
 
 export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -75,9 +75,11 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
 
 /** A person's carried figure for a period: the dues (with any late charge, as shown now) of their claims that count whose
  *  due-by falls in a period ending before this one starts and that were still OPEN or PENDING at the end of this one's
- *  last day (by the status log, as `personPeriodDue` counts), added up, skipping n/a; 0.00 for nothing carried. */
+ *  last day (by the status log, as `personPeriodDue` counts), added up, skipping n/a; 0.00 for nothing carried. For a closed
+ *  (or soft-closed) period, the one fixed when it was closed — 0.00 for a person added since. */
 export function personPeriodCarried(period: Period, periods: Period[], person: Person, people: Person[] | undefined,
   claims: Claim[], rates: Rate[] | undefined, settings: Settings | undefined, today: string | undefined): string {
+  if (period.closed || period.softClosed) return period.personCarried?.[String(person.id)] ?? '0.00';
   const held = holdsOf(people);
   const earlier = periods.filter((q) => q.to < period.from);
   return sumDue(claims

@@ -32,7 +32,7 @@ public class AutoClosePeriods {
                 .sorted(Comparator.comparing(Period::getToDate).thenComparing(Period::getId))
                 .toList();
         for (Period period : due) {
-            ClosePeriod.fix(period, sheet, claims, people, rates, grades, log);
+            ClosePeriod.fix(period, repository, sheet, claims, people, rates, grades, log);
             history.recordOn(period, period.getToDate());
             repository.saveAndFlush(period);
             audit.record("PERIOD_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
