@@ -1,0 +1,95 @@
+diff --git a/src/main/frontend/features/holidays/holidays.slot.tsx b/src/main/frontend/features/holidays/holidays.slot.tsx
+index 83abc7d4..c9332aee 100644
+--- a/src/main/frontend/features/holidays/holidays.slot.tsx
++++ b/src/main/frontend/features/holidays/holidays.slot.tsx
+@@ -4,6 +4,8 @@ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { claimsQueryKey } from '../claims/claims';
++import { peopleQueryKey } from '../people/people';
+ import { holidaysPath, holidaysQueryKey, useHolidays, type Holiday } from './holidays';
+ 
+ // The sheet's holidays, and the entry that adds one. A date that is not a calendar date, or one already on the
+@@ -18,6 +20,9 @@ function Holidays() {
+     mutationFn: (body: { date: string }) => postJson<Holiday>(holidaysPath(sheet ?? ''), body, user),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: holidaysQueryKey(sheet ?? '') });
++      // Adding a holiday can move claims' due-by, and so their figures.
++      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') });
++      await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
+       setDate('');
+     },
+   });
+diff --git a/src/main/frontend/features/holidays/holidays.ts b/src/main/frontend/features/holidays/holidays.ts
+index fd987e45..ea3fc93b 100644
+--- a/src/main/frontend/features/holidays/holidays.ts
++++ b/src/main/frontend/features/holidays/holidays.ts
+@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { useCurrentSheet } from '../session/session';
+ 
+-/** A sheet's holiday as the store holds it: a date (YYYY-MM-DD), on the sheet at most once. A claim's due-by,
+- *  fixed when it is added, is moved past the holidays on the sheet then to the next day that is not one. */
++/** A sheet's holiday as the store holds it: a date (YYYY-MM-DD), on the sheet at most once. Adding one works out
++ *  again the due-by of every claim not SETTLED or VOID whose due-by is on or after it, over the holidays now. */
+ export type Holiday = { id: number; date: string };
+ 
+ export const holidaysQueryKey = (sheetId: string) => ['sheet', sheetId, 'holidays'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/ApplyHoliday.java b/src/main/java/net/officefloor/hq/app/holiday/ApplyHoliday.java
+index 04e584d5..32ada9e3 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/ApplyHoliday.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/ApplyHoliday.java
+@@ -10,9 +10,9 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Adds the holiday to the sheet; refuses a date already on its list. Every claim on the sheet that is not a draft has
+- * its due-by worked out again, with the terms it was fixed with and the holidays now; a draft keeps the due-by it was
+- * added with. */
++/** Adds the holiday to the sheet; refuses a date already on its list. Every claim on the sheet that is not SETTLED or
++ * VOID and whose due-by is on or after the new holiday has its due-by worked out again, from the date and with the
++ * terms it was fixed with, over the holidays now on the sheet; every other claim keeps its due-by. */
+ public class ApplyHoliday {
+     public void apply(@Val LocalDate date, @Val Sheet sheet, HolidayRepository repository,
+             ClaimRepository claims, Out<Holiday> holidayOut)
+@@ -22,8 +22,10 @@ public class ApplyHoliday {
+         }
+         holidayOut.set(repository.saveAndFlush(new Holiday(sheet.getId(), date)));
+         Set<LocalDate> holidays = repository.datesOf(sheet.getId());
+-        List<Claim> all = claims.findBySheetIdOrderByIdDesc(sheet.getId());
+-        all.stream().filter(c -> c.getStatus() != ClaimStatus.DRAFT).forEach(c -> c.reworkDueBy(holidays));
+-        claims.saveAllAndFlush(all);
++        List<Claim> moved = claims.findBySheetIdOrderByIdDesc(sheet.getId()).stream()
++                .filter(c -> c.getStatus() != ClaimStatus.SETTLED && c.getStatus() != ClaimStatus.VOID)
++                .filter(c -> !c.getDueBy().isBefore(date)).toList();
++        moved.forEach(c -> c.reworkDueBy(holidays));
++        claims.saveAllAndFlush(moved);
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+index 8646d044..66568bc9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+@@ -7,6 +7,10 @@ archived:
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.holiday.ValidateHoliday
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -19,6 +23,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.holiday.AuditHolidayAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.holiday.RespondWithHoliday
