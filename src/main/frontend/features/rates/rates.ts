@@ -122,6 +122,11 @@ export function sumDue(dues: string[]): string {
   return formatCents(dues.filter((d) => d !== 'n/a').reduce((n, d) => n + hundredths(d), 0n));
 }
 
+/** One two-decimal amount minus another, as a two-decimal string (a minus sign when below zero). */
+export function diffDue(a: string, b: string): string {
+  return formatCents(hundredths(a) - hundredths(b));
+}
+
 /** The sheet's total of people's figures, skipping "n/a": with three or more figures, the single highest and the
  *  single lowest are left out. */
 export function trimmedSum(dues: string[]): string {
