@@ -1,0 +1,149 @@
+diff --git a/src/main/frontend/features/claims/bulkopen.slot.tsx b/src/main/frontend/features/claims/bulkopen.slot.tsx
+new file mode 100644
+index 00000000..93b09dde
+--- /dev/null
++++ b/src/main/frontend/features/claims/bulkopen.slot.tsx
+@@ -0,0 +1,65 @@
++import { useRef, useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { usePeople, useShowRetired } from '../people/people';
++import { claimsPath, claimsQueryKey, useClaims, useSelectedClaims, type Claim } from './claims';
++
++// Opens every selected claim with one button, in list order: the people as listed, newest claim
++// first within a person, so the claims are numbered in that order. Each is opened as its own Open
++// button would (the server refuses what it refuses there, and that claim is left as it is); the
++// counts of opened and refused show once all are done, and are gone while it runs.
++function BulkOpen() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople();
++  const claims = useClaims();
++  const [showRetired] = useShowRetired();
++  const { selected, clear } = useSelectedClaims();
++  const queryClient = useQueryClient();
++  const [result, setResult] = useState<{ opened: number; refused: number } | null>(null);
++  const busy = useRef(false);
++  if (!user || !sheet) return null;
++
++  const run = async () => {
++    if (busy.current) return;
++    busy.current = true;
++    setResult(null);
++    try {
++      const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
++      const order = listed.flatMap((p) => (claims.data ?? []).filter((c) => c.personId === p.id && selected.has(c.id)));
++      let opened = 0;
++      let refused = 0;
++      for (const c of order) {
++        try {
++          await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/open`, undefined, user);
++          opened++;
++        } catch {
++          refused++;
++        }
++      }
++      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
++      clear();
++      setResult({ opened, refused });
++    } finally {
++      busy.current = false;
++    }
++  };
++
++  return (
++    <div>
++      <button type="button" data-testid="bulk-open" onClick={() => void run()}>
++        Open selected claims
++      </button>
++      {result && (
++        <>
++          {' '}Opened <span data-testid="bulk-opened">{result.opened}</span>, refused{' '}
++          <span data-testid="bulk-refused">{result.refused}</span>
++        </>
++      )}
++    </div>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 21, Component: BulkOpen });
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 8edaf083..db30f68a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,4 +1,5 @@
+ import { useQuery } from '@tanstack/react-query';
++import { useNavigate } from '@tanstack/react-router';
+ import { getJson } from '../../api/http';
+ import { useCurrentSheet } from '../session/session';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+@@ -77,3 +78,33 @@ export const isOverdue = (c: Claim, terms: string, today: string | undefined) =>
+ 
+ /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
+ export const useEditingClaim = () => useSearchParam('editClaim', asString);
++
++/** The ids of the selected claims (search param `selectedClaims`, comma-separated), a toggle for one, and a
++ *  clear. The toggle works from the URL as it is when it runs, so quick clicks in a row each keep the others'. */
++export function useSelectedClaims() {
++  const [ids] = useSearchParam('selectedClaims', asIds);
++  const navigate = useNavigate();
++  const update = (change: (ids: Set<number>) => void) =>
++    void navigate({
++      to: '.',
++      search: (prev: Record<string, unknown>) => {
++        const next = { ...prev };
++        const set = new Set(asIds(prev.selectedClaims));
++        change(set);
++        if (set.size === 0) delete next.selectedClaims;
++        else next.selectedClaims = [...set].join(',');
++        return next;
++      },
++      replace: true,
++    });
++  return {
++    selected: new Set(ids),
++    toggle: (id: number, on: boolean) => update((set) => (on ? set.add(id) : set.delete(id))),
++    clear: () => update((set) => set.clear()),
++  };
++}
++
++const asIds = (raw: unknown): number[] =>
++  raw === undefined || raw === null || raw === ''
++    ? []
++    : String(raw).split(',').map(Number).filter((n) => Number.isInteger(n));
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 85f6f55f..588182a0 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -8,7 +8,7 @@ import { gradeOn, type Person } from '../people/people';
+ import { chargedOf, useRates } from '../rates/rates';
+ import { periodOn, usePeriods } from '../periods/periods';
+ import { DEFAULT_TERMS, useSettings } from '../roles/roles';
+-import { claimsPath, claimsQueryKey, dueByOf, isOverdue, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
++import { claimsPath, claimsQueryKey, dueByOf, isOverdue, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
+ 
+ // A person's claims, newest first, with the claim form that adds one — or, while one of their
+ // claims' editor is open, saves its changes.
+@@ -19,6 +19,7 @@ function ClaimsHeader() {
+ function PersonClaims({ person }: { person: Person }) {
+   const [sheet] = useCurrentSheet();
+   const [editing, setEditing] = useEditingClaim();
++  const { selected, toggle } = useSelectedClaims();
+   const claims = useClaims();
+   const rates = useRates();
+   const periods = usePeriods();
+@@ -33,6 +34,12 @@ function PersonClaims({ person }: { person: Person }) {
+       <ul data-testid="claims">
+         {mine.map((c) => (
+           <li key={c.id} data-testid={`claim-row-${c.id}`}>
++            <input
++              type="checkbox"
++              data-testid="claim-select"
++              checked={selected.has(c.id)}
++              onChange={(e) => toggle(c.id, e.target.checked)}
++            />{' '}
+             <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+             <span data-testid="claim-amount">{c.amount}</span>{' '}
+             <span data-testid="claim-date">{c.date}</span>{' '}
