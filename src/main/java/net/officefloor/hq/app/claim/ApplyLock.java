@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /** Opens the claim's editor for the user: locks the claim for everyone else (and releases any other claim the user
- *  held). Refuses a claim that cannot be edited — not a DRAFT, or dated in a closed period — which takes no lock, and
+ *  held). Refuses a claim that cannot be edited — not a DRAFT, or whose due-by is in a closed period — which takes no lock, and
  *  a claim another user holds locked. */
 public class ApplyLock {
     public void apply(@Val Sheet sheet, @Val Claim claim, ClaimRepository repository, PeriodRepository periods,
@@ -16,7 +16,7 @@ public class ApplyLock {
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw new ClaimStatusException("Only a draft claim can be edited; void it and add a new one.");
         }
-        if (periods.isClosedOn(sheet.getId(), claim.getDate())) {
+        if (periods.isClosedOn(sheet.getId(), claim.getDueBy())) {
             throw new ClaimStatusException("No claim can be edited in a closed period.");
         }
         String by = AuditUser.decode(user);

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
 import { gradeOn, type Person } from '../people/people';
-import { countsAsOf, holdsOf, type Claim } from '../claims/claims';
+import { countsAsOf, dueByOf, holdsOf, type Claim } from '../claims/claims';
 import { chargedOf, sumDue, type Rate } from '../rates/rates';
 import type { Settings } from '../roles/roles';
 
@@ -10,7 +10,7 @@ import type { Settings } from '../roles/roles';
  *  (YYYY-MM-DD), inclusive. No two periods overlap. A closed period keeps the due-total fixed when it was closed
  *  (`closedTotal`, null while open), and each person's fixed then (`personTotals`, by person id; empty while
  *  open), until a steward reopens it. A soft-closed period (`softClosed`) keeps them fixed the same way, while claims
- *  dated in it can still be added, edited and change status; it can be closed (fixing them afresh) or reopened. */
+ *  whose due-by falls in it can still be added, edited and change status; it can be closed (fixing them afresh) or reopened. */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; softClosed: boolean; closedTotal: string | null;
   personTotals: Record<string, string>;
@@ -44,7 +44,7 @@ export function periodOn(periods: Period[] | undefined, date: string): Period | 
   return (periods ?? []).find((p) => p.from <= date && date <= p.to);
 }
 
-/** A period's due-total: the dues (with any late charge, as shown now) of the claims whose date falls in it that counted
+/** A period's due-total: the dues (with any late charge, as shown now) of the claims whose due-by falls in it that counted
  *  by the status they had at the end of its last day (not a person's unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one fixed when it was closed. */
 export function periodDue(period: Period, people: Person[] | undefined, claims: Claim[], rates: Rate[] | undefined,
   settings: Settings | undefined, today: string | undefined): string {
@@ -52,11 +52,11 @@ export function periodDue(period: Period, people: Person[] | undefined, claims: 
   const personOf = new Map((people ?? []).map((p) => [p.id, p]));
   const held = holdsOf(people);
   return sumDue(claims
-    .filter((c) => countsAsOf(c, held, today, period.to) && personOf.has(c.personId) && periodOn([period], c.date))
+    .filter((c) => countsAsOf(c, held, today, period.to) && personOf.has(c.personId) && periodOn([period], dueByOf(c)))
     .map((c) => chargedOf(c, rates, gradeOn(personOf.get(c.personId)!, c.date), settings, today)));
 }
 
-/** A person's due-total for a period: the dues (with any late charge, as shown now) of their claims whose date falls in
+/** A person's due-total for a period: the dues (with any late charge, as shown now) of their claims whose due-by falls in
  *  it that counted by the status they had at the end of its last day
  *  (not their unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one
  *  fixed when it was closed (or soft-closed) — 0.00 for a person added since. */
@@ -65,6 +65,6 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
   if (period.closed || period.softClosed) return period.personTotals?.[String(person.id)] ?? '0.00';
   const held = holdsOf(people);
   return sumDue(claims
-    .filter((c) => c.personId === person.id && countsAsOf(c, held, today, period.to) && periodOn([period], c.date))
+    .filter((c) => c.personId === person.id && countsAsOf(c, held, today, period.to) && periodOn([period], dueByOf(c)))
     .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
 }

@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.period.Period;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * loses any figure a statement bound it to; a new OPEN claim of the same person gets the split-off amount, the same
  * date and note, the next number (as opening gives one), the signed-in user as who opened it, a due-by fixed now from
  * the terms in force on the date, and the original's number as the one it was split from. A PENDING, deferred, settled
- * or any other non-OPEN claim, or one dated in a closed period, is refused. Returns the split, for the audit.
+ * or any other non-OPEN claim, or one whose due-by is in a closed period, is refused. The new claim is numbered in the period its own due-by falls in, and is a late entry when that period is soft-closed. Returns the split, for the audit.
  */
 public class ApplySplit {
 
@@ -36,7 +37,7 @@ public class ApplySplit {
             throw new ClaimStatusException("The amount to split off must be a number with up to two decimals.");
         }
         BigDecimal amount = new BigDecimal(amountField).setScale(2);
-        if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
+        if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
             throw new ClaimStatusException("A claim in a closed period cannot be split.");
         }
         // Lock the sheet first (taking a number locks it), then re-read the claim so a concurrent change is seen.
@@ -53,10 +54,13 @@ public class ApplySplit {
         if (amount.signum() <= 0 || amount.compareTo(claim.getAmount()) >= 0) {
             throw new ClaimStatusException("The amount to split off must be more than 0.00 and less than the claim's.");
         }
+        int terms = people.findById(claim.getPersonId())
+                .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
+        LocalDate dueBy = claim.getDate().plusDays(terms);
         String number;
         if (perPeriod) {
             String prefix = periods.findBySheetIdOrderByFromDateAscIdAsc(claim.getSheetId()).stream()
-                    .filter(p -> p.contains(claim.getDate())).map(Period::getName).findFirst().orElse(null);
+                    .filter(p -> p.contains(dueBy)).map(Period::getName).findFirst().orElse(null);
             String seq = prefix == null ? "X" : "P:" + prefix;
             number = (prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq);
         } else {
@@ -71,9 +75,8 @@ public class ApplySplit {
         made.setNumber(number);
         made.setOpenedBy(user);
         made.setSplitFrom(claim.getNumber());
-        int terms = people.findById(claim.getPersonId())
-                .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
-        made.setDueBy(claim.getDate().plusDays(terms));
+        made.setDueBy(dueBy);
+        made.setLateEntry(periods.isSoftClosedOn(claim.getSheetId(), dueBy));
         made = repository.saveAndFlush(made);
         entityManager.refresh(made);
         ClaimRules.log(made, sheet, log, people, rates, grades, user);

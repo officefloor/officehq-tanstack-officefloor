@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /** Soft-closes the period, fixing each person's due-total for it and its own exactly as closing does, while claims
- *  dated in it can still be added, edited and change status. Refuses a period already closed or soft-closed, and a
+ *  whose due-by falls in it can still be added, edited and change status. Refuses a period already closed or soft-closed, and a
  *  soft close by a role the sheet's permission matrix does not allow to close. */
 public class SoftClosePeriod {
     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,

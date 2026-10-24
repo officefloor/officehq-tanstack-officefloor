@@ -46,7 +46,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-amount">{c.amount}</span>{' '}
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
-            <span data-testid="claim-period">{periodOn(periods.data, c.date)?.name ?? ''}</span>{' '}
+            <span data-testid="claim-period">{periodOn(periods.data, dueByOf(c))?.name ?? ''}</span>{' '}
             <span data-testid="claim-due">{chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)}</span>{' '}
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
@@ -103,7 +103,7 @@ const ACTIONS = [
 // non-steward approving or rejecting a PENDING claim, an open, settle or void by a role the permission matrix does
 // not allow, or rejecting one without a reason (typed beside the reject
 // button). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
-// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim, or of a claim in a
+// the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim, or of a claim whose due-by is in a
 // closed period, shows the claim's error instead of opening its editor (an open claim is voided and added anew). Opening a
 // DRAFT's editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes: another
 // user's edit button on a locked claim (and a viewer's) shows the claim's error, and their editor cannot save. A role the permission matrix allows (a steward, by the standing
@@ -113,14 +113,14 @@ const ACTIONS = [
 // the totals); anyone else, or a later day, shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
 // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
 // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
-// in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
+// whose due-by is in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
 // proofs count by one; on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
 // threshold in force on its date cannot be settled or approved while it has no proof: that shows the claim's error.
 // An OPEN claim splits off an amount (typed beside the split button; more than 0.00 and less than its amount) into a
-// new OPEN claim; any other status, a deferred claim, a claim in a closed period or an amount out of range shows the
+// new OPEN claim; any other status, a deferred claim, a claim whose due-by is in a closed period or an amount out of range shows the
 // claim's error. A steward re-dates an OPEN or PENDING claim (the date typed beside the re-date button); anyone
-// else, any other status, a claim in a closed period, a new date in one or after the person's retirement shows the
-// claim's error.
+// else, any other status, a claim whose due-by is in a closed period, or a new date after the person's retirement shows
+// the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number.
 function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   sheet: string; claim: Claim; onEdit: () => void; editorSubmits: number; children: ReactNode;
 }) {
@@ -198,7 +198,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   }, [editorSubmits]);
   const action = change.variables?.action;
   const periods = usePeriods();
-  const closed = !!periodOn(periods.data, claim.date)?.closed;
+  const closed = !!periodOn(periods.data, dueByOf(claim))?.closed;
   return (
     <>
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -352,11 +352,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
               : lock.error instanceof HttpError && lock.error.status === 403
               ? 'A viewer cannot edit a claim.'
               : closed
-              ? 'This claim is dated in a closed period, so it cannot be edited.'
+              ? 'This claim is due by a date in a closed period, so it cannot be edited.'
               : `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
             : split.isError
             ? closed
-              ? 'This claim is dated in a closed period, so it cannot be split.'
+              ? 'This claim is due by a date in a closed period, so it cannot be split.'
               : claim.status !== 'OPEN' || isDeferred(claim, today)
               ? `Only an open claim that is not deferred can be split; this one is ${isDeferred(claim, today) ? 'deferred' : claim.status}.`
               : `The amount to split off must be more than 0.00 and less than the claim's ${claim.amount}.`
@@ -366,11 +366,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? claim.status !== 'OPEN' && claim.status !== 'PENDING'
               ? `Only an open or pending claim can be re-dated; this one is ${claim.status}.`
               : closed
-              ? 'This claim is dated in a closed period, so it cannot be re-dated.'
-              : 'Only a steward can re-date a claim, to a date in no closed period and not after the person\'s retirement.'
+              ? 'This claim is due by a date in a closed period, so it cannot be re-dated.'
+              : 'Only a steward can re-date a claim, while its due-by is in no closed period, to a date not after the person\'s retirement.'
             : defer.isError
             ? closed
-              ? 'This claim is dated in a closed period, so it cannot be deferred.'
+              ? 'This claim is due by a date in a closed period, so it cannot be deferred.'
               : claim.status !== 'OPEN'
               ? `Only an open claim can be deferred; this one is ${claim.status}.`
               : `A claim can only be deferred to a date after the sheet's today (${today ?? ''}).`
@@ -379,11 +379,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
               ? 'Your role is not allowed to move a claim to another person.'
               : `A ${claim.status} claim cannot move to another person.`
             : editRefused && closed
-            ? 'This claim is dated in a closed period, so it cannot be edited.'
+            ? 'This claim is due by a date in a closed period, so it cannot be edited.'
             : editRefused
             ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
             : closed
-            ? 'This claim is dated in a closed period, so its status cannot change.'
+            ? 'This claim is due by a date in a closed period, so its status cannot change.'
             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can approve or reject a pending claim.'
             : action === 'void' && claim.status === 'SETTLED' && change.error instanceof HttpError && change.error.status === 403
@@ -486,8 +486,8 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
       {save.isError && (
         <span data-testid="claim-form-error">
           {save.error instanceof HttpError && save.error.status === 423 && 'Another user is editing this claim. '}
-          The amount must be a number with up to two decimals, and the date a calendar date not in a closed
-          period nor after the person's retirement date; a negative amount is a correction and must name, by
+          The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
+          terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
           number, a settled claim of this person (only a correction may); only a draft claim can be edited.
         </span>
       )}

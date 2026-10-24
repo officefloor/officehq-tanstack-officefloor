@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 /**
  * Re-settles a SETTLED claim: freezes its due again at the figure it would have today as an open claim bound by no
  * statement (today's rates, grades, floor and late charge; n/a leaves it live). Only a steward re-settles, and a claim
- * dated in a closed period, or in any other status, cannot be. Returns the due it had before, for the audit.
+ * whose due-by is in a closed period, or in any other status, cannot be. Returns the due it had before, for the audit.
  */
 public class ApplyResettle {
     public Resettled apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository, PersonRepository people,
@@ -23,7 +23,7 @@ public class ApplyResettle {
             @RequestHeader(name = "X-User", required = false) String userHeader)
             throws ClaimStatusException, ClerkLimitException {
         String user = AuditUser.decode(userHeader);
-        if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
+        if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
             throw new ClaimStatusException("A claim in a closed period cannot be re-settled.");
         }
         if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user))) {

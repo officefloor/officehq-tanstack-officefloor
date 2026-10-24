@@ -23,7 +23,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Closes the period, fixing each person's due-total for it as it is now — the dues (with any late charge, as shown now) of the claims dated in it that counted by the status they had at the end of its last day (not a person's
+/** Closes the period, fixing each person's due-total for it as it is now — the dues (with any late charge, as shown now) of the claims whose due-by falls in it that counted by the status they had at the end of its last day (not a person's
  *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a, 0.00 for one with none — and its own, their sum. A soft-closed period can be closed, fixing them afresh. Refuses a period already closed, and a close by a role the sheet's permission matrix does not
  *  allow to (by the standing rule, clerk and steward may). */
 public class ClosePeriod {
@@ -60,7 +60,7 @@ public class ClosePeriod {
         byId.keySet().forEach(id -> totals.put(id, BigDecimal.ZERO.setScale(2)));
         claims.findBySheetIdOrderByIdDesc(period.getSheetId()).stream()
                 .filter(c -> byId.containsKey(c.getPersonId()) && ClaimFigures.countsAsOf(c, then.get(c.getId()), byId.get(c.getPersonId()), sheet.getToday())
-                        && period.contains(c.getDate()))
+                        && period.contains(c.getDueBy()))
                 .forEach(c -> {
                     BigDecimal due = new ClaimFigures(sheetRates, new PersonGrades(byId.get(c.getPersonId()).getGrade(),
                             dated.getOrDefault(c.getPersonId(), List.of())), sheet).due(c);

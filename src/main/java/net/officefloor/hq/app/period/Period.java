@@ -38,11 +38,11 @@ public class Period {
     @Column(name = "to_date", nullable = false)
     private LocalDate toDate;
 
-    /** Whether the period is closed: no claim dated in it can be added, edited or change status. */
+    /** Whether the period is closed: no claim whose due-by falls in it can be added, edited or change status. */
     @Column(nullable = false)
     private boolean closed;
 
-    /** Whether the period is soft-closed: its figures are fixed as on closing, but claims dated in it can still be
+    /** Whether the period is soft-closed: its figures are fixed as on closing, but claims whose due-by falls in it can still be
      *  added, edited and change status. A period is never both closed and soft-closed. */
     @Column(name = "soft_closed", nullable = false)
     private boolean softClosed;

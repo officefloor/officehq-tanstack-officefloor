@@ -57,7 +57,8 @@ public final class ClaimRules {
     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
             PeriodRepository periods, PersonGradeRepository grades) throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
-        if (periods.isClosedOn(sheet.getId(), date)) {
+        LocalDate dueBy = date.plusDays(sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date));
+        if (periods.isClosedOn(sheet.getId(), dueBy)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");
         }
         if (person.retiredOn(date)) {
@@ -66,8 +67,8 @@ public final class ClaimRules {
         LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
-        claim.setLateEntry(periods.isSoftClosedOn(sheet.getId(), date));
-        claim.setDueBy(date.plusDays(sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date)));
+        claim.setLateEntry(periods.isSoftClosedOn(sheet.getId(), dueBy));
+        claim.setDueBy(dueBy);
         return claim;
     }
 

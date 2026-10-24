@@ -6,7 +6,7 @@ import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { personPeriodDue, usePeriods } from './periods';
 
-// For every period on the sheet, a person's due-total for it: the dues of their counted claims dated in it; for a
+// For every period on the sheet, a person's due-total for it: the dues of their counted claims whose due-by falls in it; for a
 // closed period, the one fixed when it was closed (0.00 for a person added since). A period's due-total is the sum
 // of these.
 function PeriodHeaders() {

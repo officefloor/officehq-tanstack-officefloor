@@ -38,7 +38,7 @@ export type Claim = {
   proofs: number;
   /** The number of the claim it was split off from, or null when it was not made by a split. */
   splitFrom: string | null;
-  /** Whether it was added while the period its date falls in was soft-closed. */
+  /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
 };
 

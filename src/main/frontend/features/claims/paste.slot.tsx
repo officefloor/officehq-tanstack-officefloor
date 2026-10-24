@@ -55,7 +55,7 @@ function PasteClaims() {
       {paste.isError && (
         <span data-testid="paste-error">
           Nothing was added: every line needs a name on the sheet and an amount, 0.00 or more, with up to two
-          decimals; a date must be a calendar date, not in a closed period nor after the person's retirement.
+          decimals; a date must be a calendar date, due by a date in no closed period and not after the person's retirement.
         </span>
       )}
     </form>

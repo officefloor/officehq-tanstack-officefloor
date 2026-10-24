@@ -58,7 +58,7 @@ function QuickAddBar() {
       {add.isError && (
         <span data-testid="quick-error">
           A name is required, the amount must be a number, 0.00 or more, with up to two decimals, and no claim can
-          be added in a closed period.
+          be added whose due-by falls in a closed period.
         </span>
       )}
     </form>

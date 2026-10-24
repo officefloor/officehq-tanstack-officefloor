@@ -3,9 +3,7 @@ package net.officefloor.hq.app.claim;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Objects;
 import net.officefloor.hq.app.AuditUser;
-import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.role.Role;
@@ -16,11 +14,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Re-dates an OPEN or PENDING claim; only a steward may. A claim in any other status, a claim in a closed period, a
- * new date in a closed period, or a new date after the person's retirement date is refused. The due-by stays as it
- * was fixed and a figure bound by a statement stays bound; the claim's period follows the new date. While the
- * sheet's period numbering is on and the claim moves to another period, it takes the next number of its new period's
- * sequence (its old number is never given again). Returns the old and new date, for the audit.
+ * Re-dates an OPEN or PENDING claim; only a steward may. A claim in any other status, a claim whose due-by is in a
+ * closed period, or a new date after the person's retirement date is refused. The due-by stays as it was fixed and a
+ * figure bound by a statement stays bound; so the claim's period (the one its due-by falls in) and its number stay as
+ * they were. Returns the old and new date, for the audit.
  */
 public class ApplyRedate {
     public Redated apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository, EntityManager entityManager,
@@ -46,28 +43,16 @@ public class ApplyRedate {
         if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.PENDING) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be re-dated.");
         }
-        if (periods.isClosedOn(claim.getSheetId(), claim.getDate()) || periods.isClosedOn(claim.getSheetId(), date)) {
-            throw new ClaimStatusException("A claim cannot be re-dated in or into a closed period.");
+        if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
+            throw new ClaimStatusException("A claim cannot be re-dated while its due-by is in a closed period.");
         }
         if (people.findById(claim.getPersonId()).map(p -> p.retiredOn(date)).orElse(false)) {
             throw new ClaimStatusException("No claim can be dated after the person's retirement date.");
         }
         LocalDate old = claim.getDate();
-        if (perPeriod) {
-            String was = periodOf(periods, claim.getSheetId(), old);
-            String now = periodOf(periods, claim.getSheetId(), date);
-            if (!Objects.equals(was, now)) {
-                String seq = now == null ? "X" : "P:" + now;
-                claim.setNumber((now == null ? "X" : now) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq));
-            }
-        }
         claim.setDate(date);
         repository.saveAndFlush(claim);
         return new Redated(old, date);
     }
 
-    private static String periodOf(PeriodRepository periods, String sheetId, LocalDate date) {
-        return periods.findBySheetIdOrderByFromDateAscIdAsc(sheetId).stream()
-                .filter(p -> p.contains(date)).map(Period::getName).findFirst().orElse(null);
-    }
 }

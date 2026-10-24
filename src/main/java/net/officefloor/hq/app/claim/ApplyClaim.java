@@ -7,7 +7,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
 /** Saves the claim's changes; refuses them unless the claim is a DRAFT (an open claim is voided and added anew
- * instead), when its date, or the one it would move to, is in a closed period, and when it would move after its
+ * instead), when its due-by (fixed when it was created; editing does not move it) is in a closed period, and when it would move after its
  * person's retirement date, and a correction that does not name a settled claim of its person. Saving closes the
  * claim's editor: it releases the claim's lock. */
 public class ApplyClaim {
@@ -17,7 +17,7 @@ public class ApplyClaim {
             throw new InvalidClaimException("Only a draft claim can be edited; void it and add a new one.");
         }
         LocalDate date = input.date() != null ? input.date() : sheet.getToday();
-        if (periods.isClosedOn(sheet.getId(), claim.getDate()) || periods.isClosedOn(sheet.getId(), date)) {
+        if (periods.isClosedOn(sheet.getId(), claim.getDueBy())) {
             throw new InvalidClaimException("No claim can be edited in a closed period.");
         }
         if (people.findById(claim.getPersonId()).map(p -> p.retiredOn(date)).orElse(false)) {

@@ -9,12 +9,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Defers an OPEN claim until a date after the sheet's today. A claim in any other status, a date not after the sheet's
- * today, or a claim dated in a closed period is refused. Returns the date, for the audit.
+ * today, or a claim whose due-by is in a closed period is refused. Returns the date, for the audit.
  */
 public class ApplyDefer {
     public LocalDate apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository, PeriodRepository periods,
             @RequestParam(name = "until", required = false) String untilParam) throws ClaimStatusException {
-        if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
+        if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
             throw new ClaimStatusException("A claim in a closed period cannot be deferred.");
         }
         if (claim.getStatus() != ClaimStatus.OPEN) {
