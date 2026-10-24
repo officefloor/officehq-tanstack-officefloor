@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.AuditUser;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -28,7 +29,7 @@ public class ApplySplit {
 
     public Split apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository, EntityManager entityManager,
             PeriodRepository periods, PersonRepository people, PersonGradeRepository grades, RateRepository rates,
-            ClaimLogRepository log,
+            ClaimLogRepository log, HolidayRepository holidays,
             @RequestHeader(name = "X-User", required = false) String userHeader,
             @RequestParam(name = "amount", required = false) String amountParam) throws ClaimStatusException {
         String user = AuditUser.decode(userHeader);
@@ -56,7 +57,7 @@ public class ApplySplit {
         }
         int terms = people.findById(claim.getPersonId())
                 .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
-        LocalDate dueBy = claim.getDate().plusDays(terms);
+        LocalDate dueBy = holidays.nextNonHoliday(claim.getSheetId(), claim.getDate().plusDays(terms));
         String number;
         if (perPeriod) {
             String prefix = periods.findBySheetIdOrderByFromDateAscIdAsc(claim.getSheetId()).stream()

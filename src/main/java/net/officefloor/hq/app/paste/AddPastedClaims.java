@@ -9,6 +9,7 @@ import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRules;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.InvalidClaimException;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public class AddPastedClaims {
     public void add(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, ClaimRepository claims,
             PeriodRepository periods, PersonGradeRepository grades, RateRepository rates, ClaimLogRepository log,
+            HolidayRepository holidays,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<PastedClaims> addedOut) throws InvalidClaimException {
         List<Person> onSheet = people.findBySheetIdOrderByIdAsc(sheet.getId());
@@ -41,7 +43,7 @@ public class AddPastedClaims {
                 throw new InvalidClaimException("Line " + at + ": " + line.name() + " is not on the sheet.");
             }
             try {
-                made.add(ClaimRules.make(line.claim(), sheet, person, claims, periods, grades));
+                made.add(ClaimRules.make(line.claim(), sheet, person, claims, periods, grades, holidays));
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + at + ": " + e.getMessage());
             }

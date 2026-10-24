@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -53,11 +54,13 @@ public final class ClaimRules {
         return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects);
     }
 
-    /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. */
+    /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is its
+     *  date plus its terms, moved past the sheet's holidays now on its list to the next day that is not one. */
     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
-            PeriodRepository periods, PersonGradeRepository grades) throws InvalidClaimException {
+            PeriodRepository periods, PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
-        LocalDate dueBy = date.plusDays(sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date));
+        LocalDate dueBy = holidays.nextNonHoliday(sheet.getId(),
+                date.plusDays(sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date)));
         if (periods.isClosedOn(sheet.getId(), dueBy)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");
         }
