@@ -45,6 +45,18 @@ public class ApplyClaimStatus {
             @RequestHeader(name = "X-User", required = false) String userHeader,
             @RequestParam(name = "reason", required = false) String reason,
             @RequestParam(name = "batch", required = false) String batch) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+        return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
+                userHeader, reason, batch, false);
+    }
+
+    /** The change itself; on a dry run (a settle only) it refuses what the settle would refuse and changes nothing. */
+    static String run(String action, Claim claim, ClaimRepository repository,
+            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
+            Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
+            String userHeader, String reason, String batch, boolean dryRun) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+        if (dryRun && !"settle".equals(action)) {
+            throw new ClaimStatusException("Only a settle can be checked.");
+        }
         String user = AuditUser.decode(userHeader);
         if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
             throw new ClaimStatusException("A claim in a closed period cannot change status.");
@@ -126,6 +138,9 @@ public class ApplyClaimStatus {
                         personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());
                 if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
                     throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof to be settled or approved.");
+                }
+                if (dryRun) {
+                    return claim.getNumber();
                 }
                 BigDecimal limit = sheet.getClerkLimit();
                 if ("settle".equals(action) && limit != null && due != null && due.compareTo(limit) > 0 && !steward) {

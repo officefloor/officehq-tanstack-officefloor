@@ -7,9 +7,10 @@ import { usePeople, useShowRetired } from '../people/people';
 import { claimsPath, claimsQueryKey, useClaims, useSelectedClaims, type Claim } from './claims';
 
 // Settles every selected claim with one button, in list order: the people as listed, newest claim
-// first within a person. Each is settled as its own Settle button would, by the signed-in user (the
-// server refuses what it refuses there, and that claim is left as it is; one a clerk settles above
-// the clerk limit goes PENDING, and counts as settled); the counts of settled and refused show once
+// first within a person. Each is settled as its own Settle button would, by the signed-in user; it is
+// all or nothing: when the server would refuse any of them, none is settled and every one counts as
+// refused (one a clerk settles above the clerk limit goes PENDING, and counts as settled). Once a batch
+// is settled the server records it (BATCH_SETTLED); the counts of settled and refused show once
 // all are done, and are gone while it runs. Every settle of one press carries the same batch key: a press that
 // settles at least one claim is a batch, numbered by the server; the sheet's last batch number shows beside the button.
 function BulkSettle() {
@@ -35,12 +36,28 @@ function BulkSettle() {
       let settled = 0;
       let refused = 0;
       const batch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      // All or nothing: every claim is checked first (nothing is written); one refusal refuses them all.
+      let ok = true;
       for (const c of order) {
         try {
-          await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/settle?batch=${encodeURIComponent(batch)}`, undefined, user);
-          settled++;
+          await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/check/settle`, undefined, user);
         } catch {
-          refused++;
+          ok = false;
+        }
+      }
+      if (!ok) {
+        refused = order.length;
+      } else {
+        for (const c of order) {
+          try {
+            await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/settle?batch=${encodeURIComponent(batch)}`, undefined, user);
+            settled++;
+          } catch {
+            refused++;
+          }
+        }
+        if (settled > 0) {
+          await putJson(`/api/sheets/${encodeURIComponent(sheet)}/settle-batches/${encodeURIComponent(batch)}`, undefined, user);
         }
       }
       await Promise.all([
