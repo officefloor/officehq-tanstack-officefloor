@@ -1,15 +1,20 @@
 package net.officefloor.hq.app.pool;
 
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Adds the pool to the sheet; refuses a name already a pool's. */
+/** Adds the pool to the sheet; refuses a name already a pool's or a crew's. */
 public class ApplyPool {
-    public void apply(@Val PoolRequest request, @Val Sheet sheet, PoolRepository repository, Out<Pool> poolOut)
+    public void apply(@Val PoolRequest request, @Val Sheet sheet, PoolRepository repository, CrewRepository crews,
+            Out<Pool> poolOut)
             throws InvalidPoolException {
         if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())) {
             throw new InvalidPoolException("There is already a pool with that name.");
+        }
+        if (crews.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())) {
+            throw new InvalidPoolException("There is already a crew with that name.");
         }
         poolOut.set(repository.saveAndFlush(new Pool(sheet.getId(), request.name())));
     }

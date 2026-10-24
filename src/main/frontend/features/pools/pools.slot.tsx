@@ -8,7 +8,7 @@ import { usePeople } from '../people/people';
 import { poolsPath, poolsQueryKey, usePools, type Pool } from './pools';
 
 // The sheet's pools, each with its members (with their cut of the pot when the pool is balanced), total share and whether it is balanced, and the entry that adds a pool.
-// A blank name, or one already a pool's, is refused by the server and shows the error beside the entry, which goes
+// A blank name, or one already a pool's or a crew's, is refused by the server and shows the error beside the entry, which goes
 // as soon as the entry changes.
 function Pools() {
   const [user] = useCurrentUser();
@@ -54,14 +54,15 @@ function Pools() {
           Add pool
         </button>
         {add.isError && (
-          <span data-testid="pool-form-error">A pool's name must not be blank or already a pool's.</span>
+          <span data-testid="pool-form-error">A pool's name must not be blank or already a pool's or a crew's.</span>
         )}
       </form>
     </section>
   );
 }
 
-// A pool's row: its members with their shares, its total and balance, and the member select (a person, or another
+// A pool's row: its members with their shares, its total and balance, and (unless it is a crew, whose members are its
+// lead and members) the member select (a person, or another
 // pool as pool:<name>) and share that add a member. A person already in the pool, a pool already a member of one, one
 // that would contain itself or make a chain of pools more than three deep, or a share that is not more than 0.00 and
 // at most 100.00 (two decimals), or a to-date before the from-date (both optional), is refused and shows the error on the pool, which goes as soon as the entry changes.
@@ -105,53 +106,57 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
       <td data-testid="pool-total-share">{pool.totalShare}</td>
       <td data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</td>
       <td>
-        <select
-          data-testid="pool-member-select"
-          value={memberKey}
-          onChange={(e) => { setMemberKey(e.target.value); add.reset(); }}
-        >
-          <option value="">Choose a person or pool</option>
-          {(people.data ?? []).map((p) => (
-            <option key={p.id} value={String(p.id)}>{p.name}</option>
-          ))}
-          {pools.map((p) => (
-            <option key={`pool-${p.id}`} value={`pool:${p.id}`}>{`pool:${p.name}`}</option>
-          ))}
-        </select>
-        <input
-          data-testid="pool-member-share"
-          placeholder="Share %"
-          value={share}
-          onChange={(e) => { setShare(e.target.value); add.reset(); }}
-        />
-        <input
-          data-testid="pool-member-from"
-          placeholder="from (open)"
-          value={from}
-          onChange={(e) => { setFrom(e.target.value); add.reset(); }}
-        />
-        <input
-          data-testid="pool-member-to"
-          placeholder="to (open)"
-          value={to}
-          onChange={(e) => { setTo(e.target.value); add.reset(); }}
-        />
-        <button
-          type="button"
-          data-testid="pool-member-add"
-          disabled={add.isPending}
-          onClick={() => submit({
-            personId: memberKey === '' || memberKey.startsWith('pool:') ? null : Number(memberKey),
-            memberPoolId: memberKey.startsWith('pool:') ? Number(memberKey.slice('pool:'.length)) : null,
-            share,
-            from,
-            to,
-          })}
-        >
-          Add member
-        </button>
-        {add.isError && (
-          <span data-testid="pool-error">A member must not already be in the pool (a pool in at most one, never itself, at most three deep), with a share above 0.00 and at most 100.00, and a to-date not before the from-date.</span>
+        {!pool.crew && (
+          <>
+            <select
+              data-testid="pool-member-select"
+              value={memberKey}
+              onChange={(e) => { setMemberKey(e.target.value); add.reset(); }}
+            >
+              <option value="">Choose a person or pool</option>
+              {(people.data ?? []).map((p) => (
+                <option key={p.id} value={String(p.id)}>{p.name}</option>
+              ))}
+              {pools.filter((p) => !p.crew).map((p) => (
+                <option key={`pool-${p.id}`} value={`pool:${p.id}`}>{`pool:${p.name}`}</option>
+              ))}
+            </select>
+            <input
+              data-testid="pool-member-share"
+              placeholder="Share %"
+              value={share}
+              onChange={(e) => { setShare(e.target.value); add.reset(); }}
+            />
+            <input
+              data-testid="pool-member-from"
+              placeholder="from (open)"
+              value={from}
+              onChange={(e) => { setFrom(e.target.value); add.reset(); }}
+            />
+            <input
+              data-testid="pool-member-to"
+              placeholder="to (open)"
+              value={to}
+              onChange={(e) => { setTo(e.target.value); add.reset(); }}
+            />
+            <button
+              type="button"
+              data-testid="pool-member-add"
+              disabled={add.isPending}
+              onClick={() => submit({
+                personId: memberKey === '' || memberKey.startsWith('pool:') ? null : Number(memberKey),
+                memberPoolId: memberKey.startsWith('pool:') ? Number(memberKey.slice('pool:'.length)) : null,
+                share,
+                from,
+                to,
+              })}
+            >
+              Add member
+            </button>
+            {add.isError && (
+              <span data-testid="pool-error">A member must not already be in the pool (a pool in at most one, never itself, at most three deep), with a share above 0.00 and at most 100.00, and a to-date not before the from-date.</span>
+            )}
+          </>
         )}
       </td>
     </tr>

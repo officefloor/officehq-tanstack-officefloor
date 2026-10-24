@@ -9,6 +9,7 @@ import { useClaims } from '../claims/claims';
 import { useSettings } from '../roles/roles';
 import { sumDue, useRates } from '../rates/rates';
 import { personDue } from '../rates/due.slot';
+import { poolsQueryKey } from '../pools/pools';
 import { crewsPath, crewsQueryKey, useCrews, type Crew } from './crews';
 import type { Person } from '../people/people';
 import type { Claim } from '../claims/claims';
@@ -23,7 +24,7 @@ export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Ra
 }
 
 // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.
-// A blank name, or one already a crew's, is refused by the server and shows the error beside the entry, which goes
+// A blank name, or one already a crew's or a pool's, is refused by the server and shows the error beside the entry, which goes
 // as soon as the entry changes.
 function Crews() {
   const [user] = useCurrentUser();
@@ -37,6 +38,7 @@ function Crews() {
     mutationFn: (body: { name: string; leadId: number | null }) => postJson<Crew[]>(crewsPath(sheet ?? ''), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: crewsQueryKey(sheet ?? '') });
+      await queryClient.invalidateQueries({ queryKey: poolsQueryKey(sheet ?? '') });
       setName('');
     },
   });
@@ -81,7 +83,7 @@ function Crews() {
           Add crew
         </button>
         {add.isError && (
-          <span data-testid="crew-form-error">A crew's name must not be blank or already a crew's, and it needs a lead.</span>
+          <span data-testid="crew-form-error">A crew's name must not be blank or already a crew's or a pool's, and it needs a lead.</span>
         )}
       </form>
     </section>
@@ -106,6 +108,7 @@ function CrewRow({ crew }: { crew: Crew }) {
       postJson<Crew[]>(`${crewsPath(sheet ?? '')}/${crew.id}/members`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: crewsQueryKey(sheet ?? '') });
+      await queryClient.invalidateQueries({ queryKey: poolsQueryKey(sheet ?? '') });
     },
   });
   const submit = useSubmitOnce(add);

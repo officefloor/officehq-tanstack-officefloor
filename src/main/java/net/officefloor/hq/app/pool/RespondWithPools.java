@@ -14,6 +14,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewMember;
+import net.officefloor.hq.app.crew.CrewMemberRepository;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.sheet.InvalidTodayException;
@@ -33,12 +37,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  it to the last member with a share), so the cuts total exactly the pot. A member whose dates do not include the
  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
  *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
- *  sheet is left out. */
+ *  sheet is left out. Each crew is also a pool, listed after them (see crewPool). */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public void respond(@Val Sheet current, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
-            PoolRepository pools, PoolMemberRepository members, ObjectResponse<List<PoolResponse>> response)
+            PoolRepository pools, PoolMemberRepository members, CrewRepository crews, CrewMemberRepository crewMembers,
+            ObjectResponse<List<PoolResponse>> response)
             throws InvalidTodayException {
         LocalDate date = AsOf.dateOf(asOfParam);
         Sheet sheet = asOf.sheet(current, date);
@@ -116,13 +121,54 @@ public class RespondWithPools {
                     todo.add(new SimpleEntry<>(m.getMemberPoolId(), cuts.get(i).isEmpty() ? null : new BigDecimal(cuts.get(i))));
                 }
             }
-            shownById.put(pool.getId(), new PoolResponse(pool.getId(), pool.getName(), total.toPlainString(), balanced, shown));
+            shownById.put(pool.getId(), new PoolResponse(pool.getId(), pool.getName(), total.toPlainString(), balanced, false, shown));
         }
         List<PoolResponse> out = new ArrayList<>();
         for (Pool pool : sheetPools) {
             if (shownById.containsKey(pool.getId())) out.add(shownById.get(pool.getId()));
         }
+        // Each crew is also a pool, after the sheet's pools: its lead then its members at equal shares, with the
+        // sheet's pot, cut as any pool that is a member of none.
+        for (Crew crew : crews.findBySheetIdOrderByIdAsc(sheet.getId())) {
+            out.add(crewPool(crew, crewMembers.findByCrewIdOrderByIdAsc(crew.getId()), byId, sheet));
+        }
         response.send(out);
+    }
+
+    /** The crew as a pool (its id the crew's, negated): the lead and the members, in the order they were added, each
+     *  at an equal share of 100.00, rounded half to even to two decimals, the remainder on the lead. A person not on
+     *  the sheet (as of the date) is left out, keeping their share. */
+    private static PoolResponse crewPool(Crew crew, List<CrewMember> crewMembers, Map<Long, Person> byId, Sheet sheet) {
+        List<Long> ids = new ArrayList<>();
+        ids.add(crew.getLeadId());
+        crewMembers.forEach(m -> ids.add(m.getPersonId()));
+        BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(ids.size()), 2, RoundingMode.HALF_EVEN);
+        List<BigDecimal> shares = new ArrayList<>();
+        ids.forEach(id -> shares.add(each));
+        shares.set(0, each.add(HUNDRED.subtract(each.multiply(BigDecimal.valueOf(ids.size())))));
+        List<Person> kept = new ArrayList<>();
+        List<BigDecimal> counted = new ArrayList<>();
+        List<Boolean> held = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        boolean allRetired = true;
+        for (int i = 0; i < ids.size(); i++) {
+            Person person = byId.get(ids.get(i));
+            if (person == null) continue;
+            boolean isRetired = person.getRetiredFrom() != null;
+            kept.add(person);
+            counted.add(shares.get(i));
+            held.add(isRetired || (sheet.getToday() != null && person.heldOn(sheet.getToday())));
+            if (!isRetired) allRetired = false;
+            total = total.add(shares.get(i));
+        }
+        boolean balanced = total.compareTo(HUNDRED) == 0;
+        List<String> cuts = cuts(balanced && !allRetired ? sheet.getPot() : null, counted, held);
+        List<PoolResponse.Member> shown = new ArrayList<>();
+        for (int i = 0; i < kept.size(); i++) {
+            shown.add(new PoolResponse.Member(kept.get(i).getId(), null, kept.get(i).getName(),
+                    counted.get(i).setScale(2).toPlainString(), cuts.get(i)));
+        }
+        return new PoolResponse(-crew.getId(), crew.getName(), total.toPlainString(), balanced, true, shown);
     }
 
     /** Each member's cut of the pot by their counted share out of the counted shares of those not held, in order: ""

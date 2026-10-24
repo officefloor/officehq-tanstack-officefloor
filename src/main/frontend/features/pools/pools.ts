@@ -4,8 +4,9 @@ import { useCurrentSheet } from '../session/session';
 
 /** A sheet's pool as the store holds it: a trimmed name, on the sheet at most once, and its members, each a person
  *  of the sheet at most once with a share percent. `totalShare` is the members' shares added up, a retired member's
- *  (one with a retirement date set, whatever the date) counting as given; `balanced` is whether it is exactly 100.00. */
-export type Pool = { id: number; name: string; totalShare: string; balanced: boolean; members: PoolMember[] };
+ *  (one with a retirement date set, whatever the date) counting as given; `balanced` is whether it is exactly 100.00. A crew is also a pool (`crew`; its id the crew's, negated), listed after the sheet's
+ *  pools: its lead and members at equal shares of 100.00, the remainder on the lead, cut from the sheet's pot. */
+export type Pool = { id: number; name: string; totalShare: string; balanced: boolean; crew: boolean; members: PoolMember[] };
 
 /** A pool's member: the person, or another pool (`poolId`; the other null), its name, its share (two decimals) and its
  *  cut of the pool's pot (two decimals; "" when the pool is not balanced or has no pot, or every member is retired, or the member's dates do not include the
