@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * instead), when its due-by (as it stands before the edit) is in a closed period, when its date moves to one whose due-by
  * (its person's terms on that date, counted in business days) would be in a closed period, and when it would move after its
  * person's retirement date, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving records who
- * last edited it, works its due-by out again from its new date when the date moves, and closes the claim's editor: it releases the claim's lock. */
+ * last edited it and closes the claim's editor: it releases the claim's lock. Its due-by keeps counting from the date and
+ * terms fixed when it was created ({@link Claim#getDueFrom}). */
 public class ApplyClaim {
     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
             PeriodRepository periods, PersonRepository people, PersonGradeRepository grades, HolidayRepository holidays,
@@ -28,10 +29,8 @@ public class ApplyClaim {
             throw new InvalidClaimException("No claim can be edited in a closed period.");
         }
         Person person = people.findById(claim.getPersonId()).orElse(null);
-        Integer movedTerms = null;
         if (person != null && !date.equals(claim.getDate())) {
             int terms = sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date);
-            movedTerms = terms;
             if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
                 throw new InvalidClaimException("No claim can be moved to a date whose due-by is in a closed period.");
             }
@@ -45,9 +44,6 @@ public class ApplyClaim {
         claim.setCorrects(input.corrects());
         claim.setCorrectsDate(correctsDate);
         claim.setDate(date);
-        if (movedTerms != null) {
-            claim.fixDue(date, movedTerms, holidays.datesOf(sheet.getId()));
-        }
         claim.setNote(input.note());
         claim.setRef(input.ref());
         claim.setTags(input.tags());
