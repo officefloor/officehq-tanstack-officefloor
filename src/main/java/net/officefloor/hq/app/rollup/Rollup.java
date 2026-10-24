@@ -23,7 +23,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a), and each
  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
- * A person's OPEN and PENDING claims dated within a hold of theirs count in none of them, unless a statement binds them.
+ * A person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is
+ * reached, count in none of them, unless a statement binds them.
  */
 public class Rollup {
 

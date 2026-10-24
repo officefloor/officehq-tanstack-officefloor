@@ -13,7 +13,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // `statementCount` is how many statements were taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and the sheet's today when it was taken (null with none).
 // `retiredFrom` is the date they are retired from (null: not retired); with one set they count as retired at
-// once, whatever the date.
+// once, whatever the date; from the day it is reached (the sheet's today on or after it) their OPEN and PENDING
+// claims count in no live total, as a hold's would, unless a statement binds them.
 // `held`: whether they have any hold. `holds`: their holds, earliest from-date first; their OPEN and PENDING
 // claims dated within one count in no live total, unless a statement binds them; their other claims still count.
 // `terms`: their own terms in days (null: none); a claim of theirs is due by its date plus these, ahead of their

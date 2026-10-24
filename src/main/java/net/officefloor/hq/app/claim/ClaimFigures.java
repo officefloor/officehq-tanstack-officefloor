@@ -108,10 +108,11 @@ public class ClaimFigures {
     }
 
     /** Whether a claim counts toward the live totals: as {@link #counts}, except its person's OPEN and PENDING
-     *  claims dated within a hold of theirs, unless a statement binds them (null person: no holds). */
+     *  claims dated within a hold of theirs, or all of them once their retirement date is reached, unless a statement
+     *  binds them (null person: no holds). */
     public static boolean countsLive(Claim claim, Person person, LocalDate today) {
         return counts(claim, today) && !(person != null && claim.getStatus().isOpen() && !claim.isBound()
-                && person.heldOn(claim.getDate()));
+                && person.leftOn(claim.getDate(), today));
     }
 
     /** Whether a claim counts toward a period's live totals: as {@link #countsLive}, taking the status it had at the
@@ -122,7 +123,7 @@ public class ClaimFigures {
             return false;
         }
         boolean deferred = then == ClaimStatus.OPEN && claim.getDeferredUntil() != null && claim.getDeferredUntil().isAfter(today);
-        return !deferred && !(person != null && claim.getStatus().isOpen() && !claim.isBound() && person.heldOn(claim.getDate()));
+        return !deferred && !(person != null && claim.getStatus().isOpen() && !claim.isBound() && person.leftOn(claim.getDate(), today));
     }
 
     /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. */

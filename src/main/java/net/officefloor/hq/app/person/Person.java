@@ -49,7 +49,8 @@ public class Person {
     @Column(nullable = false)
     private long version;
 
-    /** Set: the person counts as retired at once, whatever the date; claims dated after it are refused. */
+    /** Set: the person counts as retired at once, whatever the date; claims dated after it are refused. From the day
+     *  it is reached (the sheet's today on or after it) their unbound OPEN and PENDING claims leave the live totals. */
     @Column(name = "retired_from")
     private LocalDate retiredFrom;
 
@@ -135,6 +136,17 @@ public class Person {
     /** Whether a hold of theirs covers the date. */
     public boolean heldOn(LocalDate date) {
         return holds.stream().anyMatch(h -> h.covers(date));
+    }
+
+    /** Whether their retirement date is reached on the day: it is on or before it. */
+    public boolean retiredBy(LocalDate today) {
+        return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
+    }
+
+    /** Whether their OPEN and PENDING claims on the date leave the live totals on the day: a hold of theirs covers
+     *  the date, or their retirement date is reached. */
+    public boolean leftOn(LocalDate date, LocalDate today) {
+        return heldOn(date) || retiredBy(today);
     }
 
     /** Whether a claim on this date is refused: it is after their retirement date. */

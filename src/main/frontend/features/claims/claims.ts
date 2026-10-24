@@ -61,20 +61,25 @@ export const counts = (c: Claim, today: string | undefined) => (isOpen(c) || c.s
 /** A hold: from a date on, to a date (YYYY-MM-DD, inclusive; null: open-ended). */
 export type Hold = { from: string; to: string | null };
 
-/** Each person's holds, by person id. */
-export type Holds = Map<number, Hold[]>;
+/** Each person's holds, and the date they are retired from (null: not retired), by person id. */
+export type Holds = Map<number, { holds: Hold[]; retiredFrom: string | null }>;
 
-/** The holds of the people, by person id. */
-export const holdsOf = (people: { id: number; holds: Hold[] }[] | undefined): Holds =>
-  new Map((people ?? []).map((p) => [p.id, p.holds]));
+/** The holds and retirement dates of the people, by person id. */
+export const holdsOf = (people: { id: number; holds: Hold[]; retiredFrom?: string | null }[] | undefined): Holds =>
+  new Map((people ?? []).map((p) => [p.id, { holds: p.holds, retiredFrom: p.retiredFrom ?? null }]));
 
-/** Whether a hold of the claim's person covers its date. */
-const heldOn = (c: Claim, holds: Holds) =>
-  (holds.get(c.personId) ?? []).some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
+/** Whether the claim's person has its OPEN and PENDING claims out of the live totals on the sheet's today: a hold
+ *  of theirs covers its date, or their retirement date is reached (today on or after it). */
+const heldOn = (c: Claim, holds: Holds, today: string | undefined) => {
+  const p = holds.get(c.personId);
+  if (!p) return false;
+  if (p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today) return true;
+  return p.holds.some((h) => h.from <= c.date && (h.to === null || c.date <= h.to));
+};
 
 /** Whether a claim counts toward the live totals: as `counts`, except its person's OPEN and PENDING claims dated
- *  within a hold of theirs, unless a statement binds them. */
-export const countsLive = (c: Claim, holds: Holds, today: string | undefined) => counts(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
+ *  within a hold of theirs, or all of them once their retirement date is reached, unless a statement binds them. */
+export const countsLive = (c: Claim, holds: Holds, today: string | undefined) => counts(c, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds, today));
 
 /** The status a claim had at the end of a day (YYYY-MM-DD), as its status log records it (each line dated the sheet's
  *  today when the change was made); null when it had not been added by then. */
@@ -92,7 +97,7 @@ export function statusOn(c: Claim, day: string): ClaimStatus | null {
  *  still OPEN or PENDING and unbound now. */
 export const countsAsOf = (c: Claim, holds: Holds, today: string | undefined, end: string) => {
   const status = statusOn(c, end);
-  return status !== null && counts({ ...c, status }, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
+  return status !== null && counts({ ...c, status }, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds, today));
 };
 
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
