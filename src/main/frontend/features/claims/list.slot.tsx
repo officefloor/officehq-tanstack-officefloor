@@ -57,6 +57,11 @@ function PersonClaims({ person }: { person: Person }) {
                 </button>
               )}
             </ClaimStatusActions>
+            <ol data-testid="claim-log">
+              {(c.log ?? []).map((line, i) => (
+                <li key={i} data-testid="claim-log-line">{line}</li>
+              ))}
+            </ol>
           </li>
         ))}
       </ul>

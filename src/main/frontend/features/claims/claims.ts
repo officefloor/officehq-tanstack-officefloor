@@ -30,6 +30,8 @@ export type Claim = {
   roundsOn: string;
   /** Its due-by (YYYY-MM-DD), fixed when it was created: its date plus the terms of its person's grade then. */
   dueBy: string;
+  /** Its status log, oldest first: one line per status it has had, `<STATUS> by <user> on <date> due=<due>`. */
+  log: string[];
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
