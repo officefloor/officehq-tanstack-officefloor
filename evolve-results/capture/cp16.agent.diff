@@ -1,0 +1,341 @@
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java b/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
+new file mode 100644
+index 00000000..1672fc04
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records, after the change's own lines, each person whose figures the change moved, then the sheet's totals
++ *  when they moved. */
++public class AuditRollup {
++    public void audit(@PathVariable("sheetId") String sheetId, @Val Rollup before, SheetRepository sheets,
++            PersonRepository people, ClaimRepository claims, RateRepository rates,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        Rollup now = Rollup.of(sheetId, sheets, people, claims, rates);
++        now.changesSince(before, sheetId, AuditUser.decode(user)).forEach(audit::record);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+new file mode 100644
+index 00000000..9115e887
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -0,0 +1,81 @@
++package net.officefloor.hq.app.rollup;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimFigures;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++
++/**
++ * The sheet's figures at one moment, as the screen shows them: each person's claimed and due-total, in the
++ * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a).
++ */
++public class Rollup {
++
++    /** One person's figures. */
++    public record Figures(String name, String claimed, String dueTotal) {
++    }
++
++    private final Map<Long, Figures> people;
++    private final String claimedTotal;
++    private final String dueTotal;
++
++    private Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal) {
++        this.people = people;
++        this.claimedTotal = claimedTotal;
++        this.dueTotal = dueTotal;
++    }
++
++    /** Works out the sheet's figures now; a sheet not yet stored has none. */
++    public static Rollup of(String sheetId, SheetRepository sheets, PersonRepository persons,
++            ClaimRepository claims, RateRepository rates) {
++        String id = sheetId.trim();
++        Optional<Sheet> sheet = sheets.findById(id);
++        Map<Long, Figures> people = new LinkedHashMap<>();
++        BigDecimal claimedTotal = BigDecimal.ZERO;
++        BigDecimal dueTotal = BigDecimal.ZERO;
++        if (sheet.isPresent()) {
++            List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
++            for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
++                List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
++                BigDecimal claimed = mine.stream().filter(ClaimFigures::counts).map(Claim::getAmount)
++                        .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
++                String due = new ClaimFigures(rates.findBySheetIdAndGrade(id, person.getGrade()))
++                        .dueTotal(mine, sheet.get().getToday());
++                people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due));
++                claimedTotal = claimedTotal.add(claimed);
++                if (!"n/a".equals(due)) {
++                    dueTotal = dueTotal.add(new BigDecimal(due));
++                }
++            }
++        }
++        return new Rollup(people, claimedTotal.setScale(2).toPlainString(), dueTotal.setScale(2).toPlainString());
++    }
++
++    /** The audit lines telling how the figures moved from before to now: one per person whose figures changed
++     *  (or who is new), then the totals when they changed; none when nothing moved. */
++    public List<String> changesSince(Rollup before, String sheetId, String user) {
++        String head = " sheet=" + sheetId.trim() + " by=" + user;
++        List<String> lines = new ArrayList<>();
++        people.forEach((id, now) -> {
++            Figures was = before.people.get(id);
++            if (was == null || !was.claimed().equals(now.claimed()) || !was.dueTotal().equals(now.dueTotal())) {
++                lines.add("ROLLUP" + head + " person=" + now.name() + " claimed=" + now.claimed()
++                        + " due-total=" + now.dueTotal());
++            }
++        });
++        if (!before.claimedTotal.equals(claimedTotal) || !before.dueTotal.equals(dueTotal)) {
++            lines.add("TOTALS" + head + " claimed-total=" + claimedTotal + " due-total=" + dueTotal);
++        }
++        return lines;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java b/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
+new file mode 100644
+index 00000000..4d4737d5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Notes the sheet's figures before the change, so the audit can tell afterwards which of them moved. */
++public class TakeRollup {
++    public void take(@PathVariable("sheetId") String sheetId, SheetRepository sheets, PersonRepository people,
++            ClaimRepository claims, RateRepository rates, Out<Rollup> before) {
++        before.set(Rollup.of(sheetId, sheets, people, claims, rates));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index d9822603..0c3e71bc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,6 +1,10 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim. Body as for adding one.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -17,6 +21,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimEdited
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
+index a0c2d9de..399ee9c9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.PUT.yml
+@@ -1,4 +1,8 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/{action} — change a claim's status: open, settle or void.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+@@ -14,6 +18,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimStatus
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index c6379420..09a84f0f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,6 +1,10 @@
+ # POST /api/sheets/{sheetId}/people — add a person. Body: { "name": "...", "grade": "A|B|C" }.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -13,6 +17,10 @@ build:
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index caad8933..e27160b1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -2,6 +2,10 @@
+ # Refused with 409 when the person was saved since the editor loaded that version.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+@@ -14,6 +18,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonEdited
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 0b322869..11ed0380 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -2,6 +2,10 @@
+ # Body: { "amount": "12.50", "date": "YYYY-MM-DD" (blank = the sheet's today), "note": "..." }.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -18,6 +22,10 @@ build:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
+index 82adf05e..a8b4f7f0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.PUT.yml
+@@ -1,4 +1,8 @@
+ # PUT /api/sheets/{sheetId}/people/{personId}/statement — take a statement for the person.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+   govern: [ transaction ]
+@@ -14,6 +18,10 @@ take:
+ audit:
+   class: net.officefloor.hq.app.statement.AuditStatement
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index 21198e02..dbc6be46 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -1,6 +1,10 @@
+ # PUT /api/sheets/{sheetId}/rates — set a grade's rate. Body: { "grade": "A|B|C", "pct": "12.50", "from": "YYYY-MM-DD" (optional) }.
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -13,6 +17,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.rate.AuditRateSet
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.rate.RespondWithRate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 10494fa9..51e86632 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,6 +1,10 @@
+ # PUT /api/sheets/{sheetId}/today — change the sheet's today. Body: { "today": "YYYY-MM-DD" }.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -9,6 +13,10 @@ load:
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplyToday
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.sheet.RespondWithSheet
