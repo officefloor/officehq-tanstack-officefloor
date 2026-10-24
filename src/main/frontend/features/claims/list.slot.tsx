@@ -58,6 +58,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-proofs">{c.proofs}</span>{' '}
             <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
             <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+            <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}
               editorSubmits={claim?.id === c.id ? submits : 0}>
               {claim?.id === c.id && (
@@ -120,7 +121,9 @@ const ACTIONS = [
 // new OPEN claim; any other status, a deferred claim, a claim whose due-by is in a closed period or an amount out of range shows the
 // claim's error. A steward re-dates an OPEN or PENDING claim (the date typed beside the re-date button); anyone
 // else, any other status, a claim whose due-by is in a closed period, or a new date after the person's retirement shows
-// the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number.
+// the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number. An OPEN or PENDING claim is
+// reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
+// the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   sheet: string; claim: Claim; onEdit: () => void; editorSubmits: number; children: ReactNode;
 }) {
@@ -176,6 +179,11 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
   });
   const submitProof = useSubmitOnce(proof);
+  const remind = useMutation({
+    mutationFn: () => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/remind`, undefined, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+  });
+  const submitRemind = useSubmitOnce(remind);
   const [splitAmount, setSplitAmount] = useState('');
   const split = useMutation({
     mutationFn: (amount: string) =>
@@ -206,7 +214,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); setEditRefused(false); lock.reset(); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
       />{' '}
       {ACTIONS.map(({ action, label }) => (
         <button
@@ -218,7 +226,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             setEditRefused(false); lock.reset();
             move.reset();
             defer.reset(); redate.reset(); split.reset();
-            proof.reset();
+            proof.reset(); remind.reset();
             submitChange(action === 'reject' ? { action, reason } : { action });
           }}
         >
@@ -228,7 +236,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); setEditRefused(false); lock.reset(); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -241,7 +249,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         onClick={() => {
           change.reset();
           defer.reset(); redate.reset(); split.reset();
-          proof.reset();
+          proof.reset(); remind.reset();
           setEditRefused(false); lock.reset();
           if (target) submitMove(target.id);
         }}
@@ -252,7 +260,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-defer-date"
         placeholder="Defer until YYYY-MM-DD"
         value={deferTo}
-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); setEditRefused(false); lock.reset(); }}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
       />{' '}
       <button
         type="button"
@@ -261,7 +269,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         onClick={() => {
           change.reset();
           move.reset();
-          proof.reset();
+          proof.reset(); remind.reset();
           split.reset();
           setEditRefused(false); lock.reset();
           submitDefer(deferTo);
@@ -273,7 +281,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-date-new"
         placeholder="Re-date to YYYY-MM-DD"
         value={redateTo}
-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); setEditRefused(false); lock.reset(); }}
+        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
       />{' '}
       <button
         type="button"
@@ -283,7 +291,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset();
-          proof.reset();
+          proof.reset(); remind.reset();
           split.reset();
           setEditRefused(false); lock.reset();
           submitRedate(redateTo);
@@ -305,12 +313,27 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
       >
         Add proof
       </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-remind"
+        disabled={remind.isPending}
+        onClick={() => {
+          change.reset();
+          move.reset();
+          defer.reset(); redate.reset(); split.reset();
+          proof.reset();
+          setEditRefused(false); lock.reset();
+          submitRemind(undefined);
+        }}
+      >
+        Remind
+      </button>{' '}
       <input
         data-testid="claim-split-amount"
         placeholder="Amount to split off"
         inputMode="decimal"
         value={splitAmount}
-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); setEditRefused(false); lock.reset(); }}
+        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
       />{' '}
       <button
         type="button"
@@ -320,14 +343,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset();
-          proof.reset();
+          proof.reset(); remind.reset();
           setEditRefused(false); lock.reset();
           submitSplit(splitAmount);
         }}
       >
         Split
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); setEditRefused(false); lock.reset(); }}>
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}>
         <button
           type="button"
           data-testid="claim-edit"
@@ -344,7 +367,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || split.isError || editRefused || lock.isError) && (
+      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || split.isError || editRefused || lock.isError) && (
         <span data-testid="claim-error">
           {lock.isError
             ? lock.error instanceof HttpError && lock.error.status === 423
@@ -360,6 +383,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
               : claim.status !== 'OPEN' || isDeferred(claim, today)
               ? `Only an open claim that is not deferred can be split; this one is ${isDeferred(claim, today) ? 'deferred' : claim.status}.`
               : `The amount to split off must be more than 0.00 and less than the claim's ${claim.amount}.`
+            : remind.isError
+            ? remind.error instanceof HttpError && remind.error.status === 403
+              ? 'A viewer cannot remind a claim.'
+              : claim.status !== 'OPEN' && claim.status !== 'PENDING'
+              ? `Only an open or pending claim can be reminded; this one is ${claim.status}.`
+              : `This claim was already reminded today (${today ?? ''}).`
             : proof.isError
             ? `A ${claim.status} claim cannot gain a proof.`
             : redate.isError
