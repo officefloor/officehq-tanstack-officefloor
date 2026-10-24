@@ -6,7 +6,8 @@ import { AppSession } from '../../slots/defs/appSession';
 import { useCurrentSheet, useCurrentUser, useSheetInfo, sheetQueryKey, type SheetInfo } from './session';
 
 // The sheet's today: shown and changeable here. Changing it re-reads the whole sheet, since every
-// date decision in the app depends on it.
+// date decision in the app depends on it. The sheet is archived here too (a steward only); the two
+// share the sheet's one error element, which either action clears.
 function SheetToday() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -22,28 +23,47 @@ function SheetToday() {
     },
   });
   const submit = useSubmitOnce(save);
+  const archive = useMutation({
+    mutationFn: () => putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/archive`, undefined, user),
+    onSuccess: (saved) => queryClient.setQueryData(sheetQueryKey(saved.id), saved),
+  });
+  const submitArchive = useSubmitOnce(archive);
+  const shown = info.data?.id === sheet ? info.data : undefined;
 
   if (!user || !sheet) return null;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        archive.reset();
         submit(date.trim());
       }}
     >
       <span>
-        Today <strong data-testid="sheet-today">{info.data?.id === sheet ? info.data.today : ''}</strong>
+        Today <strong data-testid="sheet-today">{shown ? shown.today : ''}</strong>
       </span>
       <input
         data-testid="sheet-today-input"
         placeholder="YYYY-MM-DD"
         value={date}
-        onChange={(e) => { setDate(e.target.value); save.reset(); }}
+        onChange={(e) => { setDate(e.target.value); save.reset(); archive.reset(); }}
       />
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
       </button>
+      <span>
+        Archived <strong data-testid="sheet-archived">{shown ? (shown.archived ? 'yes' : 'no') : ''}</strong>
+      </span>
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        disabled={archive.isPending}
+        onClick={() => { save.reset(); submitArchive(undefined); }}
+      >
+        Archive sheet
+      </button>
       {save.isError && <span data-testid="sheet-error">Could not change the sheet's today.</span>}
+      {archive.isError && <span data-testid="sheet-error">Could not archive the sheet.</span>}
     </form>
   );
 }

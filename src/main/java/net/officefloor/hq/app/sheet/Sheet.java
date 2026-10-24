@@ -59,6 +59,10 @@ public class Sheet {
     @Column(name = "period_numbering_from")
     private LocalDate periodNumberingFrom;
 
+    /** Whether the sheet is archived: everything on it stays visible and every change is refused. */
+    @Column(nullable = false)
+    private boolean archived;
+
     /** The late percent a sheet starts at. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -194,6 +198,14 @@ public class Sheet {
     public Integer getGraceDays() {
         String days = valueOn(GRACE_DAYS, today);
         return days == null ? null : Integer.valueOf(days);
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 
     public LocalDate getPolicyDate() {

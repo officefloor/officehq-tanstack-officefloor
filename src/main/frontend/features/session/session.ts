@@ -8,9 +8,10 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 export const useCurrentUser = () => useSearchParam('user', asString);
 export const useCurrentSheet = () => useSearchParam('sheet', asString);
 
-// The active sheet as the store holds it: its id and its today. Every date decision and default
+// The active sheet as the store holds it: its id, its today and whether it is archived (then every
+// change on it is refused). Every date decision and default
 // date in the app uses the sheet's today (useSheetToday), never the browser's clock.
-export type SheetInfo = { id: string; today: string };
+export type SheetInfo = { id: string; today: string; archived: boolean };
 
 export const sheetQueryKey = (sheetId: string) => ['sheet', sheetId, 'info'] as const;
 
