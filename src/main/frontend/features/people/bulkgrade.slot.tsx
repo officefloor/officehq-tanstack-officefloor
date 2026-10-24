@@ -1,46 +1,16 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
 import { getJson, putJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useSearchParam } from '../../url/useSearchParam';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
-import { GRADES, peoplePath, peopleQueryKey, useShowRetired, type Person } from './people';
+import { GRADES, peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
 
 // Gives every selected person a grade from a date (blank: the sheet's today) with one button, in list order. Each
 // is saved exactly as the person form would save them (same name, terms and contact, the version as the store holds it now),
 // so the server writes the same PERSON_EDITED and rollup lines; one it refuses is left as it is. The count of
 // people changed shows once all are done, and is gone while it runs; the selection is cleared.
-const asIds = (raw: unknown): number[] =>
-  raw === undefined || raw === null || raw === ''
-    ? []
-    : String(raw).split(',').map(Number).filter((n) => Number.isInteger(n));
-
-/** The ids of the selected people (search param `selectedPeople`). */
-function useSelectedPeople() {
-  const [ids] = useSearchParam('selectedPeople', asIds);
-  const navigate = useNavigate();
-  const update = (change: (ids: Set<number>) => void) =>
-    void navigate({
-      to: '.',
-      search: (prev: Record<string, unknown>) => {
-        const next = { ...prev };
-        const set = new Set(asIds(prev.selectedPeople));
-        change(set);
-        if (set.size === 0) delete next.selectedPeople;
-        else next.selectedPeople = [...set].join(',');
-        return next;
-      },
-      replace: true,
-    });
-  return {
-    selected: new Set(ids),
-    toggle: (id: number, on: boolean) => update((set) => (on ? set.add(id) : set.delete(id))),
-    clear: () => update((set) => set.clear()),
-  };
-}
 
 function SelectHeader() {
   return <th>Select</th>;

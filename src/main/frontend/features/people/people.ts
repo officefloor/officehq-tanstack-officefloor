@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
 import type { Hold } from '../claims/claims';
@@ -83,3 +84,32 @@ export const useEditingPerson = () => useSearchParam('editPerson', asString);
 /** Whether retired people are listed (search param `showRetired`): off when the screen is first opened, and
  *  left as it is by loading a sheet. */
 export const useShowRetired = () => useSearchParam('showRetired', asFlag);
+
+const asIds = (raw: unknown): number[] =>
+  raw === undefined || raw === null || raw === ''
+    ? []
+    : String(raw).split(',').map(Number).filter((n) => Number.isInteger(n));
+
+/** The ids of the selected people (search param `selectedPeople`). */
+export function useSelectedPeople() {
+  const [ids] = useSearchParam('selectedPeople', asIds);
+  const navigate = useNavigate();
+  const update = (change: (ids: Set<number>) => void) =>
+    void navigate({
+      to: '.',
+      search: (prev: Record<string, unknown>) => {
+        const next = { ...prev };
+        const set = new Set(asIds(prev.selectedPeople));
+        change(set);
+        if (set.size === 0) delete next.selectedPeople;
+        else next.selectedPeople = [...set].join(',');
+        return next;
+      },
+      replace: true,
+    });
+  return {
+    selected: new Set(ids),
+    toggle: (id: number, on: boolean) => update((set) => (on ? set.add(id) : set.delete(id))),
+    clear: () => update((set) => set.clear()),
+  };
+}
