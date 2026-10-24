@@ -8,7 +8,7 @@ import { gradeOn, usePeople } from './people';
 
 // The export button: downloads every person on the sheet (retired people included, in list order) as CSV —
 // name, grade in force on the sheet's today, retired-from date (blank when not retired) and due-total as shown.
-function csvValue(value: string): string {
+export function csvValue(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
