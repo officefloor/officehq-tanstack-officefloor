@@ -1,6 +1,5 @@
 package net.officefloor.hq.app.claim;
 
-import java.time.LocalDate;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -13,17 +12,6 @@ import net.officefloor.plugin.variable.Val;
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, ClaimRepository repository,
             PeriodRepository periods, PersonGradeRepository grades, Out<Claim> claimOut) throws InvalidClaimException {
-        LocalDate date = input.date() != null ? input.date() : sheet.getToday();
-        if (periods.isClosedOn(sheet.getId(), date)) {
-            throw new InvalidClaimException("No claim can be added in a closed period.");
-        }
-        if (person.retiredOn(date)) {
-            throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
-        }
-        LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
-        Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
-        claim.setCorrectsDate(correctsDate);
-        claim.setDueBy(date.plusDays(sheet.termsFor(grades.gradesOf(person).on(date), date)));
-        claimOut.set(repository.save(claim));
+        claimOut.set(repository.save(ClaimRules.make(input, sheet, person, repository, periods, grades)));
     }
 }

@@ -1,6 +1,5 @@
 package net.officefloor.hq.app.claim;
 
-import java.math.BigDecimal;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -15,10 +14,6 @@ public class LogClaimStatus {
     public void log(@Val Claim claim, @Val Sheet sheet, ClaimLogRepository log, PersonRepository people,
             RateRepository rates, PersonGradeRepository grades,
             @RequestHeader(name = "X-User", required = false) String user) {
-        BigDecimal due = people.findById(claim.getPersonId())
-                .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
-                        grades.gradesOf(p), sheet).due(claim))
-                .orElse(null);
-        log.saveAndFlush(new ClaimLog(claim, AuditUser.decode(user), sheet.getToday(), due));
+        ClaimRules.log(claim, sheet, log, people, rates, grades, AuditUser.decode(user));
     }
 }
