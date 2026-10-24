@@ -1,0 +1,143 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 71047b1e..52ecf3a7 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -93,7 +93,8 @@ const ACTIONS = [
+ // instead of opening its editor (an open claim is voided and added anew). A role the permission matrix allows (a steward, by the standing
+ // rule) moves a DRAFT, OPEN or PENDING
+ // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
+-// shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
++// shows the claim's error. A steward voids a SETTLED claim within 7 days of its settlement (its frozen due leaves
++// the totals); anyone else, or a later day, shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
+ // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
+ // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
+ // in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
+@@ -306,8 +307,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
+             ? 'This claim is dated in a closed period, so its status cannot change.'
+             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
+             ? 'Only a steward can approve or reject a pending claim.'
++            : action === 'void' && claim.status === 'SETTLED' && change.error instanceof HttpError && change.error.status === 403
++            ? 'Only a steward can void a settled claim.'
+             : (action === 'open' || action === 'settle' || action === 'void') && change.error instanceof HttpError && change.error.status === 403
+             ? `Your role is not allowed to ${action} a claim.`
++            : action === 'void' && claim.status === 'SETTLED'
++            ? 'A settled claim can be voided only within 7 days of its settlement.'
+             : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
+             ? 'Only a steward can re-settle a claim.'
+             : action === 'resettle'
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 7fb82313..bb62eca2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import jakarta.persistence.EntityManager;
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -25,13 +26,18 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
+  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
+  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. Settling fixes the claim's due at the rate of the grade its
+- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim dated in a closed period cannot change status. Returns the claim's number for the
++ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim dated in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
++ * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. Returns the claim's number for the
+  * audit.
+  */
+ public class ApplyClaimStatus {
++
++    /** How many days after its settlement a steward may still void a SETTLED claim. */
++    static final int VOID_DAYS = 7;
++
+     public String apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
+             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
+-            @Val Sheet sheet, RoleRepository roles,
++            @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log,
+             @RequestHeader(name = "X-User", required = false) String userHeader,
+             @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+         String user = AuditUser.decode(userHeader);
+@@ -68,6 +74,15 @@ public class ApplyClaimStatus {
+             if (("approve".equals(action) || "reject".equals(action)) && !steward) {
+                 throw new ClerkLimitException("Only a steward can approve or reject a pending claim.");
+             }
++            if ("void".equals(action) && claim.getStatus() == ClaimStatus.SETTLED) {
++                if (!steward) {
++                    throw new ClerkLimitException("Only a steward can void a settled claim.");
++                }
++                LocalDate settled = log.settledOn(claim);
++                if (settled == null || sheet.getToday().isAfter(settled.plusDays(VOID_DAYS))) {
++                    throw new ClaimStatusException("A settled claim can be voided only within " + VOID_DAYS + " days of its settlement.");
++                }
++            }
+             if ("reject".equals(action) && (reason == null || reason.isBlank())) {
+                 throw new ClaimStatusException("A rejection needs a reason.");
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index d27872c3..1563a251 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -11,10 +11,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Records the claim's status change, once it is saved, with the claim's number when it has one;
+- * a settle or approve adds the due it fixed (n/a when the grade had no rate), a reject its reason. */
++ * a settle or approve adds the due it fixed (n/a when the grade had no rate), a reject its reason, and voiding a
++ * settled claim the frozen figure it takes out of the totals (reversed=). */
+ public class AuditClaimStatus {
+     public void audit(@Parameter String number, @Val Claim claim, PersonRepository people,
+-            @PathVariable("action") String action,
++            @PathVariable("action") String action, ClaimLogRepository log,
+             @RequestParam(name = "reason", required = false) String reason,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
+@@ -30,6 +31,9 @@ public class AuditClaimStatus {
+         if (claim.getStatus() == ClaimStatus.SETTLED) {
+             line += " due=" + (claim.getDue() == null ? "n/a" : claim.getDue().setScale(2).toPlainString());
+         }
++        if (claim.getStatus() == ClaimStatus.VOID && log.settledOn(claim) != null) {
++            line += " reversed=" + (claim.getDue() == null ? "n/a" : claim.getDue().setScale(2).toPlainString());
++        }
+         audit.record(line);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+index 2c4618c8..c22f6f99 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+@@ -15,6 +15,12 @@ public interface ClaimLogRepository extends JpaRepository<ClaimLog, Long> {
+     /** The claim's log lines, oldest first. */
+     List<ClaimLog> findByClaimIdOrderByIdAsc(Long claimId);
+ 
++    /** The sheet's today when the claim was last settled (its latest SETTLED log line); null when it never was. */
++    default LocalDate settledOn(Claim claim) {
++        return findByClaimIdOrderByIdAsc(claim.getId()).stream().filter(l -> ClaimStatus.SETTLED.name().equals(l.getStatus()))
++                .map(ClaimLog::getOnDate).reduce((a, b) -> b).orElse(null);
++    }
++
+     /** The claim's log as the screen shows it, oldest first. */
+     default List<String> linesOf(Claim claim) {
+         return findByClaimIdOrderByIdAsc(claim.getId()).stream().map(ClaimLog::line).toList();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 7773b4ee..265f7432 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -3,7 +3,7 @@ package net.officefloor.hq.app.claim;
+ /**
+  * A claim's status: it starts DRAFT, is opened (OPEN) and then settled (SETTLED); a clerk settling one above the
+  * clerk limit leaves it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN). A DRAFT, OPEN or
+- * PENDING claim can be voided (VOID). SETTLED and VOID are final. Only OPEN, PENDING and SETTLED claims count toward
++ * PENDING claim can be voided (VOID), and a steward may void a SETTLED one within 7 days of its settlement. VOID is final. Only OPEN, PENDING and SETTLED claims count toward
+  * totals.
+  */
+ public enum ClaimStatus {
+@@ -17,7 +17,7 @@ public enum ClaimStatus {
+             case "settle" -> this == OPEN ? SETTLED : null;
+             case "approve" -> this == PENDING ? SETTLED : null;
+             case "reject" -> this == PENDING ? OPEN : null;
+-            case "void" -> this == DRAFT || this == OPEN || this == PENDING ? VOID : null;
++            case "void" -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED ? VOID : null;
+             default -> null;
+         };
+     }
