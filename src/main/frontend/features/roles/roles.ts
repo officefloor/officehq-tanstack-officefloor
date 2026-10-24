@@ -7,9 +7,10 @@ export type Role = { user: string; role: string };
 
 /** The sheet's settings: its clerk limit with two decimals (null when there is none) and its floor with two
  *  decimals (a claim's live due is at least it), and its terms in days (a claim is due by its date plus them), and its late percent with two decimals (an overdue claim's due gains
- *  it of its figure for every full 30 days overdue). */
+ *  it of its figure for every full 30 days overdue), and its policy date (YYYY-MM-DD; "" when blank: the sheet's today — a claim
+ *  dated before it rounds half up, one on or after it half to even). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string;
-  latePct: string };
+  latePct: string; policyDate: string };
 
 /** The terms a sheet starts at, in days. */
 export const DEFAULT_TERMS = '14';

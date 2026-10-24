@@ -10,7 +10,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
  *  the number given when it was opened (null for a claim never opened; a voided claim keeps it) and the due fixed when it was
  *  settled (null when it has none: its due is live), and who opened it (null when never opened); whether its person's last statement binds it, and the
  *  figure it binds it to (null: n/a); the number of the settled claim of the same person it corrects (null when it is not
- *  a correction — a correction is a claim with a negative amount). */
+ *  a correction — a correction is a claim with a negative amount); the date its rounding goes by (a correction's is the
+ *  date of the claim it corrects, else its own). */
 export type Claim = {
   id: number;
   personId: number;
@@ -24,6 +25,7 @@ export type Claim = {
   stated: boolean;
   statedDue: string | null;
   corrects: number | null;
+  roundsOn: string;
 };
 
 /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */

@@ -14,11 +14,12 @@ import net.officefloor.hq.app.sheet.Sheet;
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
  * figure its person's last statement bound it to, else its live due (amount times the rate in force on its date of
- * the grade its person had on its date, rounded half to even, and at least the sheet's floor; none — n/a — when no rate applies then). An
+ * the grade its person had on its date, rounded by the sheet's policy, and at least the sheet's floor; none — n/a — when no rate applies then). An
  * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
  * freezes it in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
- * never takes a late charge.
+ * never takes a late charge. The rounding policy: a claim dated before the sheet's policy date (its today when blank)
+ * rounds half up, one dated on or after it half to even; a correction goes by the date of the claim it corrects.
  */
 public class ClaimFigures {
 
@@ -34,6 +35,8 @@ public class ClaimFigures {
 
     private final LocalDate today;
 
+    private final LocalDate policyDate;
+
     /** @param rates the sheet's rates.
      *  @param grades the person's grades over time.
      *  @param sheet the sheet: its floor (a live due is at least it), and its late percent, terms and today (the
@@ -45,6 +48,13 @@ public class ClaimFigures {
         this.latePct = sheet.getLatePct();
         this.terms = sheet.getTerms();
         this.today = sheet.getToday();
+        this.policyDate = sheet.policyDateInForce();
+    }
+
+    /** How the claim's live figures round: half up when the date it rounds by is before the policy date, else half
+     *  to even. */
+    public RoundingMode rounding(Claim claim) {
+        return claim.getRoundsOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
     /** Whether a claim is overdue: it is OPEN and its due-by (its date plus the terms) is before the sheet's today. */
@@ -53,19 +63,19 @@ public class ClaimFigures {
     }
 
     /** The late charge on a figure: the late percent of it for every full 30 days the claim is overdue, rounded
-     *  half to even; 0.00 when it is not overdue. */
+     *  like its due; 0.00 when it is not overdue. */
     public BigDecimal lateCharge(Claim claim, BigDecimal figure) {
         if (figure == null || claim.isCorrection() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
         long periods = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today) / 30;
         return figure.multiply(latePct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
-                .setScale(2, RoundingMode.HALF_EVEN);
+                .setScale(2, rounding(claim));
     }
 
-    /** A live due: the amount times the percent, divided by 100, rounded half to even, and at least the floor. */
-    public static BigDecimal liveDue(BigDecimal amount, BigDecimal pct, BigDecimal floor) {
-        BigDecimal due = amount.multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+    /** A live due: the amount times the percent, divided by 100, rounded as given, and at least the floor. */
+    public static BigDecimal liveDue(BigDecimal amount, BigDecimal pct, BigDecimal floor, RoundingMode rounding) {
+        BigDecimal due = amount.multiply(pct).movePointLeft(2).setScale(2, rounding);
         return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
     }
 
@@ -106,7 +116,7 @@ public class ClaimFigures {
             return claim.getStatedDue();
         }
         return rateOn(grades.on(claim.getDate()), claim.getDate())
-                .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : floor))
+                .map(pct -> liveDue(claim.getAmount(), pct, claim.isCorrection() ? null : floor, rounding(claim)))
                 .orElse(null);
     }
 

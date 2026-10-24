@@ -1,14 +1,17 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
- *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals. A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14; a blank late percent is 0.00. A key left out is not changed. */
+ *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date that is not a calendar date
+ *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
+ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today. A key left out is not changed. */
 public class ValidateSettings {
 
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
@@ -48,7 +51,16 @@ public class ValidateSettings {
             }
             lateValue = new BigDecimal(late.trim()).setScale(2);
         }
+        String policy = request == null ? null : request.policyDate();
+        LocalDate policyValue = null;
+        if (policy != null && !policy.trim().isEmpty()) {
+            try {
+                policyValue = LocalDate.parse(policy.trim());
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingsException("The policy date must be a date (YYYY-MM-DD), or blank.");
+            }
+        }
         body.set(new SettingsInput(limit != null, limitValue, floor != null, floorValue, terms != null, termsValue,
-                late != null, lateValue));
+                late != null, lateValue, policy != null, policyValue));
     }
 }

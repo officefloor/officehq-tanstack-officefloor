@@ -62,6 +62,10 @@ public class Claim {
     @Column(name = "corrects")
     private Integer corrects;
 
+    /** The date of the claim this correction corrects (it rounds by that date); null for any other claim. */
+    @Column(name = "corrects_date")
+    private LocalDate correctsDate;
+
     protected Claim() {
     }
 
@@ -148,6 +152,19 @@ public class Claim {
 
     public void setCorrects(Integer corrects) {
         this.corrects = corrects;
+    }
+
+    public LocalDate getCorrectsDate() {
+        return correctsDate;
+    }
+
+    public void setCorrectsDate(LocalDate correctsDate) {
+        this.correctsDate = correctsDate;
+    }
+
+    /** The date the claim's rounding goes by: a correction's is the date of the claim it corrects, else its own. */
+    public LocalDate getRoundsOn() {
+        return correctsDate != null ? correctsDate : date;
     }
 
     /** Whether the claim is a correction: it names a claim it corrects. */

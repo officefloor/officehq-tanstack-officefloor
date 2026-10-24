@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,12 +21,15 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
     /** The person's claims given this number (at most one: numbers are never reused on a sheet). */
     List<Claim> findBySheetIdAndPersonIdAndNumber(String sheetId, Long personId, Integer number);
 
-    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person. */
-    default void checkCorrects(String sheetId, Long personId, Integer corrects) throws InvalidClaimException {
-        if (corrects != null && findBySheetIdAndPersonIdAndNumber(sheetId, personId, corrects).stream()
-                .noneMatch(c -> c.getStatus() == ClaimStatus.SETTLED)) {
-            throw new InvalidClaimException("A correction must name a settled claim of the same person.");
+    /** Refuses a correction unless the claim it corrects is a SETTLED claim of the same person; gives that
+     *  claim's date (null when it is not a correction). */
+    default LocalDate checkCorrects(String sheetId, Long personId, Integer corrects) throws InvalidClaimException {
+        if (corrects == null) {
+            return null;
         }
+        return findBySheetIdAndPersonIdAndNumber(sheetId, personId, corrects).stream()
+                .filter(c -> c.getStatus() == ClaimStatus.SETTLED).map(Claim::getDate).findFirst()
+                .orElseThrow(() -> new InvalidClaimException("A correction must name a settled claim of the same person."));
     }
 
     /** Takes the sheet's next claim number; the update locks the sheet's row until the transaction ends, so

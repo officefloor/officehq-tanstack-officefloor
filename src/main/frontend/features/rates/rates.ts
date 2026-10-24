@@ -35,13 +35,21 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
   return found?.pct;
 }
 
+/** Whether a claim's live figures round half up: the date it rounds by (a correction's is the date of the claim it
+ *  corrects) is before the sheet's policy date (its today when blank); else they round half to even. */
+export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: string | undefined): boolean {
+  const policy = settings?.policyDate || today;
+  return policy !== undefined && (c.roundsOn ?? c.date) < policy;
+}
+
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
- *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none);
- *  a correction's live due has no floor. */
-export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined): string {
+ *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none),
+ *  rounded by the sheet's policy; a correction's live due has no floor. */
+export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined,
+  halfUp = false): string {
   if (c.due !== null) return c.due;
   if (c.stated) return c.statedDue ?? 'n/a';
-  const due = dueOf(c.amount, rateOn(rates, grade, c.date));
+  const due = dueOf(c.amount, rateOn(rates, grade, c.date), halfUp);
   return c.corrects !== null ? due : atLeast(due, floor);
 }
 
@@ -51,13 +59,14 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, flo
  *  takes a late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
   today: string | undefined): string {
-  const figure = figureOf(c, rates, grade, settings?.floor);
+  const halfUp = roundsHalfUp(c, settings, today);
+  const figure = figureOf(c, rates, grade, settings?.floor, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
   const terms = settings?.terms ?? DEFAULT_TERMS;
   if (today === undefined || !isOverdue(c, terms, today)) return figure;
   const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueByOf(c, terms)}T00:00:00Z`)) / 86_400_000;
   const periods = Math.floor(days / 30);
-  const charge = dueOf(formatCents(hundredths(figure) * BigInt(periods)), settings?.latePct ?? '0.00');
+  const charge = dueOf(formatCents(hundredths(figure) * BigInt(periods)), settings?.latePct ?? '0.00', halfUp);
   return formatCents(hundredths(figure) + hundredths(charge));
 }
 
@@ -71,10 +80,10 @@ export function atLeast(due: string, floor: string | null | undefined): string {
 const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
 
 /**
- * The due on an amount: amount times the percent, divided by 100, rounded half to even
- * to two decimals — "n/a" when there is no percent. Computed in whole hundredths, so it is exact.
+ * The due on an amount: amount times the percent, divided by 100, rounded half to even (or half up, away from
+ * zero) to two decimals — "n/a" when there is no percent. Computed in whole hundredths, so it is exact.
  */
-export function dueOf(amount: string, pct: string | undefined): string {
+export function dueOf(amount: string, pct: string | undefined, halfUp = false): string {
   if (pct === undefined) return 'n/a';
   // hundredths of the amount times hundredths of the percent = the due in millionths of a percent;
   // dividing by 10000 gives cents.
@@ -83,7 +92,7 @@ export function dueOf(amount: string, pct: string | undefined): string {
   const magnitude = negative ? -product : product;
   const rest = magnitude % 10000n;
   let cents = magnitude / 10000n;
-  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  if (rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n))) cents += 1n;
   return formatCents(negative ? -cents : cents);
 }
 
