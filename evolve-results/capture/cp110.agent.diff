@@ -1,0 +1,198 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 00000000..a424147c
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,69 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser, useSheetToday, type SheetInfo } from '../session/session';
++import { peoplePath, usePeople, type Person } from '../people/people';
++import { claimsPath, useClaims, type Claim } from '../claims/claims';
++import { ratesPath, sumDue, useRates, type Rate } from '../rates/rates';
++import { settingsPath, useSettings, type Settings } from '../roles/roles';
++import { sheetTotals } from '../header/counters.slot';
++
++// The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
++// parent, and so on down), the number of people, the due-total and the overdue-total — each sheet's as that sheet
++// shows it (its own today, rates, settings), added up. A sheet with no children shows its own figures.
++
++type Figures = { people: number; due: string; overdue: string };
++
++const sheetPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
++const childrenPath = (sheetId: string) => `${sheetPath(sheetId)}/children`;
++
++export const descendantsQueryKey = (sheetId: string) => ['sheet', sheetId, 'descendants'] as const;
++
++/** Each descendant sheet's figures, read from the store (a sheet reached twice counts once). */
++async function descendantFigures(sheetId: string): Promise<Figures[]> {
++  const seen = new Set([sheetId]);
++  const ids: string[] = [];
++  for (let level = [sheetId]; level.length > 0; ) {
++    const children = (await Promise.all(level.map((id) => getJson<string[]>(childrenPath(id))))).flat();
++    level = children.filter((id) => !seen.has(id) && (seen.add(id), true));
++    ids.push(...level);
++  }
++  return Promise.all(ids.map(async (id) => {
++    const [info, people, claims, rates, settings] = await Promise.all([
++      getJson<SheetInfo>(sheetPath(id)),
++      getJson<Person[]>(peoplePath(id)),
++      getJson<Claim[]>(claimsPath(id)),
++      getJson<Rate[]>(ratesPath(id)),
++      getJson<Settings>(settingsPath(id)),
++    ]);
++    return { people: people.length, ...sheetTotals(people, claims, rates, info.today, settings) };
++  }));
++}
++
++function ConsolidatedFigures() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople();
++  const claims = useClaims();
++  const rates = useRates();
++  const settings = useSettings();
++  const today = useSheetToday();
++  const descendants = useQuery({
++    queryKey: descendantsQueryKey(sheet ?? ''),
++    queryFn: () => descendantFigures(sheet ?? ''),
++    enabled: !!sheet,
++  });
++  if (!user || !sheet) return null;
++  const allPeople = people.data ?? [];
++  const own = { people: allPeople.length, ...sheetTotals(allPeople, claims.data ?? [], rates.data, today, settings.data) };
++  const all = [own, ...(descendants.data ?? [])];
++  return (
++    <section data-testid="consolidated">
++      Consolidated: People <strong data-testid="consolidated-people-count">{all.reduce((n, f) => n + f.people, 0)}</strong>
++      {' · '}Due <strong data-testid="consolidated-due-total">{sumDue(all.map((f) => f.due))}</strong>
++      {' · '}Overdue <strong data-testid="consolidated-overdue-total">{sumDue(all.map((f) => f.overdue))}</strong>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 1.5, Component: ConsolidatedFigures });
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index 69cadcc3..c36c87db 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -4,10 +4,21 @@ import { usePeople } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { overdueOf } from '../claims/overdue.slot';
+ import { personDue } from '../rates/due.slot';
+-import { trimmedSum, useRates } from '../rates/rates';
+-import { useSettings } from '../roles/roles';
++import { trimmedSum, useRates, type Rate } from '../rates/rates';
++import { useSettings, type Settings } from '../roles/roles';
++import type { Person } from '../people/people';
++import type { Claim } from '../claims/claims';
+ import { STATUSES } from '../summary/summary.slot';
+ 
++/** A sheet's due-total and overdue-total, as the rollup figures them, from what the store holds for it. */
++export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++  settings: Settings | undefined): { due: string; overdue: string } {
++  return {
++    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings))),
++    overdue: trimmedSum(people.map((p) => overdueOf(p, claims, rates, today, settings).total)),
++  };
++}
++
+ // The header counters, shown at all times: how many people the sheet has (retired ones included), how many of its
+ // claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
+ // figures them).
+@@ -19,8 +30,7 @@ function HeaderCounters() {
+   const today = useSheetToday();
+   const allPeople = people.data ?? [];
+   const allClaims = claims.data ?? [];
+-  const due = trimmedSum(allPeople.map((p) => personDue(p, allClaims, rates.data, today, settings.data)));
+-  const overdue = trimmedSum(allPeople.map((p) => overdueOf(p, allClaims, rates.data, today, settings.data).total));
++  const { due, overdue } = sheetTotals(allPeople, allClaims, rates.data, today, settings.data);
+   return (
+     <section data-testid="header-counters">
+       People <strong data-testid="header-people-count">{allPeople.length}</strong>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index bb8fc054..2352297b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  * instead), when its due-by (as it stands before the edit) is in a closed period, when its date moves to one whose due-by
+  * (its person's terms on that date, counted in business days) would be in a closed period, and when it would move after its
+  * person's retirement date, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving records who
+- * last edited it, works its due-by out again from its new date when the date moves, and closes the claim's editor: it releases the claim's lock. */
++ * last edited it and closes the claim's editor: it releases the claim's lock. Its due-by keeps counting from the date and
++ * terms fixed when it was created ({@link Claim#getDueFrom}). */
+ public class ApplyClaim {
+     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
+             PeriodRepository periods, PersonRepository people, PersonGradeRepository grades, HolidayRepository holidays,
+@@ -28,10 +29,8 @@ public class ApplyClaim {
+             throw new InvalidClaimException("No claim can be edited in a closed period.");
+         }
+         Person person = people.findById(claim.getPersonId()).orElse(null);
+-        Integer movedTerms = null;
+         if (person != null && !date.equals(claim.getDate())) {
+             int terms = sheet.termsFor(person.getTerms(), grades.gradesOf(person).on(date), date);
+-            movedTerms = terms;
+             if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
+                 throw new InvalidClaimException("No claim can be moved to a date whose due-by is in a closed period.");
+             }
+@@ -45,9 +44,6 @@ public class ApplyClaim {
+         claim.setCorrects(input.corrects());
+         claim.setCorrectsDate(correctsDate);
+         claim.setDate(date);
+-        if (movedTerms != null) {
+-            claim.fixDue(date, movedTerms, holidays.datesOf(sheet.getId()));
+-        }
+         claim.setNote(input.note());
+         claim.setRef(input.ref());
+         claim.setTags(input.tags());
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithChildren.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithChildren.java
+new file mode 100644
+index 00000000..7a4152eb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithChildren.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The ids of the sheet's children (the sheets naming it as their parent), by id. */
++public class RespondWithChildren {
++    public void respond(@Val Sheet sheet, SheetRepository repository, ObjectResponse<List<String>> response) {
++        response.send(repository.childrenOf(sheet.getId()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index f1851786..d5436d3d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -1,6 +1,13 @@
+ package net.officefloor.hq.app.sheet;
+ 
++import java.util.List;
+ import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.data.jpa.repository.Query;
++import org.springframework.data.repository.query.Param;
+ 
+ public interface SheetRepository extends JpaRepository<Sheet, String> {
++
++    /** The ids of the sheet's children: the sheets naming it as their parent (their undated parent setting), by id. */
++    @Query("select distinct s.sheet.id from SheetSetting s where s.key = 'parent' and s.value = :sheetId order by s.sheet.id")
++    List<String> childrenOf(@Param("sheetId") String sheetId);
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml
+new file mode 100644
+index 00000000..c7cdde12
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml
+@@ -0,0 +1,8 @@
++# GET /api/sheets/{sheetId}/children — the ids of the sheets naming it as their parent, by id.
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithChildren
++  govern: [ transaction ]
