@@ -2,14 +2,17 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { usePeople, type Person } from '../people/people';
-import { sumOf, useClaims, type Claim } from '../claims/claims';
+import { counts, useClaims, type Claim } from '../claims/claims';
 import { dueOf, rateOn, sumDue, useRates, type Rate } from './rates';
 
-// A person's due-total: their claimed times their grade's rate in force on the sheet's today, divided by
-// 100, rounded half up (n/a when no rate is in force); and the sheet's due-total, everyone's added up,
-// skipping n/a.
+// A person's due-total: the sum of their counted claims' figures, each already rounded (a settled claim's
+// frozen due, else its live due) — 0.00 with nothing that counts. When their grade has no rate in force on
+// the sheet's today it is n/a, unless a counted settled claim keeps a figure: then it is the sum of the
+// figures there are. The sheet's due-total is everyone's added up, skipping n/a.
 function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined): string {
-  return dueOf(sumOf(claims.filter((c) => c.personId === person.id)), rateOn(rates, person.grade, today));
+  const mine = claims.filter((c) => c.personId === person.id && counts(c));
+  if (rateOn(rates, person.grade, today) === undefined && !mine.some((c) => c.due !== null)) return 'n/a';
+  return sumDue(mine.map((c) => c.due ?? dueOf(c.amount, rateOn(rates, person.grade, c.date))));
 }
 
 function DueHeader() {

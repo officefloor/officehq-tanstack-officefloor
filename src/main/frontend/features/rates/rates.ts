@@ -37,7 +37,7 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
 const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
 
 /**
- * The due on an amount: amount times the percent, divided by 100, rounded half up (away from zero)
+ * The due on an amount: amount times the percent, divided by 100, rounded half to even
  * to two decimals — "n/a" when there is no percent. Computed in whole hundredths, so it is exact.
  */
 export function dueOf(amount: string, pct: string | undefined): string {
@@ -47,7 +47,9 @@ export function dueOf(amount: string, pct: string | undefined): string {
   const product = hundredths(amount) * hundredths(pct);
   const negative = product < 0n;
   const magnitude = negative ? -product : product;
-  const cents = (magnitude + 5000n) / 10000n;
+  const rest = magnitude % 10000n;
+  let cents = magnitude / 10000n;
+  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
   return formatCents(negative ? -cents : cents);
 }
 

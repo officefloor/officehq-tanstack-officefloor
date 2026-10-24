@@ -35,7 +35,7 @@ public class ApplyClaimStatus {
                 claim.setDue(people.findById(claim.getPersonId())
                         .flatMap(p -> rates.findInForce(claim.getSheetId(), p.getGrade(), claim.getDate()))
                         .map(Rate::getPct)
-                        .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_UP))
+                        .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN))
                         .orElse(null));
             }
         }
