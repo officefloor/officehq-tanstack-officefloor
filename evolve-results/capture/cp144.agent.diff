@@ -1,0 +1,152 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 88b9abf0..9c8c0b78 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /**
+  * Moves the claim to the status the action leads to; refuses a change its status does not allow, and an open,
+  * settle or void by a role the sheet's permission matrix does not allow it to. Opening gives
+- * the claim the sheet's next number (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
++ * the claim the sheet's next number in the fiscal year of its due-by (FY<year>-<n>, shared across the sheet's tree) (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
+  * X-<n> for a claim in no period) and records who opened it; a voided claim keeps its number (never reused). The one who opened a
+  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
+  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
+@@ -72,7 +72,7 @@ public class ApplyClaimStatus {
+             if (perPeriod) {
+                 repository.lockSheet(claim.getSheetId());
+             } else {
+-                repository.takeNextNumber(claim.getSheetId());
++                repository.lockTree(claim.getSheetId());
+             }
+             entityManager.refresh(claim);
+             ClaimStatus next = check(claim, action);
+@@ -92,7 +92,7 @@ public class ApplyClaimStatus {
+                 String seq = prefix == null ? "X" : "P:" + prefix;
+                 claim.setNumber((prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq));
+             } else {
+-                claim.setNumber(String.valueOf(repository.lastNumber(claim.getSheetId())));
++                claim.setNumber(repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), claim.getDueBy()));
+             }
+             claim.setStatus(next);
+             claim.setOpenedBy(user);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index 20c347dc..94f4e649 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -52,8 +52,7 @@ public class ApplyReassign {
+                 String seq = prefix == null ? "X" : "P:" + prefix;
+                 claim.setNumber((prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq));
+             } else {
+-                repository.takeNextNumber(claim.getSheetId());
+-                claim.setNumber(String.valueOf(repository.lastNumber(claim.getSheetId())));
++                claim.setNumber(repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), claim.getDueBy()));
+             }
+         }
+         claim.bind(false, null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index 103962f2..51e6d8b0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -46,7 +46,7 @@ public class ApplySplit {
+         if (perPeriod) {
+             repository.lockSheet(claim.getSheetId());
+         } else {
+-            repository.takeNextNumber(claim.getSheetId());
++            repository.lockTree(claim.getSheetId());
+         }
+         entityManager.refresh(claim);
+         if (claim.getStatus() != ClaimStatus.OPEN || claim.isDeferredOn(sheet.getToday())) {
+@@ -65,7 +65,7 @@ public class ApplySplit {
+             String seq = prefix == null ? "X" : "P:" + prefix;
+             number = (prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq);
+         } else {
+-            number = String.valueOf(repository.lastNumber(claim.getSheetId()));
++            number = repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), dueBy);
+         }
+         claim.setAmount(claim.getAmount().subtract(amount));
+         claim.bind(false, null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index db414c99..f8512d1f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -65,14 +65,7 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
+      *  last number (read with {@link #lastNumber}). The tree's top sheet's row is locked, then the sheet's own, until the
+      *  transaction ends, so two claims opened at once anywhere in the tree are numbered one after the other. */
+     default int takeNextNumber(String sheetId) {
+-        java.util.Set<String> up = new java.util.LinkedHashSet<>();
+-        String top = sheetId;
+-        for (String id = sheetId; id != null && up.add(id); ) {
+-            top = id;
+-            id = parentOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
+-        }
+-        lockSheet(top);
+-        lockSheet(sheetId);
++        String top = lockTree(sheetId);
+         java.util.Set<String> tree = new java.util.LinkedHashSet<>();
+         java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(top));
+         while (!todo.isEmpty()) {
+@@ -86,6 +79,36 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
+         return next;
+     }
+ 
++    /** The sheet's tree's top sheet: its top ancestor (itself when it has no parent). */
++    default String topOf(String sheetId) {
++        java.util.Set<String> up = new java.util.LinkedHashSet<>();
++        String top = sheetId;
++        for (String id = sheetId; id != null && up.add(id); ) {
++            top = id;
++            id = parentOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
++        }
++        return top;
++    }
++
++    /** Locks the sheet's tree's top sheet's row, then the sheet's own, until the transaction ends; gives the top sheet. */
++    default String lockTree(String sheetId) {
++        String top = topOf(sheetId);
++        lockSheet(top);
++        lockSheet(sheetId);
++        return top;
++    }
++
++    /** Takes the sheet's next sheet-wide claim number: FY<year>-<n>, counting from 1 within the fiscal year (named by
++     *  the calendar year its first day falls in, from the sheet's fiscal year start month) of the date given — the
++     *  date that places the claim in a period, its due-by. The sheets of a tree share each fiscal year's sequence,
++     *  kept on the tree's top sheet; the tree is locked (see {@link #lockTree}) so claims opened at once are numbered
++     *  one after the other. */
++    default String takeNextInFiscalYear(String sheetId, int fiscalStartMonth, LocalDate on) {
++        String top = lockTree(sheetId);
++        int year = on.getMonthValue() >= fiscalStartMonth ? on.getYear() : on.getYear() - 1;
++        return "FY" + year + "-" + takeNextInSequence(top, "FY:" + year);
++    }
++
+     @Query(value = "SELECT setting_value FROM sheet_setting WHERE sheet_id = :sheetId AND setting_key = 'parent'",
+             nativeQuery = true)
+     List<String> parentOf(@Param("sheetId") String sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index 6dac578f..aa50382c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -173,8 +173,7 @@ public class ApplyTransfer {
+                 String seq = prefix == null ? "X" : "P:" + prefix;
+                 number = (prefix == null ? "X" : prefix) + "-" + claims.takeNextInSequence(to, seq);
+             } else {
+-                claims.takeNextNumber(to);
+-                number = String.valueOf(claims.lastNumber(to));
++                number = claims.takeNextInFiscalYear(to, target.getFiscalStartMonth(), copy.getDueBy());
+             }
+             copy.setNumber(number);
+             renumbered.put(claim.getNumber(), number);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java b/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java
+index 11174e28..ed5fad3b 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplyClone.java
+@@ -170,8 +170,7 @@ public class ApplyClone {
+                 String seq = prefix == null ? "X" : "P:" + prefix;
+                 number = (prefix == null ? "X" : prefix) + "-" + claims.takeNextInSequence(to, seq);
+             } else {
+-                claims.takeNextNumber(to);
+-                number = String.valueOf(claims.lastNumber(to));
++                number = claims.takeNextInFiscalYear(to, clone.getFiscalStartMonth(), copy.getDueBy());
+             }
+             copy.setNumber(number);
+             renumbered.put(claim.getNumber(), number);
