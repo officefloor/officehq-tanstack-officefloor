@@ -2,7 +2,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import type { Person } from '../people/people';
 import { sumOf, useClaims } from './claims';
 
-// A person's claimed: the sum of their claims' amounts.
+// A person's claimed: the sum of their OPEN and SETTLED claims' amounts.
 function ClaimedHeader() {
   return <th>Claimed</th>;
 }

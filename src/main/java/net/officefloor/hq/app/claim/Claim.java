@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A claim by a person on a sheet: an amount (0.00 or more), a date and a note (may be empty). */
+/** A claim by a person on a sheet: an amount (0.00 or more), a date, a note (may be empty)
+ * and a status (DRAFT to start). */
 @Entity
 @Table(name = "claim")
 public class Claim {
@@ -32,6 +33,9 @@ public class Claim {
 
     @Column(nullable = false)
     private String note;
+
+    @Column(nullable = false)
+    private String status = ClaimStatus.DRAFT.name();
 
     protected Claim() {
     }
@@ -78,5 +82,13 @@ public class Claim {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public ClaimStatus getStatus() {
+        return ClaimStatus.valueOf(status);
+    }
+
+    public void setStatus(ClaimStatus status) {
+        this.status = status.name();
     }
 }

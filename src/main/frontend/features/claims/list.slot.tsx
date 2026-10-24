@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
@@ -31,20 +31,63 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
             <span data-testid="claim-due">{dueOf(c.amount, pct)}</span>{' '}
-            <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
-              Edit
-            </button>
-            {claim?.id === c.id && (
-              <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
-                Cancel
+            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c}>
+              <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
+                Edit
               </button>
-            )}
+              {claim?.id === c.id && (
+                <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
+                  Cancel
+                </button>
+              )}
+            </ClaimStatusActions>
           </li>
         ))}
       </ul>
       {/* Keyed by the claim being edited, so opening an editor fills the form with its values. */}
       <ClaimForm key={`${sheet}:${claim?.id ?? ''}`} sheet={sheet} person={person} claim={claim} />
     </td>
+  );
+}
+
+const ACTIONS = [
+  { action: 'open', label: 'Open' },
+  { action: 'settle', label: 'Settle' },
+  { action: 'void', label: 'Void' },
+] as const;
+
+// A claim's status and the buttons that change it. A change its status does not allow is refused
+// by the server and shows the claim's error; the error goes as soon as the next action on the row
+// is taken.
+function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: Claim; children: ReactNode }) {
+  const [user] = useCurrentUser();
+  const queryClient = useQueryClient();
+  const change = useMutation({
+    mutationFn: (action: string) => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/${action}`, undefined, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+  });
+  return (
+    <>
+      <span data-testid="claim-status">{claim.status}</span>{' '}
+      {ACTIONS.map(({ action, label }) => (
+        <button
+          key={action}
+          type="button"
+          data-testid={`claim-${action}`}
+          disabled={change.isPending}
+          onClick={() => {
+            change.reset();
+            change.mutate(action);
+          }}
+        >
+          {label}
+        </button>
+      ))}{' '}
+      <span onClickCapture={() => change.reset()}>{children}</span>
+      {change.isError && (
+        <span data-testid="claim-error">That status change is not allowed for a {claim.status} claim.</span>
+      )}
+    </>
   );
 }
 
