@@ -4,7 +4,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
 import { useSettings, type Settings } from '../roles/roles';
-import { chargedOf, formatCents, rateOn, sumDue, useRates, type Rate } from './rates';
+import { chargedOf, formatCents, rateOn, sumDue, trimmedSum, useRates, type Rate } from './rates';
 
 // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
 // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
@@ -12,7 +12,7 @@ import { chargedOf, formatCents, rateOn, sumDue, useRates, type Rate } from './r
 // When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
 // a figure — settled, bound, or live at another grade they had on its date, or live
 // on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
-// the sheet's cap: above it, it shows the cap and their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a.
+// the sheet's cap: above it, it shows the cap and their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
 export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): string {
   return capped(personFigures(person, claims, rates, today, settings), settings).due;
@@ -83,7 +83,7 @@ function DueTotal() {
   const today = useSheetToday();
   const settings = useSettings();
   if (!user || !sheet) return null;
-  const total = sumDue((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data)));
+  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data)));
   return (
     <p>
       Due in total <strong data-testid="rollup-due-total">{total}</strong>

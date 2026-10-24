@@ -3,12 +3,12 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { useSettings, type Settings } from '../roles/roles';
-import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
+import { chargedOf, sumDue, trimmedSum, useRates, type Rate } from '../rates/rates';
 import { countsLive, holdsOf, isOverdue, useClaims, type Claim } from './claims';
 
 // A person's overdue count and overdue-total: their counted claims that are overdue (OPEN or PENDING, due-by before the
 // sheet's today; their unbound OPEN and PENDING claims dated within a hold of theirs do not count), and those claims' dues (with their late charge) added up, skipping n/a.
-// The sheet's are everyone's added up.
+// The sheet's are everyone's added up (its overdue-total leaving out the highest and the lowest with three or more people).
 export function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): { count: number; total: string } {
   const held = holdsOf([person]);
@@ -53,7 +53,7 @@ function OverdueTotal() {
   return (
     <p>
       Overdue <strong data-testid="rollup-overdue-count">{each.reduce((n, o) => n + o.count, 0)}</strong>{' '}
-      totalling <strong data-testid="rollup-overdue-total">{sumDue(each.map((o) => o.total))}</strong>
+      totalling <strong data-testid="rollup-overdue-total">{trimmedSum(each.map((o) => o.total))}</strong>
     </p>
   );
 }

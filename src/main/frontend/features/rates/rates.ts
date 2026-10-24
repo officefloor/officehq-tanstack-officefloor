@@ -113,3 +113,11 @@ export function formatCents(cents: bigint): string {
 export function sumDue(dues: string[]): string {
   return formatCents(dues.filter((d) => d !== 'n/a').reduce((n, d) => n + hundredths(d), 0n));
 }
+
+/** The sheet's total of people's figures, skipping "n/a": with three or more figures, the single highest and the
+ *  single lowest are left out. */
+export function trimmedSum(dues: string[]): string {
+  const figures = dues.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
+  return formatCents(kept.reduce((n, d) => n + d, 0n));
+}

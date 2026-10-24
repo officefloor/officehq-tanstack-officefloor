@@ -4,7 +4,7 @@ import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { overdueOf } from '../claims/overdue.slot';
 import { personDue } from '../rates/due.slot';
-import { sumDue, useRates } from '../rates/rates';
+import { trimmedSum, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { STATUSES } from '../summary/summary.slot';
 
@@ -19,8 +19,8 @@ function HeaderCounters() {
   const today = useSheetToday();
   const allPeople = people.data ?? [];
   const allClaims = claims.data ?? [];
-  const due = sumDue(allPeople.map((p) => personDue(p, allClaims, rates.data, today, settings.data)));
-  const overdue = sumDue(allPeople.map((p) => overdueOf(p, allClaims, rates.data, today, settings.data).total));
+  const due = trimmedSum(allPeople.map((p) => personDue(p, allClaims, rates.data, today, settings.data)));
+  const overdue = trimmedSum(allPeople.map((p) => overdueOf(p, allClaims, rates.data, today, settings.data).total));
   return (
     <section data-testid="header-counters">
       People <strong data-testid="header-people-count">{allPeople.length}</strong>

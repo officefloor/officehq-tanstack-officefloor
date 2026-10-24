@@ -22,6 +22,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * The sheet's figures at one moment, as the screen shows them: each person's claimed and due-total, in the
  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a), and each
  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
+ * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
  * A person's OPEN and PENDING claims dated within a hold of theirs count in none of them, unless a statement binds them.
  */
 public class Rollup {
@@ -49,8 +50,8 @@ public class Rollup {
         Optional<Sheet> sheet = sheets.findById(id);
         Map<Long, Figures> people = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO;
-        BigDecimal dueTotal = BigDecimal.ZERO;
-        BigDecimal overdueTotal = BigDecimal.ZERO;
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         if (sheet.isPresent()) {
             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
             var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(id);
@@ -68,15 +69,22 @@ public class Rollup {
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due,
                         overdue.toPlainString()));
-                overdueTotal = overdueTotal.add(overdue);
+                overdues.add(overdue);
                 claimedTotal = claimedTotal.add(claimed);
                 if (!"n/a".equals(due)) {
-                    dueTotal = dueTotal.add(new BigDecimal(due));
+                    dues.add(new BigDecimal(due));
                 }
             }
         }
-        return new Rollup(people, claimedTotal.setScale(2).toPlainString(), dueTotal.setScale(2).toPlainString(),
-                overdueTotal.setScale(2).toPlainString());
+        return new Rollup(people, claimedTotal.setScale(2).toPlainString(), trimmedSum(dues),
+                trimmedSum(overdues));
+    }
+
+    /** Adds up people's figures; with three or more, the single highest and the single lowest are left out. */
+    private static String trimmedSum(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = figures.stream().sorted().toList();
+        List<BigDecimal> kept = sorted.size() >= 3 ? sorted.subList(1, sorted.size() - 1) : sorted;
+        return kept.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
     }
 
     /** The audit lines telling how the figures moved from before to now: one per person whose figures changed
