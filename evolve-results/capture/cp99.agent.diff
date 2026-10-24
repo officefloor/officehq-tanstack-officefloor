@@ -1,0 +1,450 @@
+diff --git a/src/main/frontend/features/people/bulkgrade.slot.tsx b/src/main/frontend/features/people/bulkgrade.slot.tsx
+index 1d1867ab..ae5e4858 100644
+--- a/src/main/frontend/features/people/bulkgrade.slot.tsx
++++ b/src/main/frontend/features/people/bulkgrade.slot.tsx
+@@ -10,7 +10,7 @@ import { claimsQueryKey } from '../claims/claims';
+ import { GRADES, peoplePath, peopleQueryKey, useShowRetired, type Person } from './people';
+ 
+ // Gives every selected person a grade from a date (blank: the sheet's today) with one button, in list order. Each
+-// is saved exactly as the person form would save them (same name and terms, the version as the store holds it now),
++// is saved exactly as the person form would save them (same name, terms and contact, the version as the store holds it now),
+ // so the server writes the same PERSON_EDITED and rollup lines; one it refuses is left as it is. The count of
+ // people changed shows once all are done, and is gone while it runs; the selection is cleared.
+ const asIds = (raw: unknown): number[] =>
+@@ -93,6 +93,7 @@ function BulkGrade() {
+               grade,
+               gradeFrom: from.trim(),
+               terms: p.terms == null ? '' : String(p.terms),
++              contact: p.contact ?? '',
+               version: p.version,
+             }, user);
+             graded++;
+diff --git a/src/main/frontend/features/people/contact.slot.tsx b/src/main/frontend/features/people/contact.slot.tsx
+new file mode 100644
+index 00000000..bd20e393
+--- /dev/null
++++ b/src/main/frontend/features/people/contact.slot.tsx
+@@ -0,0 +1,16 @@
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import type { Person } from './people';
++
++// A person's contact, blank when they have none.
++function ContactHeader() {
++  return <th>Contact</th>;
++}
++
++function PersonContact({ person }: { person: Person }) {
++  return <td data-testid="person-contact">{person.contact ?? ''}</td>;
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 6, Component: ContactHeader }),
++  PersonCells.fill({ order: 6, Component: PersonContact }),
++];
+diff --git a/src/main/frontend/features/people/form.slot.tsx b/src/main/frontend/features/people/form.slot.tsx
+index eabbffd9..9dadf425 100644
+--- a/src/main/frontend/features/people/form.slot.tsx
++++ b/src/main/frontend/features/people/form.slot.tsx
+@@ -9,7 +9,8 @@ import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditin
+ // The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
+ // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
+ // added with applies from the beginning of time. A person's own terms (blank: none) come ahead of their grade's
+-// and the sheet's when a claim's due-by is fixed. The
++// and the sheet's when a claim's due-by is fixed. A contact (blank: none) is kept trimmed and lower-cased and
++// must not be another person's on the sheet. The
+ // editor remembers the version of the person it loaded; when someone else has saved them since, the
+ // save is refused and the form shows the person's current values (and version) instead. Any other refused save
+ // closes the editor, its error staying on the form until the form is next changed or submitted, an editor is
+@@ -29,12 +30,13 @@ function PersonForm() {
+   // Keyed by who is being edited, so opening an editor fills the form with that person's values;
+   // an editor for someone not on this sheet falls back to the add form.
+   return <PersonFormFields key={`${sheet}:${person?.id ?? ''}`} sheet={sheet} person={person}
+-    refused={refused} setRefused={setRefused} />;
++    people={people.data ?? []} refused={refused} setRefused={setRefused} />;
+ }
+ 
+-function PersonFormFields({ sheet, person, refused, setRefused }: {
++function PersonFormFields({ sheet, person, people, refused, setRefused }: {
+   sheet: string;
+   person?: Person;
++  people: Person[];
+   refused: boolean;
+   setRefused: (refused: boolean) => void;
+ }) {
+@@ -44,11 +46,12 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
+   const [grade, setGrade] = useState(person?.grade ?? 'A');
+   const [gradeFrom, setGradeFrom] = useState('');
+   const [terms, setTerms] = useState(person?.terms == null ? '' : String(person.terms));
++  const [contact, setContact] = useState(person?.contact ?? '');
+   const [version, setVersion] = useState(person?.version);
+   const queryClient = useQueryClient();
+   const save = useMutation({
+     mutationKey: personSaveKey,
+-    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string }) =>
++    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string }) =>
+       person
+         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
+         : postJson<Person>(peoplePath(sheet), body, user),
+@@ -61,6 +64,7 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
+         setGrade('A');
+         setGradeFrom('');
+         setTerms('');
++        setContact('');
+       }
+     },
+     onError: async (error) => {
+@@ -80,6 +84,7 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
+         setName(now.name);
+         setGrade(now.grade);
+         setTerms(now.terms == null ? '' : String(now.terms));
++        setContact(now.contact ?? '');
+         setVersion(now.version);
+       }
+     },
+@@ -93,7 +98,17 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
+       onSubmit={(e) => {
+         e.preventDefault();
+         setRefused(false);
+-        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim() });
++        const given = contact.trim().toLowerCase();
++        // Refused at once when another person on the sheet as loaded has the contact; the store checks again.
++        if (given !== '' && people.some((p) => p.id !== person?.id && p.contact === given)) {
++          save.reset();
++          setRefused(true);
++          if (person) setEditing(undefined);
++          // what is shown may be stale: read the people again, as a refused save in the store would
++          void queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
++          return;
++        }
++        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim() });
+       }}
+     >
+       <h2>{person ? 'Edit person' : 'Add a person'}</h2>
+@@ -124,6 +139,12 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
+         value={terms}
+         onChange={(e) => { setTerms(e.target.value); save.reset(); setRefused(false); }}
+       />
++      <input
++        data-testid="person-form-contact"
++        placeholder="Contact (blank for none)"
++        value={contact}
++        onChange={(e) => { setContact(e.target.value); save.reset(); setRefused(false); }}
++      />
+       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
+         {person ? 'Save' : 'Add person'}
+       </button>
+@@ -136,7 +157,7 @@ function PersonFormFields({ sheet, person, refused, setRefused }: {
+         <span data-testid="person-form-error">
+           {conflict
+             ? 'Someone else has saved this person since you opened the editor; the form now shows their current values.'
+-            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, the grade from-date must be a date, and the terms must be a whole number of days or blank.'}
++            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, the grade from-date must be a date, the terms must be a whole number of days or blank, and the contact must not be another person\'s on this sheet.'}
+         </span>
+       )}
+     </form>
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 235da841..9c8bc02f 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -1,10 +1,10 @@
+-import { useIsMutating } from '@tanstack/react-query';
++import { useIsFetching, useIsMutating } from '@tanstack/react-query';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+-import { gradeOn, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
++import { gradeOn, peopleQueryKey, personSaveKey, usePeople, useEditingPerson, useShowRetired } from './people';
+ 
+-// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way);
++// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
+ // features add their own columns through PeopleColumns / PersonCells.
+ function PeopleList() {
+   const [user] = useCurrentUser();
+@@ -14,6 +14,7 @@ function PeopleList() {
+   const [showRetired] = useShowRetired();
+   const today = useSheetToday();
+   const saving = useIsMutating({ mutationKey: personSaveKey }) > 0;
++  const reading = useIsFetching({ queryKey: peopleQueryKey(sheet ?? '') }) > 0;
+   if (!user || !sheet) return null;
+   return (
+     <table data-testid="people">
+@@ -31,7 +32,7 @@ function PeopleList() {
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+             <td data-testid="person-grade">{gradeOn(p, today)}</td>
+             <td>
+-              <button type="button" data-testid={`person-edit-${p.id}`} disabled={saving}
++              <button type="button" data-testid={`person-edit-${p.id}`} disabled={saving || reading}
+                 onClick={() => setEditing(String(p.id))}>
+                 Edit
+               </button>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 154d63f4..69085745 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -19,6 +19,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ // claims dated within one count in no live total, unless a statement binds them; their other claims still count.
+ // `terms`: their own terms in days (null: none); a claim of theirs is due by its date plus these, ahead of their
+ // grade's terms and the sheet's.
++// `contact`: their contact, trimmed and lower-cased (null: none); no two people on a sheet share one.
+ // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
+ export type Person = {
+   id: number;
+@@ -34,6 +35,7 @@ export type Person = {
+   holds: Hold[];
+   patronIds: number[];
+   terms: number | null;
++  contact: string | null;
+ };
+ 
+ /** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 7c7a1efe..435f2c3e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.orm.ObjectOptimisticLockingFailureException;
+ 
+-/** Saves the person's name and terms, and records their grade from the form's from-date (the sheet's today when blank),
++/** Saves the person's name, terms and contact, and records their grade from the form's from-date (the sheet's today when blank),
+  *  replacing the grade recorded for that date and keeping the others. */
+ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
+@@ -19,10 +19,15 @@ public class ApplyPerson {
+         if (repository.existsBySheetIdAndNameIgnoreCaseAndIdNot(person.getSheetId(), request.name(), person.getId())) {
+             throw new InvalidPersonException("The name is already in use on this sheet.");
+         }
++        if (request.contactOrNull() != null && repository.existsBySheetIdAndContactAndIdNot(person.getSheetId(),
++                request.contactOrNull(), person.getId())) {
++            throw new InvalidPersonException("The contact is already in use on this sheet.");
++        }
+         LocalDate from = request.gradeFrom() == null || request.gradeFrom().isEmpty() ? sheet.getToday()
+                 : LocalDate.parse(request.gradeFrom());
+         person.setName(request.name());
+         person.setTerms(request.termsDays());
++        person.setContact(request.contactOrNull());
+         try {
+             // Every save raises the version, even one that changes only a dated grade.
+             entityManager.lock(person, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+index 6115c098..29592750 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+@@ -5,11 +5,12 @@ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Records the added person, once it is saved, with their terms when they have any. */
++/** Records the added person, once it is saved, with their terms when they have any, and their contact when they have one. */
+ public class AuditPersonAdded {
+     public void audit(@Val Person person, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + AuditUser.decode(user)
+                 + " name=" + person.getName() + " grade=" + person.getGrade()
+-                + (person.getTerms() == null ? "" : " terms=" + person.getTerms()));
++                + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
++                + (person.getContact() == null ? "" : " contact=" + person.getContact()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+index 3d821ae4..7e3d45ee 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -7,12 +7,13 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+ /** Records the edited person, once it is saved, with the grade in force on the sheet's today, and their terms when
+- *  the edit changed them (empty when cleared). */
++ *  the edit changed them (empty when cleared), and likewise their contact. */
+ public class AuditPersonEdited {
+     public void audit(@Val Person person, @Val Sheet sheet, PersonGradeRepository grades,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+         audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + AuditUser.decode(user)
+                 + " name=" + person.getName() + " grade=" + grades.gradesOf(person).on(sheet.getToday())
+-                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : ""));
++                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
++                + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : ""));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+index f990ccdb..3ae52c4c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -10,9 +10,14 @@ public class BuildPerson {
+         if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())) {
+             throw new InvalidPersonException("The name is already in use on this sheet.");
+         }
++        if (request.contactOrNull() != null
++                && repository.existsBySheetIdAndContact(sheet.getId(), request.contactOrNull())) {
++            throw new InvalidPersonException("The contact is already in use on this sheet.");
++        }
+         Person person = new Person(sheet.getId(), request.name(), request.grade());
+         person.setAddedOn(sheet.getToday());
+         person.setTerms(request.termsDays());
++        person.setContact(request.contactOrNull());
+         personOut.set(repository.save(person));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index b1f7e69a..8e361b47 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -44,6 +44,13 @@ public class Person {
+     @Transient
+     private boolean termsChanged;
+ 
++    /** Their contact, trimmed and lower-cased (null: none); no two people on a sheet share one. */
++    private String contact;
++
++    /** Set by an edit that changed their contact, for its audit record; not stored. */
++    @Transient
++    private boolean contactChanged;
++
+     /** Raised on every save; an edit naming an older version is refused. */
+     @Version
+     @Column(nullable = false)
+@@ -116,6 +123,20 @@ public class Person {
+         return termsChanged;
+     }
+ 
++    public String getContact() {
++        return contact;
++    }
++
++    /** Sets their contact, noting whether it differs from the one they had. */
++    public void setContact(String contact) {
++        contactChanged = !java.util.Objects.equals(this.contact, contact);
++        this.contact = contact;
++    }
++
++    public boolean isContactChanged() {
++        return contactChanged;
++    }
++
+     public long getVersion() {
+         return version;
+     }
+@@ -140,6 +161,7 @@ public class Person {
+         Person then = new Person(sheetId, name, grade);
+         then.id = id;
+         then.terms = terms;
++        then.contact = contact;
+         then.addedOn = addedOn;
+         if (retiredMadeOn == null || !retiredMadeOn.isAfter(date)) {
+             then.retiredFrom = retiredFrom;
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 89d06421..474c762a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -16,4 +16,10 @@ public interface PersonRepository extends JpaRepository<Person, Long> {
+ 
+     /** Whether the name is in use on the sheet by someone other than this person, ignoring case. */
+     boolean existsBySheetIdAndNameIgnoreCaseAndIdNot(String sheetId, String name, Long id);
++
++    /** Whether the contact is someone's on the sheet. */
++    boolean existsBySheetIdAndContact(String sheetId, String contact);
++
++    /** Whether the contact is on the sheet for someone other than this person. */
++    boolean existsBySheetIdAndContactAndIdNot(String sheetId, String contact, Long id);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index 0b19f97a..41c2c901 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,11 +1,17 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** The person form as submitted: a name and a grade, their own terms in days (blank: none), and for an edit the version of the person it loaded and the
++/** The person form as submitted: a name and a grade, their own terms in days (blank: none), their contact (trimmed and lower-cased; blank: none), and for an edit the version of the person it loaded and the
+  *  date the grade applies from (blank: the sheet's today). */
+-public record PersonRequest(String name, String grade, Long version, String gradeFrom, String terms) {
++public record PersonRequest(String name, String grade, Long version, String gradeFrom, String terms,
++        String contact) {
+ 
+     /** The terms as a number of days; null when blank. */
+     public Integer termsDays() {
+         return terms == null || terms.isEmpty() ? null : Integer.valueOf(terms);
+     }
++
++    /** The contact; null when blank. */
++    public String contactOrNull() {
++        return contact == null || contact.isEmpty() ? null : contact;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index dee71edf..49877ad4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -8,10 +8,11 @@ import net.officefloor.hq.app.statement.Statement;
+ /** A person as the screen shows them: their grade in force on the sheet's today, and every grade they were given
+  *  with its from-date (null for the first, which applies from the beginning of time), with their statement count
+  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
+- *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none). */
++ *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none). */
+ public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
+         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
+-        List<Hold> holds, List<Long> patronIds, Integer terms) {
++        List<Hold> holds, List<Long> patronIds, Integer terms,
++        String contact) {
+ 
+     /** A hold from a date on, to a date (inclusive; null: open-ended). */
+     public record Hold(String from, String to) {
+@@ -37,6 +38,6 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
+                 person.getRetiredFrom() == null ? null : person.getRetiredFrom().toString(), person.isHeld(),
+                 person.getHolds().stream().map(h -> new Hold(h.getFromDate().toString(),
+                         h.getToDate() == null ? null : h.getToDate().toString())).toList(),
+-                patrons.stream().map(Patron::getPatronId).toList(), person.getTerms());
++                patrons.stream().map(Patron::getPatronId).toList(), person.getTerms(), person.getContact());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 5cf8bacf..91672422 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+  * Reads the person form from the body, trimming the name; refuses an empty name or a grade other than
+- * A, B or C, and a grade from-date that is not a calendar date, and terms that are not a whole number of days.
++ * A, B or C, and a grade from-date that is not a calendar date, and terms that are not a whole number of days;
++ * the contact is trimmed and lower-cased.
+  */
+ public class ValidatePerson {
+ 
+@@ -38,6 +39,7 @@ public class ValidatePerson {
+         if (!terms.isEmpty() && !TERMS.matcher(terms).matches()) {
+             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
+         }
+-        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms));
++        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
++        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms, contact));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V57__person_contact.sql b/src/main/resources/db/migration/V57__person_contact.sql
+new file mode 100644
+index 00000000..daf27012
+--- /dev/null
++++ b/src/main/resources/db/migration/V57__person_contact.sql
+@@ -0,0 +1,3 @@
++-- A person's contact: trimmed and lower-cased; at most one person on a sheet has a given contact. Null (blank)
++-- means they have none.
++ALTER TABLE person ADD COLUMN contact VARCHAR(255);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 09043012..534fbfd2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,4 @@
+-# POST /api/sheets/{sheetId}/people — add a person. Body: { "name": "...", "grade": "A|B|C", "terms": "days" (blank: none) }.
++# POST /api/sheets/{sheetId}/people — add a person. Body: { "name": "...", "grade": "A|B|C", "terms": "days" (blank: none), "contact": "..." (blank: none) }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
+   next: archived
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 89cfc215..e30678d1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,4 +1,4 @@
+-# PUT /api/sheets/{sheetId}/people/{personId} — edit a person. Body: { "name": "...", "grade": "A|B|C", "gradeFrom": "YYYY-MM-DD" (blank: the sheet's today), "terms": "days" (blank: none), "version": n }.
++# PUT /api/sheets/{sheetId}/people/{personId} — edit a person. Body: { "name": "...", "grade": "A|B|C", "gradeFrom": "YYYY-MM-DD" (blank: the sheet's today), "terms": "days" (blank: none), "contact": "..." (blank: none), "version": n }.
+ # Refused with 409 when the person was saved since the editor loaded that version.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
