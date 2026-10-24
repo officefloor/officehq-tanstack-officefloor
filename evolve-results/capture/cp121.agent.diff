@@ -1,0 +1,181 @@
+diff --git a/src/main/frontend/features/people/origin.slot.tsx b/src/main/frontend/features/people/origin.slot.tsx
+new file mode 100644
+index 00000000..3ac237ab
+--- /dev/null
++++ b/src/main/frontend/features/people/origin.slot.tsx
+@@ -0,0 +1,16 @@
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import type { Person } from './people';
++
++// The sheet a transferred person came from; empty for anyone not transferred here.
++function OriginHeader() {
++  return <th>From sheet</th>;
++}
++
++function PersonOrigin({ person }: { person: Person }) {
++  return <td data-testid="person-origin">{person.origin ?? ''}</td>;
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 6.8, Component: OriginHeader }),
++  PersonCells.fill({ order: 6.8, Component: PersonOrigin }),
++];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 53d08e90..79437bbb 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -23,6 +23,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
+ // `aliases`: other names they go by, sorted ignoring case; the quick-add bar and the paste box find them by one too.
+ // `clashing`: whether their name or an alias is in use on another sheet of the sheet's tree (its ancestors and
+ // descendants); an edit of them through the person form is refused until it leaves them no longer clashing.
++// `origin`: the sheet they were transferred from (null: they were not transferred here).
+ // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
+ export type Person = {
+   id: number;
+@@ -41,6 +42,7 @@ export type Person = {
+   contact: string | null;
+   aliases: string[];
+   clashing: boolean;
++  origin: string | null;
+ };
+ 
+ /** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */
+diff --git a/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
+index 0faa2ad8..c6627030 100644
+--- a/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/auditview/RespondWithAuditLines.java
+@@ -4,22 +4,38 @@ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** The sheet's audit lines exactly as the file holds them, newest first. With a name, only the lines carrying
+- *  name=&lt;the name&gt; or person=&lt;the name&gt;, compared as names are (case and surrounding spaces ignored). */
++ *  name=&lt;the name&gt; or person=&lt;the name&gt;, compared as names are (case and surrounding spaces ignored),
++ *  followed, when the person by that name was transferred here, by the lines about them from the sheet they came
++ *  from, newest first, each as that sheet's file holds it. */
+ public class RespondWithAuditLines {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(name = "name", required = false) String name, Audit audit,
++            @RequestParam(name = "name", required = false) String name, Audit audit, PersonRepository people,
+             ObjectResponse<List<String>> response) {
++        String sheet = sheetId.trim();
+         String wanted = name == null ? "" : name.trim();
+-        List<String> lines = new ArrayList<>(audit.linesOf(sheetId.trim()).stream()
++        List<String> lines = linesAbout(audit, sheet, wanted);
++        if (!wanted.isEmpty()) {
++            people.findBySheetIdAndNameIgnoreCase(sheet, wanted).stream().map(Person::getOriginSheet)
++                    .filter(origin -> origin != null && !origin.equals(sheet)).findFirst()
++                    .ifPresent(origin -> lines.addAll(linesAbout(audit, origin, wanted)));
++        }
++        response.send(lines);
++    }
++
++    /** The sheet's lines (about the name, when one is given), newest first. */
++    private static List<String> linesAbout(Audit audit, String sheet, String wanted) {
++        List<String> lines = new ArrayList<>(audit.linesOf(sheet).stream()
+                 .filter(line -> wanted.isEmpty() || about(line, "name", wanted) || about(line, "person", wanted))
+                 .toList());
+         Collections.reverse(lines);
+-        response.send(lines);
++        return lines;
+     }
+ 
+     /** Whether the line carries key=&lt;value&gt; as a whole field, the value compared ignoring case. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index 746c6f2f..a174e640 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -95,6 +95,7 @@ public class ApplyTransfer {
+         arrived.setAddedOn(today);
+         arrived.setTerms(person.getTerms());
+         arrived.setContact(person.getContact());
++        arrived.setOriginSheet(sheetId);
+         arrived = people.saveAndFlush(arrived);
+         List<PersonGrade> theirGrades = grades.findByPersonIdOrderByFromDateAsc(from);
+         for (PersonGrade grade : theirGrades) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index f217fd81..ece01c0f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -79,6 +79,10 @@ public class Person {
+     @Column(name = "retired_made_on")
+     private LocalDate retiredMadeOn;
+ 
++    /** The sheet they were transferred from (null: they were not transferred here). */
++    @Column(name = "origin_sheet")
++    private String originSheet;
++
+     protected Person() {
+     }
+ 
+@@ -138,6 +142,14 @@ public class Person {
+         return termsChanged;
+     }
+ 
++    public String getOriginSheet() {
++        return originSheet;
++    }
++
++    public void setOriginSheet(String originSheet) {
++        this.originSheet = originSheet;
++    }
++
+     public String getContact() {
+         return contact;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index e53e5976..eafb42c2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -20,6 +20,9 @@ public interface PersonRepository extends JpaRepository<Person, Long> {
+ 
+     Optional<Person> findByIdAndSheetId(Long id, String sheetId);
+ 
++    /** The people on the sheet with the name, ignoring case. */
++    List<Person> findBySheetIdAndNameIgnoreCase(String sheetId, String name);
++
+     /** Whether the name is in use on the sheet, ignoring case. */
+     boolean existsBySheetIdAndNameIgnoreCase(String sheetId, String name);
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 0acb0003..85ca6bdb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -9,11 +9,12 @@ import net.officefloor.hq.app.statement.Statement;
+  *  with its from-date (null for the first, which applies from the beginning of time), with their statement count
+  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
+  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
+- *  they clash: their name or an alias is in use on another sheet of the sheet's tree. */
++ *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
++ *  transferred from (null: none). */
+ public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
+         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
+         List<Hold> holds, List<Long> patronIds, Integer terms,
+-        String contact, List<String> aliases, boolean clashing) {
++        String contact, List<String> aliases, boolean clashing, String origin) {
+ 
+     /** A hold from a date on, to a date (inclusive; null: open-ended). */
+     public record Hold(String from, String to) {
+@@ -47,6 +48,7 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
+                         .sorted(String.CASE_INSENSITIVE_ORDER.thenComparing(java.util.Comparator.naturalOrder()))
+                         .toList(),
+                 usedAround.contains(TreeNames.key(person.getName()))
+-                        || aliases.stream().anyMatch(a -> usedAround.contains(TreeNames.key(a.getAlias()))));
++                        || aliases.stream().anyMatch(a -> usedAround.contains(TreeNames.key(a.getAlias()))),
++                person.getOriginSheet());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V64__person_origin.sql b/src/main/resources/db/migration/V64__person_origin.sql
+new file mode 100644
+index 00000000..9f9f3d6d
+--- /dev/null
++++ b/src/main/resources/db/migration/V64__person_origin.sql
+@@ -0,0 +1,2 @@
++-- The sheet a transferred person came from (null: they were not transferred here).
++ALTER TABLE person ADD COLUMN origin_sheet VARCHAR(255);
