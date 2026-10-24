@@ -15,6 +15,7 @@ import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonAliasRepository;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -24,13 +25,13 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
- * Finds each line's person on the sheet, ignoring case, and makes its DRAFT claim by the claim form's rules —
+ * Finds each line's person on the sheet by name or alias, ignoring case, and makes its DRAFT claim by the claim form's rules —
  * all of them before any is stored, so a refused line adds nothing; a line repeating a reference of an earlier
  * line, ignoring case, is refused too. Then adds the claims in order, each recorded
  * and logged as the claim form records and logs it.
  */
 public class AddPastedClaims {
-    public void add(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, ClaimRepository claims,
+    public void add(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases, ClaimRepository claims,
             PeriodRepository periods, PersonGradeRepository grades, RateRepository rates, ClaimLogRepository log,
             HolidayRepository holidays,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
@@ -42,7 +43,7 @@ public class AddPastedClaims {
         int at = 0;
         for (PastedLine line : pasted.lines()) {
             at++;
-            Person person = onSheet.stream().filter(p -> p.getName().equalsIgnoreCase(line.name())).findFirst()
+            Person person = PersonAliasRepository.findByNameOrAlias(onSheet, aliases, sheet.getId(), line.name())
                     .orElse(null);
             if (person == null) {
                 throw new InvalidClaimException("Line " + at + ": " + line.name() + " is not on the sheet.");

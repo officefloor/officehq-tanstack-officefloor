@@ -11,12 +11,14 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
  *  replacing the grade recorded for that date and keeping the others. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
+            PersonAliasRepository aliases,
             PersonGradeRepository grades, EntityManager entityManager)
             throws InvalidPersonException, PersonConflictException {
         if (request.version() == null || request.version() != person.getVersion()) {
             throw new PersonConflictException();
         }
-        if (repository.existsBySheetIdAndNameIgnoreCaseAndIdNot(person.getSheetId(), request.name(), person.getId())) {
+        if (repository.existsBySheetIdAndNameIgnoreCaseAndIdNot(person.getSheetId(), request.name(), person.getId())
+                || aliases.existsBySheetIdAndAliasIgnoreCase(person.getSheetId(), request.name())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
         if (request.contactOrNull() != null && repository.existsBySheetIdAndContactAndIdNot(person.getSheetId(),

@@ -18,12 +18,13 @@ function Holidays() {
   const queryClient = useQueryClient();
   const add = useMutation({
     mutationFn: (body: { date: string }) => postJson<Holiday>(holidaysPath(sheet ?? ''), body, user),
-    onSuccess: async () => {
+    onSuccess: async (_added, body) => {
+      // Cleared before the lists reload, and only if it still holds the date added, so a date typed meanwhile stays.
+      setDate((d) => (d === body.date ? '' : d));
       await queryClient.invalidateQueries({ queryKey: holidaysQueryKey(sheet ?? '') });
       // Adding a holiday can move claims' due-by, and so their figures.
       await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') });
       await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
-      setDate('');
     },
   });
   const submit = useSubmitOnce(add);

@@ -5,9 +5,11 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 public class BuildPerson {
-    public void build(@Val PersonRequest request, @Val Sheet sheet, PersonRepository repository, Out<Person> personOut)
+    public void build(@Val PersonRequest request, @Val Sheet sheet, PersonRepository repository,
+            PersonAliasRepository aliases, Out<Person> personOut)
             throws InvalidPersonException {
-        if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())) {
+        if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())
+                || aliases.existsBySheetIdAndAliasIgnoreCase(sheet.getId(), request.name())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
         if (request.contactOrNull() != null

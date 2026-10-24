@@ -54,7 +54,8 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}
             <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
             <span data-testid="claim-overdue">{isOverdue(c, today, gradeOn(person, c.date), settings.data) ? 'yes' : 'no'}</span>{' '}
-            <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
+            {/* Shown while its deferral runs, whatever its status since; only an OPEN one is held out of the totals. */}
+            <span data-testid="claim-deferred">{c.deferredUntil !== null && today !== undefined && today < c.deferredUntil ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
             <span data-testid="claim-proofs">{c.proofs}</span>{' '}
             <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}

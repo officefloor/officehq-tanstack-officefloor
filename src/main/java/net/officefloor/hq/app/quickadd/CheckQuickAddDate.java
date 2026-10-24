@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.PersonAliasRepository;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -14,10 +15,11 @@ import net.officefloor.plugin.variable.Val;
  *  person not on the sheet yet is added with grade A and no terms of their own) — so a refused claim leaves no new person behind. */
 public class CheckQuickAddDate {
     public void check(@Val QuickAddName name, @Val Sheet sheet, PeriodRepository periods, PersonRepository people,
+            PersonAliasRepository aliases,
             PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = sheet.entryDateInForce();
-        int terms = people.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
-                .filter(p -> p.getName().equalsIgnoreCase(name.name())).findFirst()
+        int terms = PersonAliasRepository.findByNameOrAlias(people.findBySheetIdOrderByIdAsc(sheet.getId()),
+                        aliases, sheet.getId(), name.name())
                 .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(date), date))
                 .orElseGet(() -> sheet.termsFor(null, "A", date));
         if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
