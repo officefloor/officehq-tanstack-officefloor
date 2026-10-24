@@ -106,8 +106,8 @@ function Periods() {
   );
 }
 
-// The buttons that close and reopen a period. Closing one already closed, or reopening one not closed or by
-// anyone but a steward, is refused by the server and shows the period's error, which goes as soon as the next
+// The buttons that close and reopen a period. Closing one already closed, or reopening one not closed, or either by
+// a role the permission matrix does not allow (by the standing rule, reopening by anyone but a steward), is refused by the server and shows the period's error, which goes as soon as the next
 // action on the row is taken.
 function PeriodActions({ sheet, period }: { sheet: string; period: Period }) {
   const [user] = useCurrentUser();
@@ -134,8 +134,8 @@ function PeriodActions({ sheet, period }: { sheet: string; period: Period }) {
         onClick={() => { close.reset(); submitReopen(); }}>
         Reopen
       </button>
-      {close.isError && <span data-testid="period-error">This period cannot be closed: it is already closed.</span>}
-      {reopen.isError && <span data-testid="period-error">This period cannot be reopened: it is not closed, or you are not a steward.</span>}
+      {close.isError && <span data-testid="period-error">This period cannot be closed: it is already closed, or your role is not allowed to close one.</span>}
+      {reopen.isError && <span data-testid="period-error">This period cannot be reopened: it is not closed, or your role is not allowed to reopen one.</span>}
     </>
   );
 }

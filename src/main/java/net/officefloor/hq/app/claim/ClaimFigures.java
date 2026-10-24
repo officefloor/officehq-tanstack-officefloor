@@ -92,14 +92,14 @@ public class ClaimFigures {
     }
 
     /** Whether a claim counts toward a period's live totals: as {@link #countsLive}, taking the status it had at the
-     *  end of the period's last day (null: it had not been added by then, so it does not count). */
+     *  end of the period's last day (null: it had not been added by then, so it does not count); a hold takes out
+     *  only a claim that is still OPEN or PENDING and unbound now. */
     public static boolean countsAsOf(Claim claim, ClaimStatus then, Person person, LocalDate today) {
         if (then == null || !(then.isOpen() || then == ClaimStatus.SETTLED)) {
             return false;
         }
         boolean deferred = then == ClaimStatus.OPEN && claim.getDeferredUntil() != null && claim.getDeferredUntil().isAfter(today);
-        boolean bound = claim.isStated() && then != ClaimStatus.PENDING;
-        return !deferred && !(person != null && then.isOpen() && !bound && person.heldOn(claim.getDate()));
+        return !deferred && !(person != null && claim.getStatus().isOpen() && !claim.isBound() && person.heldOn(claim.getDate()));
     }
 
     /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. */

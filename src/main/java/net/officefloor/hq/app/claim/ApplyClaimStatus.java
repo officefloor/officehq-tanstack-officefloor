@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Moves the claim to the status the action leads to; refuses a change its status does not allow. Opening gives
+ * Moves the claim to the status the action leads to; refuses a change its status does not allow, and an open,
+ * settle or void by a role the sheet's permission matrix does not allow it to. Opening gives
  * the claim the sheet's next number (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
  * X-<n> for a claim in no period) and records who opened it; a voided claim keeps its number (never reused). The one who opened a
  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
@@ -36,6 +37,10 @@ public class ApplyClaimStatus {
         String user = AuditUser.decode(userHeader);
         if (periods.isClosedOn(claim.getSheetId(), claim.getDate())) {
             throw new ClaimStatusException("A claim in a closed period cannot change status.");
+        }
+        String role = roles.roleOf(claim.getSheetId(), user);
+        if (("open".equals(action) || "settle".equals(action) || "void".equals(action)) && !sheet.allows(action, role)) {
+            throw new ClerkLimitException("A " + role + " cannot " + action + " a claim.");
         }
         if ("open".equals(action) && claim.getStatus().after(action) != null) {
             // Lock the sheet first (taking a number locks it), then re-read the claim so a concurrent open is seen.
@@ -59,7 +64,7 @@ public class ApplyClaimStatus {
             claim.setOpenedBy(user);
         } else {
             ClaimStatus next = check(claim, action);
-            boolean steward = Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user));
+            boolean steward = Role.STEWARD.equals(role);
             if (("approve".equals(action) || "reject".equals(action)) && !steward) {
                 throw new ClerkLimitException("Only a steward can approve or reject a pending claim.");
             }

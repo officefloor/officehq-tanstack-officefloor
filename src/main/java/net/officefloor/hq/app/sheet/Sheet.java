@@ -24,6 +24,11 @@ public class Sheet {
     public static final String FLOOR = "floor", LATE_PCT = "late-pct", TERMS = "terms", CLERK_LIMIT = "clerk-limit",
             CAP = "cap", PROOF_THRESHOLD = "proof-threshold";
 
+    /** The setting key of an action's entry in the permission matrix. */
+    public static String permKey(String action) {
+        return "perm-" + action;
+    }
+
     @Id
     private String id;
 
@@ -162,6 +167,23 @@ public class Sheet {
     /** The proof threshold in force on a date; null when there is none. */
     public BigDecimal proofThresholdOn(LocalDate on) {
         return amountOn(PROOF_THRESHOLD, on);
+    }
+
+    /** The permission matrix entry for an action as recorded: its comma separated roles; "" when blank (the
+     *  standing rule applies). Not dated. */
+    public String permOf(String action) {
+        String roles = valueOn(permKey(action), today);
+        return roles == null ? "" : roles;
+    }
+
+    /** Whether a role may take an action: by the roles of the action's permission matrix entry, else by the
+     *  standing rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. */
+    public boolean allows(String action, String role) {
+        String roles = permOf(action);
+        if (roles.isEmpty()) {
+            return "steward".equals(role) || !("reassign".equals(action) || "reopen".equals(action));
+        }
+        return List.of(roles.split(",")).contains(role);
     }
 
     public LocalDate getPolicyDate() {

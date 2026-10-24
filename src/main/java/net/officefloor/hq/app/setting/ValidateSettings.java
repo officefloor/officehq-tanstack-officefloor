@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,7 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Reads the settings form from the body; refuses a clerk limit or floor that is negative or has more than two
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
- *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A key left out is not changed.
+ *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
+ *  roles (clerk, steward), or blank (the standing rule). A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -45,6 +47,12 @@ public class ValidateSettings {
                     "The cap must be an amount, 0.00 or more, with up to two decimals, or blank.");
             amount(changes, Sheet.PROOF_THRESHOLD, request.proofThreshold(), null, request.proofThresholdFrom(),
                     "The proof threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            roles(changes, "open", request.permOpen());
+            roles(changes, "settle", request.permSettle());
+            roles(changes, "void", request.permVoid());
+            roles(changes, "reassign", request.permReassign());
+            roles(changes, "close", request.permClose());
+            roles(changes, "reopen", request.permReopen());
         }
         body.set(new SettingsInput(changes));
     }
@@ -97,6 +105,30 @@ public class ValidateSettings {
             }
         }
         changes.add(new SettingsInput.Change(key, date == null ? null : date.toString(), false, null));
+    }
+
+    /** Adds an action's permission matrix entry when the form sets it: comma separated roles, each clerk or steward
+     *  (blank: null, the standing rule). Undated. */
+    private static void roles(List<SettingsInput.Change> changes, String action, String value)
+            throws InvalidSettingsException {
+        if (value == null) {
+            return;
+        }
+        String roles = null;
+        if (!value.trim().isEmpty()) {
+            List<String> each = new ArrayList<>();
+            for (String role : value.split(",", -1)) {
+                if (!Role.CLERK.equals(role.trim()) && !Role.STEWARD.equals(role.trim())) {
+                    throw new InvalidSettingsException("The roles that may " + action
+                            + " must be a comma separated list of clerk and steward, or blank.");
+                }
+                if (!each.contains(role.trim())) {
+                    each.add(role.trim());
+                }
+            }
+            roles = String.join(",", each);
+        }
+        changes.add(new SettingsInput.Change(Sheet.permKey(action), roles, false, null));
     }
 
     /** A setting's from-date: null when blank or left out (the sheet's today). */

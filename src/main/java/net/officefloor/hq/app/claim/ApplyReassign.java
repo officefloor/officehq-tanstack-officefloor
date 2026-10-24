@@ -4,24 +4,28 @@ import jakarta.persistence.EntityManager;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
-import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
- * Moves a DRAFT, OPEN or PENDING claim to another person of the sheet; only a steward may. The claim keeps its number
+ * Moves a DRAFT, OPEN or PENDING claim to another person of the sheet; only a role the sheet's permission matrix
+ * allows to reassign may (a steward, by the standing rule). The claim keeps its number
  * and date, loses any figure a statement bound it to (it is live until its new person's next statement) and is listed
  * as its new person's newest claim. Returns the name of the person it moved from, for the audit.
  */
 public class ApplyReassign {
     public String apply(@Val Claim claim, @Val Person to, ClaimRepository repository, PersonRepository people,
-            RoleRepository roles, EntityManager entityManager,
+            RoleRepository roles, EntityManager entityManager, SheetRepository sheets,
             @RequestHeader(name = "X-User", required = false) String userHeader)
             throws ClaimStatusException, ClerkLimitException {
         String user = AuditUser.decode(userHeader);
-        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user))) {
-            throw new ClerkLimitException("Only a steward can move a claim to another person.");
+        String role = roles.roleOf(claim.getSheetId(), user);
+        Sheet sheet = sheets.findById(claim.getSheetId()).orElseGet(() -> new Sheet(claim.getSheetId()));
+        if (!sheet.allows("reassign", role)) {
+            throw new ClerkLimitException("A " + role + " cannot move a claim to another person.");
         }
         if (claim.getStatus() != ClaimStatus.DRAFT && !claim.getStatus().isOpen()) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot move to another person.");

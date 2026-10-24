@@ -6,7 +6,19 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold';
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | PermKey;
+
+/** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
+ *  Not dated. */
+const PERMS = [
+  { action: 'open', key: 'permOpen', standing: 'clerk,steward' },
+  { action: 'settle', key: 'permSettle', standing: 'clerk,steward' },
+  { action: 'void', key: 'permVoid', standing: 'clerk,steward' },
+  { action: 'reassign', key: 'permReassign', standing: 'steward' },
+  { action: 'close', key: 'permClose', standing: 'clerk,steward' },
+  { action: 'reopen', key: 'permReopen', standing: 'steward' },
+] as const;
+type PermKey = (typeof PERMS)[number]['key'];
 
 /** The settings that carry a figure: each is saved from a from-date (blank: the sheet's today). */
 const DATED = ['clerkLimit', 'floor', 'terms', 'latePct', 'termsA', 'termsB', 'termsC', 'cap', 'proofThreshold'] as const;
@@ -27,7 +39,7 @@ type Drafts = Partial<Record<Key, string>>;
 // claim's due gains it of its figure for every full 30 days overdue), the policy date (a claim dated before it rounds half
 // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
 // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
 // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
@@ -60,6 +72,7 @@ function SheetSettings() {
     termsC: settings.data?.termsC ?? '',
     cap: settings.data?.cap ?? '',
     proofThreshold: settings.data?.proofThreshold ?? '',
+    ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
   const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
@@ -125,6 +138,12 @@ function SheetSettings() {
         Proof threshold:{' '}
         <span data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</span>
       </p>
+      {PERMS.map(({ action, key, standing }) => (
+        <p key={action}>
+          Roles that may {action} (blank: {standing}):{' '}
+          <span data-testid={`setting-perm-${action}-current`}>{settings.data?.[key] ?? ''}</span>
+        </p>
+      ))}
       <form
         data-testid="settings-form"
         onSubmit={(e) => {
@@ -222,11 +241,22 @@ function SheetSettings() {
           onFocus={touch('proofThreshold')}
         />
         {fromField('proofThreshold', 'setting-proof-threshold')}
+        {PERMS.map(({ action, key, standing }) => (
+          <input
+            key={action}
+            data-testid={`setting-perm-${action}`}
+            placeholder={`Roles that may ${action}, comma separated (blank: ${standing})`}
+            value={valueOf(key)}
+            onChange={edit(key)}
+            onInput={edit(key)}
+            onFocus={touch(key)}
+          />
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap and proof threshold each an amount, 0.00 or more, with up to two decimals, or blank; a from-date a date (YYYY-MM-DD), or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank; the terms a whole number of days, or blank; the late percent a percent, 0.00 or more, with up to two decimals, or blank; the policy date and period numbering from each a date (YYYY-MM-DD), or blank; a grade's terms a whole number of days, or blank; the cap and proof threshold each an amount, 0.00 or more, with up to two decimals, or blank; a from-date a date (YYYY-MM-DD), or blank; the roles that may take an action a comma separated list of clerk and steward, or blank.</span>
         )}
       </form>
     </section>

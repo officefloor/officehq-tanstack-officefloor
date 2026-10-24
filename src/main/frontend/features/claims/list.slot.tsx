@@ -85,10 +85,12 @@ const ACTIONS = [
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
 // by the server and shows the claim's error, as is settling or approving a claim the signed-in user opened, a
-// non-steward approving or rejecting a PENDING claim, or rejecting one without a reason (typed beside the reject
+// non-steward approving or rejecting a PENDING claim, an open, settle or void by a role the permission matrix does
+// not allow, or rejecting one without a reason (typed beside the reject
 // button). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
 // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
-// instead of opening its editor (an open claim is voided and added anew). A steward moves a DRAFT, OPEN or PENDING
+// instead of opening its editor (an open claim is voided and added anew). A role the permission matrix allows (a steward, by the standing
+// rule) moves a DRAFT, OPEN or PENDING
 // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
 // shows the claim's error. A steward re-settles a SETTLED claim at the figure it would have today as an open claim
 // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
@@ -253,7 +255,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
               : `A claim can only be deferred to a date after the sheet's today (${today ?? ''}).`
             : move.isError
             ? move.error instanceof HttpError && move.error.status === 403
-              ? 'Only a steward can move a claim to another person.'
+              ? 'Your role is not allowed to move a claim to another person.'
               : `A ${claim.status} claim cannot move to another person.`
             : editRefused
             ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
@@ -261,6 +263,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? 'This claim is dated in a closed period, so its status cannot change.'
             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can approve or reject a pending claim.'
+            : (action === 'open' || action === 'settle' || action === 'void') && change.error instanceof HttpError && change.error.status === 403
+            ? `Your role is not allowed to ${action} a claim.`
             : action === 'resettle' && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can re-settle a claim.'
             : action === 'resettle'

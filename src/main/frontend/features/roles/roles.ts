@@ -18,7 +18,8 @@ export type Role = { user: string; role: string };
 export type Settings = { clerkLimit: string | null; floor: string; terms: string;
   latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string; proofThreshold: string;
-  dated: Record<string, { from: string | null; value: string | null }[]> };
+  dated: Record<string, { from: string | null; value: string | null }[]>;
+  permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string };
 
 /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
  *  before it, else `start` (the sheet's starting value). */

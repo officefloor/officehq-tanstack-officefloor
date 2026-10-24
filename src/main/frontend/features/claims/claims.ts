@@ -84,10 +84,11 @@ export function statusOn(c: Claim, day: string): ClaimStatus | null {
 }
 
 /** Whether a claim counts toward a period's live totals: as `countsLive`, taking the status it had at the end of
- *  the period's last day — not at all when it had not been added by then. */
+ *  the period's last day — not at all when it had not been added by then; a hold takes out only a claim that is
+ *  still OPEN or PENDING and unbound now. */
 export const countsAsOf = (c: Claim, holds: Holds, today: string | undefined, end: string) => {
   const status = statusOn(c, end);
-  return status !== null && countsLive({ ...c, status }, holds, today);
+  return status !== null && counts({ ...c, status }, today) && !(isOpen(c) && !isBound(c) && heldOn(c, holds));
 };
 
 export const claimsQueryKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
