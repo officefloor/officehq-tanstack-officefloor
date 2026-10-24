@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
 import { asString, useSearchParam } from '../../url/useSearchParam';
@@ -77,3 +78,33 @@ export const isOverdue = (c: Claim, terms: string, today: string | undefined) =>
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);
+
+/** The ids of the selected claims (search param `selectedClaims`, comma-separated), a toggle for one, and a
+ *  clear. The toggle works from the URL as it is when it runs, so quick clicks in a row each keep the others'. */
+export function useSelectedClaims() {
+  const [ids] = useSearchParam('selectedClaims', asIds);
+  const navigate = useNavigate();
+  const update = (change: (ids: Set<number>) => void) =>
+    void navigate({
+      to: '.',
+      search: (prev: Record<string, unknown>) => {
+        const next = { ...prev };
+        const set = new Set(asIds(prev.selectedClaims));
+        change(set);
+        if (set.size === 0) delete next.selectedClaims;
+        else next.selectedClaims = [...set].join(',');
+        return next;
+      },
+      replace: true,
+    });
+  return {
+    selected: new Set(ids),
+    toggle: (id: number, on: boolean) => update((set) => (on ? set.add(id) : set.delete(id))),
+    clear: () => update((set) => set.clear()),
+  };
+}
+
+const asIds = (raw: unknown): number[] =>
+  raw === undefined || raw === null || raw === ''
+    ? []
+    : String(raw).split(',').map(Number).filter((n) => Number.isInteger(n));
