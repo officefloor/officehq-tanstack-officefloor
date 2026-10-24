@@ -15,6 +15,8 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Patron;
 import net.officefloor.hq.app.person.PatronRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonAlias;
+import net.officefloor.hq.app.person.PersonAliasRepository;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -49,6 +51,7 @@ public class AsOf {
     private final PersonRepository people;
     private final PersonGradeRepository grades;
     private final PatronRepository patrons;
+    private final PersonAliasRepository aliases;
     private final StatementRepository statements;
     private final ClaimRepository claims;
     private final ClaimLogRepository claimLogs;
@@ -59,7 +62,7 @@ public class AsOf {
 
     public AsOf(History history, SettingLogRepository settingLogs, RateLogRepository rateLogs, RateRepository rates,
             PersonRepository people, PersonGradeRepository grades, PatronRepository patrons,
-            StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
+            PersonAliasRepository aliases, StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
             PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches) {
         this.history = history;
         this.settingLogs = settingLogs;
@@ -68,6 +71,7 @@ public class AsOf {
         this.people = people;
         this.grades = grades;
         this.patrons = patrons;
+        this.aliases = aliases;
         this.statements = statements;
         this.claims = claims;
         this.claimLogs = claimLogs;
@@ -116,6 +120,14 @@ public class AsOf {
         List<Patron> now = patrons.findBySheetIdOrderByIdAsc(sheetId);
         return date == null ? now
                 : sorted(history.asOf(sheetId, Patron.class, date, now, Patron::getId), Comparator.comparing(Patron::getId));
+    }
+
+    /** The sheet's aliases, in the order they were given. */
+    public List<PersonAlias> aliases(String sheetId, LocalDate date) {
+        List<PersonAlias> now = aliases.findBySheetIdOrderByIdAsc(sheetId);
+        return date == null ? now
+                : sorted(history.asOf(sheetId, PersonAlias.class, date, now, PersonAlias::getId),
+                        Comparator.comparing(PersonAlias::getId));
     }
 
     /** The sheet's statements, oldest first. */

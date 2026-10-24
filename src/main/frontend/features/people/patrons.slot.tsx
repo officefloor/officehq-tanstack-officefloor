@@ -6,7 +6,7 @@ import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { useClaims, type Claim } from '../claims/claims';
-import { sumDue } from '../rates/rates';
+import { formatCents, sumDue } from '../rates/rates';
 import { peoplePath, peopleQueryKey, usePeople, type Person } from './people';
 
 /** How many days back from the sheet's today (today included) a patron's settled claim counts toward backing. */
@@ -16,20 +16,49 @@ const BACKING_DAYS = 90;
 const daysBefore = (day: string, n: number) =>
   new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
 
-/** A person's backing: their patrons' frozen figures over SETTLED claims dated within the window ending today. */
-export function backingOf(patrons: Person[], claims: Claim[], today: string | undefined): string {
-  if (today === undefined) return sumDue([]);
-  const since = daysBefore(today, BACKING_DAYS - 1);
-  const ids = new Set(patrons.map((p) => p.id));
+/** A whole number divided by a positive one, rounded half to even. */
+const divideHalfEven = (n: bigint, d: bigint) => {
+  const negative = n < 0n;
+  const m = negative ? -n : n;
+  let q = m / d;
+  const rest = (m % d) * 2n;
+  if (rest > d || (rest === d && q % 2n === 1n)) q += 1n;
+  return negative ? -q : q;
+};
+
+/** Each patron's share in hundredths of a percent, in the order they were named: 100.00 split equally, each rounded
+ *  half to even to two decimals, the remainder (100.00 minus the shares added up) going to the first-named. */
+export function sharesOf(count: number): bigint[] {
+  if (count === 0) return [];
+  const each = divideHalfEven(10000n, BigInt(count));
+  const shares = Array.from({ length: count }, () => each);
+  shares[0] += 10000n - each * BigInt(count);
+  return shares;
+}
+
+/** A patron's figure: their frozen figures over SETTLED claims dated within the window ending today, added up. */
+function figureOfPatron(patron: Person, claims: Claim[], today: string, since: string): string {
   return sumDue(claims
-    .filter((c) => ids.has(c.personId) && c.status === 'SETTLED' && c.due !== null && since <= c.date && c.date <= today)
+    .filter((c) => c.personId === patron.id && c.status === 'SETTLED' && c.due !== null && since <= c.date && c.date <= today)
     .map((c) => c.due as string));
 }
 
+/** A person's backing: over their patrons (in the order they were named), each patron's figure times their share
+ *  divided by 100, added up exactly and rounded half to even to two decimals. */
+export function backingOf(patrons: Person[], claims: Claim[], today: string | undefined): string {
+  if (today === undefined) return sumDue([]);
+  const since = daysBefore(today, BACKING_DAYS - 1);
+  const shares = sharesOf(patrons.length);
+  // figure cents times share hundredths-of-a-percent = millionths; dividing by 10000 gives cents.
+  const total = patrons.reduce((n, p, i) =>
+    n + BigInt(Math.round(Number(figureOfPatron(p, claims, today, since)) * 100)) * shares[i], 0n);
+  return formatCents(divideHalfEven(total, 10000n));
+}
+
 // A person's patrons — other people on the sheet they have named, one at a time, each once; shown by name,
-// sorted — and the button that names another. Their backing is the sum of their patrons' settled figures over
-// their SETTLED claims dated within the 90 days up to and including the sheet's today, each at its frozen figure
-// (0.00 with none).
+// each with their share, sorted by name — and the button that names another. Their backing is, over their patrons,
+// each patron's figure (their SETTLED claims dated within the 90 days up to and including the sheet's today, each at
+// its frozen figure) times their share divided by 100, added up and rounded half to even (0.00 with none).
 function PatronsHeader() {
   return (
     <>
@@ -61,7 +90,10 @@ function PersonPatrons({ person }: { person: Person }) {
   const patrons = person.patronIds
     .map((id) => everyone.find((p) => p.id === id))
     .filter((p): p is Person => p !== undefined);
-  const names = patrons.map((p) => p.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const shares = sharesOf(patrons.length);
+  const names = patrons.map((p, i) => ({ name: p.name, share: formatCents(shares[i]) }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((p) => `${p.name} ${p.share}`);
   const backing = backingOf(patrons, claims.data ?? [], today);
   return (
     <>

@@ -15,6 +15,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.person.Patron;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonAlias;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.role.Delegation;
 import net.officefloor.hq.app.role.Role;
@@ -38,7 +39,8 @@ public class History {
     /** The kind each kept entity is recorded under. */
     private static final Map<Class<?>, String> KINDS = Map.of(Claim.class, "claim", Person.class, "person",
             PersonGrade.class, "person-grade", Period.class, "period", Patron.class, "patron", Watch.class, "watch",
-            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement");
+            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement", PersonAlias.class,
+            "person-alias");
 
     /** An entity's state as its fields hold it: every field, no getter. */
     private final JsonMapper json = JsonMapper.builder()
