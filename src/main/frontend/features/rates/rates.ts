@@ -147,10 +147,24 @@ export function sharePart(due: string, share: string): string {
   return due === 'n/a' ? 'n/a' : dueOn(due, share);
 }
 
+/** A holder's part of a shared claim worked out for the holder: the claim's amount times their share divided by 100,
+ *  times the rate (undefined: none) of the holder's own grade in force on the claim's date, divided by 100, rounded to
+ *  two decimals like the claim (half to even, or half up when `halfUp`; exact, in integers); 0.00 when no rate. */
+export function holderPart(amount: string, share: string, rate: string | undefined, halfUp = false): string {
+  if (rate === undefined) return '0.00';
+  const scaled = toCents(amount) * toCents(share) * toCents(rate); // in 1/100000000 of a cent
+  const sign = scaled < 0n ? -1n : 1n;
+  const abs = scaled * sign;
+  let cents = abs / 100000000n;
+  const rest = abs % 100000000n;
+  if (rest > 50000000n || (rest === 50000000n && (halfUp || cents % 2n === 1n))) cents += 1n;
+  return fromCents(cents * sign);
+}
+
 /** How the shared claims move a person's due-total, in cents: for each claim that counts in the live totals for its
  *  person (among the people given) and has a figure (its due as shown on its row), each holder's part (see
- *  sharePart) is added to the holder's and taken from the claim's person's; undefined when the person has a part in
- *  no such claim. */
+ *  holderPart; a SETTLED claim keeps its parts as frozen: see sharePart) is added to the holder's and taken from the
+ *  claim's person's; undefined when the person has a part in no such claim. */
 export function shareParts(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
     late: Late, people: Person[]): bigint | undefined {
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -166,7 +180,10 @@ export function shareParts(person: Person, claims: Claim[], rates: Rate[], today
     if (due === 'n/a') continue;
     for (const s of shares) {
       if (!mine && s.personId !== person.id) continue;
-      const part = toCents(sharePart(due, s.share));
+      const holder = s.personId === person.id ? person : byId.get(s.personId);
+      const part = toCents(c.status === 'SETTLED' || !holder ? sharePart(due, s.share)
+        : holderPart(c.amount, s.share, rateOn(rates, gradeOn(holder, c.date), c.date, c.id), roundsUp(c, late)));
+      if (part === 0n) continue; // a part of nothing gives the holder no figure (n/a stays n/a)
       total = (total ?? 0n) + (mine ? -part : part);
     }
   }

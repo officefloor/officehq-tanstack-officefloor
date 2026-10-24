@@ -100,8 +100,9 @@ public class Rollups {
     }
 
     /** How the claims' shares move each person's due-total, by person id: for each claim that counts for its person
-     *  and has a figure (its due as shown), each holder's part (the due times their share divided by 100, rounded half to
-     *  even to two decimals) is added to the holder's and taken from the claim's person's. A person with no part in
+     *  and has a figure (its due as shown), each holder's part (see Dues.holderPart; a SETTLED claim keeps its parts
+     *  as frozen: its due times their share divided by 100, rounded half to even to two decimals) is added to the
+     *  holder's and taken from the claim's person's. A person with no part in
      *  any such claim has no entry. */
     private Map<Long, BigDecimal> shareParts(String sheetId, List<Person> everyone, List<Claim> all,
             java.time.LocalDate today, net.officefloor.hq.app.setting.DatedAmount floor, LateCharge late) {
@@ -123,7 +124,14 @@ public class Rollups {
                 continue;
             }
             for (ClaimShareRepository.Share s : theirs) {
-                BigDecimal part = Dues.part(due, s.pct());
+                Person holder = byId.get(s.personId());
+                // a settled claim keeps its parts as frozen: of its settled due; else each holder's part is worked
+                // out at the rate of the holder's own grade
+                BigDecimal part = c.status() == ClaimStatus.SETTLED || holder == null ? Dues.part(due, s.pct())
+                        : Dues.holderPart(c, s.pct(), holder.grades(), rates, late.rounding());
+                if (part.signum() == 0) {
+                    continue; // a part of nothing gives the holder no figure (n/a stays n/a)
+                }
                 parts.merge(s.personId(), part, BigDecimal::add);
                 parts.merge(owner.id(), part.negate(), BigDecimal::add);
             }

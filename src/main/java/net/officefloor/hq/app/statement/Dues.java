@@ -109,6 +109,17 @@ public final class Dues {
         return due.multiply(share).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_EVEN);
     }
 
+    /** A holder's part of a shared claim worked out for the holder: the claim's amount times their share divided by
+     *  100, times the rate of the holder's own grade in force on the claim's date (of the rates that reach it), divided
+     *  by 100, rounded to two decimals as the claim rounds (see Rounding); 0.00 when their grade has no rate. */
+    public static BigDecimal holderPart(Claim claim, BigDecimal share, Grades holderGrades, Rates rates,
+            Rounding rounding) {
+        return rates.on(claim.sheetId(), holderGrades.on(claim.date()), claim.date(), claim.id())
+                .map(r -> claim.amount().multiply(share).multiply(r.pct())
+                        .divide(BigDecimal.valueOf(10000), 2, rounding.of(claim)))
+                .orElse(new BigDecimal("0.00"));
+    }
+
     /** The cap less a person's cut total (null: none), not below 0.00; null when there is no cap. */
     public static BigDecimal capLess(BigDecimal cap, BigDecimal cut) {
         return cap == null || cut == null ? cap : cap.subtract(cut).max(BigDecimal.ZERO.setScale(2));
