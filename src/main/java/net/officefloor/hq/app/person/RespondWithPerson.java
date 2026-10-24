@@ -1,13 +1,16 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.StatementRepository;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPerson {
     public void respond(@Val Person person, StatementRepository statements, PatronRepository patrons,
-            ObjectResponse<PersonResponse> response) {
+            PersonGradeRepository grades, SheetRepository sheets, ObjectResponse<PersonResponse> response) {
+        Sheet sheet = sheets.findById(person.getSheetId()).orElseGet(() -> new Sheet(person.getSheetId()));
         response.send(PersonResponse.from(person, statements.findByPersonIdOrderByIdAsc(person.getId()),
-                patrons.findByPersonIdOrderByIdAsc(person.getId())));
+                patrons.findByPersonIdOrderByIdAsc(person.getId()), grades.gradesOf(person), sheet.getToday()));
     }
 }

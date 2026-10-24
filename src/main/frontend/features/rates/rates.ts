@@ -36,7 +36,7 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
 }
 
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
- *  else its live due at its person's grade's rate on its date, at least the sheet's floor ("n/a" when it has none). */
+ *  else its live due at the rate on its date of the grade (its person's grade on its date), at least the sheet's floor ("n/a" when it has none). */
 export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined): string {
   if (c.due !== null) return c.due;
   if (c.stated) return c.statedDue ?? 'n/a';

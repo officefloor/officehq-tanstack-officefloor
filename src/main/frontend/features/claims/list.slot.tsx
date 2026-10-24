@@ -4,7 +4,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import type { Person } from '../people/people';
+import { gradeOn, type Person } from '../people/people';
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
 import { DEFAULT_TERMS, useSettings } from '../roles/roles';
@@ -38,7 +38,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
             <span data-testid="claim-period">{periodOn(periods.data, c.date)?.name ?? ''}</span>{' '}
-            <span data-testid="claim-due">{chargedOf(c, rates.data, person.grade, settings.data, today)}</span>{' '}
+            <span data-testid="claim-due">{chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)}</span>{' '}
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
             <span data-testid="claim-due-by">{dueByOf(c, terms)}</span>{' '}

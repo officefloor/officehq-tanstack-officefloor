@@ -1,23 +1,26 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { usePeople, type Person } from '../people/people';
+import { gradeOn, usePeople, type Person } from '../people/people';
 import { countsLive, heldIds, useClaims, type Claim } from '../claims/claims';
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, rateOn, sumDue, useRates, type Rate } from './rates';
 
 // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
 // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
-// an overdue claim's late charge) — 0.00 with nothing that counts. When their grade has no rate in force on
-// the sheet's today it is n/a, unless a counted settled or bound claim keeps a figure: then it is the sum of the
-// figures there are. While they are held their OPEN claims do not count. The sheet's due-total is everyone's added up, skipping n/a.
+// an overdue claim's late charge; each claim at the grade they had on its date) — 0.00 with nothing that counts.
+// When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
+// a figure — settled, bound, or live at another grade they had on its date: then it is the sum of the figures there are. While they are held their OPEN claims do not count. The sheet's due-total is everyone's added up, skipping n/a.
 export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): string {
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, heldIds([person])));
-  if (rateOn(rates, person.grade, today) === undefined && !mine.some((c) => c.due !== null || (c.stated && c.statedDue !== null))) {
+  const grade = gradeOn(person, today);
+  const kept = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null)
+    || (!c.stated && gradeOn(person, c.date) !== grade && chargedOf(c, rates, gradeOn(person, c.date), settings, today) !== 'n/a');
+  if (rateOn(rates, grade, today) === undefined && !mine.some(kept)) {
     return 'n/a';
   }
-  return sumDue(mine.map((c) => chargedOf(c, rates, person.grade, settings, today)));
+  return sumDue(mine.map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
 }
 
 function DueHeader() {

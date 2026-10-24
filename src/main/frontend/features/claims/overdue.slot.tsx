@@ -1,7 +1,7 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { usePeople, type Person } from '../people/people';
+import { gradeOn, usePeople, type Person } from '../people/people';
 import { DEFAULT_TERMS, useSettings, type Settings } from '../roles/roles';
 import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
 import { countsLive, heldIds, isOverdue, useClaims, type Claim } from './claims';
@@ -13,7 +13,7 @@ function overdueOf(person: Person, claims: Claim[], rates: Rate[] | undefined, t
   settings: Settings | undefined): { count: number; total: string } {
   const held = heldIds([person]);
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, held) && isOverdue(c, terms, today));
-  return { count: mine.length, total: sumDue(mine.map((c) => chargedOf(c, rates, person.grade, settings, today))) };
+  return { count: mine.length, total: sumDue(mine.map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today))) };
 }
 
 function useOverdue() {

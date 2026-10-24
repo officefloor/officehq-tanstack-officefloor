@@ -7,13 +7,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.sheet.Sheet;
 
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
- * figure its person's last statement bound it to, else its live due (amount times its grade's rate in force on
- * its date, rounded half to even, and at least the sheet's floor; none — n/a — when no rate applies then). An
+ * figure its person's last statement bound it to, else its live due (amount times the rate in force on its date of
+ * the grade its person had on its date, rounded half to even, and at least the sheet's floor; none — n/a — when no rate applies then). An
  * overdue claim's due adds, on top of its figure, the late charge: the sheet's late percent of the figure for every
  * full 30 days it is overdue on the sheet's today, rounded like a due. A statement never binds the charge; settling
  * freezes it in.
@@ -21,6 +22,8 @@ import net.officefloor.hq.app.sheet.Sheet;
 public class ClaimFigures {
 
     private final List<Rate> rates;
+
+    private final PersonGrades grades;
 
     private final BigDecimal floor;
 
@@ -30,11 +33,13 @@ public class ClaimFigures {
 
     private final LocalDate today;
 
-    /** @param rates the rates of the person's grade.
+    /** @param rates the sheet's rates.
+     *  @param grades the person's grades over time.
      *  @param sheet the sheet: its floor (a live due is at least it), and its late percent, terms and today (the
      *  late charge). */
-    public ClaimFigures(List<Rate> rates, Sheet sheet) {
+    public ClaimFigures(List<Rate> rates, PersonGrades grades, Sheet sheet) {
         this.rates = rates;
+        this.grades = grades;
         this.floor = sheet.getFloor();
         this.latePct = sheet.getLatePct();
         this.terms = sheet.getTerms();
@@ -73,8 +78,10 @@ public class ClaimFigures {
         return counts(claim) && !(held && claim.getStatus() == ClaimStatus.OPEN);
     }
 
-    private Optional<BigDecimal> rateOn(LocalDate on) {
+    /** The percent of the grade's rate in force on a date. */
+    private Optional<BigDecimal> rateOn(String grade, LocalDate on) {
         return rates.stream()
+                .filter(r -> r.getGrade().equals(grade))
                 .filter(r -> r.getFromDate() == null || !r.getFromDate().isAfter(on))
                 .max(Comparator.comparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .map(Rate::getPct);
@@ -97,13 +104,14 @@ public class ClaimFigures {
         if (claim.isStated()) {
             return claim.getStatedDue();
         }
-        return rateOn(claim.getDate())
+        return rateOn(grades.on(claim.getDate()), claim.getDate())
                 .map(pct -> liveDue(claim.getAmount(), pct, floor))
                 .orElse(null);
     }
 
-    /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade has
-     *  no rate in force on the day, unless a counted claim keeps a fixed figure (settled or bound). */
+    /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade
+     *  in force on the day has no rate in force then, unless a counted claim keeps a figure: a fixed one (settled or bound), or a
+     *  live one at another grade they had on its date. */
     public String dueTotal(List<Claim> claims, LocalDate today) {
         return dueTotal(claims, today, false);
     }
@@ -112,8 +120,10 @@ public class ClaimFigures {
      *  claims do not count. */
     public String dueTotal(List<Claim> claims, LocalDate today, boolean held) {
         List<Claim> counted = claims.stream().filter(c -> countsLive(c, held)).toList();
-        boolean fixed = counted.stream().anyMatch(c -> c.getDue() != null || (c.isStated() && c.getStatedDue() != null));
-        if (rateOn(today).isEmpty() && !fixed) {
+        String grade = grades.on(today);
+        boolean kept = counted.stream().anyMatch(c -> c.getDue() != null || (c.isStated() && c.getStatedDue() != null)
+                || (!c.isStated() && !grade.equals(grades.on(c.getDate())) && figure(c) != null));
+        if (rateOn(grade, today).isEmpty() && !kept) {
             return "n/a";
         }
         return counted.stream().map(this::due).filter(f -> f != null)

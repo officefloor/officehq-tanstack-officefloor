@@ -6,7 +6,9 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
 
-// The person form: adds a person, or — while a person's editor is open — saves their changes. The
+// The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
+// grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
+// added with applies from the beginning of time. The
 // editor remembers the version of the person it loaded; when someone else has saved them since, the
 // save is refused and the form shows the person's current values (and version) instead.
 function PersonForm() {
@@ -26,10 +28,11 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(person?.name ?? '');
   const [grade, setGrade] = useState(person?.grade ?? 'A');
+  const [gradeFrom, setGradeFrom] = useState('');
   const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: string }) =>
+    mutationFn: (body: { name: string; grade: string; gradeFrom: string }) =>
       person
         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
         : postJson<Person>(peoplePath(sheet), body, user),
@@ -40,6 +43,7 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
       } else {
         setName('');
         setGrade('A');
+        setGradeFrom('');
       }
     },
     onError: async (error) => {
@@ -65,7 +69,7 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ name, grade });
+        submit({ name, grade, gradeFrom: gradeFrom.trim() });
       }}
     >
       <h2>{person ? 'Edit person' : 'Add a person'}</h2>
@@ -84,6 +88,12 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
           <option key={g} value={g}>{g}</option>
         ))}
       </select>
+      <input
+        data-testid="person-form-grade-from"
+        placeholder="Grade from (YYYY-MM-DD)"
+        value={gradeFrom}
+        onChange={(e) => { setGradeFrom(e.target.value); save.reset(); }}
+      />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {person ? 'Save' : 'Add person'}
       </button>
@@ -96,7 +106,7 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
         <span data-testid="person-form-error">
           {conflict
             ? 'Someone else has saved this person since you opened the editor; the form now shows their current values.'
-            : 'A name is required and must not already be in use on this sheet, and the grade must be A, B or C.'}
+            : 'A name is required and must not already be in use on this sheet, the grade must be A, B or C, and the grade from-date must be a date.'}
         </span>
       )}
     </form>

@@ -1,10 +1,17 @@
 package net.officefloor.hq.app.person;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import java.time.LocalDate;
+import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
+/** Saves the person's name, and records their grade from the form's from-date (the sheet's today when blank),
+ *  replacing the grade recorded for that date and keeping the others. */
 public class ApplyPerson {
-    public void apply(@Val PersonRequest request, @Val Person person, PersonRepository repository)
+    public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
+            PersonGradeRepository grades, EntityManager entityManager)
             throws InvalidPersonException, PersonConflictException {
         if (request.version() == null || request.version() != person.getVersion()) {
             throw new PersonConflictException();
@@ -12,13 +19,20 @@ public class ApplyPerson {
         if (repository.existsBySheetIdAndNameIgnoreCaseAndIdNot(person.getSheetId(), request.name(), person.getId())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
         }
+        LocalDate from = request.gradeFrom() == null || request.gradeFrom().isEmpty() ? sheet.getToday()
+                : LocalDate.parse(request.gradeFrom());
         person.setName(request.name());
-        person.setGrade(request.grade());
         try {
+            // Every save raises the version, even one that changes only a dated grade.
+            entityManager.lock(person, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
             repository.saveAndFlush(person);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ObjectOptimisticLockingFailureException | jakarta.persistence.OptimisticLockException e) {
             // saved by someone else between the load and this save
             throw new PersonConflictException();
         }
+        PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
+                .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));
+        dated.setGrade(request.grade());
+        grades.saveAndFlush(dated);
     }
 }

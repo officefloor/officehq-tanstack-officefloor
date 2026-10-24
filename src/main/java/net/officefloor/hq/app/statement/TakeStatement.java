@@ -8,6 +8,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
@@ -19,12 +20,13 @@ import net.officefloor.plugin.variable.Val;
  * among them) are unbound (live again).
  */
 public class TakeStatement {
-    public void take(@Val Sheet sheet, @Val Person person, ClaimRepository claims, RateRepository rates,
+    public void take(@Val Sheet sheet, @Val Person person, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
             StatementRepository statements, EntityManager entityManager, Out<Statement> statementOut) {
         // Lock the person so two statements (or a statement and an edit) are taken one after the other.
         entityManager.refresh(person, LockModeType.PESSIMISTIC_WRITE);
         List<Claim> mine = claims.findBySheetIdAndPersonIdOrderByIdDesc(sheet.getId(), person.getId());
-        ClaimFigures figures = new ClaimFigures(rates.findBySheetIdAndGrade(sheet.getId(), person.getGrade()), sheet);
+        ClaimFigures figures = new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheet.getId()),
+                grades.gradesOf(person), sheet);
         String dueTotal = figures.dueTotal(mine, sheet.getToday(), person.isHeld());
         int counted = 0;
         for (Claim claim : mine) {

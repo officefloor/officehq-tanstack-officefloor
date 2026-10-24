@@ -22,9 +22,10 @@ function SheetSettings() {
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: (body: Drafts) => putJson<Settings>(settingsPath(sheet ?? ''), body, user),
-    onSuccess: async () => {
+    onSuccess: async (_saved, sent) => {
       await queryClient.invalidateQueries({ queryKey: settingsQueryKey(sheet ?? '') });
-      setDrafts({});
+      // Keep what was typed in while the save was on its way; drop only the drafts it saved.
+      setDrafts((d) => Object.fromEntries(Object.entries(d).filter(([k, v]) => sent[k as Key] !== v)) as Drafts);
     },
   });
   const submit = useSubmitOnce(save);

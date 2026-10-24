@@ -4,7 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { countsLive, heldIds, useClaims } from '../claims/claims';
 import { chargedOf, sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
@@ -39,12 +39,12 @@ function Periods() {
   const submit = useSubmitOnce(add);
 
   if (!user || !sheet) return null;
-  const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
+  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
   const held = heldIds(people.data);
   const dueTotal = (period: Period) =>
     period.closedTotal ?? sumDue((claims.data ?? [])
-      .filter((c) => countsLive(c, held) && gradeOf.has(c.personId) && periodOn([period], c.date))
-      .map((c) => chargedOf(c, rates.data, gradeOf.get(c.personId) ?? '', settings.data, today)));
+      .filter((c) => countsLive(c, held) && personOf.has(c.personId) && periodOn([period], c.date))
+      .map((c) => chargedOf(c, rates.data, gradeOn(personOf.get(c.personId)!, c.date), settings.data, today)));
   return (
     <section data-testid="periods">
       <h2>Periods</h2>

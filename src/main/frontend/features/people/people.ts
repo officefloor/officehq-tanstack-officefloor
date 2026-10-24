@@ -5,6 +5,8 @@ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
+// `grade` is the grade in force on the sheet's today; `grades` every grade they were given with the date it
+// applies from (null for the first, which applies from the beginning of time), by from-date.
 // `version` is raised on every save; an edit sends the version it loaded and is refused (409) when
 // someone else has saved the person since.
 // `statementCount` is how many statements were taken for them; `statedTotal` and `statementDate` are the last
@@ -17,6 +19,7 @@ export type Person = {
   id: number;
   name: string;
   grade: string;
+  grades: DatedGrade[];
   version: number;
   statementCount: number;
   statedTotal: string | null;
@@ -25,6 +28,20 @@ export type Person = {
   held: boolean;
   patronIds: number[];
 };
+
+/** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */
+export type DatedGrade = { grade: string; from: string | null };
+
+/** The grade in force for a person on a date: the one whose from-date is the latest on or before it, the first
+ *  grade they were given applying from the beginning of time. */
+export function gradeOn(person: Person, date: string | undefined): string {
+  if (date === undefined) return person.grade;
+  let found = person.grade;
+  for (const g of person.grades) {
+    if (g.from === null || g.from <= date) found = g.grade;
+  }
+  return found;
+}
 
 export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 

@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -21,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  */
 public class FindOrAddPerson {
     public void find(@Val QuickAddName name, @Val Sheet sheet, @Val Rollup before, PersonRepository people,
-            SheetRepository sheets, ClaimRepository claims, RateRepository rates,
+            SheetRepository sheets, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<Person> personOut,
             Out<Rollup> rollupOut) {
         Optional<Person> found = people.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
@@ -34,7 +35,7 @@ public class FindOrAddPerson {
         String by = AuditUser.decode(user);
         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by + " name=" + person.getName()
                 + " grade=" + person.getGrade());
-        Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates);
+        Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
         now.changesSince(before, sheet.getId(), by).forEach(audit::record);
         personOut.set(person);
         rollupOut.set(now);

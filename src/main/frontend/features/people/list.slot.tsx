@@ -1,9 +1,9 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { usePeople, useEditingPerson, useShowRetired } from './people';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { gradeOn, usePeople, useEditingPerson, useShowRetired } from './people';
 
-// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade and an edit button;
+// The sheet's people in the order they were added — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button;
 // features add their own columns through PeopleColumns / PersonCells.
 function PeopleList() {
   const [user] = useCurrentUser();
@@ -11,6 +11,7 @@ function PeopleList() {
   const [, setEditing] = useEditingPerson();
   const people = usePeople();
   const [showRetired] = useShowRetired();
+  const today = useSheetToday();
   if (!user || !sheet) return null;
   return (
     <table data-testid="people">
@@ -26,7 +27,7 @@ function PeopleList() {
         {(people.data ?? []).filter((p) => showRetired || p.retiredFrom === null).map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
-            <td data-testid="person-grade">{p.grade}</td>
+            <td data-testid="person-grade">{gradeOn(p, today)}</td>
             <td>
               <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
                 Edit

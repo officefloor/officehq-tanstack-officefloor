@@ -10,6 +10,9 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonGrade;
+import net.officefloor.hq.app.person.PersonGradeRepository;
+import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -38,7 +41,7 @@ public class Rollup {
 
     /** Works out the sheet's figures now; a sheet not yet stored has none. */
     public static Rollup of(String sheetId, SheetRepository sheets, PersonRepository persons,
-            ClaimRepository claims, RateRepository rates) {
+            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades) {
         String id = sheetId.trim();
         Optional<Sheet> sheet = sheets.findById(id);
         Map<Long, Figures> people = new LinkedHashMap<>();
@@ -46,11 +49,14 @@ public class Rollup {
         BigDecimal dueTotal = BigDecimal.ZERO;
         if (sheet.isPresent()) {
             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
+            var sheetRates = rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(id);
+            Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
             for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
                 BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person.isHeld())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
-                String due = new ClaimFigures(rates.findBySheetIdAndGrade(id, person.getGrade()), sheet.get())
+                String due = new ClaimFigures(sheetRates,
+                        new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get())
                         .dueTotal(mine, sheet.get().getToday(), person.isHeld());
                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due));
                 claimedTotal = claimedTotal.add(claimed);
