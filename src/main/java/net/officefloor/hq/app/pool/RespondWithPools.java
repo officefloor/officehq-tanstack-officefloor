@@ -28,8 +28,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  pot, cuts the pot times their share divided by the shares of the members with a cut added up, rounded half to even
  *  to two decimals; a retired member, and a person with a hold covering the sheet's today, has no cut (0.00), so
  *  their share is spread over the others in proportion to theirs (the pool's total share is unchanged). A pool whose
- *  every member is retired shows no cuts. The remainder, the pot minus the cuts added up, goes to the member with a
- *  cut with the largest share, the earliest added on a tie, so the cuts total exactly the pot. A member whose dates do not include the
+ *  every member is retired shows no cuts. The remainder, the pot minus the cuts added up, goes to the member with the
+ *  smallest non-zero cut, the latest added on a tie (a member with no cut gets none; a pool with no non-zero cut gives
+ *  it to the last member with a share), so the cuts total exactly the pot. A member whose dates do not include the
  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
  *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
  *  sheet is left out. */
@@ -126,7 +127,7 @@ public class RespondWithPools {
 
     /** Each member's cut of the pot by their counted share out of the counted shares of those not held, in order: ""
      *  for all when there is no pot (or the pool is not balanced); 0.00 for a held member. The remainder goes to the
-     *  largest share of those not held, the earliest on a tie. */
+     *  smallest non-zero cut, the latest on a tie; with no non-zero cut, to the last not held with a share. */
     private static List<String> cuts(BigDecimal pot, List<BigDecimal> shares, List<Boolean> held) {
         List<String> out = new ArrayList<>();
         if (pot == null) {
@@ -139,7 +140,8 @@ public class RespondWithPools {
         }
         List<BigDecimal> cuts = new ArrayList<>();
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
-        int largest = -1;
+        int smallest = -1;
+        int lastShared = -1;
         for (int i = 0; i < shares.size(); i++) {
             if (held.get(i) || withCut.signum() == 0) {
                 cuts.add(BigDecimal.ZERO.setScale(2));
@@ -148,9 +150,11 @@ public class RespondWithPools {
             BigDecimal cut = pot.multiply(shares.get(i)).divide(withCut, 2, RoundingMode.HALF_EVEN);
             cuts.add(cut);
             sum = sum.add(cut);
-            if (largest < 0 || shares.get(i).compareTo(shares.get(largest)) > 0) largest = i;
+            if (cut.signum() != 0 && (smallest < 0 || cut.compareTo(cuts.get(smallest)) <= 0)) smallest = i;
+            if (shares.get(i).signum() != 0) lastShared = i;
         }
-        if (largest >= 0) cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
+        int to = smallest >= 0 ? smallest : lastShared;
+        if (to >= 0) cuts.set(to, cuts.get(to).add(pot.subtract(sum)));
         cuts.forEach(c -> out.add(c.setScale(2).toPlainString()));
         return out;
     }
