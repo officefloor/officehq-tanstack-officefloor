@@ -7,7 +7,7 @@ import { poolsPath, poolsQueryKey, type Pool } from './pools';
 
 // The pools export button: downloads the sheet's pools as CSV — pools in the order added, each pool's members in the
 // order added — with pool, member (a member pool as pool:<name>), share and cut as the pool's row shows them (empty
-// when none). The pools are re-read from the store first, so the cuts are current. Quoting and line ends as the
+// when none). The pools are re-read from the store first, so the cuts are current (as of the as-of date, in an as-of view). Quoting and line ends as the
 // people export.
 function ExportPools() {
   const [user] = useCurrentUser();
