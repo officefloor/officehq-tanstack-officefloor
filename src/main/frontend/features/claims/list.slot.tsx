@@ -4,6 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import type { Person } from '../people/people';
+import { dueOf, rateOf, useRates } from '../rates/rates';
 import { claimsPath, claimsQueryKey, personClaimsPath, useClaims, useEditingClaim, type Claim } from './claims';
 
 // A person's claims, newest first, with the claim form that adds one — or, while one of their
@@ -16,7 +17,9 @@ function PersonClaims({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const [editing, setEditing] = useEditingClaim();
   const claims = useClaims();
+  const rates = useRates();
   if (!sheet) return null;
+  const pct = rateOf(rates.data, person.grade);
   const mine = (claims.data ?? []).filter((c) => c.personId === person.id);
   const claim = editing ? mine.find((c) => String(c.id) === editing) : undefined;
   return (
@@ -27,6 +30,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-amount">{c.amount}</span>{' '}
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
+            <span data-testid="claim-due">{dueOf(c.amount, pct)}</span>{' '}
             <button type="button" data-testid="claim-edit" onClick={() => setEditing(String(c.id))}>
               Edit
             </button>
