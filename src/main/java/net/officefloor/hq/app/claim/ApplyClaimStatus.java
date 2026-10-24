@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * Moves the claim to the status the action leads to; refuses a change its status does not allow. Opening gives
  * the claim the sheet's next number and records who opened it; voiding clears the number. The one who opened a
  * claim cannot settle it. Settling fixes the claim's due at its person's grade's
- * rate in force on the claim's date (none when no rate applies then, so it stays live). Returns the number the claim had for the audit.
+ * rate in force on the claim's date (or at the figure its person's last statement bound it to) (none when no rate applies then, so it stays live). Returns the number the claim had for the audit.
  */
 public class ApplyClaimStatus {
     public Integer apply(@PathVariable("action") String action, @Val Claim claim, ClaimRepository repository,
@@ -42,7 +42,7 @@ public class ApplyClaimStatus {
                 return had;
             }
             if (claim.getStatus() == ClaimStatus.SETTLED) {
-                claim.setDue(people.findById(claim.getPersonId())
+                claim.setDue(claim.isStated() ? claim.getStatedDue() : people.findById(claim.getPersonId())
                         .flatMap(p -> rates.findInForce(claim.getSheetId(), p.getGrade(), claim.getDate()))
                         .map(Rate::getPct)
                         .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN))

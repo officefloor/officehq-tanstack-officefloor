@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import type { Claim } from '../claims/claims';
 import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
@@ -31,6 +32,14 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
     if (!found || (found.from ?? '') <= (r.from ?? '')) found = r;
   }
   return found?.pct;
+}
+
+/** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
+ *  else its live due at its person's grade's rate on its date ("n/a" when it has none). */
+export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string): string {
+  if (c.due !== null) return c.due;
+  if (c.stated) return c.statedDue ?? 'n/a';
+  return dueOf(c.amount, rateOn(rates, grade, c.date));
 }
 
 /** A two-decimal string ("12.50") in hundredths, exactly. */

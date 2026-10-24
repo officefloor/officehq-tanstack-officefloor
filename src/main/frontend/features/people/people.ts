@@ -7,7 +7,17 @@ export const GRADES = ['A', 'B', 'C'] as const;
 
 // `version` is raised on every save; an edit sends the version it loaded and is refused (409) when
 // someone else has saved the person since.
-export type Person = { id: number; name: string; grade: string; version: number };
+// `statementCount` is how many statements were taken for them; `statedTotal` and `statementDate` are the last
+// one's due-total and the sheet's today when it was taken (null with none).
+export type Person = {
+  id: number;
+  name: string;
+  grade: string;
+  version: number;
+  statementCount: number;
+  statedTotal: string | null;
+  statementDate: string | null;
+};
 
 export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
