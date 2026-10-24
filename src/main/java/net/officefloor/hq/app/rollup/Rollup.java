@@ -88,6 +88,14 @@ public class Rollup {
         return kept.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
     }
 
+    /** One SNAPSHOT line per person, in list order, with the due-total as it stands in these figures. */
+    public List<String> snapshot(String sheetId, String user) {
+        String head = " sheet=" + sheetId.trim() + " by=" + user;
+        List<String> lines = new ArrayList<>();
+        people.values().forEach(f -> lines.add("SNAPSHOT" + head + " name=" + f.name() + " due-total=" + f.dueTotal()));
+        return lines;
+    }
+
     /** The audit lines telling how the figures moved from before to now: one per person whose figures changed
      *  (or who is new), then the totals when they changed; none when nothing moved. */
     public List<String> changesSince(Rollup before, String sheetId, String user) {
