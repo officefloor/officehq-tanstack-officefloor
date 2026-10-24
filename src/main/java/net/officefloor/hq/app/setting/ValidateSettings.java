@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -57,6 +57,12 @@ public class ValidateSettings {
             graceDays(changes, request.graceDays());
             amount(changes, Sheet.NOTE_THRESHOLD, request.noteThreshold(), null, request.noteThresholdFrom(),
                     "The note threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            days(changes, Sheet.graceKey("A"), request.graceA(), null, request.graceAFrom(),
+                    "The grace days of grade A must be a whole number of days, 0 or more, or blank.");
+            days(changes, Sheet.graceKey("B"), request.graceB(), null, request.graceBFrom(),
+                    "The grace days of grade B must be a whole number of days, 0 or more, or blank.");
+            days(changes, Sheet.graceKey("C"), request.graceC(), null, request.graceCFrom(),
+                    "The grace days of grade C must be a whole number of days, 0 or more, or blank.");
         }
         body.set(new SettingsInput(changes));
     }

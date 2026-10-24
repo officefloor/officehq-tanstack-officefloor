@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { dueByOf, isBound, isOverdue, type Claim } from '../claims/claims';
+import { isBound, isOverdue, lateFromOf, type Claim } from '../claims/claims';
 import { settingOn, type Settings } from '../roles/roles';
 import { useCurrentSheet } from '../session/session';
 
@@ -54,7 +54,7 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, hal
 
 /** A claim's due: a settled claim's frozen due, else the greater of the sheet's floor in force on its date and its figure
  *  plus its late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that
- *  boundary date (its due-by plus 30, 60, 90 ... days) of the figure, rounded like a due, added up; a boundary at 0.00 adds
+ *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure, rounded like a due, added up; a boundary at 0.00 adds
  *  nothing ("n/a" when it has no figure). A statement binds only the figure: the charge and the floor keep following the
  *  sheet. A correction takes neither floor nor late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
@@ -63,8 +63,8 @@ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, se
   const figure = figureOf(c, rates, grade, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
   const floor = settings && settingOn(settings, 'floor', c.date, '1.00');
-  if (today === undefined || !isOverdue(c, today)) return atLeast(figure, floor);
-  const dueBy = Date.parse(`${dueByOf(c)}T00:00:00Z`);
+  if (today === undefined || !isOverdue(c, today, grade, settings)) return atLeast(figure, floor);
+  const dueBy = Date.parse(`${lateFromOf(c, grade, settings)}T00:00:00Z`);
   const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
   let charge = 0n;
   for (let k = 1; k <= periods; k++) {

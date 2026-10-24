@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { getJson } from '../../api/http';
 import { useCurrentSheet } from '../session/session';
+import { settingOn, type Settings } from '../roles/roles';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
 /** A claim's status: DRAFT to start, then OPEN and SETTLED; a clerk settling one above the clerk limit leaves it
@@ -130,9 +131,18 @@ export function sumOf(claims: Claim[], held: Holds, today: string | undefined): 
 /** A claim's due-by (YYYY-MM-DD), fixed when it was created. */
 export const dueByOf = (c: Claim): string => c.dueBy;
 
-/** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by is before the sheet's today. */
-export const isOverdue = (c: Claim, today: string | undefined) =>
-  isOpen(c) && !isDeferred(c, today) && today !== undefined && dueByOf(c) < today;
+/** The date a claim's lateness counts from (YYYY-MM-DD): its due-by plus the grace days (setting grace-<grade>) in
+ *  force on its date of its person's grade on its date (`grade`); its due-by when that grade has none. */
+export function lateFromOf(c: Claim, grade: string, settings: Settings | undefined): string {
+  const grace = settingOn(settings, `grace-${grade}`, c.date, '');
+  if (grace === '') return dueByOf(c);
+  return new Date(Date.parse(`${dueByOf(c)}T00:00:00Z`) + Number(grace) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by plus any grace of its person's grade
+ *  on its date (`grade`; see {@link lateFromOf}) is before the sheet's today. */
+export const isOverdue = (c: Claim, today: string | undefined, grade: string, settings: Settings | undefined) =>
+  isOpen(c) && !isDeferred(c, today) && today !== undefined && lateFromOf(c, grade, settings) < today;
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */
 export const useEditingClaim = () => useSearchParam('editClaim', asString);

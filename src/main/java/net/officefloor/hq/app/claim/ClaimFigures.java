@@ -17,7 +17,7 @@ import net.officefloor.hq.app.sheet.Sheet;
  * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
  * the grade its person had on its date, rounded by the sheet's policy; none — n/a — when no rate applies then, or the one that would has ended by then). An
  * overdue claim's due adds, on top of its figure, the late charge: for each full 30 days it is overdue on the sheet's today, the
- * sheet's late percent in force on that boundary date (its due-by plus 30, 60, 90 ... days) of the figure, rounded like a due, and
+ * sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure, rounded like a due, and
  * the charges added up (a boundary whose percent is 0.00 adds nothing). The floor comes last: an unsettled claim's due is the
  * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the figure only (never
  * the floor or the charge); settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
@@ -57,10 +57,17 @@ public class ClaimFigures {
         return claim.getRoundsOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by (fixed when it was created) is
-     *  before the sheet's today. */
+    /** The date a claim's lateness counts from: its due-by (fixed when it was created) plus the grace days in force on
+     *  its date of the grade its person had on its date (none: its due-by). */
+    public LocalDate lateFrom(Claim claim) {
+        Integer grace = sheet.gradeGraceOn(grades.on(claim.getDate()), claim.getDate());
+        return grace == null ? claim.getDueBy() : claim.getDueBy().plusDays(grace);
+    }
+
+    /** Whether a claim is overdue: it is OPEN or PENDING, not deferred, and its due-by plus any grace of its grade
+     *  ({@link #lateFrom}) is before the sheet's today. */
     public boolean overdue(Claim claim) {
-        return claim.getStatus().isOpen() && !claim.isDeferredOn(today) && claim.getDueBy().isBefore(today);
+        return claim.getStatus().isOpen() && !claim.isDeferredOn(today) && lateFrom(claim).isBefore(today);
     }
 
     /** The late charge on a figure: for each full 30 days the claim is overdue, the late percent in force on that
@@ -72,13 +79,14 @@ public class ClaimFigures {
         return chargeByBoundary(claim, figure);
     }
 
-    /** The late percent in force on each full 30-day boundary past the claim's due-by, up to the sheet's today, of
-     *  the figure, each rounded like its due, added up. */
+    /** The late percent in force on each full 30-day boundary past the claim's due-by plus any grace
+     *  ({@link #lateFrom}), up to the sheet's today, of the figure, each rounded like its due, added up. */
     private BigDecimal chargeByBoundary(Claim claim, BigDecimal figure) {
-        long periods = ChronoUnit.DAYS.between(claim.getDueBy(), today) / 30;
+        LocalDate from = lateFrom(claim);
+        long periods = ChronoUnit.DAYS.between(from, today) / 30;
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
         for (long k = 1; k <= periods; k++) {
-            BigDecimal pct = sheet.latePctOn(claim.getDueBy().plusDays(30 * k));
+            BigDecimal pct = sheet.latePctOn(from.plusDays(30 * k));
             if (pct.signum() != 0) {
                 charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding(claim)));
             }
@@ -143,7 +151,7 @@ public class ClaimFigures {
         if (figure == null) {
             return null;
         }
-        if (claim.isCorrection() || !claim.getDueBy().isBefore(today)) {
+        if (claim.isCorrection() || !lateFrom(claim).isBefore(today)) {
             return floored(claim, figure);
         }
         return floored(claim, figure.add(chargeByBoundary(claim, figure)));

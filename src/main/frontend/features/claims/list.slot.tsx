@@ -52,7 +52,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
             <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}
             <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
-            <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
+            <span data-testid="claim-overdue">{isOverdue(c, today, gradeOn(person, c.date), settings.data) ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
             <span data-testid="claim-proofs">{c.proofs}</span>{' '}

@@ -178,6 +178,18 @@ public class Sheet {
         return own != null ? own : termsFor(grade, on);
     }
 
+    /** The setting key of a grade's grace days (dated). */
+    public static String graceKey(String grade) {
+        return "grace-" + grade;
+    }
+
+    /** The grade's grace days in force on a date (grades A, B and C): an overdue claim's lateness counts from its
+     *  due-by plus them; null when it has none. */
+    public Integer gradeGraceOn(String grade, LocalDate on) {
+        String days = grade == null ? null : valueOn(graceKey(grade), on);
+        return days != null ? Integer.valueOf(days) : null;
+    }
+
     /** The terms in force for a grade on a date: its own, else the sheet's. */
     public int termsFor(String grade, LocalDate on) {
         Integer own = grade == null ? null : gradeTermsOn(grade, on);
