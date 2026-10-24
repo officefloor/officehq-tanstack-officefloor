@@ -6,8 +6,17 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 /** A claim's status: DRAFT to start, then OPEN and SETTLED; a DRAFT or OPEN claim can be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note and the status. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+/** A claim as the store holds it: the amount with two decimals, the date (YYYY-MM-DD), the note, the status and
+ *  the number given when it was opened (null for a draft or a voided claim). */
+export type Claim = {
+  id: number;
+  personId: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: number | null;
+};
 
 /** Whether a claim counts toward claimed and the totals: only OPEN and SETTLED claims do. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';

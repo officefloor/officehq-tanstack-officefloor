@@ -27,6 +27,7 @@ function PersonClaims({ person }: { person: Person }) {
       <ul data-testid="claims">
         {mine.map((c) => (
           <li key={c.id} data-testid={`claim-row-${c.id}`}>
+            <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
             <span data-testid="claim-amount">{c.amount}</span>{' '}
             <span data-testid="claim-date">{c.date}</span>{' '}
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
