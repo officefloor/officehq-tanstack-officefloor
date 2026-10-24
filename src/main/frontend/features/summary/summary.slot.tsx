@@ -6,12 +6,13 @@ import { personDue } from '../rates/due.slot';
 import { sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import { periodDue, usePeriods } from '../periods/periods';
+import { isActive } from '../claims/active.slot';
 
 /** The statuses the summary counts claims by. */
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The summary panel, figured the same way as the list: per grade, how many people not retired have it in force on
-// the sheet's today and their due-totals added up (skipping n/a); per period, its due-total; per status, how
+// the sheet's today, their due-totals added up (skipping n/a) and how many of them are active; per period, its due-total; per status, how
 // many of the sheet's claims have it.
 function Summary() {
   const [user] = useCurrentUser();
@@ -23,7 +24,7 @@ function Summary() {
   const settings = useSettings();
   const today = useSheetToday();
   if (!user || !sheet) return null;
-  const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
+  const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const allClaims = claims.data ?? [];
   return (
     <section data-testid="summary">
@@ -34,17 +35,21 @@ function Summary() {
             <th>Grade</th>
             <th>People</th>
             <th>Due</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const onGrade = active.filter((p) => gradeOn(p, today) === g);
+            const onGrade = current.filter((p) => gradeOn(p, today) === g);
             return (
               <tr key={g}>
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
                   {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data)))}
+                </td>
+                <td data-testid={`summary-grade-${g}-active`}>
+                  {onGrade.filter((p) => isActive(p, allClaims, today)).length}
                 </td>
               </tr>
             );
