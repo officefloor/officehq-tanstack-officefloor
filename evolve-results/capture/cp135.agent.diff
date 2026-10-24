@@ -1,0 +1,52 @@
+diff --git a/src/main/frontend/features/pools/export.slot.tsx b/src/main/frontend/features/pools/export.slot.tsx
+new file mode 100644
+index 00000000..9d7e384f
+--- /dev/null
++++ b/src/main/frontend/features/pools/export.slot.tsx
+@@ -0,0 +1,46 @@
++import { useQueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { csvValue } from '../people/export.slot';
++import { poolsPath, poolsQueryKey, type Pool } from './pools';
++
++// The pools export button: downloads the sheet's pools as CSV — pools in the order added, each pool's members in the
++// order added — with pool, member (a member pool as pool:<name>), share and cut as the pool's row shows them (empty
++// when none). The pools are re-read from the store first, so the cuts are current. Quoting and line ends as the
++// people export.
++function ExportPools() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++  if (!user || !sheet) return null;
++  const download = async () => {
++    const pools = await queryClient.fetchQuery({
++      queryKey: poolsQueryKey(sheet),
++      queryFn: () => getJson<Pool[]>(poolsPath(sheet)),
++      staleTime: 0,
++    });
++    const lines = [['pool', 'member', 'share', 'cut']];
++    for (const p of pools) {
++      for (const m of p.members) {
++        lines.push([p.name, m.poolId != null ? `pool:${m.name}` : m.name, m.share, m.cut]);
++      }
++    }
++    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `pools-${sheet}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  };
++  return (
++    <button type="button" data-testid="export-pools" onClick={() => { void download(); }}>
++      Export pools (CSV)
++    </button>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 6.71, Component: ExportPools });
