@@ -1,10 +1,5 @@
 package net.officefloor.hq.app.rate;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
-import java.util.Set;
-import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -12,40 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  * a from-date or to-date that is not a calendar date, and a to-date before the from-date. A blank from-date means from the beginning of time. */
 public class ValidateRate {
 
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
-    private static final Pattern PCT = Pattern.compile("\\d+(\\.\\d{1,2})?");
-
     public void validate(@RequestBody RateRequest request, Out<RateInput> body) throws InvalidRateException {
-        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        String pct = request == null || request.pct() == null ? "" : request.pct().trim();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidRateException("The grade must be A, B or C.");
-        }
-        if (!PCT.matcher(pct).matches()) {
-            throw new InvalidRateException("The rate must be a percent, 0.00 or more, with up to two decimals.");
-        }
-        String from = request == null || request.from() == null ? "" : request.from().trim();
-        LocalDate parsed = null;
-        if (!from.isEmpty()) {
-            try {
-                parsed = LocalDate.parse(from);
-            } catch (DateTimeParseException e) {
-                throw new InvalidRateException("The from-date must be a calendar date.");
-            }
-        }
-        String to = request == null || request.to() == null ? "" : request.to().trim();
-        LocalDate until = null;
-        if (!to.isEmpty()) {
-            try {
-                until = LocalDate.parse(to);
-            } catch (DateTimeParseException e) {
-                throw new InvalidRateException("The to-date must be a calendar date.");
-            }
-        }
-        if (parsed != null && until != null && until.isBefore(parsed)) {
-            throw new InvalidRateException("The to-date must not be before the from-date.");
-        }
-        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), parsed, until));
+        body.set(RateRules.check(request));
     }
 }
