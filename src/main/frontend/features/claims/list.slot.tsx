@@ -78,6 +78,11 @@ function PersonClaims({ person }: { person: Person }) {
                 </button>
               )}
             </ClaimStatusActions>
+            <ol data-testid="claim-comments">
+              {(c.comments ?? []).map((line, i) => (
+                <li key={i} data-testid="claim-comments-line">{line}</li>
+              ))}
+            </ol>
             <ol data-testid="claim-log">
               {(c.log ?? []).map((line, i) => (
                 <li key={i} data-testid="claim-log-line">{line}</li>
@@ -129,7 +134,9 @@ const ACTIONS = [
 // the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number. An OPEN or PENDING claim is
 // reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
 // the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
-// beside the void button); a void without one shows the claim's error.
+// beside the void button); a void without one shows the claim's error. A claim of any status is commented with the
+// text typed beside the comment button (shown on the claim, oldest first, as <user> on <date>: <text>); an empty
+// comment shows the claim's error.
 function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   sheet: string; claim: Claim; onEdit: () => void; editorSubmits: number; children: ReactNode;
 }) {
@@ -193,6 +200,15 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
   });
   const submitRemind = useSubmitOnce(remind);
+  const [commentText, setCommentText] = useState('');
+  const comment = useMutation({
+    mutationFn: (text: string) => postJson<Claim>(`${claimsPath(sheet)}/${claim.id}/comments`, { text }, user),
+    onSuccess: () => {
+      setCommentText('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
+  });
+  const submitComment = useSubmitOnce(comment);
   const [splitAmount, setSplitAmount] = useState('');
   const split = useMutation({
     mutationFn: (amount: string) =>
@@ -207,7 +223,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   const inline = useMutation({
     mutationFn: (amount: string) =>
       putJson<Claim>(`${claimsPath(sheet)}/${claim.id}`,
-        { amount, date: claim.date, note: claim.note, corrects: claim.corrects ?? '' }, user),
+        { amount, date: claim.date, note: claim.note, corrects: claim.corrects ?? '', ref: claim.ref ?? '',
+          tags: (claim.tags ?? []).join(', ') }, user),
     onSuccess: () => {
       setInlineAmount('');
       return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
@@ -234,12 +251,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <select
         data-testid="claim-void-reason"
         value={voidReason}
-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       >
         <option value="">(no void reason)</option>
         {(voidReasons.data ?? []).map((r) => (
@@ -256,7 +273,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             setEditRefused(false); lock.reset(); inline.reset();
             move.reset();
             defer.reset(); redate.reset(); split.reset();
-            proof.reset(); remind.reset();
+            proof.reset(); remind.reset(); comment.reset();
             submitChange(action === 'reject' ? { action, reason }
               : action === 'void' && voidReason !== '' ? { action, reason: voidReason } : { action });
           }}
@@ -267,7 +284,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -280,7 +297,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         onClick={() => {
           change.reset();
           defer.reset(); redate.reset(); split.reset();
-          proof.reset(); remind.reset();
+          proof.reset(); remind.reset(); comment.reset();
           setEditRefused(false); lock.reset(); inline.reset();
           if (target) submitMove(target.id);
         }}
@@ -291,7 +308,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-defer-date"
         placeholder="Defer until YYYY-MM-DD"
         value={deferTo}
-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <button
         type="button"
@@ -300,7 +317,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         onClick={() => {
           change.reset();
           move.reset();
-          proof.reset(); remind.reset();
+          proof.reset(); remind.reset(); comment.reset();
           split.reset();
           setEditRefused(false); lock.reset(); inline.reset();
           submitDefer(deferTo);
@@ -312,7 +329,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-date-new"
         placeholder="Re-date to YYYY-MM-DD"
         value={redateTo}
-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <button
         type="button"
@@ -322,7 +339,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset();
-          proof.reset(); remind.reset();
+          proof.reset(); remind.reset(); comment.reset();
           split.reset();
           setEditRefused(false); lock.reset(); inline.reset();
           submitRedate(redateTo);
@@ -352,7 +369,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset();
-          proof.reset();
+          proof.reset(); comment.reset();
           setEditRefused(false); lock.reset(); inline.reset();
           submitRemind(undefined);
         }}
@@ -360,11 +377,32 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         Remind
       </button>{' '}
       <input
+        data-testid="claim-comment-text"
+        placeholder="Comment"
+        value={commentText}
+        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-comment-add"
+        disabled={comment.isPending}
+        onClick={() => {
+          change.reset();
+          move.reset();
+          defer.reset(); redate.reset(); split.reset();
+          proof.reset(); remind.reset();
+          setEditRefused(false); lock.reset(); inline.reset();
+          submitComment(commentText);
+        }}
+      >
+        Comment
+      </button>{' '}
+      <input
         data-testid="claim-split-amount"
         placeholder="Amount to split off"
         inputMode="decimal"
         value={splitAmount}
-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <button
         type="button"
@@ -374,14 +412,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset();
-          proof.reset(); remind.reset();
+          proof.reset(); remind.reset(); comment.reset();
           setEditRefused(false); lock.reset(); inline.reset();
           submitSplit(splitAmount);
         }}
       >
         Split
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}>
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}>
         <input
           data-testid="claim-inline-amount"
           placeholder="Amount"
@@ -413,7 +451,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || split.isError || editRefused || lock.isError || inline.isError) && (
+      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || comment.isError || split.isError || editRefused || lock.isError || inline.isError) && (
         <span data-testid="claim-error">
           {inline.isError
             ? inline.error instanceof HttpError && inline.error.status === 423
@@ -439,6 +477,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
               : claim.status !== 'OPEN' || isDeferred(claim, today)
               ? `Only an open claim that is not deferred can be split; this one is ${isDeferred(claim, today) ? 'deferred' : claim.status}.`
               : `The amount to split off must be more than 0.00 and less than the claim's ${claim.amount}.`
+            : comment.isError
+            ? comment.error instanceof HttpError && comment.error.status === 403
+              ? 'A viewer cannot comment a claim, and no claim on an archived sheet can be commented.'
+              : (comment.variables ?? '').trim() === ''
+              ? 'A comment cannot be empty.'
+              : 'This claim cannot be commented while the sheet is shown as of a date.'
             : remind.isError
             ? remind.error instanceof HttpError && remind.error.status === 403
               ? 'A viewer cannot remind a claim.'

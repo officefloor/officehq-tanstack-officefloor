@@ -50,6 +50,8 @@ export type Claim = {
   tagsUsed: string[];
   /** The reason it was voided with, from the sheet's list, or null when it was voided without one (or is not VOID). */
   voidReason: string | null;
+  /** Its comments, oldest first: `<user> on <date>: <text>`, dated the sheet's today when each was written. */
+  comments: string[];
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

@@ -10,13 +10,16 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The sheet's claims; as of a date (asOf), as they stood at the end of it. */
+/** The sheet's claims; as of a date (asOf), as they stood at the end of it (only the comments written by then). */
 public class RespondWithClaims {
     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+            ClaimCommentRepository comments,
             ObjectResponse<List<ClaimResponse>> response) throws InvalidTodayException {
         LocalDate date = AsOf.dateOf(asOfParam);
         Map<Long, List<String>> lines = asOf.claimLines(sheet.getId(), date);
+        Map<Long, List<String>> commented = comments.linesOnSheet(sheet.getId(), date);
         response.send(asOf.claims(sheet.getId(), date).stream()
-                .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()))).toList());
+                .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()),
+                        commented.getOrDefault(c.getId(), List.of()))).toList());
     }
 }
