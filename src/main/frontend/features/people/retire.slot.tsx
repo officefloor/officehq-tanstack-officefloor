@@ -6,6 +6,7 @@ import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
+import { poolsQueryKey } from '../pools/pools';
 
 // Whether a person is retired and from when, and the date and button that retire them (a blank date is the
 // sheet's today). A person with a date set counts as retired at once, whatever the date.
@@ -23,6 +24,7 @@ function PersonRetired({ person }: { person: Person }) {
     mutationFn: (body: { date: string }) => putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}/retire`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
+      await queryClient.invalidateQueries({ queryKey: poolsQueryKey(sheet ?? '') });
       setDate('');
     },
   });
