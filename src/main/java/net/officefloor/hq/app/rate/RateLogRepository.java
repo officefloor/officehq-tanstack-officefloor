@@ -12,7 +12,7 @@ public interface RateLogRepository extends JpaRepository<RateLog, Long> {
     List<RateLog> findBySheetIdOrderByIdAsc(String sheetId);
 
     /** The sheet's rates as they stood at the end of a date: every rate set while the sheet's today was on or before
-     *  it, each replacing the one its grade had for its from-date, as setting it did. Only worked out, never saved. */
+     *  it, each a newer version of the one its grade had for its from-date, as setting it did. Only worked out, never saved. */
     default List<Rate> ratesAsOf(String sheetId, LocalDate date) {
         List<Rate> rates = new ArrayList<>();
         for (RateLog set : findBySheetIdOrderByIdAsc(sheetId)) {
@@ -24,6 +24,7 @@ public interface RateLogRepository extends JpaRepository<RateLog, Long> {
             if (rate == null) {
                 rates.add(new Rate(sheetId, set.getGrade(), set.getPct(), set.getFromDate(), set.getToDate()));
             } else {
+                rate.nextVersion();
                 rate.setPct(set.getPct());
                 rate.setToDate(set.getToDate());
             }

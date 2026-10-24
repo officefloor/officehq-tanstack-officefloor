@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /** A sheet's rate for a grade: a percent with two decimals, from a date on (null: from the beginning of time),
- *  through a to-date (null: no end). */
+ *  through a to-date (null: no end); the newest of its versions, numbered from 1 (older ones are in {@link RateVersion}). */
 @Entity
 @Table(name = "rate")
 public class Rate {
@@ -33,6 +33,9 @@ public class Rate {
 
     @Column(name = "to_date")
     private LocalDate toDate;
+
+    @Column(nullable = false)
+    private int version = 1;
 
     protected Rate() {
     }
@@ -76,6 +79,16 @@ public class Rate {
 
     public void setToDate(LocalDate toDate) {
         this.toDate = toDate;
+    }
+
+    /** Its version number: how many versions it has had (1 when first set). */
+    public int getVersion() {
+        return version;
+    }
+
+    /** Makes it the next version: the caller keeps the one it replaces. */
+    public void nextVersion() {
+        version++;
     }
 
     /** Whether it has ended by a date: it has a to-date before it. */

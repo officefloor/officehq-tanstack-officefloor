@@ -51,10 +51,17 @@ public final class RateRules {
         return new RateInput(grade, new BigDecimal(pct).setScale(2), parsed, until);
     }
 
-    /** Sets the grade's rate as the rate form does, returning it saved. */
-    public static Rate set(RateInput input, Sheet sheet, RateRepository repository, RateLogRepository log) {
-        Rate rate = repository.findWithFrom(sheet.getId(), input.grade(), input.from())
-                .orElseGet(() -> new Rate(sheet.getId(), input.grade(), input.pct(), input.from(), input.to()));
+    /** Sets the grade's rate as the rate form does, returning it saved: when the grade already has one for the
+     *  from-date, that one is kept as an older version and the new one is its next. */
+    public static Rate set(RateInput input, Sheet sheet, RateRepository repository, RateLogRepository log,
+            RateVersionRepository versions) {
+        Rate rate = repository.findWithFrom(sheet.getId(), input.grade(), input.from()).orElse(null);
+        if (rate == null) {
+            rate = new Rate(sheet.getId(), input.grade(), input.pct(), input.from(), input.to());
+        } else {
+            versions.saveAndFlush(new RateVersion(rate, sheet.getToday()));
+            rate.nextVersion();
+        }
         rate.setPct(input.pct());
         rate.setToDate(input.to());
         Rate saved = repository.saveAndFlush(rate);

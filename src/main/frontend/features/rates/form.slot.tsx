@@ -9,8 +9,8 @@ import { rateOn, ratesPath, ratesPreviewPath, ratesQueryKey, useRates, type Rate
 
 // The sheet's rates: each grade's rate in force on the sheet's today (its parent's, up to three levels up, when it
 // has none in force; n/a for a grade with none), every
-// rate with its from-date and to-date (a grade's rate from the start shows n/a when it has none), and the form that
-// sets one — replacing the grade's rate with the same from-date.
+// rate with its from-date and to-date and its version count (a grade's rate from the start shows n/a when it has none), and the form that
+// sets one — a new version of the grade's rate with the same from-date, when it has one.
 function Rates() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -52,6 +52,7 @@ function Rates() {
             <th>From</th>
             <th>To</th>
             <th>Rate (%)</th>
+            <th>Versions</th>
             <th>In force today (%)</th>
           </tr>
         </thead>
@@ -66,6 +67,7 @@ function Rates() {
                 <td>start</td>
                 <td data-testid="rate-to">{start?.to ?? ''}</td>
                 <td data-testid="rate-pct">{start?.pct ?? 'n/a'}</td>
+                <td data-testid="rate-version">{start?.version ?? ''}</td>
                 <td rowSpan={dated.length + 1} data-testid={`rate-current-${g}`}>
                   {rateOn(rates.data, g, today) ?? 'n/a'}
                 </td>
@@ -76,6 +78,7 @@ function Rates() {
                   <td data-testid="rate-from">{r.from}</td>
                   <td data-testid="rate-to">{r.to ?? ''}</td>
                   <td data-testid="rate-pct">{r.pct}</td>
+                  <td data-testid="rate-version">{r.version}</td>
                 </tr>
               )),
             ];

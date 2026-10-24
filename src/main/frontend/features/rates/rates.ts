@@ -6,8 +6,8 @@ import { useCurrentSheet } from '../session/session';
 
 /** A grade's rate as the store holds it: the percent with two decimals, from a date on (YYYY-MM-DD; null
  *  when it applies from the beginning of time), through a to-date (null when it has no end), and the sheet it is set
- *  on — the sheet's own, or one up its chain of parents. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; sheet: string };
+ *  on — the sheet's own, or one up its chain of parents; the newest of its versions, with how many it has. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; sheet: string; version: number };
 
 export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
