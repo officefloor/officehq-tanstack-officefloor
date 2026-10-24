@@ -1,0 +1,207 @@
+diff --git a/src/main/frontend/features/claims/bulksettle.slot.tsx b/src/main/frontend/features/claims/bulksettle.slot.tsx
+index 48cb27bd..908346aa 100644
+--- a/src/main/frontend/features/claims/bulksettle.slot.tsx
++++ b/src/main/frontend/features/claims/bulksettle.slot.tsx
+@@ -7,9 +7,10 @@ import { usePeople, useShowRetired } from '../people/people';
+ import { claimsPath, claimsQueryKey, useClaims, useSelectedClaims, type Claim } from './claims';
+ 
+ // Settles every selected claim with one button, in list order: the people as listed, newest claim
+-// first within a person. Each is settled as its own Settle button would, by the signed-in user (the
+-// server refuses what it refuses there, and that claim is left as it is; one a clerk settles above
+-// the clerk limit goes PENDING, and counts as settled); the counts of settled and refused show once
++// first within a person. Each is settled as its own Settle button would, by the signed-in user; it is
++// all or nothing: when the server would refuse any of them, none is settled and every one counts as
++// refused (one a clerk settles above the clerk limit goes PENDING, and counts as settled). Once a batch
++// is settled the server records it (BATCH_SETTLED); the counts of settled and refused show once
+ // all are done, and are gone while it runs. Every settle of one press carries the same batch key: a press that
+ // settles at least one claim is a batch, numbered by the server; the sheet's last batch number shows beside the button.
+ function BulkSettle() {
+@@ -35,12 +36,28 @@ function BulkSettle() {
+       let settled = 0;
+       let refused = 0;
+       const batch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
++      // All or nothing: every claim is checked first (nothing is written); one refusal refuses them all.
++      let ok = true;
+       for (const c of order) {
+         try {
+-          await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/settle?batch=${encodeURIComponent(batch)}`, undefined, user);
+-          settled++;
++          await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/check/settle`, undefined, user);
+         } catch {
+-          refused++;
++          ok = false;
++        }
++      }
++      if (!ok) {
++        refused = order.length;
++      } else {
++        for (const c of order) {
++          try {
++            await putJson<Claim>(`${claimsPath(sheet)}/${c.id}/settle?batch=${encodeURIComponent(batch)}`, undefined, user);
++            settled++;
++          } catch {
++            refused++;
++          }
++        }
++        if (settled > 0) {
++          await putJson(`/api/sheets/${encodeURIComponent(sheet)}/settle-batches/${encodeURIComponent(batch)}`, undefined, user);
+         }
+       }
+       await Promise.all([
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index d8891076..d64046c0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -45,6 +45,18 @@ public class ApplyClaimStatus {
+             @RequestHeader(name = "X-User", required = false) String userHeader,
+             @RequestParam(name = "reason", required = false) String reason,
+             @RequestParam(name = "batch", required = false) String batch) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
++        return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
++                userHeader, reason, batch, false);
++    }
++
++    /** The change itself; on a dry run (a settle only) it refuses what the settle would refuse and changes nothing. */
++    static String run(String action, Claim claim, ClaimRepository repository,
++            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
++            Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
++            String userHeader, String reason, String batch, boolean dryRun) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
++        if (dryRun && !"settle".equals(action)) {
++            throw new ClaimStatusException("Only a settle can be checked.");
++        }
+         String user = AuditUser.decode(userHeader);
+         if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
+             throw new ClaimStatusException("A claim in a closed period cannot change status.");
+@@ -127,6 +139,9 @@ public class ApplyClaimStatus {
+                 if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
+                     throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof to be settled or approved.");
+                 }
++                if (dryRun) {
++                    return claim.getNumber();
++                }
+                 BigDecimal limit = sheet.getClerkLimit();
+                 if ("settle".equals(action) && limit != null && due != null && due.compareTo(limit) > 0 && !steward) {
+                     next = ClaimStatus.PENDING;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditBatchSettled.java b/src/main/java/net/officefloor/hq/app/claim/AuditBatchSettled.java
+new file mode 100644
+index 00000000..b9de143c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditBatchSettled.java
+@@ -0,0 +1,35 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Once every claim of a bulk settle is settled, records its batch: its number, how many claims it holds and the
++ *  frozen figures of those SETTLED added up. A key that settled nothing is no batch, and records nothing. */
++public class AuditBatchSettled {
++    public void audit(@Val Sheet sheet, @PathVariable("batchKey") String batchKey, ClaimRepository repository,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String key = batchKey == null ? "" : batchKey.trim();
++        Integer number = key.isEmpty() ? null : repository.batchNumber(sheet.getId(), key);
++        if (number == null) {
++            return;
++        }
++        int count = 0;
++        BigDecimal total = BigDecimal.ZERO;
++        for (Claim claim : repository.findBySheetIdOrderByIdDesc(sheet.getId())) {
++            if (!number.equals(claim.getSettleBatch())) {
++                continue;
++            }
++            count++;
++            if (claim.getStatus() == ClaimStatus.SETTLED && claim.getDue() != null) {
++                total = total.add(claim.getDue());
++            }
++        }
++        audit.record("BATCH_SETTLED sheet=" + sheet.getId() + " by=" + AuditUser.decode(user) + " batch=" + number
++                + " count=" + count + " total=" + total.setScale(2).toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimSettle.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimSettle.java
+new file mode 100644
+index 00000000..34bc1eac
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimSettle.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.persistence.EntityManager;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.voidreason.VoidReasonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Refuses, as the claim's own settle would, a settle the signed-in user cannot make, and changes nothing (one that
++ *  would go PENDING is not refused). A bulk settle checks every claim first, so that it settles all or none. */
++public class CheckClaimSettle {
++    public void check(@Val Claim claim, ClaimRepository repository,
++            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
++            @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
++            @RequestHeader(name = "X-User", required = false) String userHeader)
++            throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
++        ApplyClaimStatus.run("settle", claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log,
++                voidReasons, userHeader, null, null, true);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/check/settle.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/check/settle.PUT.yml
+new file mode 100644
+index 00000000..d39441af
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/check/settle.PUT.yml
+@@ -0,0 +1,22 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/check/settle — refuse, as the claim's settle would, a settle the user cannot make; changes nothing.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: claim
++claim:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.claim.CheckClaimSettle
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settle-batches/{batchKey}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settle-batches/{batchKey}.PUT.yml
+new file mode 100644
+index 00000000..5fe5dcf9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settle-batches/{batchKey}.PUT.yml
+@@ -0,0 +1,18 @@
++# PUT /api/sheets/{sheetId}/settle-batches/{batchKey} — a bulk settle is done: record its batch (BATCH_SETTLED).
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditBatchSettled
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
