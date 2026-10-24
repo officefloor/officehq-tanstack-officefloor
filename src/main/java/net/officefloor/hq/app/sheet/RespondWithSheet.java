@@ -5,10 +5,10 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithSheet {
 
-    public record SheetResponse(String id) {
+    public record SheetResponse(String id, String today) {
     }
 
     public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
-        response.send(new SheetResponse(sheet.getId()));
+        response.send(new SheetResponse(sheet.getId(), sheet.getToday().toString()));
     }
 }
