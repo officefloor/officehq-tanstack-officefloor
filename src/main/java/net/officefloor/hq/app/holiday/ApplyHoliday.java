@@ -10,9 +10,9 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Adds the holiday to the sheet; refuses a date already on its list. Every claim on the sheet that is not a draft has
- * its due-by worked out again, with the terms it was fixed with and the holidays now; a draft keeps the due-by it was
- * added with. */
+/** Adds the holiday to the sheet; refuses a date already on its list. Every claim on the sheet that is not SETTLED or
+ * VOID and whose due-by is on or after the new holiday has its due-by worked out again, from the date and with the
+ * terms it was fixed with, over the holidays now on the sheet; every other claim keeps its due-by. */
 public class ApplyHoliday {
     public void apply(@Val LocalDate date, @Val Sheet sheet, HolidayRepository repository,
             ClaimRepository claims, Out<Holiday> holidayOut)
@@ -22,8 +22,10 @@ public class ApplyHoliday {
         }
         holidayOut.set(repository.saveAndFlush(new Holiday(sheet.getId(), date)));
         Set<LocalDate> holidays = repository.datesOf(sheet.getId());
-        List<Claim> all = claims.findBySheetIdOrderByIdDesc(sheet.getId());
-        all.stream().filter(c -> c.getStatus() != ClaimStatus.DRAFT).forEach(c -> c.reworkDueBy(holidays));
-        claims.saveAllAndFlush(all);
+        List<Claim> moved = claims.findBySheetIdOrderByIdDesc(sheet.getId()).stream()
+                .filter(c -> c.getStatus() != ClaimStatus.SETTLED && c.getStatus() != ClaimStatus.VOID)
+                .filter(c -> !c.getDueBy().isBefore(date)).toList();
+        moved.forEach(c -> c.reworkDueBy(holidays));
+        claims.saveAllAndFlush(moved);
     }
 }

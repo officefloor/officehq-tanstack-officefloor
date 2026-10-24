@@ -4,6 +4,8 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { claimsQueryKey } from '../claims/claims';
+import { peopleQueryKey } from '../people/people';
 import { holidaysPath, holidaysQueryKey, useHolidays, type Holiday } from './holidays';
 
 // The sheet's holidays, and the entry that adds one. A date that is not a calendar date, or one already on the
@@ -18,6 +20,9 @@ function Holidays() {
     mutationFn: (body: { date: string }) => postJson<Holiday>(holidaysPath(sheet ?? ''), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: holidaysQueryKey(sheet ?? '') });
+      // Adding a holiday can move claims' due-by, and so their figures.
+      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') });
+      await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
       setDate('');
     },
   });
