@@ -59,6 +59,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
             <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+            <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}
               editorSubmits={claim?.id === c.id ? submits : 0}>
               {claim?.id === c.id && (
@@ -490,9 +491,10 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
   const [date, setDate] = useState(claim?.date ?? '');
   const [note, setNote] = useState(claim?.note ?? '');
   const [corrects, setCorrects] = useState(claim?.corrects == null ? '' : String(claim.corrects));
+  const [ref, setRef] = useState(claim?.ref ?? '');
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: (body: { amount: string; date: string; note: string; corrects: string }) =>
+    mutationFn: (body: { amount: string; date: string; note: string; corrects: string; ref: string }) =>
       claim
         ? putJson<Claim>(`${claimsPath(sheet)}/${claim.id}`, body, user)
         : postJson<Claim>(personClaimsPath(sheet, person.id), body, user),
@@ -505,6 +507,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
         setDate('');
         setNote('');
         setCorrects('');
+        setRef('');
       }
     },
   });
@@ -518,7 +521,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
       onSubmit={(e) => {
         e.preventDefault();
         onSubmitted();
-        submit({ amount, date, note, corrects });
+        submit({ amount, date, note, corrects, ref });
       }}
     >
       <input
@@ -547,6 +550,12 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
         value={corrects}
         onChange={(e) => { setCorrects(e.target.value); save.reset(); }}
       />
+      <input
+        data-testid="claim-form-ref"
+        placeholder="Reference"
+        value={ref}
+        onChange={(e) => { setRef(e.target.value); save.reset(); }}
+      />
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
         {claim ? 'Save claim' : 'Add claim'}
       </button>
@@ -555,7 +564,8 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
           {save.error instanceof HttpError && save.error.status === 423 && 'Another user is editing this claim. '}
           The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
           terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
-          number, a settled claim of this person (only a correction may); only a draft claim can be edited.
+          number, a settled claim of this person (only a correction may); a reference must not already be used on this sheet
+          (ignoring case); only a draft claim can be edited.
         </span>
       )}
     </form>

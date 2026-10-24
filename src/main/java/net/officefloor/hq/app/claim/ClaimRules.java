@@ -24,12 +24,13 @@ public final class ClaimRules {
     }
 
     /** Checks one claim form's fields as ValidateClaim does; a null field is blank. */
-    public static ClaimInput check(String amountField, String dateField, String noteField, String correctsField)
-            throws InvalidClaimException {
+    public static ClaimInput check(String amountField, String dateField, String noteField, String correctsField,
+            String refField) throws InvalidClaimException {
         String amount = amountField == null ? "" : amountField.trim();
         String date = dateField == null ? "" : dateField.trim();
         String note = noteField == null ? "" : noteField.trim();
         String corrects = correctsField == null ? "" : correctsField.trim();
+        String ref = refField == null ? "" : refField.trim();
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidClaimException("The amount must be a number with up to two decimals.");
         }
@@ -51,7 +52,8 @@ public final class ClaimRules {
                 throw new InvalidClaimException("Not a date: " + date);
             }
         }
-        return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects);
+        return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects,
+                ref.isEmpty() ? null : ref);
     }
 
     /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is the
@@ -68,16 +70,19 @@ public final class ClaimRules {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
         }
         LocalDate correctsDate = repository.checkCorrects(sheet.getId(), person.getId(), input.corrects());
+        repository.checkRef(sheet.getId(), null, input.ref());
         Claim claim = new Claim(sheet.getId(), person.getId(), input.amount(), date, input.note(), input.corrects());
         claim.setCorrectsDate(correctsDate);
+        claim.setRef(input.ref());
         claim.setLateEntry(periods.isSoftClosedOn(sheet.getId(), dueBy));
         claim.fixDue(date, terms, holidays.datesOf(sheet.getId()));
         return claim;
     }
 
-    /** Records the claim's adding, and after it, when it is a late entry, its LATE_ENTRY. */
+    /** Records the claim's adding (its ref at the end, when it has one), and after it, when it is a late entry, its LATE_ENTRY. */
     public static void auditAdded(Claim claim, String personName, String by, Audit audit) {
-        audit.record(ClaimAudit.line("CLAIM_ADDED", claim, personName, by));
+        audit.record(ClaimAudit.line("CLAIM_ADDED", claim, personName, by)
+                + (claim.getRef() == null ? "" : " ref=" + claim.getRef()));
         if (claim.isLateEntry()) {
             audit.record(ClaimAudit.line("LATE_ENTRY", claim, personName, by));
         }

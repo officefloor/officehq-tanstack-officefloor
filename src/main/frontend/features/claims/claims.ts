@@ -42,6 +42,8 @@ export type Claim = {
   /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
   remindedOn: string | null;
+  /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
+  ref: string | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

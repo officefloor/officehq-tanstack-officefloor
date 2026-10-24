@@ -43,6 +43,23 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
                 .orElseThrow(() -> new InvalidClaimException("A correction must name a settled claim of the same person."));
     }
 
+    /** Whether a claim on the sheet other than the given one (null: none) has the reference, ignoring case. */
+    boolean existsBySheetIdAndRefIgnoreCaseAndIdNot(String sheetId, String ref, Long id);
+
+    boolean existsBySheetIdAndRefIgnoreCase(String sheetId, String ref);
+
+    /** Refuses a reference (null: none) another claim on the sheet already has, ignoring case. */
+    default void checkRef(String sheetId, Long claimId, String ref) throws InvalidClaimException {
+        if (ref == null) {
+            return;
+        }
+        boolean used = claimId == null ? existsBySheetIdAndRefIgnoreCase(sheetId, ref)
+                : existsBySheetIdAndRefIgnoreCaseAndIdNot(sheetId, ref, claimId);
+        if (used) {
+            throw new InvalidClaimException("The reference " + ref + " is already used on this sheet.");
+        }
+    }
+
     /** Takes the sheet's next claim number; the update locks the sheet's row until the transaction ends, so
      * two claims opened at once are numbered one after the other. */
     @Modifying

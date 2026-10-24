@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * Reads the paste box from the body: each non-blank line is name,amount,date,note — the note is the rest of the
- * line, so it may hold commas; the date and the note may be blank or absent. Checks every line's claim exactly
+ * line, so it may hold commas; the date and the note may be blank or absent. A trimmed note ending in
+ * " #<reference>" gives the claim that reference, and the note is what comes before it. Checks every line's claim exactly
  * as the claim form would (it corrects nothing), refusing the whole paste when any line fails or there is none.
  */
 public class ValidatePaste {
@@ -30,8 +31,14 @@ public class ValidatePaste {
             }
             ClaimInput claim;
             try {
-                claim = ClaimRules.check(fields[1], fields.length > 2 ? fields[2] : null,
-                        fields.length > 3 ? fields[3] : null, null);
+                String note = fields.length > 3 ? fields[3].trim() : "";
+                String ref = null;
+                int hash = note.lastIndexOf(" #");
+                if (hash >= 0 && !note.substring(hash + 2).isBlank()) {
+                    ref = note.substring(hash + 2);
+                    note = note.substring(0, hash);
+                }
+                claim = ClaimRules.check(fields[1], fields.length > 2 ? fields[2] : null, note, null, ref);
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + at + ": " + e.getMessage());
             }

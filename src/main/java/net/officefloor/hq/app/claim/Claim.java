@@ -113,6 +113,10 @@ public class Claim {
     @Column(name = "late_entry", nullable = false)
     private boolean lateEntry;
 
+    /** The claim's external reference, trimmed; unique on its sheet ignoring case; null for a claim with none. */
+    @Column(name = "ref")
+    private String ref;
+
     protected Claim() {
     }
 
@@ -342,8 +346,17 @@ public class Claim {
         then.proofs = proofs;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
+        then.ref = ref;
         then.bind(stated, statedDue);
         return then;
+    }
+
+    public String getRef() {
+        return ref;
+    }
+
+    public void setRef(String ref) {
+        this.ref = ref;
     }
 
     public boolean isLateEntry() {

@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Saves the claim's changes; refuses them unless the claim is a DRAFT (an open claim is voided and added anew
  * instead), when its due-by (fixed when it was created; editing does not move it) is in a closed period, and when it would move after its
- * person's retirement date, and a correction that does not name a settled claim of its person. Saving closes the
+ * person's retirement date, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving closes the
  * claim's editor: it releases the claim's lock. */
 public class ApplyClaim {
     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
@@ -24,11 +24,13 @@ public class ApplyClaim {
             throw new InvalidClaimException("No claim can be dated after the person's retirement date.");
         }
         LocalDate correctsDate = repository.checkCorrects(sheet.getId(), claim.getPersonId(), input.corrects());
+        repository.checkRef(sheet.getId(), claim.getId(), input.ref());
         claim.setAmount(input.amount());
         claim.setCorrects(input.corrects());
         claim.setCorrectsDate(correctsDate);
         claim.setDate(date);
         claim.setNote(input.note());
+        claim.setRef(input.ref());
         claim.setLockedBy(null);
         repository.saveAndFlush(claim);
     }

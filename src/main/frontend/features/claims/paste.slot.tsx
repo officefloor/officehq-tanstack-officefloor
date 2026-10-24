@@ -8,7 +8,8 @@ import { peopleQueryKey } from '../people/people';
 import { claimsQueryKey } from './claims';
 
 // The paste box: each line is name,amount,date,note (the note may hold commas; the date may be blank for the
-// sheet's entry date, else its today; the note may be absent) and adds a DRAFT claim, in order, for the named person on the sheet.
+// sheet's entry date, else its today; the note may be absent; a note ending in ` #<reference>` gives the claim that
+// reference) and adds a DRAFT claim, in order, for the named person on the sheet.
 // The server checks every line by the claim form's rules first, so one refused line adds nothing. How many were
 // added shows once done, and is gone while it runs.
 function PasteClaims() {
@@ -54,7 +55,8 @@ function PasteClaims() {
       {paste.isError && (
         <span data-testid="paste-error">
           Nothing was added: every line needs a name on the sheet and an amount, 0.00 or more, with up to two
-          decimals; a date must be a calendar date, due by a date in no closed period and not after the person's retirement.
+          decimals; a date must be a calendar date, due by a date in no closed period and not after the person's retirement; a reference must not repeat
+          one on the sheet or in the paste (ignoring case).
         </span>
       )}
     </form>

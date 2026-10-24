@@ -1,7 +1,10 @@
 package net.officefloor.hq.app.paste;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.Claim;
@@ -22,7 +25,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Finds each line's person on the sheet, ignoring case, and makes its DRAFT claim by the claim form's rules —
- * all of them before any is stored, so a refused line adds nothing. Then adds the claims in order, each recorded
+ * all of them before any is stored, so a refused line adds nothing; a line repeating a reference of an earlier
+ * line, ignoring case, is refused too. Then adds the claims in order, each recorded
  * and logged as the claim form records and logs it.
  */
 public class AddPastedClaims {
@@ -34,6 +38,7 @@ public class AddPastedClaims {
         List<Person> onSheet = people.findBySheetIdOrderByIdAsc(sheet.getId());
         List<Person> persons = new ArrayList<>();
         List<Claim> made = new ArrayList<>();
+        Set<String> refs = new HashSet<>();
         int at = 0;
         for (PastedLine line : pasted.lines()) {
             at++;
@@ -46,6 +51,10 @@ public class AddPastedClaims {
                 made.add(ClaimRules.make(line.claim(), sheet, person, claims, periods, grades, holidays));
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + at + ": " + e.getMessage());
+            }
+            if (line.claim().ref() != null && !refs.add(line.claim().ref().toLowerCase(Locale.ROOT))) {
+                throw new InvalidClaimException("Line " + at + ": the reference " + line.claim().ref()
+                        + " is already used in this paste.");
             }
             persons.add(person);
         }
