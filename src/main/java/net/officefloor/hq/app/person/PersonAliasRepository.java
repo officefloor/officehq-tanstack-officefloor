@@ -15,6 +15,9 @@ public interface PersonAliasRepository extends JpaRepository<PersonAlias, Long> 
     /** Whether the alias is in use on the sheet, ignoring case. */
     boolean existsBySheetIdAndAliasIgnoreCase(String sheetId, String alias);
 
+    /** The aliases on any of the sheets. */
+    List<PersonAlias> findBySheetIdIn(java.util.Collection<String> sheetIds);
+
     Optional<PersonAlias> findFirstBySheetIdAndAliasIgnoreCase(String sheetId, String alias);
 
     /** The person on the sheet going by the name or alias, ignoring case. */

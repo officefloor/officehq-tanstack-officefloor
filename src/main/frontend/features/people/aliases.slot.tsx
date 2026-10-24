@@ -8,7 +8,8 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
 
 // A person's aliases — other names they go by, sorted ignoring case (the server sorts them) — and the entry and
-// button that add another. An alias must not equal, ignoring case, any name or alias on the sheet.
+// button that add another. An alias must not equal, ignoring case, any name or alias on the sheet or on another
+// sheet of its tree (its ancestors and descendants).
 function AliasesHeader() {
   return <th>Aliases</th>;
 }

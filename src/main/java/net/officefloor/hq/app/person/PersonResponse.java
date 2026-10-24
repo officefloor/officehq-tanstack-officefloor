@@ -8,11 +8,12 @@ import net.officefloor.hq.app.statement.Statement;
 /** A person as the screen shows them: their grade in force on the sheet's today, and every grade they were given
  *  with its from-date (null for the first, which applies from the beginning of time), with their statement count
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
- *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case. */
+ *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
+ *  they clash: their name or an alias is in use on another sheet of the sheet's tree. */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
         List<Hold> holds, List<Long> patronIds, Integer terms,
-        String contact, List<String> aliases) {
+        String contact, List<String> aliases, boolean clashing) {
 
     /** A hold from a date on, to a date (inclusive; null: open-ended). */
     public record Hold(String from, String to) {
@@ -26,9 +27,11 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
      *  @param patrons the person's patrons, in the order they were named.
      *  @param grades the person's grades over time.
      *  @param aliases the person's aliases.
-     *  @param today the sheet's today. */
+     *  @param today the sheet's today.
+     *  @param usedAround the names and aliases, lower-cased, in use on the other sheets of the sheet's tree. */
     public static PersonResponse from(Person person, List<Statement> statements, List<Patron> patrons,
-            List<PersonAlias> aliases, PersonGrades grades, LocalDate today) {
+            List<PersonAlias> aliases, PersonGrades grades, LocalDate today,
+            java.util.Set<String> usedAround) {
         Statement last = statements.isEmpty() ? null : statements.get(statements.size() - 1);
         List<DatedGrade> dated = new ArrayList<>();
         dated.add(new DatedGrade(grades.first(), null));
@@ -42,6 +45,8 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                 patrons.stream().map(Patron::getPatronId).toList(), person.getTerms(), person.getContact(),
                 aliases.stream().map(PersonAlias::getAlias)
                         .sorted(String.CASE_INSENSITIVE_ORDER.thenComparing(java.util.Comparator.naturalOrder()))
-                        .toList());
+                        .toList(),
+                usedAround.contains(TreeNames.key(person.getName()))
+                        || aliases.stream().anyMatch(a -> usedAround.contains(TreeNames.key(a.getAlias()))));
     }
 }

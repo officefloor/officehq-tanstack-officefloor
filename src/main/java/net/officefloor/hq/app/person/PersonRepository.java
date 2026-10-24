@@ -22,4 +22,7 @@ public interface PersonRepository extends JpaRepository<Person, Long> {
 
     /** Whether the contact is on the sheet for someone other than this person. */
     boolean existsBySheetIdAndContactAndIdNot(String sheetId, String contact, Long id);
+
+    /** The people on any of the sheets. */
+    List<Person> findBySheetIdIn(java.util.Collection<String> sheetIds);
 }

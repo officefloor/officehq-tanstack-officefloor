@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's people; as of a date (asOf), as they stood at the end of it. */
 public class RespondWithPeople {
-    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf, TreeNames tree,
             ObjectResponse<List<PersonResponse>> response) throws InvalidTodayException {
         LocalDate date = AsOf.dateOf(asOfParam);
         Sheet view = asOf.sheet(sheet, date);
@@ -25,11 +25,12 @@ public class RespondWithPeople {
         Map<Long, List<PersonAlias>> aliasesOf = asOf.aliases(sheet.getId(), date).stream()
                 .collect(Collectors.groupingBy(PersonAlias::getPersonId));
         Map<Long, List<PersonGrade>> gradesOf = asOf.grades(sheet.getId(), date);
+        java.util.Set<String> usedAround = tree.usedAround(sheet.getId());
         response.send(asOf.people(sheet.getId(), date).stream()
                 .map(p -> PersonResponse.from(p, byPerson.getOrDefault(p.getId(), List.of()),
                         patronsOf.getOrDefault(p.getId(), List.of()),
                         aliasesOf.getOrDefault(p.getId(), List.of()),
-                        new PersonGrades(p.getGrade(), gradesOf.getOrDefault(p.getId(), List.of())), view.getToday()))
+                        new PersonGrades(p.getGrade(), gradesOf.getOrDefault(p.getId(), List.of())), view.getToday(), usedAround))
                 .toList());
     }
 }

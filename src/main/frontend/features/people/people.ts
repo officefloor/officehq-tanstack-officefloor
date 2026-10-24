@@ -21,6 +21,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // grade's terms and the sheet's.
 // `contact`: their contact, trimmed and lower-cased (null: none); no two people on a sheet share one.
 // `aliases`: other names they go by, sorted ignoring case; the quick-add bar and the paste box find them by one too.
+// `clashing`: whether their name or an alias is in use on another sheet of the sheet's tree (its ancestors and
+// descendants); an edit of them through the person form is refused until it leaves them no longer clashing.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -38,6 +40,7 @@ export type Person = {
   terms: number | null;
   contact: string | null;
   aliases: string[];
+  clashing: boolean;
 };
 
 /** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */

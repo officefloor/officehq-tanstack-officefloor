@@ -11,7 +11,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
  *  replacing the grade recorded for that date and keeping the others. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
-            PersonAliasRepository aliases,
+            PersonAliasRepository aliases, TreeNames tree,
             PersonGradeRepository grades, EntityManager entityManager)
             throws InvalidPersonException, PersonConflictException {
         if (request.version() == null || request.version() != person.getVersion()) {
@@ -20,6 +20,12 @@ public class ApplyPerson {
         if (repository.existsBySheetIdAndNameIgnoreCaseAndIdNot(person.getSheetId(), request.name(), person.getId())
                 || aliases.existsBySheetIdAndAliasIgnoreCase(person.getSheetId(), request.name())) {
             throw new InvalidPersonException("The name is already in use on this sheet.");
+        }
+        // A person clashing with the tree may be edited only to a name, with their aliases, that no longer clashes.
+        java.util.List<String> names = new java.util.ArrayList<>(java.util.List.of(request.name()));
+        aliases.findByPersonIdOrderByIdAsc(person.getId()).forEach(a -> names.add(a.getAlias()));
+        if (tree.usedAround(person.getSheetId(), names)) {
+            throw new InvalidPersonException("The name or an alias is already in use on a sheet of this sheet's tree.");
         }
         if (request.contactOrNull() != null && repository.existsBySheetIdAndContactAndIdNot(person.getSheetId(),
                 request.contactOrNull(), person.getId())) {
