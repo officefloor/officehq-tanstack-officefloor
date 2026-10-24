@@ -5,7 +5,7 @@ import java.util.List;
 
 /** A validated settings form: the settings it sets, in the order they are recorded — the clerk limit, the floor, the
  *  terms, the late percent, the policy date, the period numbering from, the terms of grades A, B and C, the cap, the proof threshold, the
- *  permission matrix entries for open, settle, void, reassign, close and reopen, the grace days, the note threshold, the entry date, each grade's grace days and proof threshold, the pot, the parent sheet, the fiscal year start month. */
+ *  permission matrix entries for open, settle, void, reassign, close and reopen, the grace days, the note threshold, the entry date, each grade's grace days and proof threshold, the pot, the parent sheet, the fiscal year start month, the alert threshold. */
 public record SettingsInput(List<Change> changes) {
 
     /** A setting the form sets: its key (as the audit names it), its value as the screen shows it (null: blank —

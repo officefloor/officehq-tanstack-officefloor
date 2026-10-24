@@ -24,7 +24,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
  * A person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is
- * reached, count in none of them, unless a statement binds them.
+ * reached, count in none of them, unless a statement binds them. The sheet's alert threshold (null: off) is kept with
+ * them, as it stands now.
  */
 public class Rollup {
 
@@ -36,9 +37,12 @@ public class Rollup {
     private final String claimedTotal;
     private final String dueTotal;
     private final String overdueTotal;
+    private final BigDecimal alertThreshold;
 
-    private Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+    private Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
+            BigDecimal alertThreshold) {
         this.people = people;
+        this.alertThreshold = alertThreshold;
         this.claimedTotal = claimedTotal;
         this.dueTotal = dueTotal;
         this.overdueTotal = overdueTotal;
@@ -78,7 +82,7 @@ public class Rollup {
             }
         }
         return new Rollup(people, claimedTotal.setScale(2).toPlainString(), trimmedSum(dues),
-                trimmedSum(overdues));
+                trimmedSum(overdues), sheet.map(Sheet::getAlertThreshold).orElse(null));
     }
 
     /** Adds up people's figures; with three or more, the single highest and the single lowest are left out. */
@@ -104,11 +108,33 @@ public class Rollup {
                 + " due-total=" + f.dueTotal() + " overdue-total=" + f.overdueTotal()));
         lines.add("TOTALS" + head + " claimed-total=" + claimedTotal + " due-total=" + dueTotal
                 + " overdue-total=" + overdueTotal);
+        lines.addAll(alertsSince(Map.of(), head));
         return lines;
     }
 
+    /** One ALERT line per person, in list order, whose due-total is now above the alert threshold and before was at
+     *  or below it (or they had no due-total); none when the threshold is off. */
+    private List<String> alertsSince(Map<Long, Figures> before, String head) {
+        List<String> lines = new ArrayList<>();
+        if (alertThreshold == null) {
+            return lines;
+        }
+        people.forEach((id, now) -> {
+            Figures was = before.get(id);
+            if (above(now.dueTotal()) && (was == null || !above(was.dueTotal()))) {
+                lines.add("ALERT" + head + " name=" + now.name() + " due-total=" + now.dueTotal());
+            }
+        });
+        return lines;
+    }
+
+    private boolean above(String dueTotal) {
+        return !"n/a".equals(dueTotal) && new BigDecimal(dueTotal).compareTo(alertThreshold) > 0;
+    }
+
     /** The audit lines telling how the figures moved from before to now: one per person whose figures changed
-     *  (or who is new), then the totals when they changed; none when nothing moved. */
+     *  (or who is new), then the totals when they changed, then the ALERT lines of those who crossed above the alert
+     *  threshold; none when nothing moved. */
     public List<String> changesSince(Rollup before, String sheetId, String user) {
         String head = " sheet=" + sheetId.trim() + " by=" + user;
         List<String> lines = new ArrayList<>();
@@ -125,6 +151,7 @@ public class Rollup {
             lines.add("TOTALS" + head + " claimed-total=" + claimedTotal + " due-total=" + dueTotal
                     + " overdue-total=" + overdueTotal);
         }
+        lines.addAll(alertsSince(before.people, head));
         return lines;
     }
 }

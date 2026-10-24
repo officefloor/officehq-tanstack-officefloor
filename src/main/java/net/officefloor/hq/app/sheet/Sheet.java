@@ -32,6 +32,9 @@ public class Sheet {
     /** The key of the pot: undated, an amount with two decimals (null: none). */
     public static final String POT = "pot";
 
+    /** The key of the alert threshold: undated, an amount with two decimals (null: off). */
+    public static final String ALERT_THRESHOLD = "alert-threshold";
+
     /** The key of the parent sheet: undated, a sheet's id (null: none). A grade with no rate in force on a date on
      *  this sheet takes the parent's, then the parent's parent's, up to three levels up. */
     public static final String PARENT = "parent";
@@ -276,6 +279,11 @@ public class Sheet {
     /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */
     public BigDecimal getPot() {
         return amountOn(POT, today);
+    }
+
+    /** The alert threshold: a person whose due-total crosses above it is alerted. Not dated; null when off. */
+    public BigDecimal getAlertThreshold() {
+        return amountOn(ALERT_THRESHOLD, today);
     }
 
     /** The month (1 to 12) a fiscal year starts in. Not dated; 1 unless set. */

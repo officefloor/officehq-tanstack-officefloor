@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. The alert threshold is an amount like the floor, or blank (off); not dated. A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -74,6 +74,8 @@ public class ValidateSettings {
             pot(changes, request.pot());
             parent(changes, request.parent());
             fiscalStartMonth(changes, request.fiscalStartMonth());
+            undatedAmount(changes, Sheet.ALERT_THRESHOLD, request.alertThreshold(),
+                    "The alert threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");
         }
         body.set(new SettingsInput(changes));
     }
@@ -169,17 +171,23 @@ public class ValidateSettings {
 
     /** Adds the pot when the form sets it: an amount with up to two decimals, or blank (none). Undated. */
     private static void pot(List<SettingsInput.Change> changes, String value) throws InvalidSettingsException {
+        undatedAmount(changes, Sheet.POT, value, "The pot must be an amount, 0.00 or more, with up to two decimals, or blank.");
+    }
+
+    /** Adds an undated amount setting when the form sets it: an amount with up to two decimals, or blank (none). */
+    private static void undatedAmount(List<SettingsInput.Change> changes, String key, String value, String message)
+            throws InvalidSettingsException {
         if (value == null) {
             return;
         }
-        String pot = null;
+        String amount = null;
         if (!value.trim().isEmpty()) {
             if (!AMOUNT.matcher(value.trim()).matches()) {
-                throw new InvalidSettingsException("The pot must be an amount, 0.00 or more, with up to two decimals, or blank.");
+                throw new InvalidSettingsException(message);
             }
-            pot = new BigDecimal(value.trim()).setScale(2).toPlainString();
+            amount = new BigDecimal(value.trim()).setScale(2).toPlainString();
         }
-        changes.add(new SettingsInput.Change(Sheet.POT, pot, false, null));
+        changes.add(new SettingsInput.Change(key, amount, false, null));
     }
 
     /** Adds the parent sheet when the form sets it: a sheet's id, or blank (none). Undated. Whether that sheet may
