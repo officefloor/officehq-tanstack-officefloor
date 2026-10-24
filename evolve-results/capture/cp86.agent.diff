@@ -1,0 +1,194 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 0bab1f80..91ade665 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -107,7 +107,9 @@ const ACTIONS = [
+ // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim, or of a claim whose due-by is in a
+ // closed period, shows the claim's error instead of opening its editor (an open claim is voided and added anew). Opening a
+ // DRAFT's editor locks the claim for other users until it is saved or cancelled, or the sheet's today changes: another
+-// user's edit button on a locked claim (and a viewer's) shows the claim's error, and their editor cannot save. A role the permission matrix allows (a steward, by the standing
++// user's edit button on a locked claim (and a viewer's) shows the claim's error, and their editor cannot save. A DRAFT's
++// amount can also be saved in the row (the amount typed beside the edit button), by the claim form's rules: a refusal
++// shows the claim's error. A role the permission matrix allows (a steward, by the standing
+ // rule) moves a DRAFT, OPEN or PENDING
+ // claim to another person (picked beside the move button); anyone else moving it, or moving a SETTLED or VOID claim,
+ // shows the claim's error. A steward voids a SETTLED claim within 7 days of its settlement (its frozen due leaves
+@@ -194,6 +196,17 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     },
+   });
+   const submitSplit = useSubmitOnce(split);
++  const [inlineAmount, setInlineAmount] = useState('');
++  const inline = useMutation({
++    mutationFn: (amount: string) =>
++      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}`,
++        { amount, date: claim.date, note: claim.note, corrects: claim.corrects ?? '' }, user),
++    onSuccess: () => {
++      setInlineAmount('');
++      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
++    },
++  });
++  const submitInline = useSubmitOnce(inline);
+   const [editRefused, setEditRefused] = useState(false);
+   const lock = useMutation({
+     mutationKey: claimLockKey(sheet, claim.id),
+@@ -202,7 +215,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+   const submitLock = useSubmitOnce(lock);
+   // Submitting the claim's editor is the next action on it: a refused lock's error goes.
+   useEffect(() => {
+-    if (editorSubmits > 0) lock.reset();
++    if (editorSubmits > 0) lock.reset(); inline.reset();
+   }, [editorSubmits]);
+   const action = change.variables?.action;
+   const periods = usePeriods();
+@@ -214,7 +227,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-reject-reason"
+         placeholder="Reason to reject"
+         value={reason}
+-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
++        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       {ACTIONS.map(({ action, label }) => (
+         <button
+@@ -223,7 +236,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           data-testid={`claim-${action}`}
+           disabled={change.isPending}
+           onClick={() => {
+-            setEditRefused(false); lock.reset();
++            setEditRefused(false); lock.reset(); inline.reset();
+             move.reset();
+             defer.reset(); redate.reset(); split.reset();
+             proof.reset(); remind.reset();
+@@ -236,7 +249,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+       <select
+         data-testid="claim-reassign-to"
+         value={target ? String(target.id) : ''}
+-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
++        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       >
+         {others.map((p) => (
+           <option key={p.id} value={String(p.id)}>{p.name}</option>
+@@ -250,7 +263,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           defer.reset(); redate.reset(); split.reset();
+           proof.reset(); remind.reset();
+-          setEditRefused(false); lock.reset();
++          setEditRefused(false); lock.reset(); inline.reset();
+           if (target) submitMove(target.id);
+         }}
+       >
+@@ -260,7 +273,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-defer-date"
+         placeholder="Defer until YYYY-MM-DD"
+         value={deferTo}
+-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
++        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -271,7 +284,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           move.reset();
+           proof.reset(); remind.reset();
+           split.reset();
+-          setEditRefused(false); lock.reset();
++          setEditRefused(false); lock.reset(); inline.reset();
+           submitDefer(deferTo);
+         }}
+       >
+@@ -281,7 +294,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-date-new"
+         placeholder="Re-date to YYYY-MM-DD"
+         value={redateTo}
+-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
++        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -293,7 +306,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           defer.reset();
+           proof.reset(); remind.reset();
+           split.reset();
+-          setEditRefused(false); lock.reset();
++          setEditRefused(false); lock.reset(); inline.reset();
+           submitRedate(redateTo);
+         }}
+       >
+@@ -307,7 +320,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          setEditRefused(false); lock.reset();
++          setEditRefused(false); lock.reset(); inline.reset();
+           submitProof(undefined);
+         }}
+       >
+@@ -322,7 +335,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+           proof.reset();
+-          setEditRefused(false); lock.reset();
++          setEditRefused(false); lock.reset(); inline.reset();
+           submitRemind(undefined);
+         }}
+       >
+@@ -333,7 +346,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to split off"
+         inputMode="decimal"
+         value={splitAmount}
+-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}
++        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -344,13 +357,28 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           move.reset();
+           defer.reset(); redate.reset();
+           proof.reset(); remind.reset();
+-          setEditRefused(false); lock.reset();
++          setEditRefused(false); lock.reset(); inline.reset();
+           submitSplit(splitAmount);
+         }}
+       >
+         Split
+       </button>{' '}
+-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); }}>
++      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}>
++        <input
++          data-testid="claim-inline-amount"
++          placeholder="Amount"
++          inputMode="decimal"
++          value={inlineAmount}
++          onChange={(e) => { setInlineAmount(e.target.value); inline.reset(); }}
++        />{' '}
++        <button
++          type="button"
++          data-testid="claim-inline-save"
++          disabled={inline.isPending}
++          onClick={() => submitInline(inlineAmount)}
++        >
++          Save amount
++        </button>{' '}
+         <button
+           type="button"
+           data-testid="claim-edit"
+@@ -367,9 +395,19 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         </button>
+         {children}
+       </span>
+-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || split.isError || editRefused || lock.isError) && (
++      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || split.isError || editRefused || lock.isError || inline.isError) && (
+         <span data-testid="claim-error">
+-          {lock.isError
++          {inline.isError
++            ? inline.error instanceof HttpError && inline.error.status === 423
++              ? 'Another user is editing this claim; its amount cannot change until they save or cancel.'
++              : inline.error instanceof HttpError && inline.error.status === 403
++              ? 'A viewer cannot edit a claim.'
++              : claim.status !== 'DRAFT'
++              ? `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
++              : closed
++              ? 'This claim is due by a date in a closed period, so it cannot be edited.'
++              : 'The amount must be a number with up to two decimals; a negative amount is a correction and must name a settled claim of this person.'
++            : lock.isError
+             ? lock.error instanceof HttpError && lock.error.status === 423
+               ? 'Another user is editing this claim; it cannot be edited until they save or cancel.'
+               : lock.error instanceof HttpError && lock.error.status === 403
