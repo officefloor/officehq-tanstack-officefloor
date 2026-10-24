@@ -58,6 +58,10 @@ public class Claim {
     @Column(name = "edited_by")
     private String editedBy;
 
+    /** The number of the bulk settle batch that settled it (or left it PENDING); null when settled one at a time. */
+    @Column(name = "settle_batch")
+    private Integer settleBatch;
+
     /** Whether the claim is bound by its person's last statement to the figure it had then. */
     @Column(nullable = false)
     private boolean stated;
@@ -250,6 +254,14 @@ public class Claim {
         this.editedBy = editedBy;
     }
 
+    public Integer getSettleBatch() {
+        return settleBatch;
+    }
+
+    public void setSettleBatch(Integer settleBatch) {
+        this.settleBatch = settleBatch;
+    }
+
     public String getCorrects() {
         return corrects;
     }
@@ -362,6 +374,7 @@ public class Claim {
         then.due = due;
         then.openedBy = openedBy;
         then.editedBy = editedBy;
+        then.settleBatch = settleBatch;
         then.dueBy = dueBy;
         then.dueFrom = dueFrom;
         then.dueTerms = dueTerms;

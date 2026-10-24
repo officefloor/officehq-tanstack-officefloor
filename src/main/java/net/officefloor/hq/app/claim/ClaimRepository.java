@@ -99,4 +99,34 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
         advanceSequence(sheetId, seq);
         return last + 1;
     }
+
+    @Query(value = "SELECT batch_number FROM settle_batch WHERE sheet_id = :sheetId AND batch_key = :key", nativeQuery = true)
+    Integer batchNumber(@Param("sheetId") String sheetId, @Param("key") String key);
+
+    @Modifying
+    @Query(value = "UPDATE sheet SET last_settle_batch = last_settle_batch + 1 WHERE id = :sheetId", nativeQuery = true)
+    int takeNextBatch(@Param("sheetId") String sheetId);
+
+    @Query(value = "SELECT last_settle_batch FROM sheet WHERE id = :sheetId", nativeQuery = true)
+    int lastBatch(@Param("sheetId") String sheetId);
+
+    @Modifying
+    @Query(value = "INSERT INTO settle_batch (sheet_id, batch_key, batch_number) VALUES (:sheetId, :key, :number)",
+            nativeQuery = true)
+    int startBatch(@Param("sheetId") String sheetId, @Param("key") String key, @Param("number") int number);
+
+    /** The number of the bulk settle batch the key names: the sheet's next one the first time the key is used (a
+     *  batch is numbered when its first claim settles). Locks the sheet's row first, so two batches numbered at once
+     *  are numbered one after the other. */
+    default int batchFor(String sheetId, String key) {
+        lockSheet(sheetId);
+        Integer number = batchNumber(sheetId, key);
+        if (number != null) {
+            return number;
+        }
+        takeNextBatch(sheetId);
+        int next = lastBatch(sheetId);
+        startBatch(sheetId, key, next);
+        return next;
+    }
 }

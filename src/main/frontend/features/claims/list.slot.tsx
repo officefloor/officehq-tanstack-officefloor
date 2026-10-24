@@ -62,6 +62,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
             <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
             <span data-testid="claim-tags">{(c.tags ?? []).join(', ')}</span>{' '}
+            <span data-testid="claim-batch">{c.settleBatch ?? ''}</span>{' '}
             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => setEditing(String(c.id))}
               editorSubmits={claim?.id === c.id ? submits : 0}>
               {claim?.id === c.id && (

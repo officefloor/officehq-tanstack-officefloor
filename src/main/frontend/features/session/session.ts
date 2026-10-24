@@ -11,8 +11,9 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
 // The active sheet as the store holds it: its id, its today and whether it is archived (then every
 // change on it is refused). Every date decision and default
 // date in the app uses the sheet's today (useSheetToday), never the browser's clock. In an as-of view
-// (asof.slot.tsx) it is the sheet as it stood at the end of `asOf`, and that date is its today.
-export type SheetInfo = { id: string; today: string; archived: boolean; asOf: string | null };
+// (asof.slot.tsx) it is the sheet as it stood at the end of `asOf`, and that date is its today. Its
+// lastBatch is the number of its last bulk settle batch (null while it has had none).
+export type SheetInfo = { id: string; today: string; archived: boolean; asOf: string | null; lastBatch: number | null };
 
 export const sheetQueryKey = (sheetId: string) => ['sheet', sheetId, 'info'] as const;
 

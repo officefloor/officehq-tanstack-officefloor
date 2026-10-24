@@ -31,7 +31,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the proof threshold in force on the claim's date (its person's grade's on that date when one is set, else the sheet's) cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due-by is in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
  * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. While the sheet's list of
  * void reasons is not empty, a void needs a reason from it, which the claim keeps. Returns the claim's number for the
- * audit.
+ * audit. A settle that is part of a bulk settle (its batch key) gives the claim that batch's number (the sheet's next
+ * the first time a claim of the batch settles); one settled on its own has none.
  */
 public class ApplyClaimStatus {
 
@@ -42,7 +43,8 @@ public class ApplyClaimStatus {
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
             @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
             @RequestHeader(name = "X-User", required = false) String userHeader,
-            @RequestParam(name = "reason", required = false) String reason) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+            @RequestParam(name = "reason", required = false) String reason,
+            @RequestParam(name = "batch", required = false) String batch) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         String user = AuditUser.decode(userHeader);
         if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
             throw new ClaimStatusException("A claim in a closed period cannot change status.");
@@ -130,6 +132,10 @@ public class ApplyClaimStatus {
                     next = ClaimStatus.PENDING;
                 } else {
                     claim.setDue(due);
+                }
+                if ("settle".equals(action)) {
+                    String key = batch == null ? "" : batch.trim();
+                    claim.setSettleBatch(key.isEmpty() ? null : repository.batchFor(claim.getSheetId(), key));
                 }
             }
             claim.setStatus(next);

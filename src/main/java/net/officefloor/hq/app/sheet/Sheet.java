@@ -76,6 +76,10 @@ public class Sheet {
     @Column(name = "archived_on")
     private LocalDate archivedOn;
 
+    /** The number of the sheet's last bulk settle batch; 0 while it has had none. Taken through ClaimRepository. */
+    @Column(name = "last_settle_batch", nullable = false, insertable = false, updatable = false)
+    private int lastSettleBatch;
+
     /** The late percent a sheet starts at. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -309,5 +313,9 @@ public class Sheet {
     /** The default date of a new claim: the entry date while it is set, else the sheet's today. */
     public LocalDate entryDateInForce() {
         return entryDate != null ? entryDate : today;
+    }
+
+    public int getLastSettleBatch() {
+        return lastSettleBatch;
     }
 }

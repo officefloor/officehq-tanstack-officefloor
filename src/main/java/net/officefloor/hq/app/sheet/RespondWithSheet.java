@@ -9,8 +9,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** The sheet; as of a date (asOf), as it stood at the end of it: that date its today, and the date itself. */
 public class RespondWithSheet {
 
-    /** @param asOf the date the sheet is shown as of (null: as it stands now). */
-    public record SheetResponse(String id, String today, boolean archived, String asOf) {
+    /** @param asOf the date the sheet is shown as of (null: as it stands now).
+     *  @param lastBatch the number of the sheet's last bulk settle batch (null: none yet). */
+    public record SheetResponse(String id, String today, boolean archived, String asOf, Integer lastBatch) {
     }
 
     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
@@ -18,6 +19,7 @@ public class RespondWithSheet {
         LocalDate date = AsOf.dateOf(asOfParam);
         Sheet view = asOf.sheet(sheet, date);
         response.send(new SheetResponse(view.getId(), view.getToday().toString(), view.isArchived(),
-                date == null ? null : date.toString()));
+                date == null ? null : date.toString(),
+                sheet.getLastSettleBatch() == 0 ? null : sheet.getLastSettleBatch()));
     }
 }

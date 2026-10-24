@@ -54,6 +54,8 @@ export type Claim = {
   voidReason: string | null;
   /** Its comments, oldest first: `<user> on <date>: <text>`, dated the sheet's today when each was written. */
   comments: string[];
+  /** The number of the bulk settle batch that settled it (or left it PENDING); null when settled one at a time. */
+  settleBatch: number | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
