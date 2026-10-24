@@ -1,0 +1,61 @@
+diff --git a/src/main/frontend/features/people/patrons.slot.tsx b/src/main/frontend/features/people/patrons.slot.tsx
+index b25e7318..d9b8cb42 100644
+--- a/src/main/frontend/features/people/patrons.slot.tsx
++++ b/src/main/frontend/features/people/patrons.slot.tsx
+@@ -5,15 +5,31 @@ import { useSubmitOnce } from '../../api/submitOnce';
+ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+-import { useClaims } from '../claims/claims';
+-import { useSettings } from '../roles/roles';
+-import { useRates, sumDue } from '../rates/rates';
+-import { personDue } from '../rates/due.slot';
++import { useClaims, type Claim } from '../claims/claims';
++import { sumDue } from '../rates/rates';
+ import { peoplePath, peopleQueryKey, usePeople, type Person } from './people';
+ 
++/** How many days back from the sheet's today (today included) a patron's settled claim counts toward backing. */
++const BACKING_DAYS = 90;
++
++/** The day a number of days before a date (YYYY-MM-DD). */
++const daysBefore = (day: string, n: number) =>
++  new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
++
++/** A person's backing: their patrons' frozen figures over SETTLED claims dated within the window ending today. */
++export function backingOf(patrons: Person[], claims: Claim[], today: string | undefined): string {
++  if (today === undefined) return sumDue([]);
++  const since = daysBefore(today, BACKING_DAYS - 1);
++  const ids = new Set(patrons.map((p) => p.id));
++  return sumDue(claims
++    .filter((c) => ids.has(c.personId) && c.status === 'SETTLED' && c.due !== null && since <= c.date && c.date <= today)
++    .map((c) => c.due as string));
++}
++
+ // A person's patrons — other people on the sheet they have named, one at a time, each once; shown by name,
+-// sorted — and the button that names another. Their backing is their patrons' due-totals added up, skipping
+-// n/a (0.00 with no patrons).
++// sorted — and the button that names another. Their backing is the sum of their patrons' settled figures over
++// their SETTLED claims dated within the 90 days up to and including the sheet's today, each at its frozen figure
++// (0.00 with none).
+ function PatronsHeader() {
+   return (
+     <>
+@@ -28,9 +44,7 @@ function PersonPatrons({ person }: { person: Person }) {
+   const [sheet] = useCurrentSheet();
+   const people = usePeople();
+   const claims = useClaims();
+-  const rates = useRates();
+   const today = useSheetToday();
+-  const settings = useSettings();
+   const [chosen, setChosen] = useState('');
+   const queryClient = useQueryClient();
+   const add = useMutation({
+@@ -48,7 +62,7 @@ function PersonPatrons({ person }: { person: Person }) {
+     .map((id) => everyone.find((p) => p.id === id))
+     .filter((p): p is Person => p !== undefined);
+   const names = patrons.map((p) => p.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+-  const backing = sumDue(patrons.map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data)));
++  const backing = backingOf(patrons, claims.data ?? [], today);
+   return (
+     <>
+       <td>
