@@ -1,8 +1,10 @@
 import { HomeMain } from '../../slots/defs/homeMain';
+import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople, useEditingPerson } from './people';
 
-// The sheet's people in the order they were added, each with their name, grade and an edit button.
+// The sheet's people in the order they were added, each with their name, grade and an edit button;
+// features add their own columns through PeopleColumns / PersonCells.
 function PeopleList() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -16,6 +18,7 @@ function PeopleList() {
           <th>Name</th>
           <th>Grade</th>
           <th />
+          <PeopleColumns.Slot />
         </tr>
       </thead>
       <tbody>
@@ -28,6 +31,7 @@ function PeopleList() {
                 Edit
               </button>
             </td>
+            <PersonCells.Slot person={p} />
           </tr>
         ))}
       </tbody>
