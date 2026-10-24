@@ -25,6 +25,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // `clashing`: whether their name or an alias is in use on another sheet of the sheet's tree (its ancestors and
 // descendants); an edit of them through the person form is refused until it leaves them no longer clashing.
 // `origin`: the sheet they were transferred from (null: they were not transferred here).
+// `retirements`: their past retirements, each ended by an unretire, earliest from-date first: from a date to the
+// day they were unretired; a claim dated after the from and before the to is refused, as one after a retirement is.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -44,7 +46,11 @@ export type Person = {
   aliases: string[];
   clashing: boolean;
   origin: string | null;
+  retirements: Retirement[];
 };
+
+/** A past retirement: from a date to the day they were unretired (YYYY-MM-DD). */
+export type Retirement = { from: string; to: string };
 
 /** A grade a person was given, from a date on (YYYY-MM-DD; null: from the beginning of time). */
 export type DatedGrade = { grade: string; from: string | null };

@@ -71,6 +71,13 @@ public class Person {
     @OrderBy("fromDate ASC, toDate ASC")
     private List<PersonHold> holds = new ArrayList<>();
 
+    /** Their past retirements, each ended by an unretire, earliest from-date first: a claim dated after the from and
+     *  before the to of one is refused, as one after a retirement is. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "person_retirement", joinColumns = @JoinColumn(name = "person_id"))
+    @OrderBy("fromDate ASC, toDate ASC")
+    private List<PersonRetirement> retirements = new ArrayList<>();
+
     /** The sheet's today when they were added (null: not recorded); a statement as of an earlier date is refused. */
     @Column(name = "added_on")
     private LocalDate addedOn;
@@ -182,6 +189,13 @@ public class Person {
         this.retiredMadeOn = madeOn;
     }
 
+    /** Unretires them on the sheet's today given: their retirement is kept as a past one, from its date to that day. */
+    public void unretire(LocalDate on) {
+        retirements.add(new PersonRetirement(retiredFrom, on, retiredMadeOn, on));
+        this.retiredFrom = null;
+        this.retiredMadeOn = null;
+    }
+
     /** A copy of them as they stood at the end of a date: only the holds and retirement made while the sheet's
      *  today was on or before it. Only worked out, never saved. */
     public Person asOf(LocalDate date) {
@@ -195,12 +209,24 @@ public class Person {
             then.retiredFrom = retiredFrom;
             then.retiredMadeOn = retiredMadeOn;
         }
+        for (PersonRetirement r : retirements) {
+            if (r.madeBy(date)) {
+                then.retirements.add(r);
+            } else if (r.retiredBy(date)) {
+                then.retiredFrom = r.getFromDate();
+                then.retiredMadeOn = r.getRetireMadeOn();
+            }
+        }
         holds.stream().filter(h -> h.madeBy(date)).forEach(then.holds::add);
         return then;
     }
 
     public LocalDate getRetiredFrom() {
         return retiredFrom;
+    }
+
+    public List<PersonRetirement> getRetirements() {
+        return retirements;
     }
 
     public List<PersonHold> getHolds() {
@@ -232,8 +258,10 @@ public class Person {
         return heldOn(date) || retiredBy(today);
     }
 
-    /** Whether a claim on this date is refused: it is after their retirement date. */
+    /** Whether a claim on this date is refused: it is after their retirement date, or after the from and before the
+     *  to of a past retirement. */
     public boolean retiredOn(LocalDate date) {
-        return retiredFrom != null && date.isAfter(retiredFrom);
+        return (retiredFrom != null && date.isAfter(retiredFrom))
+                || retirements.stream().anyMatch(r -> r.refuses(date));
     }
 }
