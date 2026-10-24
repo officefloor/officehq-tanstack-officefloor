@@ -7,6 +7,7 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonGradeRepository;
+import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
  * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. The one who last edited a claim (its form or its amount entry) cannot settle or approve it either. Settling fixes the claim's due at the rate of the grade its
- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the sheet's proof threshold in force on the claim's date cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due-by is in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
+ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the proof threshold in force on the claim's date (its person's grade's on that date when one is set, else the sheet's) cannot be settled or approved while it has no proof — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due-by is in a closed period cannot change status. Only a steward voids a SETTLED claim, and only within 7 days of
  * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. While the sheet's list of
  * void reasons is not empty, a void needs a reason from it, which the claim keeps. Returns the claim's number for the
  * audit.
@@ -115,11 +116,12 @@ public class ApplyClaimStatus {
                 throw new ClaimStatusException("The one who last edited a claim cannot settle or approve it.");
             }
             if (next == ClaimStatus.SETTLED) {
-                BigDecimal due = people.findById(claim.getPersonId())
-                        .map(p -> new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
-                                grades.gradesOf(p), sheet).due(claim))
-                        .orElse(null);
-                BigDecimal threshold = sheet.proofThresholdOn(claim.getDate());
+                PersonGrades personGrades = people.findById(claim.getPersonId()).map(grades::gradesOf).orElse(null);
+                BigDecimal due = personGrades == null ? null
+                        : new ClaimFigures(rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(claim.getSheetId()),
+                                personGrades, sheet).due(claim);
+                BigDecimal threshold = sheet.proofThresholdFor(
+                        personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());
                 if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
                     throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof to be settled or approved.");
                 }

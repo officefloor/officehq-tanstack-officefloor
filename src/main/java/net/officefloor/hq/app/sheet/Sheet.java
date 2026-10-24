@@ -206,6 +206,23 @@ public class Sheet {
         return amountOn(PROOF_THRESHOLD, on);
     }
 
+    /** The setting key of a grade's proof threshold (dated). */
+    public static String proofThresholdKey(String grade) {
+        return PROOF_THRESHOLD + "-" + grade;
+    }
+
+    /** The grade's own proof threshold in force on a date; null when it has none. */
+    public BigDecimal gradeProofThresholdOn(String grade, LocalDate on) {
+        return grade == null ? null : amountOn(proofThresholdKey(grade), on);
+    }
+
+    /** The proof threshold in force for a claim of a grade on a date: the grade's own in force then when one is
+     *  set, else the sheet's; null when there is none. */
+    public BigDecimal proofThresholdFor(String grade, LocalDate on) {
+        BigDecimal own = gradeProofThresholdOn(grade, on);
+        return own != null ? own : proofThresholdOn(on);
+    }
+
     /** The note threshold in force on a date; null when there is none. */
     public BigDecimal noteThresholdOn(LocalDate on) {
         return amountOn(NOTE_THRESHOLD, on);

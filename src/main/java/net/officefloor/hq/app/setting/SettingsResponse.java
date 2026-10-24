@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.setting;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,12 +13,13 @@ import net.officefloor.hq.app.sheet.SheetSetting;
  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
  *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date; and the permission matrix
- *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none). */
+ *  entry of each of open, settle, void, reassign, close and reopen (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
         Map<String, List<Dated>> dated, String permOpen, String permSettle, String permVoid, String permReassign,
         String permClose, String permReopen, String graceDays, String noteThreshold, String entryDate,
-        String graceA, String graceB, String graceC) {
+        String graceA, String graceB, String graceC,
+        String proofThresholdA, String proofThresholdB, String proofThresholdC) {
 
     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
     public record Dated(String from, String value) {
@@ -42,13 +44,20 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 sheet.getGraceDays() == null ? "" : String.valueOf(sheet.getGraceDays()),
                 sheet.noteThresholdOn(sheet.getToday()) == null ? "" : sheet.noteThresholdOn(sheet.getToday()).toPlainString(),
                 sheet.getEntryDate() == null ? "" : sheet.getEntryDate().toString(),
-                gradeGrace(sheet, "A"), gradeGrace(sheet, "B"), gradeGrace(sheet, "C"));
+                gradeGrace(sheet, "A"), gradeGrace(sheet, "B"), gradeGrace(sheet, "C"),
+                gradeProofThreshold(sheet, "A"), gradeProofThreshold(sheet, "B"), gradeProofThreshold(sheet, "C"));
     }
 
     /** The grade's grace days in force on the sheet's today; "" when it has none. */
     public static String gradeGrace(Sheet sheet, String grade) {
         Integer grace = sheet.gradeGraceOn(grade, sheet.getToday());
         return grace == null ? "" : String.valueOf(grace);
+    }
+
+    /** The grade's proof threshold in force on the sheet's today with two decimals; "" when it has none. */
+    public static String gradeProofThreshold(Sheet sheet, String grade) {
+        BigDecimal threshold = sheet.gradeProofThresholdOn(grade, sheet.getToday());
+        return threshold == null ? "" : threshold.toPlainString();
     }
 
     /** The grade's own terms in days in force on the sheet's today; "" when it uses the sheet's terms. */

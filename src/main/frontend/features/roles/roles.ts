@@ -13,16 +13,17 @@ export type Role = { user: string; role: string };
  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
  *  two decimals ("" when there is none — a person's due-total is at most it), and its proof threshold with two decimals ("" when there is none — a claim whose due is
  *  above the one in force on its date cannot be settled or approved without a proof), and its grace days ("" when off; not dated), and its note threshold with two decimals ("" when there is none — a claim whose due is
- *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date). Each of those is the value in force on the
+ *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's). Each of those is the value in force on the
  *  sheet's today; `dated` holds the values recorded for each setting that carries a figure, by key (floor, late-pct,
- *  terms, terms-A/B/C, clerk-limit, cap, proof-threshold, note-threshold, grace-A/B/C), each from its from-date on (null: from the beginning of time; a null value is blank). */
+ *  terms, terms-A/B/C, clerk-limit, cap, proof-threshold, note-threshold, grace-A/B/C, proof-threshold-A/B/C), each from its from-date on (null: from the beginning of time; a null value is blank). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string;
   latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string; proofThreshold: string;
   dated: Record<string, { from: string | null; value: string | null }[]>;
   permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string;
   graceDays: string; noteThreshold: string; entryDate: string;
-  graceA: string; graceB: string; graceC: string };
+  graceA: string; graceB: string; graceC: string;
+  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string };
 
 /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
  *  before it, else `start` (the sheet's starting value). */
