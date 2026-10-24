@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
@@ -60,7 +60,7 @@ const ACTIONS = [
 ] as const;
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
-// by the server and shows the claim's error, as is settling a claim the signed-in user opened; the error goes as soon as the next action on the row
+// by the server and shows the claim's error, as is settling a claim the signed-in user opened, or a clerk settling one whose due is above the clerk limit; the error goes as soon as the next action on the row
 // is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error
 // instead of opening its editor (an open claim is voided and added anew).
 function ClaimStatusActions({ sheet, claim, onEdit, children }: {
@@ -114,6 +114,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, children }: {
             ? 'This claim is dated in a closed period, so its status cannot change.'
             : change.variables === 'settle' && claim.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
+            : change.variables === 'settle' && change.error instanceof HttpError && change.error.status === 403
+            ? 'Its due is above the clerk limit, so only a steward can settle it.'
             : `That status change is not allowed for a ${claim.status} claim.`}
         </span>
       )}
