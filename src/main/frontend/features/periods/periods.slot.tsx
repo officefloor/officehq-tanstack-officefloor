@@ -10,16 +10,16 @@ import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { fiscalYearOf, useFiscalStartMonth, useFloor, useLate } from '../settings/settings';
 import { useRates } from '../rates/rates';
-import { periodDueTotal, periodsKey, personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
+import { periodClaimsCount, periodDueTotal, periodsKey, personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
 import type { Period } from './periods';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** One period with its due-total (see periodDueTotal), whether it is closed (yes, soft or no), the fiscal year its
  *  from-date falls in (see fiscalYearOf), its cap on each person's open claims (blank: none), and the buttons that close it, soft-close it and (a steward only) reopen it, whether it is locked (yes or no), and the buttons
- *  that (a steward only) lock and unlock it. */
-function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: string; user: string; period: Period;
-    dueTotal: string; fiscalYear: string }) {
+ *  that (a steward only) lock and unlock it, and its claim count (see periodClaimsCount). */
+function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear, claimsCount }: { sheetId: string; user: string;
+    period: Period; dueTotal: string; fiscalYear: string; claimsCount: number }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
 
@@ -78,6 +78,9 @@ function PeriodRow({ sheetId, user, period, dueTotal, fiscalYear }: { sheetId: s
       </td>
       <td>
         Locked <span data-testid="period-locked">{period.locked ? 'yes' : 'no'}</span>
+      </td>
+      <td>
+        Claims <span data-testid="period-claims-count">{claimsCount}</span>
       </td>
       <td>
         <button
@@ -343,7 +346,7 @@ function Periods({ sheetId, user }: { sheetId: string; user: string }) {
         <tbody>
           {periods.map((p) => (
             <PeriodRow key={p.name} sheetId={sheetId} user={user} period={p} dueTotal={periodDueTotal(p, claims, people, rates, floor, late)}
-              fiscalYear={fiscalYearOf(p.from, fiscalStartMonth)} />
+              fiscalYear={fiscalYearOf(p.from, fiscalStartMonth)} claimsCount={periodClaimsCount(p, claims)} />
           ))}
         </tbody>
       </table>

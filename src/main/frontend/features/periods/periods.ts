@@ -69,6 +69,11 @@ export function periodDueTotal(period: Period, claims: Claim[], people: Person[]
   return sumDue(people.map((p) => personPeriodDueTotal(period, p, claims, people, rates, floor, late)));
 }
 
+/** A period's claim count as shown on its row: the claims whose due-by falls in it, VOID and DELETED ones left out. */
+export function periodClaimsCount(period: Period, claims: Claim[]): number {
+  return claims.filter((c) => c.status !== 'VOID' && c.status !== 'DELETED' && periodOf([period], dueBy(c))).length;
+}
+
 /** A period's classic due-total: while it is open, the dues (as shown on their rows now) of every person's claims that
  *  count by their status now (see live) whose due-by falls in it, added up; once closed or soft-closed, the figure
  *  fixed then (see personPeriodDueTotal). */
