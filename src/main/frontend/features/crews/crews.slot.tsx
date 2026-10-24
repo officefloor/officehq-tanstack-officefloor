@@ -10,6 +10,17 @@ import { useSettings } from '../roles/roles';
 import { sumDue, useRates } from '../rates/rates';
 import { personDue } from '../rates/due.slot';
 import { crewsPath, crewsQueryKey, useCrews, type Crew } from './crews';
+import type { Person } from '../people/people';
+import type { Claim } from '../claims/claims';
+import type { Rate } from '../rates/rates';
+import type { Settings } from '../roles/roles';
+
+/** A crew's due-total: its lead's and its members' due-totals added up, n/a skipped. */
+export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+  settings: Settings | undefined): string {
+  const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
+  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings)));
+}
 
 // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.
 // A blank name, or one already a crew's, is refused by the server and shows the error beside the entry, which goes
@@ -98,9 +109,6 @@ function CrewRow({ crew }: { crew: Crew }) {
     },
   });
   const submit = useSubmitOnce(add);
-  const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
-  const dues = (people.data ?? []).filter((p) => ids.includes(p.id))
-    .map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data));
   return (
     <tr data-testid={`crew-row-${crew.name}`}>
       <td data-testid="crew-name">{crew.name}</td>
@@ -112,7 +120,7 @@ function CrewRow({ crew }: { crew: Crew }) {
           ))}
         </ul>
       </td>
-      <td data-testid="crew-due-total">{sumDue(dues)}</td>
+      <td data-testid="crew-due-total">{crewDue(crew, people.data ?? [], claims.data ?? [], rates.data, today, settings.data)}</td>
       <td>
         <select
           data-testid="crew-member-select"
