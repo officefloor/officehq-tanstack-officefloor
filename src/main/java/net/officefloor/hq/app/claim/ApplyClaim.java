@@ -8,7 +8,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Saves the claim's changes; refuses them unless the claim is a DRAFT (an open claim is voided and added anew
  * instead), when its date, or the one it would move to, is in a closed period, and when it would move after its
- * person's retirement date, and a correction that does not name a settled claim of its person. */
+ * person's retirement date, and a correction that does not name a settled claim of its person. Saving closes the
+ * claim's editor: it releases the claim's lock. */
 public class ApplyClaim {
     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
             PeriodRepository periods, PersonRepository people) throws InvalidClaimException {
@@ -28,6 +29,7 @@ public class ApplyClaim {
         claim.setCorrectsDate(correctsDate);
         claim.setDate(date);
         claim.setNote(input.note());
+        claim.setLockedBy(null);
         repository.saveAndFlush(claim);
     }
 }

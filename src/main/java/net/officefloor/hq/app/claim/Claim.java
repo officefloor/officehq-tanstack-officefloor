@@ -89,6 +89,10 @@ public class Claim {
     @Column(name = "split_from")
     private String splitFrom;
 
+    /** The signed-in name whose open editor locks the claim for everyone else; null while no editor holds it. */
+    @Column(name = "locked_by")
+    private String lockedBy;
+
     protected Claim() {
     }
 
@@ -256,5 +260,18 @@ public class Claim {
 
     public void setSplitFrom(String splitFrom) {
         this.splitFrom = splitFrom;
+    }
+
+    public String getLockedBy() {
+        return lockedBy;
+    }
+
+    public void setLockedBy(String lockedBy) {
+        this.lockedBy = lockedBy;
+    }
+
+    /** Whether someone other than the user holds the claim's editor open. */
+    public boolean isLockedFor(String user) {
+        return lockedBy != null && !lockedBy.equals(user);
     }
 }

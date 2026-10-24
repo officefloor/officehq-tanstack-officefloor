@@ -16,6 +16,9 @@ public interface ClaimRepository extends JpaRepository<Claim, Long> {
     /** The sheet's claims in the order they are listed: newest first, a moved claim as its new person's newest. */
     List<Claim> findBySheetIdOrderByListedDescIdDesc(String sheetId);
 
+    /** The sheet's claims some open editor locks. */
+    List<Claim> findBySheetIdAndLockedByIsNotNull(String sheetId);
+
     /** Lists the claim as the newest: gives it the next listing key. */
     @Modifying
     @Query(value = "UPDATE claim SET listed = NEXT VALUE FOR claim_listed_seq WHERE id = :id", nativeQuery = true)
