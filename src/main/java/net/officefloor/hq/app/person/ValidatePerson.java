@@ -14,6 +14,6 @@ public class ValidatePerson {
             throw new InvalidPersonException("A name is required.");
         }
         body.set(PersonRules.check(request.name(), request.grade(), request.version(), request.gradeFrom(),
-                request.terms(), request.contact()));
+                request.terms(), request.contact(), request.tags()));
     }
 }

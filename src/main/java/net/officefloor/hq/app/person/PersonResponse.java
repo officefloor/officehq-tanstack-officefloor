@@ -10,12 +10,12 @@ import net.officefloor.hq.app.statement.Statement;
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
- *  transferred from (null: none), and their past retirements (earliest first). */
+ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted. */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
         List<Hold> holds, List<Long> patronIds, Integer terms,
         String contact, List<String> aliases, boolean clashing, String origin,
-        List<Retirement> retirements) {
+        List<Retirement> retirements, List<String> tags) {
 
     /** A past retirement, from a date to the day they were unretired. */
     public record Retirement(String from, String to) {
@@ -56,6 +56,7 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                         || aliases.stream().anyMatch(a -> usedAround.contains(TreeNames.key(a.getAlias()))),
                 person.getOriginSheet(),
                 person.getRetirements().stream().map(r -> new Retirement(r.getFromDate().toString(),
-                        r.getToDate().toString())).toList());
+                        r.getToDate().toString())).toList(),
+                net.officefloor.hq.app.claim.Tags.list(person.getTags()));
     }
 }

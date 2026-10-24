@@ -36,7 +36,7 @@ public class ValidateImportPeople {
             PersonRequest person;
             try {
                 person = PersonRules.check(fields[0], fields[1], null, null, fields.length > 2 ? fields[2] : null,
-                        fields.length > 3 ? fields[3] : null);
+                        fields.length > 3 ? fields[3] : null, null);
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + at + ": " + e.getMessage());
             }

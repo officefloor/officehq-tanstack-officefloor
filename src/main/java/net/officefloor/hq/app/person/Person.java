@@ -51,6 +51,10 @@ public class Person {
     @Transient
     private boolean contactChanged;
 
+    /** Their tags, trimmed, lower-cased, without repeats, sorted and comma separated (null: none); the tag totals
+     *  count each claim of theirs for these as well as for the claim's own. */
+    private String tags;
+
     /** Their place in the sheet's list, lowest first (null: their id, which puts a person added later at the end). */
     private Long position;
 
@@ -171,6 +175,14 @@ public class Person {
         return contactChanged;
     }
 
+    public String getTags() {
+        return tags;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
+    }
+
     public long getVersion() {
         return version;
     }
@@ -204,6 +216,7 @@ public class Person {
         then.position = position;
         then.terms = terms;
         then.contact = contact;
+        then.tags = tags;
         then.addedOn = addedOn;
         if (retiredMadeOn == null || !retiredMadeOn.isAfter(date)) {
             then.retiredFrom = retiredFrom;

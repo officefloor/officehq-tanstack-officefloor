@@ -10,7 +10,8 @@ import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditin
 // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
 // added with applies from the beginning of time. A person's own terms (blank: none) come ahead of their grade's
 // and the sheet's when a claim's due-by is fixed. A contact (blank: none) is kept trimmed and lower-cased and
-// must not be another person's on the sheet. The
+// must not be another person's on the sheet. Tags (comma separated) are kept trimmed, lower-cased, sorted and without
+// repeats. The
 // editor remembers the version of the person it loaded; when someone else has saved them since, the
 // save is refused and the form shows the person's current values (and version) instead. Any other refused save
 // closes the editor, its error staying on the form until the form is next changed or submitted, an editor is
@@ -47,11 +48,12 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState(person?.terms == null ? '' : String(person.terms));
   const [contact, setContact] = useState(person?.contact ?? '');
+  const [tags, setTags] = useState((person?.tags ?? []).join(', '));
   const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationKey: personSaveKey,
-    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string }) =>
+    mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string }) =>
       person
         ? putJson<Person>(`${peoplePath(sheet)}/${person.id}`, { ...body, version }, user)
         : postJson<Person>(peoplePath(sheet), body, user),
@@ -65,6 +67,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         setGradeFrom('');
         setTerms('');
         setContact('');
+        setTags('');
       }
     },
     onError: async (error) => {
@@ -85,6 +88,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         setGrade(now.grade);
         setTerms(now.terms == null ? '' : String(now.terms));
         setContact(now.contact ?? '');
+        setTags((now.tags ?? []).join(', '));
         setVersion(now.version);
       }
     },
@@ -108,7 +112,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
           void queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
           return;
         }
-        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim() });
+        submit({ name, grade, gradeFrom: gradeFrom.trim(), terms: terms.trim(), contact: contact.trim(), tags });
       }}
     >
       <h2>{person ? 'Edit person' : 'Add a person'}</h2>
@@ -144,6 +148,12 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         placeholder="Contact (blank for none)"
         value={contact}
         onChange={(e) => { setContact(e.target.value); save.reset(); setRefused(false); }}
+      />
+      <input
+        data-testid="person-form-tags"
+        placeholder="Tags (comma separated)"
+        value={tags}
+        onChange={(e) => { setTags(e.target.value); save.reset(); setRefused(false); }}
       />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {person ? 'Save' : 'Add person'}

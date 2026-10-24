@@ -27,6 +27,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // `origin`: the sheet they were transferred from (null: they were not transferred here).
 // `retirements`: their past retirements, each ended by an unretire, earliest from-date first: from a date to the
 // day they were unretired; a claim dated after the from and before the to is refused, as one after a retirement is.
+// `tags`: their tags, trimmed, lower-cased and sorted, without repeats (empty: none); the tag totals count each
+// claim of theirs for these as well as for the claim's own.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -47,6 +49,7 @@ export type Person = {
   clashing: boolean;
   origin: string | null;
   retirements: Retirement[];
+  tags: string[];
 };
 
 /** A past retirement: from a date to the day they were unretired (YYYY-MM-DD). */

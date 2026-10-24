@@ -7,7 +7,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
-/** Saves the person's name, terms and contact, and records their grade from the form's from-date (the sheet's today when blank),
+/** Saves the person's name, terms, contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
  *  replacing the grade recorded for that date and keeping the others. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
@@ -36,6 +36,7 @@ public class ApplyPerson {
         person.setName(request.name());
         person.setTerms(request.termsDays());
         person.setContact(request.contactOrNull());
+        person.setTags(request.tags());
         try {
             // Every save raises the version, even one that changes only a dated grade.
             entityManager.lock(person, LockModeType.OPTIMISTIC_FORCE_INCREMENT);

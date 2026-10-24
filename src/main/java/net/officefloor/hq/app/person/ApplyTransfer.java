@@ -113,6 +113,7 @@ public class ApplyTransfer {
             arrived.setAddedOn(today);
             arrived.setTerms(person.getTerms());
             arrived.setContact(person.getContact());
+            arrived.setTags(person.getTags());
             arrived.setOriginSheet(sheetId);
             arrived = people.saveAndFlush(arrived);
             for (PersonGrade grade : theirGrades) {

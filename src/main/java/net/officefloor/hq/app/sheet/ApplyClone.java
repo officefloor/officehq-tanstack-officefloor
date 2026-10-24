@@ -75,8 +75,8 @@ public class ApplyClone {
         Map<Long, Long> personIds = new LinkedHashMap<>();
         for (Person person : people.findListed(from)) {
             entityManager.createNativeQuery("INSERT INTO person (sheet_id, name, grade, version, retired_from, terms,"
-                    + " contact, added_on, retired_made_on, origin_sheet) SELECT :to, name, grade, 0, retired_from, terms,"
-                    + " contact, added_on, retired_made_on, origin_sheet FROM person WHERE id = :id")
+                    + " contact, tags, added_on, retired_made_on, origin_sheet) SELECT :to, name, grade, 0, retired_from, terms,"
+                    + " contact, tags, added_on, retired_made_on, origin_sheet FROM person WHERE id = :id")
                     .setParameter("to", to).setParameter("id", person.getId()).executeUpdate();
             Long copy = ((Number) entityManager.createNativeQuery(
                     "SELECT id FROM person WHERE sheet_id = :to AND name_key = LOWER(:name)")

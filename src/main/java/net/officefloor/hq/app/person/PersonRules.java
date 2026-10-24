@@ -20,10 +20,10 @@ public final class PersonRules {
     /**
      * Checks the form's fields, trimming the name; refuses an empty name or a grade other than A, B or C, a grade
      * from-date that is not a calendar date, and terms that are not a whole number of days; the contact is trimmed
-     * and lower-cased.
+     * and lower-cased; the tags are normalised as Tags.normalise does.
      */
     public static PersonRequest check(String name, String grade, Long version, String gradeFrom, String terms,
-            String contact) throws InvalidPersonException {
+            String contact, String tags) throws InvalidPersonException {
         name = name == null ? "" : name.trim();
         grade = grade == null ? "" : grade.trim();
         if (name.isEmpty()) {
@@ -45,7 +45,8 @@ public final class PersonRules {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
         }
         contact = contact == null ? "" : contact.trim().toLowerCase(Locale.ROOT);
-        return new PersonRequest(name, grade, version, gradeFrom, terms, contact);
+        return new PersonRequest(name, grade, version, gradeFrom, terms, contact,
+                net.officefloor.hq.app.claim.Tags.normalise(tags));
     }
 
     /**
@@ -69,6 +70,7 @@ public final class PersonRules {
         person.setAddedOn(sheet.getToday());
         person.setTerms(request.termsDays());
         person.setContact(request.contactOrNull());
+        person.setTags(request.tags());
         return person;
     }
 

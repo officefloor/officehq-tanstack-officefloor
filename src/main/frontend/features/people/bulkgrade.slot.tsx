@@ -8,7 +8,7 @@ import { claimsQueryKey } from '../claims/claims';
 import { GRADES, peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
 
 // Gives every selected person a grade from a date (blank: the sheet's today) with one button, in list order. Each
-// is saved exactly as the person form would save them (same name, terms and contact, the version as the store holds it now),
+// is saved exactly as the person form would save them (same name, terms, contact and tags, the version as the store holds it now),
 // so the server writes the same PERSON_EDITED and rollup lines; one it refuses is left as it is. The count of
 // people changed shows once all are done, and is gone while it runs; the selection is cleared.
 
@@ -64,6 +64,7 @@ function BulkGrade() {
               gradeFrom: from.trim(),
               terms: p.terms == null ? '' : String(p.terms),
               contact: p.contact ?? '',
+              tags: (p.tags ?? []).join(', '),
               version: p.version,
             }, user);
             graded++;
