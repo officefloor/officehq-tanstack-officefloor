@@ -122,3 +122,28 @@ export function useSelectedPeople() {
     clear: () => update((set) => set.clear()),
   };
 }
+
+export const PEOPLE_SORTS = ['added', 'name', 'grade', 'due-total'] as const;
+export type PeopleSort = (typeof PEOPLE_SORTS)[number];
+
+const asSort = (raw: unknown): PeopleSort =>
+  (PEOPLE_SORTS as readonly unknown[]).includes(raw) ? (raw as PeopleSort) : 'added';
+
+/** How this screen shows the people list (search param `sortPeople`): added (list order) when first opened, and
+ *  left as it is by loading a sheet. It changes only what the screen shows — the list order, which every action
+ *  and figure goes by, stays as it is. */
+export const useSortPeople = () => useSearchParam('sortPeople', asSort);
+
+/** A name as names are compared: case and surrounding spaces ignored. */
+export const nameKey = (name: string) => name.trim().toLowerCase();
+
+/** The people in the order the sort shows them: by the key, those with equal keys in list order (the sort is
+ *  stable). `key` gives a person's key; null (an n/a due-total) goes last. */
+export function sortedBy<K extends string | number>(people: Person[], key: (p: Person) => K | null): Person[] {
+  const keyed = people.map((p, i) => ({ p, i, k: key(p) }));
+  keyed.sort((a, b) => {
+    if (a.k === null || b.k === null) return a.k === b.k ? a.i - b.i : a.k === null ? 1 : -1;
+    return a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i;
+  });
+  return keyed.map((e) => e.p);
+}
