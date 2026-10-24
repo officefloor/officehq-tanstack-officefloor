@@ -73,6 +73,8 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
   });
   const submitChange = useSubmitOnce(change);
+  const periods = usePeriods();
+  const closed = !!periodOn(periods.data, claim.date)?.closed;
   return (
     <>
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -92,7 +94,9 @@ function ClaimStatusActions({ sheet, claim, children }: { sheet: string; claim: 
       <span onClickCapture={() => change.reset()}>{children}</span>
       {change.isError && (
         <span data-testid="claim-error">
-          {change.variables === 'settle' && claim.openedBy === user
+          {closed
+            ? 'This claim is dated in a closed period, so its status cannot change.'
+            : change.variables === 'settle' && claim.openedBy === user
             ? 'You opened this claim, so someone else must settle it.'
             : `That status change is not allowed for a ${claim.status} claim.`}
         </span>
@@ -159,7 +163,8 @@ function ClaimForm({ sheet, person, claim }: { sheet: string; person: Person; cl
       </button>
       {save.isError && (
         <span data-testid="claim-form-error">
-          The amount must be a number, 0.00 or more, with up to two decimals, and the date a calendar date.
+          The amount must be a number, 0.00 or more, with up to two decimals, and the date a calendar date
+          not in a closed period.
         </span>
       )}
     </form>

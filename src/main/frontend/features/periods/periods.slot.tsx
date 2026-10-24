@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { counts, useClaims } from '../claims/claims';
 import { figureOf, sumDue, useRates } from '../rates/rates';
-import { periodOn, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { periodClosePath, periodOn, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the figures of the counted claims whose date falls in it,
-// added up, skipping n/a — and the form that adds one.
+// added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
+// button that closes it, and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -37,7 +38,7 @@ function Periods() {
   if (!user || !sheet) return null;
   const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
   const dueTotal = (period: Period) =>
-    sumDue((claims.data ?? [])
+    period.closedTotal ?? sumDue((claims.data ?? [])
       .filter((c) => counts(c) && gradeOf.has(c.personId) && periodOn([period], c.date))
       .map((c) => figureOf(c, rates.data, gradeOf.get(c.personId) ?? '')));
   return (
@@ -50,6 +51,8 @@ function Periods() {
             <th>From</th>
             <th>To</th>
             <th>Due</th>
+            <th>Closed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -59,6 +62,10 @@ function Periods() {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{dueTotal(p)}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                <PeriodActions key={`${sheet}:${p.id}`} sheet={sheet} period={p} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -96,6 +103,26 @@ function Periods() {
         )}
       </form>
     </section>
+  );
+}
+
+// The button that closes a period. Closing one already closed is refused by the server and shows the period's
+// error, which goes as soon as the next action on the row is taken.
+function PeriodActions({ sheet, period }: { sheet: string; period: Period }) {
+  const [user] = useCurrentUser();
+  const queryClient = useQueryClient();
+  const close = useMutation({
+    mutationFn: () => putJson<Period>(periodClosePath(sheet, period.id), undefined, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet) }),
+  });
+  const submitClose = useSubmitOnce(close);
+  return (
+    <>
+      <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => submitClose()}>
+        Close
+      </button>
+      {close.isError && <span data-testid="period-error">This period cannot be closed: it is already closed.</span>}
+    </>
   );
 }
 
