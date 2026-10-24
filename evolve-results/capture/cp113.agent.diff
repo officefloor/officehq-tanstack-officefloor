@@ -1,0 +1,462 @@
+diff --git a/src/main/frontend/features/people/import.slot.tsx b/src/main/frontend/features/people/import.slot.tsx
+new file mode 100644
+index 00000000..9f6070a5
+--- /dev/null
++++ b/src/main/frontend/features/people/import.slot.tsx
+@@ -0,0 +1,63 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/submitOnce';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { peopleQueryKey } from './people';
++
++// The people import box: each line is name,grade,terms,contact (the terms and the contact may be blank or absent)
++// and adds a person, in order, as the person form would. The server checks every line by the person form's rules
++// first — a name (ignoring case) or a contact repeated in the paste is refused too — so one refused line adds
++// nothing. How many were added shows once done, and is gone while it runs.
++function ImportPeople() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [text, setText] = useState('');
++  const queryClient = useQueryClient();
++  const importPeople = useMutation({
++    mutationFn: (body: { text: string }) =>
++      postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/import-people`, body, user),
++    // Not awaited: the count shows before the new rows do.
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
++    },
++  });
++  const submit = useSubmitOnce(importPeople);
++  if (!user || !sheet) return null;
++
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        submit({ text });
++      }}
++    >
++      <h2>Import people</h2>
++      <textarea
++        data-testid="import-people"
++        placeholder="name,grade,terms,contact — one person per line"
++        rows={4}
++        value={text}
++        onChange={(e) => { setText(e.target.value); importPeople.reset(); }}
++      />
++      <button type="submit" data-testid="import-submit" disabled={importPeople.isPending}>
++        Import people
++      </button>
++      {importPeople.isSuccess && (
++        <>
++          {' '}Added <span data-testid="import-added">{importPeople.data.added}</span>
++        </>
++      )}
++      {importPeople.isError && (
++        <span data-testid="import-error">
++          Nothing was imported: every line needs a name and a grade of A, B or C; terms must be a whole number of
++          days; no name may be in use on the sheet or its tree, nor a contact on the sheet, and none may repeat in
++          the paste.
++        </span>
++      )}
++    </form>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 15.5, Component: ImportPeople });
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
+new file mode 100644
+index 00000000..c929c401
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
+@@ -0,0 +1,54 @@
++package net.officefloor.hq.app.importpeople;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonAliasRepository;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.person.PersonRules;
++import net.officefloor.hq.app.person.TreeNames;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/**
++ * Makes each line's person by the person form's rules — all of them before any is stored, so a refused line adds
++ * nothing. Then adds the people in order, each recorded as the person form records them, followed by the figures
++ * that adding them moved.
++ */
++public class AddImportedPeople {
++    public void add(@Val ImportedLines lines, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
++            TreeNames tree, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
++            PersonGradeRepository grades, @RequestHeader(name = "X-User", required = false) String user, Audit audit,
++            Out<ImportedPeople> addedOut) throws InvalidPersonException {
++        List<Person> made = new ArrayList<>();
++        int at = 0;
++        for (PersonRequest line : lines.people()) {
++            at++;
++            try {
++                made.add(PersonRules.make(line, sheet, people, aliases, tree));
++            } catch (InvalidPersonException e) {
++                throw new InvalidPersonException("Line " + at + ": " + e.getMessage());
++            }
++        }
++        String by = AuditUser.decode(user);
++        for (Person person : made) {
++            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
++            Person saved = people.saveAndFlush(person);
++            audit.record(PersonRules.addedLine(saved, by));
++            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades).changesSince(before, sheet.getId(), by)
++                    .forEach(audit::record);
++        }
++        addedOut.set(new ImportedPeople(made.size()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ImportPeopleRequest.java b/src/main/java/net/officefloor/hq/app/importpeople/ImportPeopleRequest.java
+new file mode 100644
+index 00000000..f8cffc4f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ImportPeopleRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.importpeople;
++
++/** The people import box as submitted: lines of name,grade,terms,contact. */
++public record ImportPeopleRequest(String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ImportedLines.java b/src/main/java/net/officefloor/hq/app/importpeople/ImportedLines.java
+new file mode 100644
+index 00000000..a4f46256
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ImportedLines.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.importpeople;
++
++import java.util.List;
++import net.officefloor.hq.app.person.PersonRequest;
++
++/** The import box's lines, each checked by the person form's rules, in order. */
++public record ImportedLines(List<PersonRequest> people) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ImportedPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/ImportedPeople.java
+new file mode 100644
+index 00000000..013b7a56
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ImportedPeople.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.importpeople;
++
++/** How many people the import added. */
++public record ImportedPeople(int added) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/RespondWithImportedPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/RespondWithImportedPeople.java
+new file mode 100644
+index 00000000..14958f5a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/importpeople/RespondWithImportedPeople.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.importpeople;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithImportedPeople {
++    public void respond(@Val ImportedPeople added, ObjectResponse<ImportedPeople> response) {
++        response.send(added);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeople.java
+new file mode 100644
+index 00000000..967d6581
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeople.java
+@@ -0,0 +1,58 @@
++package net.officefloor.hq.app.importpeople;
++
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.person.InvalidPersonException;
++import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.person.PersonRules;
++import net.officefloor.hq.app.person.TreeNames;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * Reads the import box from the body: each non-blank line is name,grade,terms,contact — the terms and the contact
++ * may be blank or absent. Checks every line exactly as the person form would, refusing the whole import when any
++ * line fails, a name (ignoring case) or a contact repeats one of an earlier line, or there is no line.
++ */
++public class ValidateImportPeople {
++    public void validate(@RequestBody ImportPeopleRequest request, Out<ImportedLines> linesOut)
++            throws InvalidPersonException {
++        String text = request == null || request.text() == null ? "" : request.text();
++        List<PersonRequest> people = new ArrayList<>();
++        Set<String> names = new HashSet<>();
++        Set<String> contacts = new HashSet<>();
++        int at = 0;
++        for (String line : text.split("\\r?\\n")) {
++            at++;
++            if (line.isBlank()) {
++                continue;
++            }
++            String[] fields = line.split(",", -1);
++            if (fields.length < 2 || fields.length > 4) {
++                throw new InvalidPersonException("Line " + at + ": a line is name,grade,terms,contact.");
++            }
++            PersonRequest person;
++            try {
++                person = PersonRules.check(fields[0], fields[1], null, null, fields.length > 2 ? fields[2] : null,
++                        fields.length > 3 ? fields[3] : null);
++            } catch (InvalidPersonException e) {
++                throw new InvalidPersonException("Line " + at + ": " + e.getMessage());
++            }
++            if (!names.add(TreeNames.key(person.name()))) {
++                throw new InvalidPersonException("Line " + at + ": the name " + person.name()
++                        + " is already used in this import.");
++            }
++            if (person.contactOrNull() != null && !contacts.add(person.contactOrNull())) {
++                throw new InvalidPersonException("Line " + at + ": the contact " + person.contactOrNull()
++                        + " is already used in this import.");
++            }
++            people.add(person);
++        }
++        if (people.isEmpty()) {
++            throw new InvalidPersonException("Paste at least one line of name,grade,terms,contact.");
++        }
++        linesOut.set(new ImportedLines(List.copyOf(people)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+index 29592750..b1e88c24 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+@@ -8,9 +8,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ /** Records the added person, once it is saved, with their terms when they have any, and their contact when they have one. */
+ public class AuditPersonAdded {
+     public void audit(@Val Person person, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+-        audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + AuditUser.decode(user)
+-                + " name=" + person.getName() + " grade=" + person.getGrade()
+-                + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
+-                + (person.getContact() == null ? "" : " contact=" + person.getContact()));
++        audit.record(PersonRules.addedLine(person, AuditUser.decode(user)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+index 283227cc..4c6daa00 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -8,21 +8,6 @@ public class BuildPerson {
+     public void build(@Val PersonRequest request, @Val Sheet sheet, PersonRepository repository,
+             PersonAliasRepository aliases, TreeNames tree, Out<Person> personOut)
+             throws InvalidPersonException {
+-        if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())
+-                || aliases.existsBySheetIdAndAliasIgnoreCase(sheet.getId(), request.name())) {
+-            throw new InvalidPersonException("The name is already in use on this sheet.");
+-        }
+-        if (tree.usedAround(sheet.getId(), request.name())) {
+-            throw new InvalidPersonException("The name is already in use on a sheet of this sheet's tree.");
+-        }
+-        if (request.contactOrNull() != null
+-                && repository.existsBySheetIdAndContact(sheet.getId(), request.contactOrNull())) {
+-            throw new InvalidPersonException("The contact is already in use on this sheet.");
+-        }
+-        Person person = new Person(sheet.getId(), request.name(), request.grade());
+-        person.setAddedOn(sheet.getToday());
+-        person.setTerms(request.termsDays());
+-        person.setContact(request.contactOrNull());
+-        personOut.set(repository.save(person));
++        personOut.set(repository.save(PersonRules.make(request, sheet, repository, aliases, tree)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRules.java b/src/main/java/net/officefloor/hq/app/person/PersonRules.java
+new file mode 100644
+index 00000000..e8bc6db3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRules.java
+@@ -0,0 +1,82 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.Locale;
++import java.util.Set;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.sheet.Sheet;
++
++/** The person form's rules, shared by the form and the people import box. */
++public final class PersonRules {
++
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    private static final Pattern TERMS = Pattern.compile("\\d{1,5}");
++
++    private PersonRules() {
++    }
++
++    /**
++     * Checks the form's fields, trimming the name; refuses an empty name or a grade other than A, B or C, a grade
++     * from-date that is not a calendar date, and terms that are not a whole number of days; the contact is trimmed
++     * and lower-cased.
++     */
++    public static PersonRequest check(String name, String grade, Long version, String gradeFrom, String terms,
++            String contact) throws InvalidPersonException {
++        name = name == null ? "" : name.trim();
++        grade = grade == null ? "" : grade.trim();
++        if (name.isEmpty()) {
++            throw new InvalidPersonException("A name is required.");
++        }
++        if (!GRADES.contains(grade)) {
++            throw new InvalidPersonException("The grade must be A, B or C.");
++        }
++        gradeFrom = gradeFrom == null ? "" : gradeFrom.trim();
++        if (!gradeFrom.isEmpty()) {
++            try {
++                LocalDate.parse(gradeFrom);
++            } catch (DateTimeParseException e) {
++                throw new InvalidPersonException("Not a date: " + gradeFrom);
++            }
++        }
++        terms = terms == null ? "" : terms.trim();
++        if (!terms.isEmpty() && !TERMS.matcher(terms).matches()) {
++            throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
++        }
++        contact = contact == null ? "" : contact.trim().toLowerCase(Locale.ROOT);
++        return new PersonRequest(name, grade, version, gradeFrom, terms, contact);
++    }
++
++    /**
++     * Makes the person to add to the sheet, unsaved: refused when the name is a name or alias on the sheet or on
++     * another sheet of its tree, ignoring case, or the contact is another person's on the sheet.
++     */
++    public static Person make(PersonRequest request, Sheet sheet, PersonRepository repository,
++            PersonAliasRepository aliases, TreeNames tree) throws InvalidPersonException {
++        if (repository.existsBySheetIdAndNameIgnoreCase(sheet.getId(), request.name())
++                || aliases.existsBySheetIdAndAliasIgnoreCase(sheet.getId(), request.name())) {
++            throw new InvalidPersonException("The name is already in use on this sheet.");
++        }
++        if (tree.usedAround(sheet.getId(), request.name())) {
++            throw new InvalidPersonException("The name is already in use on a sheet of this sheet's tree.");
++        }
++        if (request.contactOrNull() != null
++                && repository.existsBySheetIdAndContact(sheet.getId(), request.contactOrNull())) {
++            throw new InvalidPersonException("The contact is already in use on this sheet.");
++        }
++        Person person = new Person(sheet.getId(), request.name(), request.grade());
++        person.setAddedOn(sheet.getToday());
++        person.setTerms(request.termsDays());
++        person.setContact(request.contactOrNull());
++        return person;
++    }
++
++    /** The PERSON_ADDED record for the added person: their terms when they have any, their contact when they have one. */
++    public static String addedLine(Person person, String by) {
++        return "PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by
++                + " name=" + person.getName() + " grade=" + person.getGrade()
++                + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
++                + (person.getContact() == null ? "" : " contact=" + person.getContact());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 91672422..237dafe8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -1,45 +1,19 @@
+ package net.officefloor.hq.app.person;
+ 
+-import java.time.LocalDate;
+-import java.time.format.DateTimeParseException;
+-import java.util.Set;
+-import java.util.regex.Pattern;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+- * Reads the person form from the body, trimming the name; refuses an empty name or a grade other than
+- * A, B or C, and a grade from-date that is not a calendar date, and terms that are not a whole number of days;
+- * the contact is trimmed and lower-cased.
++ * Reads the person form from the body, checked by {@link PersonRules#check}: the name trimmed, refusing an empty
++ * name or a grade other than A, B or C, a grade from-date that is not a calendar date, and terms that are not a
++ * whole number of days; the contact is trimmed and lower-cased.
+  */
+ public class ValidatePerson {
+-
+-    private static final Set<String> GRADES = Set.of("A", "B", "C");
+-
+-    private static final Pattern TERMS = Pattern.compile("\\d{1,5}");
+-
+     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidPersonException {
+-        String name = request == null || request.name() == null ? "" : request.name().trim();
+-        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
+-        if (name.isEmpty()) {
++        if (request == null) {
+             throw new InvalidPersonException("A name is required.");
+         }
+-        if (!GRADES.contains(grade)) {
+-            throw new InvalidPersonException("The grade must be A, B or C.");
+-        }
+-        String gradeFrom = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
+-        if (!gradeFrom.isEmpty()) {
+-            try {
+-                LocalDate.parse(gradeFrom);
+-            } catch (DateTimeParseException e) {
+-                throw new InvalidPersonException("Not a date: " + gradeFrom);
+-            }
+-        }
+-        String terms = request.terms() == null ? "" : request.terms().trim();
+-        if (!terms.isEmpty() && !TERMS.matcher(terms).matches()) {
+-            throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
+-        }
+-        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
+-        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms, contact));
++        body.set(PersonRules.check(request.name(), request.grade(), request.version(), request.gradeFrom(),
++                request.terms(), request.contact()));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
+new file mode 100644
+index 00000000..d3324d6f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
+@@ -0,0 +1,25 @@
++# POST /api/sheets/{sheetId}/import-people — add a person per pasted line of name,grade,terms,contact, in order.
++# Body: { "text": "..." }. Every line is checked by the person form's rules before anything is stored (a name,
++# ignoring case, or a contact repeated in the paste refuses it too), so one refused line adds nothing.
++# Each person is recorded as the person form records them (PERSON_ADDED, then the figures it moved).
++# Responds { "added": n }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: validate
++validate:
++  class: net.officefloor.hq.app.importpeople.ValidateImportPeople
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: add
++add:
++  class: net.officefloor.hq.app.importpeople.AddImportedPeople
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.importpeople.RespondWithImportedPeople
++  govern: [ transaction ]
