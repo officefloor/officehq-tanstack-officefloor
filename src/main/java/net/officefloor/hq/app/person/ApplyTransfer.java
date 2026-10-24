@@ -52,7 +52,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * sheet's next one, in the order they were opened (by the sheet's today when each was opened, then by the order they
  * were added). References are not carried.
  * Their plans go with them, each keeping the claims it made. They leave this sheet entirely: their claims, holds, patron links (both ways), pool memberships,
- * crew memberships, the crews they lead (with those crews' members) and watchers are dropped.
+ * crew memberships and watchers are dropped; the crews they lead keep their members and have no lead.
  */
 public class ApplyTransfer {
     public void apply(@Val TransferInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
@@ -236,9 +236,8 @@ public class ApplyTransfer {
         members.deleteAll(members.findByPersonIdOrderByIdAsc(from));
         crewMembers.deleteAll(crewMembers.findByPersonIdOrderByIdAsc(from));
         for (Crew crew : crews.findByLeadIdOrderByIdAsc(from)) {
-            crewMembers.deleteAll(crewMembers.findByCrewIdOrderByIdAsc(crew.getId()));
-            crewMembers.flush();
-            crews.delete(crew);
+            crew.setLeadId(null);
+            crews.save(crew);
         }
         crews.flush();
         watches.deleteAll(watches.findByPersonIdOrderByIdAsc(from));

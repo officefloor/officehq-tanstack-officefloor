@@ -136,12 +136,18 @@ public class ApplyClone {
         // Crews, with their leads, then their members.
         Map<Long, Long> crewIds = new HashMap<>();
         for (Object[] crew : rows(entityManager, "SELECT id, name, lead_id FROM crew WHERE sheet_id = :from ORDER BY id", from)) {
-            Long lead = personIds.get(((Number) crew[2]).longValue());
-            if (lead == null) {
-                continue;
+            if (crew[2] == null) {
+                // A crew with no lead (transferred away) is copied with none.
+                entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name) VALUES (:to, :name)")
+                        .setParameter("to", to).setParameter("name", crew[1]).executeUpdate();
+            } else {
+                Long lead = personIds.get(((Number) crew[2]).longValue());
+                if (lead == null) {
+                    continue;
+                }
+                entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name, lead_id) VALUES (:to, :name, :lead)")
+                        .setParameter("to", to).setParameter("name", crew[1]).setParameter("lead", lead).executeUpdate();
             }
-            entityManager.createNativeQuery("INSERT INTO crew (sheet_id, name, lead_id) VALUES (:to, :name, :lead)")
-                    .setParameter("to", to).setParameter("name", crew[1]).setParameter("lead", lead).executeUpdate();
             Long copy = ((Number) entityManager.createNativeQuery(
                     "SELECT id FROM crew WHERE sheet_id = :to AND name = :name")
                     .setParameter("to", to).setParameter("name", crew[1]).getSingleResult()).longValue();

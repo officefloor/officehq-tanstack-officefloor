@@ -137,11 +137,13 @@ public class RespondWithPools {
 
     /** The crew as a pool (its id the crew's, negated): the lead and the members, in the order they were added, each
      *  at an equal share of 100.00, rounded half to even to two decimals, the remainder on the lead. A person not on
-     *  the sheet (as of the date) is left out, keeping their share. */
+     *  the sheet (as of the date) is left out, keeping their share; a crew with no lead (transferred away) shares among
+     *  its members alone. */
     private static PoolResponse crewPool(Crew crew, List<CrewMember> crewMembers, Map<Long, Person> byId, Sheet sheet) {
         List<Long> ids = new ArrayList<>();
-        ids.add(crew.getLeadId());
+        if (crew.getLeadId() != null) ids.add(crew.getLeadId());
         crewMembers.forEach(m -> ids.add(m.getPersonId()));
+        if (ids.isEmpty()) return new PoolResponse(-crew.getId(), crew.getName(), "0.00", false, true, List.of());
         BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(ids.size()), 2, RoundingMode.HALF_EVEN);
         List<BigDecimal> shares = new ArrayList<>();
         ids.forEach(id -> shares.add(each));
