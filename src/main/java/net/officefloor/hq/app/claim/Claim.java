@@ -393,6 +393,29 @@ public class Claim {
         return then;
     }
 
+    /** A copy of the claim for a person on another sheet, as a transfer carries it: its status, dates, note, frozen
+     *  due, opener and editor, deferral, proofs and tags; unbound (a statement's figure is lost), with no number (the
+     *  other sheet gives it one), no reference, batch, lock or split. Not saved. */
+    public Claim transferTo(String toSheetId, Long toPersonId) {
+        Claim moved = new Claim(toSheetId, toPersonId, amount, date, note, null);
+        moved.status = status;
+        moved.due = due;
+        moved.openedBy = openedBy;
+        moved.editedBy = editedBy;
+        moved.dueBy = dueBy;
+        moved.dueFrom = dueFrom;
+        moved.dueTerms = dueTerms;
+        moved.correctsDate = correctsDate;
+        moved.deferredUntil = deferredUntil;
+        moved.remindedOn = remindedOn;
+        moved.proofs = proofs;
+        moved.lateEntry = lateEntry;
+        moved.tags = tags;
+        moved.tagsUsed = tagsUsed;
+        moved.voidReason = voidReason;
+        return moved;
+    }
+
     public String getRef() {
         return ref;
     }

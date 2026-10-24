@@ -25,8 +25,8 @@ export function currentAsOf(): string {
 
 const isSheetLoad = (path: string) => /^\/api\/sheets\/[^/?]+$/.test(path);
 
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const asOf = currentAsOf();
+async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
+  const asOf = live ? '' : currentAsOf();
   if (asOf && init?.method && init.method !== 'GET' && !isSheetLoad(path)) {
     throw new HttpError(`${init.method} ${path} -> refused while the sheet is shown as of ${asOf}`, 400);
   }
@@ -42,6 +42,11 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
+}
+
+// A read of the store as it is now, whatever date the screen shows the sheet as of.
+export function getJsonLive<T>(path: string): Promise<T> {
+  return send<T>(path, undefined, true);
 }
 
 // A change sends the signed-in name (`user`) as `X-User`, URI-encoded (a header is Latin-1 only),

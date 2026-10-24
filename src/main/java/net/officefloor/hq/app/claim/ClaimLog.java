@@ -49,6 +49,18 @@ public class ClaimLog {
         this.due = due;
     }
 
+    /** A copy of the line for the claim a transfer made of this line's claim on another sheet. Not saved. */
+    public ClaimLog copyFor(Claim moved) {
+        ClaimLog copy = new ClaimLog();
+        copy.sheetId = moved.getSheetId();
+        copy.claimId = moved.getId();
+        copy.status = status;
+        copy.byUser = byUser;
+        copy.onDate = onDate;
+        copy.due = due;
+        return copy;
+    }
+
     public Long getClaimId() {
         return claimId;
     }

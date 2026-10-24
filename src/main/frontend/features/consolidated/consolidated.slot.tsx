@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { currentAsOf, getJsonLive } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday, type SheetInfo } from '../session/session';
 import { peoplePath, usePeople, type Person } from '../people/people';
@@ -10,7 +10,8 @@ import { sheetTotals } from '../header/counters.slot';
 
 // The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
 // parent, and so on down), the number of people, the due-total and the overdue-total — each sheet's as that sheet
-// shows it (its own today, rates, settings), added up. A sheet with no children shows its own figures.
+// shows it (its own today, rates, settings), added up. A sheet with no children shows its own figures. They are
+// read from the store as it is now, also while the screen shows the sheet as of a date.
 
 type Figures = { people: number; due: string; overdue: string };
 
@@ -19,25 +20,28 @@ const childrenPath = (sheetId: string) => `${sheetPath(sheetId)}/children`;
 
 export const descendantsQueryKey = (sheetId: string) => ['sheet', sheetId, 'descendants'] as const;
 
+/** A sheet's figures, read from the store as it is now. */
+async function figuresOf(id: string): Promise<Figures> {
+  const [info, people, claims, rates, settings] = await Promise.all([
+    getJsonLive<SheetInfo>(sheetPath(id)),
+    getJsonLive<Person[]>(peoplePath(id)),
+    getJsonLive<Claim[]>(claimsPath(id)),
+    getJsonLive<Rate[]>(ratesPath(id)),
+    getJsonLive<Settings>(settingsPath(id)),
+  ]);
+  return { people: people.length, ...sheetTotals(people, claims, rates, info.today, settings) };
+}
+
 /** Each descendant sheet's figures, read from the store (a sheet reached twice counts once). */
 async function descendantFigures(sheetId: string): Promise<Figures[]> {
   const seen = new Set([sheetId]);
   const ids: string[] = [];
   for (let level = [sheetId]; level.length > 0; ) {
-    const children = (await Promise.all(level.map((id) => getJson<string[]>(childrenPath(id))))).flat();
+    const children = (await Promise.all(level.map((id) => getJsonLive<string[]>(childrenPath(id))))).flat();
     level = children.filter((id) => !seen.has(id) && (seen.add(id), true));
     ids.push(...level);
   }
-  return Promise.all(ids.map(async (id) => {
-    const [info, people, claims, rates, settings] = await Promise.all([
-      getJson<SheetInfo>(sheetPath(id)),
-      getJson<Person[]>(peoplePath(id)),
-      getJson<Claim[]>(claimsPath(id)),
-      getJson<Rate[]>(ratesPath(id)),
-      getJson<Settings>(settingsPath(id)),
-    ]);
-    return { people: people.length, ...sheetTotals(people, claims, rates, info.today, settings) };
-  }));
+  return Promise.all(ids.map(figuresOf));
 }
 
 function ConsolidatedFigures() {
@@ -53,9 +57,18 @@ function ConsolidatedFigures() {
     queryFn: () => descendantFigures(sheet ?? ''),
     enabled: !!sheet,
   });
+  const asOf = currentAsOf();
+  // While the screen shows the sheet as of a date, its own figures too are read from the store as it is now.
+  const ownLive = useQuery({
+    queryKey: [...descendantsQueryKey(sheet ?? ''), 'own', asOf],
+    queryFn: () => figuresOf(sheet ?? ''),
+    enabled: !!sheet && !!asOf,
+  });
   if (!user || !sheet) return null;
   const allPeople = people.data ?? [];
-  const own = { people: allPeople.length, ...sheetTotals(allPeople, claims.data ?? [], rates.data, today, settings.data) };
+  const own = asOf
+    ? ownLive.data ?? { people: 0, due: '0.00', overdue: '0.00' }
+    : { people: allPeople.length, ...sheetTotals(allPeople, claims.data ?? [], rates.data, today, settings.data) };
   const all = [own, ...(descendants.data ?? [])];
   return (
     <section data-testid="consolidated">

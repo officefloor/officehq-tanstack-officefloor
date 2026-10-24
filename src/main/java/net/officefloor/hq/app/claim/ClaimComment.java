@@ -43,6 +43,11 @@ public class ClaimComment {
         this.text = text;
     }
 
+    /** A copy of the comment for the claim a transfer made of this comment's claim on another sheet. Not saved. */
+    public ClaimComment copyFor(Claim moved) {
+        return new ClaimComment(moved, byUser, onDate, text);
+    }
+
     public Long getClaimId() {
         return claimId;
     }
