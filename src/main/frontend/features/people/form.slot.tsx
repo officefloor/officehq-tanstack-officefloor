@@ -72,7 +72,7 @@ function PersonFormFields({ sheet, person }: { sheet: string; person?: Person })
           Cancel
         </button>
       )}
-      {save.isError && <span data-testid="person-form-error">A name is required, and the grade must be A, B or C.</span>}
+      {save.isError && <span data-testid="person-form-error">A name is required and must not already be in use on this sheet, and the grade must be A, B or C.</span>}
     </form>
   );
 }
