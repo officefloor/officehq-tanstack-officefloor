@@ -36,7 +36,7 @@ public class AddPastedClaims {
             HolidayRepository holidays,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<PastedClaims> addedOut) throws InvalidClaimException {
-        List<Person> onSheet = people.findBySheetIdOrderByIdAsc(sheet.getId());
+        List<Person> onSheet = people.findListed(sheet.getId());
         List<Person> persons = new ArrayList<>();
         List<Claim> made = new ArrayList<>();
         Set<String> refs = new HashSet<>();

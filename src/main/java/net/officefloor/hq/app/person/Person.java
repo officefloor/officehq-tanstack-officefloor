@@ -51,6 +51,9 @@ public class Person {
     @Transient
     private boolean contactChanged;
 
+    /** Their place in the sheet's list, lowest first (null: their id, which puts a person added later at the end). */
+    private Long position;
+
     /** Raised on every save; an edit naming an older version is refused. */
     @Version
     @Column(nullable = false)
@@ -87,6 +90,18 @@ public class Person {
 
     public Long getId() {
         return id;
+    }
+
+    /** Their place in the sheet's list, lowest first: their position, or their id with none set. */
+    public long getPlace() {
+        return position != null ? position : id;
+    }
+
+    /** Swaps their place in the list with another person's. */
+    public void swapPlace(Person other) {
+        long mine = getPlace();
+        position = other.getPlace();
+        other.position = mine;
     }
 
     public String getSheetId() {
@@ -160,6 +175,7 @@ public class Person {
     public Person asOf(LocalDate date) {
         Person then = new Person(sheetId, name, grade);
         then.id = id;
+        then.position = position;
         then.terms = terms;
         then.contact = contact;
         then.addedOn = addedOn;

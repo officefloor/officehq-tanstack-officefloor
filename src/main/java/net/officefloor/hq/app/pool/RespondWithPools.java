@@ -31,7 +31,7 @@ public class RespondWithPools {
 
     public void respond(@Val Sheet sheet, PoolRepository pools, PoolMemberRepository members, PersonRepository people,
             ObjectResponse<List<PoolResponse>> response) {
-        Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+        Map<Long, Person> byId = people.findListed(sheet.getId()).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         List<Pool> sheetPools = pools.findBySheetIdOrderByIdAsc(sheet.getId());
         Map<Long, Pool> poolsById = sheetPools.stream().collect(Collectors.toMap(Pool::getId, Function.identity()));

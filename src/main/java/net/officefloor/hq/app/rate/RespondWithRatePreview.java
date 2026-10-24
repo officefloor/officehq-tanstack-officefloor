@@ -26,7 +26,7 @@ public class RespondWithRatePreview {
         List<Rate> current = rates.findInChain(sheet.getId());
         List<Rate> candidate = new ArrayList<>(current.stream().filter(r -> !r.getGrade().equals(input.grade())).toList());
         candidate.add(new Rate(sheet.getId(), input.grade(), input.pct(), null, null));
-        Map<Long, Person> people = persons.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+        Map<Long, Person> people = persons.findListed(sheet.getId()).stream()
                 .collect(Collectors.toMap(Person::getId, p -> p));
         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(sheet.getId());
         int count = 0;

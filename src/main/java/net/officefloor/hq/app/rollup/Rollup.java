@@ -57,7 +57,7 @@ public class Rollup {
             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
             var sheetRates = rates.findInChain(id);
             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
-            for (Person person : persons.findBySheetIdOrderByIdAsc(id)) {
+            for (Person person : persons.findListed(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
                 BigDecimal claimed = mine.stream().filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);

@@ -45,7 +45,7 @@ public class AddImportedPeople {
             PersonGradeRepository grades, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<ImportedPeople> addedOut) throws InvalidPersonException {
-        List<Person> onSheet = people.findBySheetIdOrderByIdAsc(sheet.getId());
+        List<Person> onSheet = people.findListed(sheet.getId());
         List<Planned> planned = new ArrayList<>();
         Set<Long> updating = new HashSet<>();
         int at = 0;

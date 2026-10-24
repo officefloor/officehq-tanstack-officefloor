@@ -29,7 +29,7 @@ public class FindOrAddPerson {
             @RequestHeader(name = "X-User", required = false) String user, Audit audit, TreeNames tree, Out<Person> personOut,
             Out<Rollup> rollupOut) throws InvalidClaimException {
         Optional<Person> found = PersonAliasRepository.findByNameOrAlias(
-                people.findBySheetIdOrderByIdAsc(sheet.getId()), aliases, sheet.getId(), name.name());
+                people.findListed(sheet.getId()), aliases, sheet.getId(), name.name());
         if (found.isPresent()) {
             personOut.set(found.get());
             return;

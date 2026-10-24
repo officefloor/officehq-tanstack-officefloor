@@ -98,11 +98,15 @@ public class AsOf {
         return date == null ? sheet : settingLogs.sheetAsOf(sheet, date);
     }
 
-    /** The sheet's people, in the order they were added. */
+    /** The sheet's people, in list order: as of a date, those then on the sheet in the places they hold now. */
     public List<Person> people(String sheetId, LocalDate date) {
-        List<Person> now = people.findBySheetIdOrderByIdAsc(sheetId);
-        return date == null ? now
-                : sorted(history.asOf(sheetId, Person.class, date, now, Person::getId), Comparator.comparing(Person::getId));
+        List<Person> now = people.findListed(sheetId);
+        if (date == null) {
+            return now;
+        }
+        Map<Long, Long> places = now.stream().collect(Collectors.toMap(Person::getId, Person::getPlace));
+        return sorted(history.asOf(sheetId, Person.class, date, now, Person::getId),
+                Comparator.<Person>comparingLong(p -> places.getOrDefault(p.getId(), p.getPlace())).thenComparing(Person::getId));
     }
 
     /** The sheet's dated grades of each person, by from-date, by person id. */

@@ -61,7 +61,7 @@ export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] 
 
 export const peoplePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in list order: by their place, which the move buttons swap; a new person goes to the end. */
 export function usePeople() {
   const [sheet] = useCurrentSheet();
   return useQuery({

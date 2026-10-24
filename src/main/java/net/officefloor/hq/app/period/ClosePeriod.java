@@ -51,7 +51,7 @@ public class ClosePeriod {
     /** Each person's due-total for the period as it is now (see above), by person id. */
     static Map<Long, BigDecimal> totals(Period period, Sheet sheet, ClaimRepository claims, PersonRepository people,
             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log) {
-        Map<Long, Person> byId = people.findBySheetIdOrderByIdAsc(period.getSheetId()).stream()
+        Map<Long, Person> byId = people.findListed(period.getSheetId()).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
         var sheetRates = rates.findInChain(period.getSheetId());
         Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(period.getSheetId());

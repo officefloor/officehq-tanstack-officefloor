@@ -18,7 +18,7 @@ public class CheckQuickAddDate {
             PersonAliasRepository aliases,
             PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = sheet.entryDateInForce();
-        int terms = PersonAliasRepository.findByNameOrAlias(people.findBySheetIdOrderByIdAsc(sheet.getId()),
+        int terms = PersonAliasRepository.findByNameOrAlias(people.findListed(sheet.getId()),
                         aliases, sheet.getId(), name.name())
                 .map(p -> sheet.termsFor(p.getTerms(), grades.gradesOf(p).on(date), date))
                 .orElseGet(() -> sheet.termsFor(null, "A", date));
