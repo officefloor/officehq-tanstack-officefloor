@@ -10,10 +10,11 @@ import type { Settings } from '../roles/roles';
  *  (YYYY-MM-DD), inclusive. No two periods overlap. A closed period keeps the due-total fixed when it was closed
  *  (`closedTotal`, null while open), and each person's fixed then (`personTotals`, by person id; empty while
  *  open), until a steward reopens it. A soft-closed period (`softClosed`) keeps them fixed the same way, while claims
- *  whose due-by falls in it can still be added, edited and change status; it can be closed (fixing them afresh) or reopened. */
+ *  whose due-by falls in it can still be added, edited and change status; it can be closed (fixing them afresh) or reopened.
+ *  A period's `cap` (null for none) is the most OPEN or PENDING claims a person may have whose due-by falls in it: opening one more is refused. */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; softClosed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>;
+  personTotals: Record<string, string>; cap: number | null;
 };
 
 export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;

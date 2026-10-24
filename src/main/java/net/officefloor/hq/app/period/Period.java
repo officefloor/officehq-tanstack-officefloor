@@ -48,6 +48,10 @@ public class Period {
     private boolean softClosed;
 
     /** The due-total fixed when the period was closed (or soft-closed); null while it is open. */
+    /** The most OPEN or PENDING claims a person may have in the period (by due-by); null for no cap. */
+    @Column(name = "open_cap")
+    private Integer cap;
+
     @Column(name = "closed_total", precision = 19, scale = 2)
     private BigDecimal closedTotal;
 
@@ -66,6 +70,15 @@ public class Period {
         this.name = name;
         this.fromDate = fromDate;
         this.toDate = toDate;
+    }
+
+    public Period(String sheetId, String name, LocalDate fromDate, LocalDate toDate, Integer cap) {
+        this(sheetId, name, fromDate, toDate);
+        this.cap = cap;
+    }
+
+    public Integer getCap() {
+        return cap;
     }
 
     public Long getId() {

@@ -272,6 +272,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   const action = change.variables?.action;
   const periods = usePeriods();
   const closed = !!periodOn(periods.data, dueByOf(claim))?.closed;
+  const capOf = (c: Claim) => periodOn(periods.data, dueByOf(c))?.cap ?? null;
   return (
     <>
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -598,6 +599,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? 'Choose a void reason from the sheet\'s list to void this claim.'
             : action === 'void' && claim.status === 'SETTLED'
             ? 'A settled claim can be voided only within 7 days of its settlement.'
+            : action === 'open' && claim.status === 'DRAFT' && capOf(claim) !== null
+            ? `This claim is due in period ${periodOn(periods.data, dueByOf(claim))?.name}, which caps each person at ${capOf(claim)} open or pending claims; this person already has that many there.`
             : action === 'delete'
             ? `Only a draft claim can be deleted; this one is ${claim.status}.`
             : action === 'restore' && claim.status === 'DELETED'

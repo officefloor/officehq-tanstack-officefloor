@@ -14,7 +14,7 @@ import { fiscalYearOf, periodClosePath, periodDue, periodsGenerateFyPath, period
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // buttons that close and reopen it, the form that adds one, and the form that generates one per calendar month
 // (named yyyy-mm, leaving out a month whose name or days the sheet's periods already take), showing how many were made,
-// and the entry that generates a fiscal year's twelve the same way; each period shows the fiscal year its from-date falls in.
+// a cap on each person's open claims in it (blank for none), and the entry that generates a fiscal year's twelve the same way; each period shows the fiscal year its from-date falls in.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -27,15 +27,17 @@ function Periods() {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
   const queryClient = useQueryClient();
   const add = useMutation({
-    mutationFn: (body: { name: string; from: string; to: string }) =>
+    mutationFn: (body: { name: string; from: string; to: string; cap: string }) =>
       postJson<Period>(periodsPath(sheet ?? ''), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') });
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
     },
   });
   const submit = useSubmitOnce(add);
@@ -72,6 +74,7 @@ function Periods() {
             <th>Due</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th></th>
           </tr>
         </thead>
@@ -84,6 +87,7 @@ function Periods() {
               <td data-testid="period-due-total">{dueTotal(p)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, settings.data)}</td>
+              <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td>
                 <PeriodActions key={`${sheet}:${p.id}`} sheet={sheet} period={p} />
               </td>
@@ -95,7 +99,7 @@ function Periods() {
         data-testid="period-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ name, from, to });
+          submit({ name, from, to, cap });
         }}
       >
         <input
@@ -116,11 +120,18 @@ function Periods() {
           value={to}
           onChange={(e) => { setTo(e.target.value); add.reset(); }}
         />
+        <input
+          data-testid="period-form-cap"
+          placeholder="Open claims cap per person (blank for none)"
+          inputMode="numeric"
+          value={cap}
+          onChange={(e) => { setCap(e.target.value); add.reset(); }}
+        />
         <button type="submit" data-testid="period-form-submit" disabled={add.isPending}>
           Add period
         </button>
         {add.isError && (
-          <span data-testid="period-form-error">A period needs a name the sheet does not have yet, and calendar from and to dates, the to-date on or after the from-date, not overlapping another period.</span>
+          <span data-testid="period-form-error">A period needs a name the sheet does not have yet, and calendar from and to dates, the to-date on or after the from-date, not overlapping another period, and a cap that is blank or a whole number of at least 1.</span>
         )}
       </form>
       <form

@@ -16,6 +16,6 @@ public class ApplyPeriod {
         if (periods.stream().anyMatch(p -> p.overlaps(input.from(), input.to()))) {
             throw new InvalidPeriodException("The period overlaps another period.");
         }
-        periodOut.set(repository.saveAndFlush(new Period(sheet.getId(), input.name(), input.from(), input.to())));
+        periodOut.set(repository.saveAndFlush(new Period(sheet.getId(), input.name(), input.from(), input.to(), input.cap())));
     }
 }
