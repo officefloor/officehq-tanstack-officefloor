@@ -23,7 +23,7 @@ public class TakeStatement {
         // Lock the person so two statements (or a statement and an edit) are taken one after the other.
         entityManager.refresh(person, LockModeType.PESSIMISTIC_WRITE);
         List<Claim> mine = claims.findBySheetIdAndPersonIdOrderByIdDesc(sheet.getId(), person.getId());
-        ClaimFigures figures = new ClaimFigures(rates.findBySheetIdAndGrade(sheet.getId(), person.getGrade()));
+        ClaimFigures figures = new ClaimFigures(rates.findBySheetIdAndGrade(sheet.getId(), person.getGrade()), sheet.getFloor());
         String dueTotal = figures.dueTotal(mine, sheet.getToday());
         int counted = 0;
         for (Claim claim : mine) {

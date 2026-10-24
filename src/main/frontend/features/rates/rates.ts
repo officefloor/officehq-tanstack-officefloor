@@ -35,11 +35,17 @@ export function rateOn(rates: Rate[] | undefined, grade: string, date: string | 
 }
 
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
- *  else its live due at its person's grade's rate on its date ("n/a" when it has none). */
-export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string): string {
+ *  else its live due at its person's grade's rate on its date, at least the sheet's floor ("n/a" when it has none). */
+export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, floor: string | null | undefined): string {
   if (c.due !== null) return c.due;
   if (c.stated) return c.statedDue ?? 'n/a';
-  return dueOf(c.amount, rateOn(rates, grade, c.date));
+  return atLeast(dueOf(c.amount, rateOn(rates, grade, c.date)), floor);
+}
+
+/** A due raised to the floor when below it ("n/a" stays n/a; no floor leaves it as it is). */
+export function atLeast(due: string, floor: string | null | undefined): string {
+  if (due === 'n/a' || floor == null || floor === '') return due;
+  return hundredths(due) < hundredths(floor) ? formatCents(hundredths(floor)) : due;
 }
 
 /** A two-decimal string ("12.50") in hundredths, exactly. */

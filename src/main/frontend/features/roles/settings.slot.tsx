@@ -6,49 +6,76 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-// The sheet's settings: the clerk limit in force (blank when there is none) and the form that sets it.
-// A clerk settles a claim only when its due is at or below the limit; a steward settles anything.
+type Key = 'clerkLimit' | 'floor';
+type Drafts = Partial<Record<Key, string>>;
+
+// The sheet's settings: the clerk limit in force (blank when there is none), the floor in force (a claim's live
+// due is at least it), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// limit; a steward settles anything. Each field shows the value in force until it is typed in; saving sets only
+// the fields typed in (all of them when none was).
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings();
-  const [limit, setLimit] = useState('');
+  const [drafts, setDrafts] = useState<Drafts>({});
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: (body: { clerkLimit: string }) => putJson<Settings>(settingsPath(sheet ?? ''), body, user),
+    mutationFn: (body: Drafts) => putJson<Settings>(settingsPath(sheet ?? ''), body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: settingsQueryKey(sheet ?? '') });
-      setLimit('');
+      setDrafts({});
     },
   });
   const submit = useSubmitOnce(save);
 
   if (!user || !sheet) return null;
+  const current: Record<Key, string> = {
+    clerkLimit: settings.data?.clerkLimit ?? '',
+    floor: settings.data?.floor ?? '',
+  };
+  const valueOf = (key: Key) => drafts[key] ?? current[key];
+  const edit = (key: Key) => (e: { currentTarget: HTMLInputElement }) => {
+    const value = e.currentTarget.value;
+    setDrafts((d) => ({ ...d, [key]: value }));
+    save.reset();
+  };
   return (
     <section data-testid="settings">
       <h2>Settings</h2>
       <p>
         Clerk limit: <span data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</span>
       </p>
+      <p>
+        Floor: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
+      </p>
       <form
         data-testid="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ clerkLimit: limit });
+          submit(Object.keys(drafts).length > 0 ? drafts : { ...current });
         }}
       >
         <input
           data-testid="setting-clerk-limit"
           placeholder="Clerk limit (blank: no limit)"
           inputMode="decimal"
-          value={limit}
-          onChange={(e) => { setLimit(e.target.value); save.reset(); }}
+          value={valueOf('clerkLimit')}
+          onChange={edit('clerkLimit')}
+          onInput={edit('clerkLimit')}
+        />
+        <input
+          data-testid="setting-floor"
+          placeholder="Floor (blank: 1.00)"
+          inputMode="decimal"
+          value={valueOf('floor')}
+          onChange={edit('floor')}
+          onInput={edit('floor')}
         />
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit must be an amount, 0.00 or more, with up to two decimals, or blank.</span>
+          <span data-testid="settings-error">The clerk limit and floor must each be an amount, 0.00 or more, with up to two decimals, or blank.</span>
         )}
       </form>
     </section>

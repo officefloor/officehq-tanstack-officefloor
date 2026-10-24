@@ -3,18 +3,20 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { usePeople, type Person } from '../people/people';
 import { countsLive, heldIds, useClaims, type Claim } from '../claims/claims';
+import { useSettings } from '../roles/roles';
 import { figureOf, rateOn, sumDue, useRates, type Rate } from './rates';
 
 // A person's due-total: the sum of their counted claims' figures, each already rounded (a settled claim's
-// frozen due, else the figure their last statement bound it to, else its live due) — 0.00 with nothing that counts. When their grade has no rate in force on
+// frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor) — 0.00 with nothing that counts. When their grade has no rate in force on
 // the sheet's today it is n/a, unless a counted settled or bound claim keeps a figure: then it is the sum of the
 // figures there are. While they are held their OPEN claims do not count. The sheet's due-total is everyone's added up, skipping n/a.
-function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined): string {
+function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+  floor: string | undefined): string {
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, heldIds([person])));
   if (rateOn(rates, person.grade, today) === undefined && !mine.some((c) => c.due !== null || (c.stated && c.statedDue !== null))) {
     return 'n/a';
   }
-  return sumDue(mine.map((c) => figureOf(c, rates, person.grade)));
+  return sumDue(mine.map((c) => figureOf(c, rates, person.grade, floor)));
 }
 
 function DueHeader() {
@@ -25,7 +27,8 @@ function PersonDue({ person }: { person: Person }) {
   const claims = useClaims();
   const rates = useRates();
   const today = useSheetToday();
-  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today)}</td>;
+  const settings = useSettings();
+  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data?.floor)}</td>;
 }
 
 function DueTotal() {
@@ -35,8 +38,9 @@ function DueTotal() {
   const claims = useClaims();
   const rates = useRates();
   const today = useSheetToday();
+  const settings = useSettings();
   if (!user || !sheet) return null;
-  const total = sumDue((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today)));
+  const total = sumDue((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data?.floor)));
   return (
     <p>
       Due in total <strong data-testid="rollup-due-total">{total}</strong>

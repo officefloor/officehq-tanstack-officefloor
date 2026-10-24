@@ -23,6 +23,13 @@ public class Sheet {
     @Column(name = "clerk_limit", precision = 19, scale = 2)
     private BigDecimal clerkLimit;
 
+    /** The floor: a claim's live due is at least it; a sheet starts at 1.00. */
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal floor = Sheet.DEFAULT_FLOOR;
+
+    /** The floor a sheet starts at. */
+    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+
     protected Sheet() {
     }
 
@@ -49,5 +56,13 @@ public class Sheet {
 
     public void setClerkLimit(BigDecimal clerkLimit) {
         this.clerkLimit = clerkLimit;
+    }
+
+    public BigDecimal getFloor() {
+        return floor;
+    }
+
+    public void setFloor(BigDecimal floor) {
+        this.floor = floor;
     }
 }

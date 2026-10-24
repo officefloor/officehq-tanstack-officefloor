@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { countsLive, heldIds, useClaims } from '../claims/claims';
 import { figureOf, sumDue, useRates } from '../rates/rates';
+import { useSettings } from '../roles/roles';
 import { periodClosePath, periodOn, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the figures of the counted claims whose date falls in it (not a held person's OPEN ones),
@@ -19,6 +20,7 @@ function Periods() {
   const people = usePeople();
   const claims = useClaims();
   const rates = useRates();
+  const settings = useSettings();
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -41,7 +43,7 @@ function Periods() {
   const dueTotal = (period: Period) =>
     period.closedTotal ?? sumDue((claims.data ?? [])
       .filter((c) => countsLive(c, held) && gradeOf.has(c.personId) && periodOn([period], c.date))
-      .map((c) => figureOf(c, rates.data, gradeOf.get(c.personId) ?? '')));
+      .map((c) => figureOf(c, rates.data, gradeOf.get(c.personId) ?? '', settings.data?.floor)));
   return (
     <section data-testid="periods">
       <h2>Periods</h2>

@@ -2,7 +2,6 @@ package net.officefloor.hq.app.claim;
 
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -20,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * the claim the sheet's next number and records who opened it; a voided claim keeps its number (never reused). The one who opened a
  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
  * the sheet's clerk limit (a due of n/a is within any limit; no limit when the sheet has none). Settling fixes the claim's due at its person's grade's
- * rate in force on the claim's date (or at the figure its person's last statement bound it to) (none when no rate applies then, so it stays live). A claim dated in a closed period cannot change status. Returns the claim's number for the
+ * rate in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to) (none when no rate applies then, so it stays live). A claim dated in a closed period cannot change status. Returns the claim's number for the
  * audit.
  */
 public class ApplyClaimStatus {
@@ -49,7 +48,7 @@ public class ApplyClaimStatus {
                 BigDecimal due = claim.isStated() ? claim.getStatedDue() : people.findById(claim.getPersonId())
                         .flatMap(p -> rates.findInForce(claim.getSheetId(), p.getGrade(), claim.getDate()))
                         .map(Rate::getPct)
-                        .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN))
+                        .map(pct -> ClaimFigures.liveDue(claim.getAmount(), pct, sheet.getFloor()))
                         .orElse(null);
                 BigDecimal limit = sheet.getClerkLimit();
                 if (limit != null && due != null && due.compareTo(limit) > 0

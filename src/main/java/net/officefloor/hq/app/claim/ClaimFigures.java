@@ -11,15 +11,25 @@ import net.officefloor.hq.app.rate.Rate;
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
  * figure its person's last statement bound it to, else its live due (amount times its grade's rate in force on
- * its date, rounded half to even; none — n/a — when no rate applies then).
+ * its date, rounded half to even, and at least the sheet's floor; none — n/a — when no rate applies then).
  */
 public class ClaimFigures {
 
     private final List<Rate> rates;
 
-    /** @param rates the rates of the person's grade. */
-    public ClaimFigures(List<Rate> rates) {
+    private final BigDecimal floor;
+
+    /** @param rates the rates of the person's grade.
+     *  @param floor the sheet's floor: a live due is at least it. */
+    public ClaimFigures(List<Rate> rates, BigDecimal floor) {
         this.rates = rates;
+        this.floor = floor;
+    }
+
+    /** A live due: the amount times the percent, divided by 100, rounded half to even, and at least the floor. */
+    public static BigDecimal liveDue(BigDecimal amount, BigDecimal pct, BigDecimal floor) {
+        BigDecimal due = amount.multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
     }
 
     /** Whether a claim counts toward the totals: only OPEN and SETTLED claims do. */
@@ -48,7 +58,7 @@ public class ClaimFigures {
             return claim.getStatedDue();
         }
         return rateOn(claim.getDate())
-                .map(pct -> claim.getAmount().multiply(pct).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN))
+                .map(pct -> liveDue(claim.getAmount(), pct, floor))
                 .orElse(null);
     }
 
