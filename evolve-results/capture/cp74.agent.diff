@@ -1,0 +1,1019 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index d85fc9d5..05c8de33 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -7,7 +7,32 @@ export class HttpError extends Error {
+   }
+ }
+ 
++// The as-of view: while the screen's `asof` search param holds a date, every read of a sheet asks for the
++// sheet as it stood at the end of that date, and every change is refused here, before it reaches the store
++// (so each form and action shows its usual error). Loading a sheet (PUT /api/sheets/<id>) is not a change.
++export const ASOF_PARAM = 'asof';
++
++/** The date the screen shows the sheet as of (YYYY-MM-DD), or '' while it shows the sheet as it is now. */
++export function currentAsOf(): string {
++  const raw = new URLSearchParams(window.location.search).get(ASOF_PARAM) ?? '';
++  try {
++    const parsed: unknown = JSON.parse(raw);
++    return typeof parsed === 'string' ? parsed : raw;
++  } catch {
++    return raw;
++  }
++}
++
++const isSheetLoad = (path: string) => /^\/api\/sheets\/[^/?]+$/.test(path);
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
++  const asOf = currentAsOf();
++  if (asOf && init?.method && init.method !== 'GET' && !isSheetLoad(path)) {
++    throw new HttpError(`${init.method} ${path} -> refused while the sheet is shown as of ${asOf}`, 400);
++  }
++  if (asOf && !init?.method && path.startsWith('/api/sheets/')) {
++    path += `${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
++  }
+   const res = await fetch(path, init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+diff --git a/src/main/frontend/features/session/asof.slot.tsx b/src/main/frontend/features/session/asof.slot.tsx
+new file mode 100644
+index 00000000..571cff1b
+--- /dev/null
++++ b/src/main/frontend/features/session/asof.slot.tsx
+@@ -0,0 +1,49 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { ASOF_PARAM } from '../../api/http';
++import { AppSession } from '../../slots/defs/appSession';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useCurrentSheet, useCurrentUser, useSheetInfo } from './session';
++
++// The as-of view of this screen (the `asof` search param; other users' screens are unaffected): while
++// it is set, every read of the sheet gives it as it stood at the end of that date, the date standing in
++// for its today, and every change is refused (api/http.ts). Setting or clearing it re-reads the sheet.
++const isDate = (raw: string) => /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(`${raw}T00:00:00Z`));
++
++function AsOfView() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [, setAsOf] = useSearchParam(ASOF_PARAM, asString);
++  const info = useSheetInfo();
++  const [date, setDate] = useState('');
++  const queryClient = useQueryClient();
++  const shown = info.data?.id === sheet ? info.data : undefined;
++
++  const change = async (next: string | undefined) => {
++    await setAsOf(next);
++    await queryClient.resetQueries({ queryKey: ['sheet', sheet] });
++  };
++
++  if (!user || !sheet) return null;
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        if (isDate(date.trim())) void change(date.trim());
++      }}
++    >
++      <span>
++        As of <strong data-testid="sheet-asof">{shown?.asOf ?? ''}</strong>
++      </span>
++      <input data-testid="asof-date" placeholder="YYYY-MM-DD" value={date} onChange={(e) => setDate(e.target.value)} />
++      <button type="submit" data-testid="asof-set">
++        Set as-of
++      </button>
++      <button type="button" data-testid="asof-clear" onClick={() => void change(undefined)}>
++        Clear as-of
++      </button>
++    </form>
++  );
++}
++
++export const contribution = AppSession.fill({ order: 25, Component: AsOfView });
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 843ed39e..be22c37a 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -10,8 +10,9 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
+ 
+ // The active sheet as the store holds it: its id, its today and whether it is archived (then every
+ // change on it is refused). Every date decision and default
+-// date in the app uses the sheet's today (useSheetToday), never the browser's clock.
+-export type SheetInfo = { id: string; today: string; archived: boolean };
++// date in the app uses the sheet's today (useSheetToday), never the browser's clock. In an as-of view
++// (asof.slot.tsx) it is the sheet as it stood at the end of `asOf`, and that date is its today.
++export type SheetInfo = { id: string; today: string; archived: boolean; asOf: string | null };
+ 
+ export const sheetQueryKey = (sheetId: string) => ['sheet', sheetId, 'info'] as const;
+ 
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 863661ef..d9e9d2f9 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -32,8 +32,9 @@ function PersonStatement({ person }: { person: Person }) {
+         queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') }),
+         queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') }),
+       ]);
+-      setAsOf('');
+     },
++    // A date typed for one statement, taken or refused, never carries into the next.
++    onSettled: () => setAsOf(''),
+   });
+   const submit = useSubmitOnce(take);
+   const rowAction = useRowAction(`person-${person.id}`);
+diff --git a/src/main/frontend/url/useSearchParam.ts b/src/main/frontend/url/useSearchParam.ts
+index 4f1dbfea..a027962c 100644
+--- a/src/main/frontend/url/useSearchParam.ts
++++ b/src/main/frontend/url/useSearchParam.ts
+@@ -13,12 +13,12 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
+ export function useSearchParam<T>(
+   key: string,
+   decode: (raw: unknown) => T,
+-): [T, (value: T | undefined) => void] {
++): [T, (value: T | undefined) => Promise<void>] {
+   const search = useSearch({ strict: false }) as Record<string, unknown>;
+   const navigate = useNavigate();
+ 
+   const set = (value: T | undefined) => {
+-    void navigate({
++    return navigate({
+       to: '.', // stay on the current route; only the search changes
+       // Only the one key changes; every other param is left exactly as it was, so two controls
+       // never clobber each other.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 0f186374..57455ce0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -235,6 +235,10 @@ public class Claim {
+         this.statedDue = stated ? statedDue : null;
+     }
+ 
++    public Long getListed() {
++        return listed;
++    }
++
+     public LocalDate getDeferredUntil() {
+         return deferredUntil;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index d3e7101f..8adeaa76 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -1,16 +1,22 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's claims; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithClaims {
+-    public void respond(@Val Sheet sheet, ClaimRepository repository, ClaimLogRepository log,
+-            ObjectResponse<List<ClaimResponse>> response) {
+-        Map<Long, List<String>> lines = log.linesOnSheet(sheet.getId());
+-        response.send(repository.findBySheetIdOrderByListedDescIdDesc(sheet.getId()).stream()
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<ClaimResponse>> response) throws InvalidTodayException {
++        LocalDate date = AsOf.dateOf(asOfParam);
++        Map<Long, List<String>> lines = asOf.claimLines(sheet.getId(), date);
++        response.send(asOf.claims(sheet.getId(), date).stream()
+                 .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()))).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+new file mode 100644
+index 00000000..27ddefbf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -0,0 +1,190 @@
++package net.officefloor.hq.app.history;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Collectors;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimLog;
++import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Patron;
++import net.officefloor.hq.app.person.PatronRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonGrade;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateLogRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Delegation;
++import net.officefloor.hq.app.role.DelegationRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
++import net.officefloor.hq.app.sheet.SettingLogRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.statement.Statement;
++import net.officefloor.hq.app.statement.StatementRepository;
++import net.officefloor.hq.app.watch.Watch;
++import net.officefloor.hq.app.watch.WatchRepository;
++import org.springframework.stereotype.Service;
++
++/**
++ * A sheet as it stood at the end of a date (an as-of view): every change made while the sheet's today was on or
++ * before it counts, every later one does not, and that date stands in for the sheet's today. With no date, each
++ * read gives the sheet as the store holds it now. Only worked out, never saved.
++ */
++@Service
++public class AsOf {
++
++    private final History history;
++    private final SettingLogRepository settingLogs;
++    private final RateLogRepository rateLogs;
++    private final RateRepository rates;
++    private final PersonRepository people;
++    private final PersonGradeRepository grades;
++    private final PatronRepository patrons;
++    private final StatementRepository statements;
++    private final ClaimRepository claims;
++    private final ClaimLogRepository claimLogs;
++    private final PeriodRepository periods;
++    private final RoleRepository roles;
++    private final DelegationRepository delegations;
++    private final WatchRepository watches;
++
++    public AsOf(History history, SettingLogRepository settingLogs, RateLogRepository rateLogs, RateRepository rates,
++            PersonRepository people, PersonGradeRepository grades, PatronRepository patrons,
++            StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
++            PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches) {
++        this.history = history;
++        this.settingLogs = settingLogs;
++        this.rateLogs = rateLogs;
++        this.rates = rates;
++        this.people = people;
++        this.grades = grades;
++        this.patrons = patrons;
++        this.statements = statements;
++        this.claims = claims;
++        this.claimLogs = claimLogs;
++        this.periods = periods;
++        this.roles = roles;
++        this.delegations = delegations;
++        this.watches = watches;
++    }
++
++    /** The as-of date a read asks for: null when none is given; refuses one that is not a calendar date. */
++    public static LocalDate dateOf(String raw) throws InvalidTodayException {
++        if (raw == null || raw.isBlank()) {
++            return null;
++        }
++        try {
++            return LocalDate.parse(raw.trim());
++        } catch (DateTimeParseException e) {
++            throw new InvalidTodayException(raw.trim());
++        }
++    }
++
++    /** The sheet as of the date: its settings then, archived only if it was by then, the date its today. */
++    public Sheet sheet(Sheet sheet, LocalDate date) {
++        return date == null ? sheet : settingLogs.sheetAsOf(sheet, date);
++    }
++
++    /** The sheet's people, in the order they were added. */
++    public List<Person> people(String sheetId, LocalDate date) {
++        List<Person> now = people.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Person.class, date, now, Person::getId), Comparator.comparing(Person::getId));
++    }
++
++    /** The sheet's dated grades of each person, by from-date, by person id. */
++    public Map<Long, List<PersonGrade>> grades(String sheetId, LocalDate date) {
++        if (date == null) {
++            return grades.datedOnSheet(sheetId);
++        }
++        return sorted(history.asOf(sheetId, PersonGrade.class, date, grades.findBySheetIdOrderByFromDateAsc(sheetId),
++                PersonGrade::getId), Comparator.comparing(PersonGrade::getFromDate)).stream()
++                .collect(Collectors.groupingBy(PersonGrade::getPersonId));
++    }
++
++    /** The sheet's patrons, in the order they were named. */
++    public List<Patron> patrons(String sheetId, LocalDate date) {
++        List<Patron> now = patrons.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Patron.class, date, now, Patron::getId), Comparator.comparing(Patron::getId));
++    }
++
++    /** The sheet's statements, oldest first. */
++    public List<Statement> statements(String sheetId, LocalDate date) {
++        List<Statement> now = statements.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Statement.class, date, now, Statement::getId),
++                        Comparator.comparing(Statement::getId));
++    }
++
++    /** The sheet's claims in the order they are listed: newest first, a moved claim as its new person's newest. */
++    public List<Claim> claims(String sheetId, LocalDate date) {
++        List<Claim> now = claims.findBySheetIdOrderByListedDescIdDesc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Claim.class, date, now, Claim::getId),
++                        Comparator.comparing(Claim::getListed, Comparator.nullsFirst(Comparator.naturalOrder()))
++                                .thenComparing(Claim::getId).reversed());
++    }
++
++    /** The status log of each claim on the sheet as the screen shows it, oldest first, by claim id: only the lines
++     *  written while the sheet's today was on or before the date. */
++    public Map<Long, List<String>> claimLines(String sheetId, LocalDate date) {
++        if (date == null) {
++            return claimLogs.linesOnSheet(sheetId);
++        }
++        return claimLogs.findBySheetIdOrderByIdAsc(sheetId).stream().filter(l -> !l.getOnDate().isAfter(date))
++                .collect(Collectors.groupingBy(ClaimLog::getClaimId,
++                        Collectors.mapping(ClaimLog::line, Collectors.toList())));
++    }
++
++    /** The sheet's periods, by from-date. */
++    public List<Period> periods(String sheetId, LocalDate date) {
++        List<Period> now = periods.findBySheetIdOrderByFromDateAscIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Period.class, date, now, Period::getId),
++                        Comparator.comparing(Period::getFromDate).thenComparing(Period::getId));
++    }
++
++    /** The sheet's rates, by grade, then from-date (one from the beginning of time first). */
++    public List<Rate> rates(String sheetId, LocalDate date) {
++        return date == null ? rates.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheetId)
++                : sorted(rateLogs.ratesAsOf(sheetId, date), Comparator.comparing(Rate::getGrade)
++                        .thenComparing(Rate::getFromDate, Comparator.nullsFirst(Comparator.naturalOrder())));
++    }
++
++    /** The user names given a role on the sheet, by name. */
++    public List<Role> roles(String sheetId, LocalDate date) {
++        List<Role> now = roles.findBySheetIdOrderByUserNameAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Role.class, date, now, Role::getId), Comparator.comparing(Role::getUserName));
++    }
++
++    /** The steward role delegations made on the sheet, oldest first. */
++    public List<Delegation> delegations(String sheetId, LocalDate date) {
++        List<Delegation> now = delegations.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Delegation.class, date, now, Delegation::getId),
++                        Comparator.comparing(Delegation::getId));
++    }
++
++    /** The user's watches on the sheet, in the order made. */
++    public List<Watch> watches(String sheetId, String user, LocalDate date) {
++        List<Watch> now = watches.findBySheetIdAndUserNameOrderByIdAsc(sheetId, user);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Watch.class, date, now, Watch::getId), Comparator.comparing(Watch::getId))
++                        .stream().filter(w -> user.equals(w.getUserName())).toList();
++    }
++
++    private static <T> List<T> sorted(List<T> list, Comparator<T> order) {
++        return list.stream().sorted(order).toList();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/History.java b/src/main/java/net/officefloor/hq/app/history/History.java
+new file mode 100644
+index 00000000..b7a67426
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/History.java
+@@ -0,0 +1,103 @@
++package net.officefloor.hq.app.history;
++
++import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
++import com.fasterxml.jackson.annotation.PropertyAccessor;
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import java.util.function.Function;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.person.Patron;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonGrade;
++import net.officefloor.hq.app.role.Delegation;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.statement.Statement;
++import net.officefloor.hq.app.watch.Watch;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Service;
++import tools.jackson.databind.DeserializationFeature;
++import tools.jackson.databind.JsonNode;
++import tools.jackson.databind.json.JsonMapper;
++
++/**
++ * The states a sheet's things have been saved in (entity_history), each with the sheet's today when it was saved —
++ * recorded by HistoryRecorder — and read back as they stood at the end of a date: the last state saved while the
++ * sheet's today was on or before it. A thing with no state saved by then did not exist then (or was deleted); one
++ * with no state recorded at all was saved before this was kept and stands as it is.
++ */
++@Service
++public class History {
++
++    /** The kind each kept entity is recorded under. */
++    private static final Map<Class<?>, String> KINDS = Map.of(Claim.class, "claim", Person.class, "person",
++            PersonGrade.class, "person-grade", Period.class, "period", Patron.class, "patron", Watch.class, "watch",
++            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement");
++
++    /** An entity's state as its fields hold it: every field, no getter. */
++    private final JsonMapper json = JsonMapper.builder()
++            .changeDefaultVisibility(v -> v.withVisibility(PropertyAccessor.ALL, Visibility.NONE)
++                    .withVisibility(PropertyAccessor.FIELD, Visibility.ANY))
++            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
++            .build();
++
++    private final JdbcTemplate jdbc;
++
++    public History(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The kind an entity is recorded under; null for one that is not kept. */
++    static String kindOf(Class<?> type) {
++        return KINDS.get(type);
++    }
++
++    /** The entity's state, as recorded. */
++    JsonNode stateOf(Object entity) {
++        return json.valueToTree(entity);
++    }
++
++    String write(JsonNode state) {
++        return json.writeValueAsString(state);
++    }
++
++    /**
++     * The sheet's things of a type as they stood at the end of a date, in no particular order: each as its last
++     * state saved while the sheet's today was on or before it; none deleted or not yet made by then. A thing with no
++     * state recorded at all is taken as it stands now. Only worked out, never saved.
++     *
++     * @param current the sheet's things of the type as they stand now.
++     */
++    public <T> List<T> asOf(String sheetId, Class<T> type, LocalDate date, List<T> current, Function<T, Long> idOf) {
++        Set<Long> recorded = new HashSet<>();
++        Map<Long, String> then = new LinkedHashMap<>();
++        jdbc.query("SELECT entity_id, made_on, state FROM entity_history WHERE sheet_id = ? AND kind = ? ORDER BY id",
++                rs -> {
++                    long id = rs.getLong(1);
++                    recorded.add(id);
++                    Date madeOn = rs.getDate(2);
++                    if (!madeOn.toLocalDate().isAfter(date)) {
++                        String state = rs.getString(3);
++                        if (state == null) {
++                            then.remove(id);
++                        } else {
++                            then.put(id, state);
++                        }
++                    }
++                }, sheetId, kindOf(type));
++        List<T> asOf = new ArrayList<>();
++        for (T now : current) {
++            if (!recorded.contains(idOf.apply(now))) {
++                asOf.add(now);
++            }
++        }
++        then.values().forEach(state -> asOf.add(json.readValue(state, type)));
++        return asOf;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java b/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
+new file mode 100644
+index 00000000..8fbcebab
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
+@@ -0,0 +1,185 @@
++package net.officefloor.hq.app.history;
++
++import jakarta.annotation.PostConstruct;
++import jakarta.persistence.EntityManagerFactory;
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Types;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.IdentityHashMap;
++import java.util.LinkedHashMap;
++import java.util.Map;
++import org.hibernate.engine.spi.SessionFactoryImplementor;
++import org.hibernate.engine.spi.SharedSessionContractImplementor;
++import org.hibernate.engine.spi.TransactionCompletionCallbacks.AfterCompletionCallback;
++import org.hibernate.engine.spi.TransactionCompletionCallbacks.BeforeCompletionCallback;
++import org.hibernate.event.service.spi.EventListenerRegistry;
++import org.hibernate.event.spi.AbstractCollectionEvent;
++import org.hibernate.event.spi.EventType;
++import org.hibernate.event.spi.PostCollectionRecreateEvent;
++import org.hibernate.event.spi.PostCollectionRecreateEventListener;
++import org.hibernate.event.spi.PostCollectionUpdateEvent;
++import org.hibernate.event.spi.PostCollectionUpdateEventListener;
++import org.hibernate.event.spi.PostDeleteEvent;
++import org.hibernate.event.spi.PostDeleteEventListener;
++import org.hibernate.event.spi.PostInsertEvent;
++import org.hibernate.event.spi.PostInsertEventListener;
++import org.hibernate.event.spi.PostUpdateEvent;
++import org.hibernate.event.spi.PostUpdateEventListener;
++import org.hibernate.persister.entity.EntityPersister;
++import org.springframework.stereotype.Component;
++import tools.jackson.databind.JsonNode;
++import tools.jackson.databind.node.ObjectNode;
++
++/**
++ * Records into entity_history the state each kept entity (see History) is in once a change to it is saved: as the
++ * transaction completes, one state per entity it inserted, updated (its fields or its collections) or deleted (no
++ * state), each with its sheet's today then.
++ */
++@Component
++public class HistoryRecorder implements PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener,
++        PostCollectionUpdateEventListener, PostCollectionRecreateEventListener {
++
++    /** The entities each open session has changed, by kind and id, in the order first changed: each mapped to
++     *  whether it was deleted. */
++    private final Map<SharedSessionContractImplementor, Map<Object, Boolean>> changed =
++            Collections.synchronizedMap(new IdentityHashMap<>());
++
++    private final EntityManagerFactory entityManagerFactory;
++
++    private final History history;
++
++    public HistoryRecorder(EntityManagerFactory entityManagerFactory, History history) {
++        this.entityManagerFactory = entityManagerFactory;
++        this.history = history;
++    }
++
++    @PostConstruct
++    void register() {
++        EventListenerRegistry registry = entityManagerFactory.unwrap(SessionFactoryImplementor.class)
++                .getEventListenerRegistry();
++        registry.appendListeners(EventType.POST_INSERT, this);
++        registry.appendListeners(EventType.POST_UPDATE, this);
++        registry.appendListeners(EventType.POST_DELETE, this);
++        registry.appendListeners(EventType.POST_COLLECTION_UPDATE, this);
++        registry.appendListeners(EventType.POST_COLLECTION_RECREATE, this);
++    }
++
++    @Override
++    public boolean requiresPostCommitHandling(EntityPersister persister) {
++        return false;
++    }
++
++    @Override
++    public void onPostInsert(PostInsertEvent event) {
++        note(event.getSession(), event.getEntity(), false);
++    }
++
++    @Override
++    public void onPostUpdate(PostUpdateEvent event) {
++        note(event.getSession(), event.getEntity(), false);
++    }
++
++    @Override
++    public void onPostDelete(PostDeleteEvent event) {
++        note(event.getSession(), event.getEntity(), true);
++    }
++
++    @Override
++    public void onPostUpdateCollection(PostCollectionUpdateEvent event) {
++        noteOwner(event);
++    }
++
++    @Override
++    public void onPostRecreateCollection(PostCollectionRecreateEvent event) {
++        noteOwner(event);
++    }
++
++    private void noteOwner(AbstractCollectionEvent event) {
++        Object owner = event.getAffectedOwnerOrNull();
++        if (owner != null) {
++            note(event.getSession(), owner, false);
++        }
++    }
++
++    private void note(SharedSessionContractImplementor session, Object entity, boolean deleted) {
++        if (History.kindOf(entity.getClass()) == null) {
++            return;
++        }
++        Map<Object, Boolean> mine = changed.get(session);
++        if (mine == null) {
++            Map<Object, Boolean> fresh = new LinkedHashMap<>();
++            changed.put(session, fresh);
++            mine = fresh;
++            session.getTransactionCompletionCallbacks().registerCallback((BeforeCompletionCallback) s -> {
++                Map<Object, Boolean> done = changed.remove(s);
++                if (done != null && !done.isEmpty()) {
++                    s.doWork(connection -> write(connection, done));
++                }
++            });
++            session.getTransactionCompletionCallbacks()
++                    .registerCallback((AfterCompletionCallback) (success, s) -> changed.remove(s));
++        }
++        // An entity is keyed by itself: one instance per id in a session.
++        mine.merge(entity, deleted, (was, now) -> was || now);
++    }
++
++    private void write(Connection connection, Map<Object, Boolean> done) throws SQLException {
++        Map<String, java.sql.Date> todays = new HashMap<>();
++        try (PreparedStatement insert = connection.prepareStatement(
++                "INSERT INTO entity_history (sheet_id, kind, entity_id, made_on, state) VALUES (?, ?, ?, ?, ?)")) {
++            for (Map.Entry<Object, Boolean> e : done.entrySet()) {
++                Object entity = e.getKey();
++                JsonNode state = history.stateOf(entity);
++                if (state.get("id") == null || state.get("id").isNull() || state.get("sheetId") == null) {
++                    continue;
++                }
++                long id = state.get("id").asLong();
++                String sheetId = state.get("sheetId").asString();
++                java.sql.Date today = todays.computeIfAbsent(sheetId, k -> todayOf(connection, k));
++                if (today == null) {
++                    continue;
++                }
++                String kind = History.kindOf(entity.getClass());
++                if ("claim".equals(kind) && state instanceof ObjectNode claim) {
++                    // A claim's listing key is given by the store, so its saved copy may not hold it.
++                    claim.put("listed", listedOf(connection, id));
++                }
++                insert.setString(1, sheetId);
++                insert.setString(2, kind);
++                insert.setLong(3, id);
++                insert.setDate(4, today);
++                if (e.getValue()) {
++                    insert.setNull(5, Types.CLOB);
++                } else {
++                    insert.setString(5, history.write(state));
++                }
++                insert.addBatch();
++            }
++            insert.executeBatch();
++        }
++    }
++
++    private static java.sql.Date todayOf(Connection connection, String sheetId) {
++        try (PreparedStatement select = connection.prepareStatement("SELECT today FROM sheet WHERE id = ?")) {
++            select.setString(1, sheetId);
++            try (ResultSet rs = select.executeQuery()) {
++                return rs.next() ? rs.getDate(1) : null;
++            }
++        } catch (SQLException e) {
++            throw new IllegalStateException(e);
++        }
++    }
++
++    private static long listedOf(Connection connection, long claimId) throws SQLException {
++        try (PreparedStatement select = connection.prepareStatement("SELECT listed FROM claim WHERE id = ?")) {
++            select.setLong(1, claimId);
++            try (ResultSet rs = select.executeQuery()) {
++                return rs.next() ? rs.getLong(1) : 0L;
++            }
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index 67e10abd..9f24a989 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.period;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's periods; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithPeriods {
+-    public void respond(@Val Sheet sheet, PeriodRepository repository, ObjectResponse<List<PeriodResponse>> response) {
+-        response.send(repository.findBySheetIdOrderByFromDateAscIdAsc(sheet.getId()).stream().map(PeriodResponse::from).toList());
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<PeriodResponse>> response) throws InvalidTodayException {
++        response.send(asOf.periods(sheet.getId(), AsOf.dateOf(asOfParam)).stream().map(PeriodResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index b0bf21ea..40132377 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -1,26 +1,32 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.time.LocalDate;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.stream.Collectors;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.hq.app.statement.Statement;
+-import net.officefloor.hq.app.statement.StatementRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's people; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithPeople {
+-    public void respond(@Val Sheet sheet, PersonRepository repository, StatementRepository statements,
+-            PatronRepository patrons, PersonGradeRepository grades, ObjectResponse<List<PersonResponse>> response) {
+-        Map<Long, List<Statement>> byPerson = statements.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<PersonResponse>> response) throws InvalidTodayException {
++        LocalDate date = AsOf.dateOf(asOfParam);
++        Sheet view = asOf.sheet(sheet, date);
++        Map<Long, List<Statement>> byPerson = asOf.statements(sheet.getId(), date).stream()
+                 .collect(Collectors.groupingBy(Statement::getPersonId));
+-        Map<Long, List<Patron>> patronsOf = patrons.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++        Map<Long, List<Patron>> patronsOf = asOf.patrons(sheet.getId(), date).stream()
+                 .collect(Collectors.groupingBy(Patron::getPersonId));
+-        Map<Long, List<PersonGrade>> gradesOf = grades.datedOnSheet(sheet.getId());
+-        response.send(repository.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++        Map<Long, List<PersonGrade>> gradesOf = asOf.grades(sheet.getId(), date);
++        response.send(asOf.people(sheet.getId(), date).stream()
+                 .map(p -> PersonResponse.from(p, byPerson.getOrDefault(p.getId(), List.of()),
+                         patronsOf.getOrDefault(p.getId(), List.of()),
+-                        new PersonGrades(p.getGrade(), gradesOf.getOrDefault(p.getId(), List.of())), sheet.getToday()))
++                        new PersonGrades(p.getGrade(), gradesOf.getOrDefault(p.getId(), List.of())), view.getToday()))
+                 .toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index 9a7895b3..87b68632 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's rates; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithRates {
+-    public void respond(@Val Sheet sheet, RateRepository repository, ObjectResponse<List<RateResponse>> response) {
+-        response.send(repository.findBySheetIdOrderByGradeAscFromDateAscIdAsc(sheet.getId()).stream().map(RateResponse::from).toList());
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<RateResponse>> response) throws InvalidTodayException {
++        response.send(asOf.rates(sheet.getId(), AsOf.dateOf(asOfParam)).stream().map(RateResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/Delegation.java b/src/main/java/net/officefloor/hq/app/role/Delegation.java
+index ed93b8ee..8bc88051 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Delegation.java
++++ b/src/main/java/net/officefloor/hq/app/role/Delegation.java
+@@ -44,6 +44,10 @@ public class Delegation {
+         this.toDate = toDate;
+     }
+ 
++    public Long getId() {
++        return id;
++    }
++
+     public String getSheetId() {
+         return sheetId;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java b/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java
+index c275cbae..efd8dd01 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java
+@@ -1,13 +1,18 @@
+ package net.officefloor.hq.app.role;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The steward role delegations made on the sheet; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithDelegations {
+-    public void respond(@Val Sheet sheet, DelegationRepository repository,
+-            ObjectResponse<List<DelegationResponse>> response) {
+-        response.send(repository.findBySheetIdOrderByIdAsc(sheet.getId()).stream().map(DelegationResponse::from).toList());
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<DelegationResponse>> response) throws InvalidTodayException {
++        response.send(asOf.delegations(sheet.getId(), AsOf.dateOf(asOfParam)).stream()
++                .map(DelegationResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+index 9b781aad..f3c32948 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.role;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The user names given a role on the sheet; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithRoles {
+-    public void respond(@Val Sheet sheet, RoleRepository repository, ObjectResponse<List<RoleResponse>> response) {
+-        response.send(repository.findBySheetIdOrderByUserNameAsc(sheet.getId()).stream().map(RoleResponse::from).toList());
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<RoleResponse>> response) throws InvalidTodayException {
++        response.send(asOf.roles(sheet.getId(), AsOf.dateOf(asOfParam)).stream().map(RoleResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index 113d6c1c..d148773b 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -41,6 +41,10 @@ public class Role {
+         this.role = role;
+     }
+ 
++    public Long getId() {
++        return id;
++    }
++
+     public String getSheetId() {
+         return sheetId;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 01563a6e..69ddabb7 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -1,11 +1,16 @@
+ package net.officefloor.hq.app.setting;
+ 
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's settings; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithSettings {
+-    public void respond(@Val Sheet sheet, ObjectResponse<SettingsResponse> response) {
+-        response.send(SettingsResponse.from(sheet));
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<SettingsResponse> response) throws InvalidTodayException {
++        response.send(SettingsResponse.from(asOf.sheet(sheet, AsOf.dateOf(asOfParam))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java b/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java
+index d0e58c37..b8c415fc 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplyArchive.java
+@@ -13,7 +13,7 @@ public class ApplyArchive {
+         if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), AuditUser.decode(user)))) {
+             throw new SheetArchivedException("Only a steward can archive the sheet.");
+         }
+-        sheet.setArchived(true);
++        sheet.archive();
+         repository.save(sheet);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index eda82d84..aaafdf75 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -1,14 +1,23 @@
+ package net.officefloor.hq.app.sheet;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet; as of a date (asOf), as it stood at the end of it: that date its today, and the date itself. */
+ public class RespondWithSheet {
+ 
+-    public record SheetResponse(String id, String today, boolean archived) {
++    /** @param asOf the date the sheet is shown as of (null: as it stands now). */
++    public record SheetResponse(String id, String today, boolean archived, String asOf) {
+     }
+ 
+-    public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
+-        response.send(new SheetResponse(sheet.getId(), sheet.getToday().toString(), sheet.isArchived()));
++    public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<SheetResponse> response) throws InvalidTodayException {
++        LocalDate date = AsOf.dateOf(asOfParam);
++        Sheet view = asOf.sheet(sheet, date);
++        response.send(new SheetResponse(view.getId(), view.getToday().toString(), view.isArchived(),
++                date == null ? null : date.toString()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java
+index 88d352bf..073b1657 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SettingLogRepository.java
+@@ -14,7 +14,7 @@ public interface SettingLogRepository extends JpaRepository<SettingLog, Long> {
+     default Sheet sheetAsOf(Sheet sheet, LocalDate date) {
+         Sheet then = new Sheet(sheet.getId());
+         then.setToday(date);
+-        then.setArchived(sheet.isArchived());
++        then.setArchived(sheet.archivedBy(date));
+         for (SettingLog set : findBySheetIdOrderByIdAsc(sheet.getId())) {
+             if (set.getMadeOn().isAfter(date)) {
+                 continue;
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 40bc0358..bc36776e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -66,6 +66,10 @@ public class Sheet {
+     @Column(nullable = false)
+     private boolean archived;
+ 
++    /** The sheet's today when it was archived; null while it is not, or when that was not recorded. */
++    @Column(name = "archived_on")
++    private LocalDate archivedOn;
++
+     /** The late percent a sheet starts at. */
+     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+ 
+@@ -216,6 +220,18 @@ public class Sheet {
+         this.archived = archived;
+     }
+ 
++    /** Archives the sheet, on its today. */
++    public void archive() {
++        this.archived = true;
++        this.archivedOn = today;
++    }
++
++    /** Whether the sheet had been archived by the end of a date: it was archived while its today was on or before
++     *  it (one archived before that was recorded, on any date). */
++    public boolean archivedBy(LocalDate date) {
++        return archived && (archivedOn == null || !archivedOn.isAfter(date));
++    }
++
+     public LocalDate getPolicyDate() {
+         return policyDate;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/watch/RespondWithWatched.java b/src/main/java/net/officefloor/hq/app/watch/RespondWithWatched.java
+index e75346cc..7736ef19 100644
+--- a/src/main/java/net/officefloor/hq/app/watch/RespondWithWatched.java
++++ b/src/main/java/net/officefloor/hq/app/watch/RespondWithWatched.java
+@@ -2,16 +2,19 @@ package net.officefloor.hq.app.watch;
+ 
+ import java.util.List;
+ import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.InvalidTodayException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The ids of the people on the sheet the user watches. */
++/** The ids of the people on the sheet the user watches; as of a date (asOf), as they stood at the end of it. */
+ public class RespondWithWatched {
+     public void respond(@Val Sheet sheet, @RequestParam(name = "user", required = false) String user,
+-            WatchRepository watches, ObjectResponse<List<Long>> response) {
+-        response.send(watches.findBySheetIdAndUserNameOrderByIdAsc(sheet.getId(), AuditUser.decode(user)).stream()
++            @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
++            ObjectResponse<List<Long>> response) throws InvalidTodayException {
++        response.send(asOf.watches(sheet.getId(), AuditUser.decode(user), AsOf.dateOf(asOfParam)).stream()
+                 .map(Watch::getPersonId).toList());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V45__entity_history.sql b/src/main/resources/db/migration/V45__entity_history.sql
+new file mode 100644
+index 00000000..badf459e
+--- /dev/null
++++ b/src/main/resources/db/migration/V45__entity_history.sql
+@@ -0,0 +1,15 @@
++-- Every state a sheet's claim, person, dated grade, period, patron, watch, role, delegation and statement has been
++-- saved in, with the sheet's today when it was saved, in the order saved: the last one saved while the sheet's today
++-- was on or before a date gives the thing as it stood at the end of that date (an as-of view). A null state: it was
++-- deleted then. A thing with no state recorded was saved before this was kept, and stands as it is as of any date.
++CREATE TABLE entity_history (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL,
++    kind VARCHAR(40) NOT NULL,
++    entity_id BIGINT NOT NULL,
++    made_on DATE NOT NULL,
++    state CLOB
++);
++CREATE INDEX entity_history_sheet ON entity_history (sheet_id, kind, id);
++-- The sheet's today when it was archived (null: not archived, or not recorded).
++ALTER TABLE sheet ADD COLUMN archived_on DATE;
