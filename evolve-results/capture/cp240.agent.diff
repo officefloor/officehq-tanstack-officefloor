@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index e9a324a4..bd4be8c1 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -147,10 +147,24 @@ export function sharePart(due: string, share: string): string {
+   return due === 'n/a' ? 'n/a' : dueOn(due, share);
+ }
+ 
++/** A holder's part of a shared claim worked out for the holder: the claim's amount times their share divided by 100,
++ *  times the rate (undefined: none) of the holder's own grade in force on the claim's date, divided by 100, rounded to
++ *  two decimals like the claim (half to even, or half up when `halfUp`; exact, in integers); 0.00 when no rate. */
++export function holderPart(amount: string, share: string, rate: string | undefined, halfUp = false): string {
++  if (rate === undefined) return '0.00';
++  const scaled = toCents(amount) * toCents(share) * toCents(rate); // in 1/100000000 of a cent
++  const sign = scaled < 0n ? -1n : 1n;
++  const abs = scaled * sign;
++  let cents = abs / 100000000n;
++  const rest = abs % 100000000n;
++  if (rest > 50000000n || (rest === 50000000n && (halfUp || cents % 2n === 1n))) cents += 1n;
++  return fromCents(cents * sign);
++}
++
+ /** How the shared claims move a person's due-total, in cents: for each claim that counts in the live totals for its
+  *  person (among the people given) and has a figure (its due as shown on its row), each holder's part (see
+- *  sharePart) is added to the holder's and taken from the claim's person's; undefined when the person has a part in
+- *  no such claim. */
++ *  holderPart; a SETTLED claim keeps its parts as frozen: see sharePart) is added to the holder's and taken from the
++ *  claim's person's; undefined when the person has a part in no such claim. */
+ export function shareParts(person: Person, claims: Claim[], rates: Rate[], today: string, floor: DatedValue,
+     late: Late, people: Person[]): bigint | undefined {
+   const byId = new Map(people.map((p) => [p.id, p]));
+@@ -166,7 +180,10 @@ export function shareParts(person: Person, claims: Claim[], rates: Rate[], today
+     if (due === 'n/a') continue;
+     for (const s of shares) {
+       if (!mine && s.personId !== person.id) continue;
+-      const part = toCents(sharePart(due, s.share));
++      const holder = s.personId === person.id ? person : byId.get(s.personId);
++      const part = toCents(c.status === 'SETTLED' || !holder ? sharePart(due, s.share)
++        : holderPart(c.amount, s.share, rateOn(rates, gradeOn(holder, c.date), c.date, c.id), roundsUp(c, late)));
++      if (part === 0n) continue; // a part of nothing gives the holder no figure (n/a stays n/a)
+       total = (total ?? 0n) + (mine ? -part : part);
+     }
+   }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+index 4e02b169..14413337 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollups.java
+@@ -100,8 +100,9 @@ public class Rollups {
+     }
+ 
+     /** How the claims' shares move each person's due-total, by person id: for each claim that counts for its person
+-     *  and has a figure (its due as shown), each holder's part (the due times their share divided by 100, rounded half to
+-     *  even to two decimals) is added to the holder's and taken from the claim's person's. A person with no part in
++     *  and has a figure (its due as shown), each holder's part (see Dues.holderPart; a SETTLED claim keeps its parts
++     *  as frozen: its due times their share divided by 100, rounded half to even to two decimals) is added to the
++     *  holder's and taken from the claim's person's. A person with no part in
+      *  any such claim has no entry. */
+     private Map<Long, BigDecimal> shareParts(String sheetId, List<Person> everyone, List<Claim> all,
+             java.time.LocalDate today, net.officefloor.hq.app.setting.DatedAmount floor, LateCharge late) {
+@@ -123,7 +124,14 @@ public class Rollups {
+                 continue;
+             }
+             for (ClaimShareRepository.Share s : theirs) {
+-                BigDecimal part = Dues.part(due, s.pct());
++                Person holder = byId.get(s.personId());
++                // a settled claim keeps its parts as frozen: of its settled due; else each holder's part is worked
++                // out at the rate of the holder's own grade
++                BigDecimal part = c.status() == ClaimStatus.SETTLED || holder == null ? Dues.part(due, s.pct())
++                        : Dues.holderPart(c, s.pct(), holder.grades(), rates, late.rounding());
++                if (part.signum() == 0) {
++                    continue; // a part of nothing gives the holder no figure (n/a stays n/a)
++                }
+                 parts.merge(s.personId(), part, BigDecimal::add);
+                 parts.merge(owner.id(), part.negate(), BigDecimal::add);
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Dues.java b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+index 081f7380..e481e513 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Dues.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Dues.java
+@@ -109,6 +109,17 @@ public final class Dues {
+         return due.multiply(share).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_EVEN);
+     }
+ 
++    /** A holder's part of a shared claim worked out for the holder: the claim's amount times their share divided by
++     *  100, times the rate of the holder's own grade in force on the claim's date (of the rates that reach it), divided
++     *  by 100, rounded to two decimals as the claim rounds (see Rounding); 0.00 when their grade has no rate. */
++    public static BigDecimal holderPart(Claim claim, BigDecimal share, Grades holderGrades, Rates rates,
++            Rounding rounding) {
++        return rates.on(claim.sheetId(), holderGrades.on(claim.date()), claim.date(), claim.id())
++                .map(r -> claim.amount().multiply(share).multiply(r.pct())
++                        .divide(BigDecimal.valueOf(10000), 2, rounding.of(claim)))
++                .orElse(new BigDecimal("0.00"));
++    }
++
+     /** The cap less a person's cut total (null: none), not below 0.00; null when there is no cap. */
+     public static BigDecimal capLess(BigDecimal cap, BigDecimal cut) {
+         return cap == null || cut == null ? cap : cap.subtract(cut).max(BigDecimal.ZERO.setScale(2));
