@@ -79,4 +79,13 @@ public final class PersonRules {
                 + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
                 + (person.getContact() == null ? "" : " contact=" + person.getContact());
     }
+
+    /** The PERSON_EDITED record for the edited person, once saved, with the grade in force on the sheet's today, and
+     *  their terms when the edit changed them (empty when cleared), and likewise their contact. */
+    public static String editedLine(Person person, String grade, String by) {
+        return "PERSON_EDITED sheet=" + person.getSheetId() + " by=" + by
+                + " name=" + person.getName() + " grade=" + grade
+                + (person.isTermsChanged() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
+                + (person.isContactChanged() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : "");
+    }
 }
