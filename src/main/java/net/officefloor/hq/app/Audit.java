@@ -82,6 +82,21 @@ public class Audit {
         }
     }
 
+    /** Every line the file holds for a sheet (carrying sheet=&lt;id&gt;), in the order they were written. */
+    public synchronized java.util.List<String> linesOf(String sheetId) {
+        String token = "sheet=" + sheetId;
+        try {
+            if (!Files.exists(file)) {
+                return java.util.List.of();
+            }
+            return Files.readAllLines(file, StandardCharsets.UTF_8).stream()
+                    .filter(line -> java.util.Arrays.asList(line.split(" ")).contains(token))
+                    .toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     /** Remove the audit file. */
     public synchronized void clear() {
         try {
