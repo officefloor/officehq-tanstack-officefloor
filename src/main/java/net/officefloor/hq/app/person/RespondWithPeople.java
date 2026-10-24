@@ -11,10 +11,13 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPeople {
     public void respond(@Val Sheet sheet, PersonRepository repository, StatementRepository statements,
-            ObjectResponse<List<PersonResponse>> response) {
+            PatronRepository patrons, ObjectResponse<List<PersonResponse>> response) {
         Map<Long, List<Statement>> byPerson = statements.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
                 .collect(Collectors.groupingBy(Statement::getPersonId));
+        Map<Long, List<Patron>> patronsOf = patrons.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+                .collect(Collectors.groupingBy(Patron::getPersonId));
         response.send(repository.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
-                .map(p -> PersonResponse.from(p, byPerson.getOrDefault(p.getId(), List.of()))).toList());
+                .map(p -> PersonResponse.from(p, byPerson.getOrDefault(p.getId(), List.of()),
+                        patronsOf.getOrDefault(p.getId(), List.of()))).toList());
     }
 }

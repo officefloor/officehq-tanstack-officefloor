@@ -12,6 +12,7 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // `retiredFrom` is the date they are retired from (null: not retired); with one set they count as retired at
 // once, whatever the date.
 // `held`: their OPEN claims count in no live total; their SETTLED claims still count.
+// `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
   name: string;
@@ -22,6 +23,7 @@ export type Person = {
   statementDate: string | null;
   retiredFrom: string | null;
   held: boolean;
+  patronIds: number[];
 };
 
 export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;

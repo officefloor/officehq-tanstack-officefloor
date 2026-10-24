@@ -11,7 +11,7 @@ import { chargedOf, rateOn, sumDue, useRates, type Rate } from './rates';
 // an overdue claim's late charge) — 0.00 with nothing that counts. When their grade has no rate in force on
 // the sheet's today it is n/a, unless a counted settled or bound claim keeps a figure: then it is the sum of the
 // figures there are. While they are held their OPEN claims do not count. The sheet's due-total is everyone's added up, skipping n/a.
-function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): string {
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, heldIds([person])));
   if (rateOn(rates, person.grade, today) === undefined && !mine.some((c) => c.due !== null || (c.stated && c.statedDue !== null))) {
