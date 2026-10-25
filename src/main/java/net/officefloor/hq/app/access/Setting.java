@@ -6,6 +6,9 @@ public record Setting(String sheetId, String key, String value) {
     /** The most a clerk may settle a claim's due for; blank means no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The most a person's due-total may be; an amount with two decimals, blank for none. */
+    public static final String CAP = "cap";
+
     /** The least a claim's live due may be; an amount with two decimals. */
     public static final String FLOOR = "floor";
 

@@ -10,7 +10,7 @@ import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, isBound, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
-import { useFloorCents, useLate } from '../access/useAccess';
+import { useCapCents, useFloorCents, useLate } from '../access/useAccess';
 
 const GRADES = ['A', 'B', 'C'] as const;
 const RATE = /^\d{1,3}(\.\d{1,2})?$/;
@@ -29,10 +29,29 @@ function useRateByGrade(sheetId: string): Map<string, bigint> {
   return byGrade;
 }
 
-/** A person's due-total in cents: their counted claims' already-rounded figures added up (0 with none). Null when
+/** A person's due-total in cents, held to the sheet's cap: the cap when their figures add up to more (an n/a one is
+ *  not capped). Everything that adds up due-totals uses this. */
+export function useDueTotals(sheetId: string): Map<number, bigint | null> {
+  const sums = useUncappedDueTotals(sheetId);
+  const cap = useCapCents(sheetId);
+  const totals = new Map<number, bigint | null>();
+  for (const [id, sum] of sums) totals.set(id, sum != null && cap != null && sum > cap ? cap : sum);
+  return totals;
+}
+
+/** A person's excess in cents: how far their figures add up to more than the sheet's cap; 0 otherwise (and when n/a). */
+export function useExcesses(sheetId: string): Map<number, bigint> {
+  const sums = useUncappedDueTotals(sheetId);
+  const cap = useCapCents(sheetId);
+  const excess = new Map<number, bigint>();
+  for (const [id, sum] of sums) excess.set(id, sum != null && cap != null && sum > cap ? sum - cap : 0n);
+  return excess;
+}
+
+/** A person's uncapped due-total in cents: their counted claims' already-rounded figures added up (0 with none). Null when
  *  their grade has no rate on the sheet's today, unless a counted settled or stated claim keeps a figure, or a claim has
  *  one at a grade other than today's or dated on or before today (from its own date): then the figures there are, added up. */
-export function useDueTotals(sheetId: string): Map<number, bigint | null> {
+function useUncappedDueTotals(sheetId: string): Map<number, bigint | null> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -215,11 +234,21 @@ function DueHead() {
   return <th>Due total</th>;
 }
 
-// A person's due-total: their counted claims' due figures added up; n/a when the grade has no rate today and
+// A person's due-total: their counted claims' due figures added up, at most the sheet's cap; n/a when the grade has no rate today and
 // no settled or stated claim keeps a figure.
 function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const total = useDueTotals(sheetId).get(personId);
   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
+}
+
+function ExcessHead() {
+  return <th>Excess</th>;
+}
+
+// A person's excess: how far their figures add up to more than the sheet's cap; 0.00 when they do not.
+function ExcessCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const excess = useExcesses(sheetId).get(personId) ?? 0n;
+  return <td data-testid="person-excess">{showHundredths(excess)}</td>;
 }
 
 // A claim's due: fixed when it was settled; the bound figure while a statement binds it; otherwise its amount times the rate in force on the claim's
@@ -260,6 +289,8 @@ export const contributions = [
   SheetBody.fill({ order: 5, Component: RatesPanel }),
   PersonHeads.fill({ order: 20, Component: DueHead }),
   PersonCells.fill({ order: 20, Component: DueTotalCell }),
+  PersonHeads.fill({ order: 21, Component: ExcessHead }),
+  PersonCells.fill({ order: 21, Component: ExcessCell }),
   ClaimCells.fill({ order: 10, Component: ClaimDue }),
   SheetBody.fill({ order: 25, Component: DueTotal }),
 ];

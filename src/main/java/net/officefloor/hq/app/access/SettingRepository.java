@@ -47,6 +47,17 @@ public class SettingRepository {
         return value == null ? null : new BigDecimal(value);
     }
 
+    /** The sheet's cap: the most a person's due-total may be; null when there is none. */
+    public BigDecimal cap(String sheetId) {
+        String value = find(sheetId, Setting.CAP);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** A person's due-total held to the cap: the cap when it is above it; n/a (null) and no cap leave it as it is. */
+    public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
+        return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+    }
+
     /** The sheet's floor: the least a claim's live due may be (1.00 until it is set). */
     public BigDecimal floor(String sheetId) {
         String value = find(sheetId, Setting.FLOOR);

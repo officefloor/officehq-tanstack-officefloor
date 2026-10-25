@@ -38,6 +38,12 @@ export function useFloorCents(sheetId: string): bigint {
   return toHundredths(value);
 }
 
+/** The sheet's cap in cents: the most a person's due-total may be; null while blank (no cap). */
+export function useCapCents(sheetId: string): bigint | null {
+  const value = useSettings(sheetId).data?.find((s) => s.key === 'cap')?.value;
+  return value == null || value === '' ? null : toHundredths(value);
+}
+
 /** The terms a sheet starts with, until they are set: the days after its date a claim is due by. */
 export const TERMS_DEFAULT = '14';
 

@@ -108,7 +108,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and the late percent, what an overdue claim's due gains of its figure for every
 // full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
-// the date from which, on the sheet's today, an opened claim is numbered within its period. The value in force shows beside each. Saving
+// the date from which, on the sheet's today, an opened claim is numbered within its period, and the cap (blank: none), the most
+// a person's due-total may be. The value in force shows beside each. Saving
 // sends only the settings whose field was touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
   inputMode: 'decimal' | 'numeric' | 'text'; invalid: string };
@@ -129,6 +130,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today' },
   { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',
     invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off' },
+  { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A cap is an amount with up to two decimals, or blank for none' },
 ];
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {

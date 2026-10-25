@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
  * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor;
  * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
- * figure or one at another grade. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
+ * figure or one at another grade, and at most the sheet's cap (an n/a one is not capped). After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
  * sheet's totals moved. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
  * binds them; their other claims still do.
  */
@@ -56,6 +56,7 @@ public class Rollup {
         List<Claim> sheetClaims = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
         LateCharge late = settings.lateCharge(sheetId, today);
+        BigDecimal cap = settings.cap(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         BigDecimal dueTotal = ZERO;
@@ -78,7 +79,8 @@ public class Rollup {
                     due = due.add(figure);
                 }
             }
-            BigDecimal personDue = kept || rateOn(sheetRates, p.getGrade(), today) != null ? due : null;
+            BigDecimal personDue = SettingRepository.capped(
+                    kept || rateOn(sheetRates, p.getGrade(), today) != null ? due : null, cap);
             figures.put(p.getId(), new Figures(p.getName(), claimed, personDue));
             claimedTotal = claimedTotal.add(claimed);
             if (personDue != null) {
