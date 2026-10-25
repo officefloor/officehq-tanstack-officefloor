@@ -108,7 +108,7 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
 // due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and the late percent, what an overdue claim's due gains of its figure for every
-// full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
+// full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
 // the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most

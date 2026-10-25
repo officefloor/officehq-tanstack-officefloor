@@ -50,7 +50,7 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** The grades that may have their own terms. */
     public static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
 
-    /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue; two decimals. */
+    /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue, the one in force on each 30-day boundary date; two decimals. */
     public static final String LATE_PCT = "late-pct";
 
     /** The late percent a sheet starts with, until it is set. */

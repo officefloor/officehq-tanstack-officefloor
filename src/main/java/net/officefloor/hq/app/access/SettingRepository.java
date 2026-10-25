@@ -76,7 +76,7 @@ public class SettingRepository {
         return value == null ? null : Integer.valueOf(value);
     }
 
-    /** The sheet's late charge as of its today, each claim's late percent the one in force on its date, with its policy date for rounding. */
+    /** The sheet's late charge as of its today, each 30-day boundary's late percent the one in force on its date, with its policy date for rounding. */
     public LateCharge lateCharge(String sheetId, LocalDate today) {
         return new LateCharge(today, dated(sheetId), policyDate(sheetId, today));
     }

@@ -62,7 +62,7 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = f
   return whole;
 }
 
-/** The late charge's terms as of the sheet's today: its late percent (in hundredths) in force on a claim's date; and
+/** The late charge's terms as of the sheet's today: its late percent (in hundredths) in force on a date; and
  *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
  *  live figures round. */
 export type Late = { today: string; pctOn: (date: string) => bigint; policyDate: string;
@@ -104,15 +104,21 @@ export function isBound(claim: { stated: boolean; status?: string }): boolean {
   return claim.stated && claim.status !== 'PENDING';
 }
 
-/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), the
- *  late percent in force on its date of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction,
+/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), for every
+ *  full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of the figure,
+ *  each rounded as the claim rounds (roundsHalfUp), the charges added up; otherwise (or for a correction,
  *  or a claim deferred past the sheet's today) 0. */
 export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; dueBy: string; corrects?: string | null;
   deferred?: boolean }, figureCents: bigint): bigint {
   if (late === undefined || !isOpen(claim) || isCorrection(claim) || claim.deferred) return 0n;
   const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
-  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctOn(claim.date), roundsHalfUp(late, claim));
+  let charge = 0n;
+  for (let n = 1n; n <= periods; n++) {
+    const pct = late.pctOn(addDays(claim.dueBy, Number(n) * 30));
+    if (pct !== 0n) charge += dueCents(figureCents, pct, roundsHalfUp(late, claim));
+  }
+  return charge;
 }
 
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;

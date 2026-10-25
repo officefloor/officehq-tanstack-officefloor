@@ -7,9 +7,9 @@ import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.claim.Claim;
 
 /**
- * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (fixed when it was added) gains the late
- * percent in force on its date of its figure for every full 30 days it is overdue, rounded to two decimals as the claim rounds (see
- * {@link #rounding}). A correction
+ * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (fixed when it was added) gains, for every
+ * full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of its figure,
+ * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
  */
 public record LateCharge(LocalDate today, DatedSettings settings, LocalDate policyDate) {
@@ -42,8 +42,14 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
         if (periods == 0) {
             return none;
         }
-        return figure.multiply(settings.latePct(claim.getDate())).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
-                .setScale(2, rounding(claim));
+        BigDecimal charge = none;
+        for (long n = 1; n <= periods; n++) {
+            BigDecimal pct = settings.latePct(claim.getDueBy().plusDays(30 * n));
+            if (pct.signum() != 0) {
+                charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding(claim)));
+            }
+        }
+        return charge;
     }
 
     /** The figure with the claim's late charge added on top; null without a figure. */

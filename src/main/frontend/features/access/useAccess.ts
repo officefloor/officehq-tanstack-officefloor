@@ -65,7 +65,7 @@ export const TERMS_DEFAULT = '14';
 /** The late percent a sheet starts with, until it is set. */
 export const LATE_PCT_DEFAULT = '0.00';
 
-/** The sheet's late charge as of its today: its late percent in force on each claim's date (0.00 before any is); with its
+/** The sheet's late charge as of its today: its late percent in force on each date (0.00 before any is); with its
  *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
  *  until the sheet's today is known. */
 export function useLate(sheetId: string): Late | undefined {
