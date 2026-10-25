@@ -30,7 +30,9 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string;
   /** The policy versions (each change to the rounding mode, floor, cap, terms, late percent or clerk limit), in the
    *  order made, numbered from 1: each one's from-date (null: none — it counts always). */
-  policyVersions: (string | null)[] };
+  policyVersions: (string | null)[];
+  /** The same policy versions, each with the setting it changed and the value set (null: blank). */
+  policyLog: { from: string | null; key: string; value: string | null }[] };
 
 /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
  *  before it, else `start` (the sheet's starting value). */
