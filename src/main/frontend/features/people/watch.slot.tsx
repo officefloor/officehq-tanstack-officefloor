@@ -11,7 +11,7 @@ import { peoplePath, type Person } from './people';
 const watchedQueryKey = (sheetId: string, user: string) => ['sheet', sheetId, 'watched', user] as const;
 
 /** The ids of the people the signed-in user watches on the sheet. */
-function useWatched() {
+export function useWatched() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   return useQuery({
