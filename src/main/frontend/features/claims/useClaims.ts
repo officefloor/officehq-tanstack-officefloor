@@ -28,7 +28,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** How many proofs the claim carries; one above the proof threshold needs one before it is settled or approved. */
   proofs: number;
   /** The number of the claim this one was split off; none when it was not split off one. */
-  splitFrom: string | null };
+  splitFrom: string | null;
+  /** Whether it was added while the period containing its date was soft-closed. */
+  lateEntry: boolean };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;

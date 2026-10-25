@@ -24,6 +24,7 @@ public class Claim {
     private LocalDate deferredUntil;
     private int proofs;
     private String splitFrom;
+    private boolean lateEntry;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -69,6 +70,15 @@ public class Claim {
 
     public void setSplitFrom(String splitFrom) {
         this.splitFrom = splitFrom;
+    }
+
+    /** Whether the claim was added while the period containing its date was soft-closed. */
+    public boolean isLateEntry() {
+        return lateEntry;
+    }
+
+    public void setLateEntry(boolean lateEntry) {
+        this.lateEntry = lateEntry;
     }
 
     /** Keep {@code amount} of the claim, the rest split off: it loses any figure a statement bound it to. */

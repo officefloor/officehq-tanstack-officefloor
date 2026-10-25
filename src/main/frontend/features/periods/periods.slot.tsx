@@ -16,10 +16,11 @@ const NO_HOLDS = new Map();
 
 /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
  *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
- *  then, by person id (empty while open; a person added later has none). */
+ *  then, by person id (empty while open; a person added later has none); and whether it is soft-closed: its
+ *  figures fixed as a close fixes them, but claims dated inside it can still change. */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>;
+  personTotals: Record<string, string>; soft: boolean;
 };
 
 /** The key every feature reads the sheet's periods under. */
@@ -76,15 +77,15 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
   };
 }
 
-/** A period's due-total as shown: the one fixed when it was closed; while open, the live figure. */
+/** A period's due-total as shown: the one fixed when it was closed or soft-closed; while open, the live figure. */
 export function showPeriodDueTotal(p: Period, live: bigint): string {
-  return p.closed && p.closedTotal != null ? p.closedTotal : showHundredths(live);
+  return (p.closed || p.soft) && p.closedTotal != null ? p.closedTotal : showHundredths(live);
 }
 
-/** A person's due-total for a period as shown: the one fixed when it was closed (0.00 for a person added since);
- *  while open, the live figure. */
+/** A person's due-total for a period as shown: the one fixed when it was closed or soft-closed (0.00 for a person
+ *  added since); while open, the live figure. */
 export function showPersonPeriodDueTotal(p: Period, personId: number, live: bigint): string {
-  return p.closed ? (p.personTotals?.[String(personId)] ?? '0.00') : showHundredths(live);
+  return p.closed || p.soft ? (p.personTotals?.[String(personId)] ?? '0.00') : showHundredths(live);
 }
 
 // The period form: adds a period with a name unique on the sheet and a from and to date, not
@@ -239,7 +240,9 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
 // A period's row. A closed period shows the due-total fixed when it was closed; an open one, the live
 // figure. Closing is refused with the row's error when someone else closed it first. Reopening (a
 // steward only) makes the due-total live again; anyone else, or a period not closed, is refused with
-// the row's error. Each action clears the error the other left.
+// the row's error. Soft-closing (as closing, by the close permission) fixes the figures but leaves claims inside it
+// open to change; a soft-closed period can be closed (fixing them afresh) or reopened. Each action clears the
+// error the others left.
 function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: Period; dueTotal: bigint }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -253,9 +256,15 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/reopen`, { by: user ?? '' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
+  const softClose = useMutation({
+    mutationFn: () => postJson<Period>(
+      `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/soft-close`, { by: user ?? '' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
   const submitClose = useSubmitOnce(close);
+  const submitSoftClose = useSubmitOnce(softClose);
   const submitReopen = useSubmitOnce(reopen);
-  const error = close.error ?? reopen.error;
+  const error = close.error ?? softClose.error ?? reopen.error;
   return (
     <tr data-testid={`period-row-${p.name}`}>
       <td data-testid="period-name">{p.name}</td>
@@ -264,7 +273,7 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       <td data-testid="period-due-total">
         {showPeriodDueTotal(p, dueTotal)}
       </td>
-      <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+      <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
       <td>
         {!p.closed && (
           <button
@@ -272,11 +281,26 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
             data-testid="period-close"
             disabled={close.isPending}
             onClick={() => {
+              softClose.reset();
               reopen.reset();
               submitClose(undefined);
             }}
           >
             Close
+          </button>
+        )}{' '}
+        {!p.closed && (
+          <button
+            type="button"
+            data-testid="period-soft-close"
+            disabled={softClose.isPending}
+            onClick={() => {
+              close.reset();
+              reopen.reset();
+              submitSoftClose(undefined);
+            }}
+          >
+            Soft close
           </button>
         )}{' '}
         <button
@@ -285,6 +309,7 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
           disabled={reopen.isPending}
           onClick={() => {
             close.reset();
+            softClose.reset();
             submitReopen(undefined);
           }}
         >
@@ -332,9 +357,15 @@ function ClaimPeriod({ sheetId, claim }: { sheetId: string; user: string; person
   return <span data-testid="claim-period">{periodOn(periods.data ?? [], claim.date)?.name ?? ''}</span>;
 }
 
+// Whether the claim was added while its period was soft-closed: a late entry, for good.
+function ClaimLateEntry({ claim }: { sheetId: string; user: string; personId: number; claim: { lateEntry?: boolean } }) {
+  return <span data-testid="claim-late-entry">{claim.lateEntry ? 'yes' : 'no'}</span>;
+}
+
 export const contributions = [
   SheetBody.fill({ order: 7, Component: PeriodsPanel }),
   ClaimCells.fill({ order: 30, Component: ClaimPeriod }),
+  ClaimCells.fill({ order: 31, Component: ClaimLateEntry }),
   PersonHeads.fill({ order: 26, Component: PersonPeriodHeads }),
   PersonCells.fill({ order: 26, Component: PersonPeriodCells }),
 ];

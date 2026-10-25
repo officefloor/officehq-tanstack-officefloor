@@ -59,7 +59,13 @@ public class AddPastedClaims {
             LocalDate dueBy = date.plusDays(settings.dated(sheet.id()).terms(person, date));
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
                     input.corrects(), dueBy);
+            if (periods.softClosedOn(sheet.id(), date)) {
+                claims.markLate(claim);
+            }
             audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));
+            if (claim.isLateEntry()) {
+                audit.record(ClaimAudit.line("LATE_ENTRY", claim, by, person.getName()));
+            }
             log.record(claim, by);
         }
         rollup.record(sheet.id(), before, by);

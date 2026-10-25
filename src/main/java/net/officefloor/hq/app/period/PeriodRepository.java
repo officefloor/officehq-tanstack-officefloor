@@ -21,9 +21,9 @@ public class PeriodRepository {
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of());
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), rs.getBoolean("soft_closed"));
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
 
     private final JdbcTemplate jdbc;
 
@@ -45,7 +45,7 @@ public class PeriodRepository {
     }
 
     private static Period withTotals(Period p, Map<Long, BigDecimal> personTotals) {
-        return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals);
+        return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals, p.soft());
     }
 
     /** Whether a period on the sheet has this name, ignoring case and surrounding spaces. */
@@ -73,7 +73,7 @@ public class PeriodRepository {
             ps.setDate(4, Date.valueOf(to));
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of());
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false);
     }
 
     public Period find(String sheetId, long id) {
@@ -96,24 +96,49 @@ public class PeriodRepository {
     }
 
     /**
-     * Close the period with its due-total and each person's (by person id) fixed. Whether it was still open: of two
-     * users closing it, one wins.
+     * Close the period (open or soft-closed) with its due-total and each person's (by person id) fixed afresh. Whether
+     * it was not yet closed: of two users closing it, one wins.
      */
     public boolean close(long id, BigDecimal total, Map<Long, BigDecimal> personTotals) {
-        if (jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE id = ? AND NOT closed", total,
-                id) != 1) {
+        if (jdbc.update("UPDATE period SET closed = TRUE, soft_closed = FALSE, closed_total = ? WHERE id = ? AND NOT closed",
+                total, id) != 1) {
             return false;
         }
+        fixPersonTotals(id, personTotals);
+        return true;
+    }
+
+    /**
+     * Soft-close the open period with its due-total and each person's (by person id) fixed. Whether it was still open
+     * (neither closed nor soft-closed): of two users soft-closing it, one wins.
+     */
+    public boolean softClose(long id, BigDecimal total, Map<Long, BigDecimal> personTotals) {
+        if (jdbc.update("UPDATE period SET soft_closed = TRUE, closed_total = ? WHERE id = ? AND NOT closed AND NOT soft_closed",
+                total, id) != 1) {
+            return false;
+        }
+        fixPersonTotals(id, personTotals);
+        return true;
+    }
+
+    private void fixPersonTotals(long id, Map<Long, BigDecimal> personTotals) {
         jdbc.update("DELETE FROM period_person_total WHERE period_id = ?", id);
         personTotals.forEach((personId, personTotal) -> jdbc.update(
                 "INSERT INTO period_person_total (period_id, person_id, total) VALUES (?, ?, ?)", id, personId,
                 personTotal));
-        return true;
     }
 
-    /** Reopen the period, its due-totals live again. Whether it was still closed: of two users reopening it, one wins. */
+    /** Whether the date falls inside a soft-closed period of the sheet. */
+    public boolean softClosedOn(String sheetId, LocalDate date) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM period WHERE sheet_id = ? AND soft_closed AND from_date <= ? AND to_date >= ?",
+                Integer.class, sheetId, Date.valueOf(date), Date.valueOf(date));
+        return n != null && n > 0;
+    }
+
+    /** Reopen the closed or soft-closed period, its due-totals live again. Whether it was still closed or soft-closed: of two users reopening it, one wins. */
     public boolean reopen(long id) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE id = ? AND closed", id) != 1) {
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE id = ? AND (closed OR soft_closed)", id) != 1) {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE period_id = ?", id);
