@@ -33,12 +33,12 @@ public class ValidateClaim {
         if (note.length() > 1000) {
             throw new BadRequestException("A note is at most 1000 characters");
         }
-        Integer correctsNumber = null;
+        String correctsNumber = null;
         if (!corrects.isEmpty()) {
-            if (!corrects.matches("\\d{1,9}")) {
+            if (!corrects.matches("\\d{1,9}|.{1,200}-\\d{1,9}")) {
                 throw new BadRequestException("Name the corrected claim by its number");
             }
-            correctsNumber = Integer.valueOf(corrects);
+            correctsNumber = corrects.matches("\\d+") ? String.valueOf(Integer.parseInt(corrects)) : corrects;
         }
         claim.set(new ClaimInput(amount, parsed, note, correctsNumber));
         changedBy.set(by);

@@ -107,7 +107,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
 // due by (14 until they are set), and the late percent, what an overdue claim's due gains of its figure for every
 // full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
-// claim's live figures round half up and from which they round half to even. The value in force shows beside each. Saving
+// claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
+// the date from which, on the sheet's today, an opened claim is numbered within its period. The value in force shows beside each. Saving
 // sends only the settings whose field was touched since the last save.
 const SETTINGS = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
@@ -120,6 +121,8 @@ const SETTINGS = [
     invalid: 'A late percent is a number with up to two decimals' },
   { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
     invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today' },
+  { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',
+    invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off' },
 ] as const;
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {

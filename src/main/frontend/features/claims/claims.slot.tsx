@@ -20,7 +20,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
   const [amount, setAmount] = useState(editing?.amount ?? '');
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
-  const [corrects, setCorrects] = useState(editing?.corrects?.toString() ?? '');
+  const [corrects, setCorrects] = useState(editing?.corrects ?? '');
   const [user] = useUser();
   const queryClient = useQueryClient();
   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
@@ -63,7 +63,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={amount} onChange={field(setAmount)} />{' '}
       <input data-testid="claim-form-date" type="date" value={date} onChange={field(setDate)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={field(setNote)} />{' '}
-      <input data-testid="claim-form-corrects" placeholder="Corrects no." inputMode="numeric" value={corrects} onChange={field(setCorrects)} />{' '}
+      <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={field(setCorrects)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>

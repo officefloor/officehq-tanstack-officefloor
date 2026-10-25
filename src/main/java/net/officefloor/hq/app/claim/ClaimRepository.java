@@ -23,9 +23,9 @@ public class ClaimRepository {
         Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
                 rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
                 rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-                rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+                rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
                 rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-                rs.getObject("corrects", Integer.class));
+                rs.getString("corrects"));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -56,7 +56,7 @@ public class ClaimRepository {
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet. */
-    public boolean settledNumbered(String sheetId, long personId, int number) {
+    public boolean settledNumbered(String sheetId, long personId, String number) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ? AND status = ?",
                 Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
     }
@@ -66,7 +66,7 @@ public class ClaimRepository {
                 .stream().findFirst().orElse(null);
     }
 
-    public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Integer corrects) {
+    public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -77,7 +77,7 @@ public class ClaimRepository {
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
-            ps.setObject(6, corrects, java.sql.Types.INTEGER);
+            ps.setString(6, corrects);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
@@ -101,5 +101,17 @@ public class ClaimRepository {
     public int nextNumber(String sheetId) {
         return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
                 + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, sheetId);
+    }
+
+    /** Take the next number of one of the sheet's per-period sequences (a period's id, or X for no period), from 1. */
+    public int nextNumber(String sheetId, String sequence) {
+        try {
+            jdbc.update("INSERT INTO claim_sequence (sheet_id, seq_key) SELECT ?, ? FROM DUAL WHERE NOT EXISTS"
+                    + " (SELECT 1 FROM claim_sequence WHERE sheet_id = ? AND seq_key = ?)", sheetId, sequence, sheetId, sequence);
+        } catch (org.springframework.dao.DuplicateKeyException started) {
+            // another user started it first
+        }
+        return jdbc.queryForObject("SELECT last_number FROM FINAL TABLE (UPDATE claim_sequence SET last_number = last_number + 1"
+                + " WHERE sheet_id = ? AND seq_key = ?)", Integer.class, sheetId, sequence);
     }
 }

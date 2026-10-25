@@ -15,7 +15,7 @@ final class ClaimAudit {
         return line(event, claim, by, personName, claim.getNumber());
     }
 
-    static String line(String event, Claim claim, ChangedBy by, String personName, Integer number) {
+    static String line(String event, Claim claim, ChangedBy by, String personName, String number) {
         return event + " sheet=" + claim.getSheetId() + " by=" + by.name() + " person=" + personName + " amount="
                 + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate()
                 + (number == null ? "" : " number=" + number);

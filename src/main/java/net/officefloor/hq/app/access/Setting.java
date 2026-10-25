@@ -26,4 +26,7 @@ public record Setting(String sheetId, String key, String value) {
 
     /** The date before which a claim's live figures round half up, and from which half to even; blank means the sheet's today. */
     public static final String POLICY_DATE = "policy-date";
+
+    /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 }

@@ -6,6 +6,8 @@ import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
 import net.officefloor.hq.app.access.SettingRepository;
+import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -24,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
-            @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
+            PeriodRepository periods, @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         if (!from.canBecome(status)) {
             throw new BadRequestException("A " + from + " claim cannot become " + status);
@@ -54,10 +56,27 @@ public class ApplyClaimStatus {
         }
         if (status == ClaimStatus.OPEN) {
             // Numbered only once the claim is surely moving, so a refused open uses up no number.
-            claim.setNumber(repository.nextNumber(claim.getSheetId()));
+            claim.setNumber(number(claim, repository, settings, sheets, periods));
             repository.updateStatus(claim, status);
         }
         audited.set(new ClaimNumber(claim.getNumber()));
+    }
+
+    /**
+     * The number an opened claim takes: while the sheet numbers by period and its today is on or after that setting's
+     * date, the next within the claim's period (by its date) as {@code <period name>-<n>}, or {@code X-<n>} in no period;
+     * otherwise the sheet's next.
+     */
+    private static String number(Claim claim, ClaimRepository repository, SettingRepository settings,
+            SheetRepository sheets, PeriodRepository periods) {
+        String sheetId = claim.getSheetId();
+        java.time.LocalDate from = settings.periodNumberingFrom(sheetId);
+        if (from == null || sheets.today(sheetId).isBefore(from)) {
+            return String.valueOf(repository.nextNumber(sheetId));
+        }
+        Period period = periods.on(sheetId, claim.getDate());
+        return period == null ? "X-" + repository.nextNumber(sheetId, "X")
+                : period.name() + "-" + repository.nextNumber(sheetId, String.valueOf(period.id()));
     }
 
     /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date and at least the sheet's floor (a correction has none); null when there is no rate. */

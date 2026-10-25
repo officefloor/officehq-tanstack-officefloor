@@ -40,7 +40,7 @@ public class OpenClaims {
                     RollupSnapshot before = rollup.snapshot(sheet.id());
                     ClaimNumber[] number = new ClaimNumber[1];
                     Out<ClaimNumber> audited = value -> number[0] = value;
-                    apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, by, audited);
+                    apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, by, audited);
                     record.record(claim, number[0], by, people, audit);
                     rollup.record(sheet.id(), before, by);
                     opened++;

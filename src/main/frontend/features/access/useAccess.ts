@@ -60,7 +60,7 @@ export function useLate(sheetId: string): Late | undefined {
   const termsDays = useTermsDays(sheetId);
   const today = useSheetToday(sheetId).data?.today;
   const claims = useClaims(sheetId).data;
-  const dateOfNumber = new Map<number, string>();
+  const dateOfNumber = new Map<string, string>();
   for (const c of claims ?? []) if (c.number != null) dateOfNumber.set(c.number, c.date);
   return today === undefined ? undefined
     : { today, termsDays, pctHundredths: toHundredths(pct), policyDate: policy === '' ? today : policy, dateOfNumber };

@@ -64,11 +64,11 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = f
  *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
  *  live figures round. */
 export type Late = { today: string; termsDays: number; pctHundredths: bigint; policyDate: string;
-  dateOfNumber: ReadonlyMap<number, string> };
+  dateOfNumber: ReadonlyMap<string, string> };
 
 /** Whether the claim's live figures round half up: it (or, for a correction, the claim it corrects) is dated before
  *  the sheet's policy date; on or after it they round half to even. Half to even until the sheet's today is known. */
-export function roundsHalfUp(late: Late | undefined, claim: { date: string; corrects?: number | null }): boolean {
+export function roundsHalfUp(late: Late | undefined, claim: { date: string; corrects?: string | null }): boolean {
   if (late === undefined) return false;
   const on = (claim.corrects != null ? late.dateOfNumber.get(claim.corrects) : undefined) ?? claim.date;
   return on < late.policyDate;
@@ -93,7 +93,7 @@ export function isCorrection(claim: { amount: string }): boolean {
 
 /** A claim's late charge in cents on its figure: for an OPEN claim past its due-by (its date plus the terms), the
  *  late percent of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
-export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; corrects?: number | null },
+export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; corrects?: string | null },
   figureCents: bigint): bigint {
   if (late === undefined || claim.status !== 'OPEN' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(addDays(claim.date, late.termsDays), late.today);
@@ -122,7 +122,7 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
  *  charge is never bound by a statement; a settled claim's due already has it frozen in. Null without a figure. */
 export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
-    corrects?: number | null },
+    corrects?: string | null },
   floorCents: bigint, late: Late | undefined): bigint | null {
   const figure = claimFigureCents(rates, grade, claim, floorCents, roundsHalfUp(late, claim));
   return figure == null ? null : figure + lateCents(late, claim, figure);

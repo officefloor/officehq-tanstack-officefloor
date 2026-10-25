@@ -67,6 +67,12 @@ public class PeriodRepository {
                 .stream().findFirst().orElse(null);
     }
 
+    /** The period whose dates contain the date; null when none does. */
+    public Period on(String sheetId, LocalDate date) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?",
+                ROW, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
+    }
+
     /** Whether the date falls inside a closed period of the sheet. */
     public boolean closedOn(String sheetId, LocalDate date) {
         Integer n = jdbc.queryForObject(

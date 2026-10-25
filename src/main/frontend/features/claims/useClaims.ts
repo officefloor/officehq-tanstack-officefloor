@@ -5,8 +5,8 @@ import { asNumber, useSearchParam } from '../../url/useSearchParam';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
-  /** Given when the claim is opened; none for a draft or a void claim. */
-  number: number | null;
+  /** Given when the claim is opened: the sheet's next (1, 2, ...), or within its period (<period>-<n>, X-<n> in none); none for a draft. */
+  number: string | null;
   /** The due fixed when the claim was settled; none while live (not settled, or settled without a rate). */
   settledDue: string | null;
   /** The signed-in user who opened the claim; none when it was never opened. They cannot settle it. */
@@ -15,7 +15,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   stated: boolean;
   statedDue: string | null;
   /** The number of the SETTLED claim this correction (a negative amount) corrects; none for any other claim. */
-  corrects: number | null };
+  corrects: string | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do, and a held
  *  person's (`held`: the ids of the people on hold) OPEN claims do not. */

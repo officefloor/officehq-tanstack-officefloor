@@ -13,17 +13,17 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
-    private Integer number;
+    private String number;
     private BigDecimal settledDue;
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
-    private Integer corrects;
+    private String corrects;
     private LocalDate roundOn;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
-            boolean stated, BigDecimal statedDue, Integer corrects) {
+            ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
+            boolean stated, BigDecimal statedDue, String corrects) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -97,11 +97,11 @@ public class Claim {
     }
 
     /** The number given when the claim was opened; null for a draft (or a claim voided as a draft); a voided claim keeps its number, never reused. */
-    public Integer getNumber() {
+    public String getNumber() {
         return number;
     }
 
-    public void setNumber(Integer number) {
+    public void setNumber(String number) {
         this.number = number;
     }
 
@@ -134,11 +134,11 @@ public class Claim {
     }
 
     /** The number of the SETTLED claim this correction corrects; null for a claim that is not a correction. */
-    public Integer getCorrects() {
+    public String getCorrects() {
         return corrects;
     }
 
-    public void setCorrects(Integer corrects) {
+    public void setCorrects(String corrects) {
         this.corrects = corrects;
     }
 

@@ -71,6 +71,12 @@ public class SettingRepository {
         return value == null ? today : java.time.LocalDate.parse(value);
     }
 
+    /** The sheet's period numbering from-date; null while off. */
+    public java.time.LocalDate periodNumberingFrom(String sheetId) {
+        String value = find(sheetId, Setting.PERIOD_NUMBERING_FROM);
+        return value == null ? null : java.time.LocalDate.parse(value);
+    }
+
     /** The sheet's late-charge terms as of its today, with its policy date for rounding. */
     public LateCharge lateCharge(String sheetId, java.time.LocalDate today) {
         return new LateCharge(today, terms(sheetId), latePct(sheetId), policyDate(sheetId, today));
