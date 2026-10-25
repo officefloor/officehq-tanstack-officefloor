@@ -8,6 +8,7 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClerkLimitException;
+import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.plan.Plan;
 import net.officefloor.hq.app.plan.PlanRepository;
 import net.officefloor.hq.app.crew.Crew;
@@ -18,6 +19,7 @@ import net.officefloor.hq.app.pool.PoolMember;
 import net.officefloor.hq.app.pool.PoolMemberRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.statement.BindingLogRepository;
 import net.officefloor.hq.app.statement.BindingLogs;
@@ -36,14 +38,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * other is already a member). The crews they lead are left without a lead, and their crew
  * memberships move to the other (dropped where the other already leads or is in the crew). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
  * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
- * are dropped, and they leave the sheet.
+ * are dropped, and they leave the sheet. The merge is kept, so it can be undone (see ApplyMergeUndo).
  */
 public class ApplyMerge {
     public void apply(@Val MergeInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
             PersonAliasRepository aliases, PatronRepository patrons, PoolMemberRepository members,
             StatementRepository statements, BindingLogRepository bindings, SheetRepository sheets, WatchRepository watches, PersonGradeRepository grades,
             PlanRepository plans, CrewRepository crews, CrewMemberRepository crewMembers,
-            RoleRepository roles, EntityManager entityManager,
+            RoleRepository roles, PersonMergeRepository merges, History history, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMerged> merged)
             throws InvalidPersonException, ClerkLimitException {
         String sheetId = person.getSheetId();
@@ -63,6 +65,7 @@ public class ApplyMerge {
         }
         Long from = person.getId();
         Long to = into.getId();
+        String state = history.written(person);
 
         // Claims: moved in the order they were added, each listed as the other's newest and released when held.
         List<Claim> moved = new ArrayList<>(claims.findBySheetIdOrderByIdDesc(sheetId).stream()
@@ -87,8 +90,9 @@ public class ApplyMerge {
         List<PersonAlias> theirAliases = aliases.findByPersonIdOrderByIdAsc(from);
         aliases.deleteAll(theirAliases);
         aliases.flush();
-        aliases.save(new PersonAlias(sheetId, to, person.getName()));
-        theirAliases.forEach(a -> aliases.save(new PersonAlias(sheetId, to, a.getAlias())));
+        List<Long> givenAliases = new ArrayList<>();
+        givenAliases.add(aliases.save(new PersonAlias(sheetId, to, person.getName())).getId());
+        theirAliases.forEach(a -> givenAliases.add(aliases.save(new PersonAlias(sheetId, to, a.getAlias())).getId()));
 
         // Patrons: theirs added to the other's; those naming them name the other instead.
         for (Patron patron : patrons.findByPersonIdOrderByIdAsc(from)) {
@@ -153,6 +157,10 @@ public class ApplyMerge {
         statements.flush();
         people.delete(person);
         people.flush();
+        merges.saveAndFlush(new PersonMerge(sheetId, to, from,
+                sheets.findById(sheetId).map(Sheet::getToday).orElseGet(() -> new Sheet(sheetId).getToday()), user,
+                state, moved.stream().map(Claim::getId).toList(),
+                theirAliases.stream().map(PersonAlias::getAlias).toList(), givenAliases));
         entityManager.refresh(into);
         merged.set(new PersonMerged(person.getName(), into));
     }

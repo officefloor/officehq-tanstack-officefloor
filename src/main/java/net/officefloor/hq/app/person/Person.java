@@ -142,6 +142,11 @@ public class Person {
         return position != null ? position : id;
     }
 
+    /** Puts them at a place in the list. */
+    public void placeAt(long place) {
+        position = place;
+    }
+
     /** Swaps their place in the list with another person's. */
     public void swapPlace(Person other) {
         long mine = getPlace();

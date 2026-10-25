@@ -76,6 +76,16 @@ public class History {
         return json.writeValueAsString(state);
     }
 
+    /** The entity's state as recorded, written out: kept to bring the entity back as it stood (see {@link #read}). */
+    public String written(Object entity) {
+        return write(stateOf(entity));
+    }
+
+    /** An entity read back from a state written out; only worked out, never saved. */
+    public <T> T read(String state, Class<T> type) {
+        return json.readValue(state, type);
+    }
+
     /**
      * The sheet's things of a type as they stood at the end of a date, in no particular order: each as its last
      * state saved while the sheet's today was on or before it; none deleted or not yet made by then. A thing with no
