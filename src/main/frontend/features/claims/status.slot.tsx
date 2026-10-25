@@ -20,6 +20,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // OPEN or PENDING claim to another person (listed then as that person's newest claim). A change its status does not
 // allow, a settle or approve by the user who opened the claim, or an approve or reject by a non-steward, is refused by the
 // server, and the refusal shows on the claim until its next action (only the last action's error shows). A clerk's settle above the clerk limit leaves it PENDING.
+// A steward may void a SETTLED claim within 7 days of its settlement (not in a closed period): its frozen due still shows but
+// counts in no total.
 // An OPEN claim can be deferred to a date after the sheet's today (not in a closed period): until then it counts in no
 // total, is not overdue and cannot be settled; whether it is deferred, and until when, shows on the claim.
 // A claim not SETTLED or VOID takes a proof, raising its proofs count by one; one whose due is above the proof threshold

@@ -22,6 +22,9 @@ public class RecordClaimStatus {
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
         }
+        if (claim.getStatus() == ClaimStatus.VOID && claim.getSettledDue() != null) {
+            line += " reversed=" + claim.getSettledDue().setScale(2).toPlainString();
+        }
         if (claim.getStatus() == ClaimStatus.OPEN && review.asked()) {
             line += " reason=" + review.reason();
         }

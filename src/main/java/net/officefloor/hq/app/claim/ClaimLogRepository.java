@@ -25,6 +25,14 @@ public class ClaimLogRepository {
                 claim.getSheetId(), claim.getId(), claim.getStatus().name(), by, java.sql.Date.valueOf(on), due);
     }
 
+    /** The date of the claim's last log line in the status, or null when it never had it. */
+    public LocalDate lastOn(String sheetId, long claimId, ClaimStatus status) {
+        List<LocalDate> on = jdbc.query("SELECT logged_on FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ?"
+                + " ORDER BY id DESC LIMIT 1", (rs, i) -> rs.getObject("logged_on", LocalDate.class),
+                sheetId, claimId, status.name());
+        return on.isEmpty() ? null : on.get(0);
+    }
+
     /**
      * Each claim's status at the end of the day, by claim id, as its log records it: its last line (in log order)
      * logged on or before the day. A claim with no such line (added after it) is absent.

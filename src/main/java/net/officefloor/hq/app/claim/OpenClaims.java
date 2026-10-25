@@ -25,7 +25,7 @@ import net.officefloor.plugin.variable.Val;
 public class OpenClaims {
     public void open(@Val SheetResponse sheet, @Val BulkOpenIds selected, @Val ChangedBy by, ClaimRepository claims,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
-            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
+            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log, ClaimLogRepository logs,
             WatchRepository watches, Out<BulkOpenResponse> result) {
         int opened = 0;
         if (roles.isViewer(sheet.id(), by.name()) || sheets.isArchived(sheet.id())) {
@@ -47,7 +47,7 @@ public class OpenClaims {
                     RollupSnapshot before = rollup.snapshot(sheet.id());
                     ClaimNumber[] number = new ClaimNumber[1];
                     Out<ClaimNumber> audited = value -> number[0] = value;
-                    apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, by, ClaimReview.NONE, audited);
+                    apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, logs, by, ClaimReview.NONE, audited);
                     record.record(claim, number[0], by, ClaimReview.NONE, people, watches, audit, log);
                     rollup.record(sheet.id(), before, by);
                     opened++;

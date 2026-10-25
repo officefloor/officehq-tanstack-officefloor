@@ -23,14 +23,15 @@ import net.officefloor.plugin.variable.Val;
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
  * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
- * returns it to OPEN, bound again by its last statement if that bound it. Opening records who opened it; a voided claim keeps its number. Settling
+ * returns it to OPEN, bound again by its last statement if that bound it. A steward may void a SETTLED claim within
+ * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
-            PeriodRepository periods, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
+            PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         String role = roles.roleOf(claim.getSheetId(), by.name());
         boolean steward = Role.STEWARD.equals(role);
@@ -51,6 +52,17 @@ public class ApplyClaimStatus {
             String action = status == ClaimStatus.OPEN ? "open" : status == ClaimStatus.VOID ? "void" : "settle";
             if (!settings.allows(claim.getSheetId(), action, role)) {
                 throw new BadRequestException("A " + role + " may not " + action + " a claim on this sheet");
+            }
+            if (status == ClaimStatus.VOID && from == ClaimStatus.SETTLED) {
+                if (!steward) {
+                    throw new BadRequestException("Only a steward voids a SETTLED claim");
+                }
+                java.time.LocalDate settledOn = log.lastOn(claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED);
+                java.time.LocalDate today = sheets.today(claim.getSheetId());
+                if (settledOn == null || today.isAfter(settledOn.plusDays(ClaimStatus.VOID_SETTLED_DAYS))) {
+                    throw new BadRequestException("A SETTLED claim is voided only within "
+                            + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement");
+                }
             }
             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
                 throw new BadRequestException("The user who opened a claim cannot settle it");
@@ -80,6 +92,7 @@ public class ApplyClaimStatus {
             claim.setOpenedBy(by.name());
         }
         if (to == ClaimStatus.SETTLED) {
+            // A voided SETTLED claim keeps its frozen figure (shown, and reversed in its audit) but counts in no total.
             claim.setSettledDue(due);
         }
         if (!repository.updateStatus(claim, from)) {
