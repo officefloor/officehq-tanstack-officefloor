@@ -24,8 +24,8 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
- * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor in force on its date;
- * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
+ * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even;
+ * none without a rate) with its late charge added on top while it is overdue, and then — unless it is settled or a correction — at least the sheet's floor in force on its date, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
  * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
  * those of their claims that are OPEN or PENDING and past their due-by on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
  * then a TOTALS line when any of the sheet's three totals moved. The sheet's due-total and overdue-total leave out the
@@ -210,7 +210,7 @@ public class Rollup {
         return figure == null ? "n/a" : figure.toPlainString();
     }
 
-    /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor in force on its date, unless it is a correction. */
+    /** A claim's figure: its settled due, else the figure a statement bound, else its rate figure (the floor comes later, after the late charge). */
     private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, LateCharge late) {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue().setScale(2);
@@ -219,7 +219,7 @@ public class Rollup {
             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
         }
         BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
-        return claim.figureAt(rate, late.settings().floor(claim.getDate()), late.rounding(claim));
+        return claim.figureAt(rate, late.rounding(claim));
     }
 
     /**

@@ -19,8 +19,8 @@ import net.officefloor.plugin.variable.Val;
  * Takes the person's statement on the sheet's today: records their due-total, binds each of their counting claims
  * to the figure it has now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
  * figure its last statement bound it to, else its amount times the rate in force on the claim's date of its
- * person's grade in force on that date (rounded as the claim rounds by the sheet's policy date, and at least the sheet's floor in force on the claim's date; none without a rate). The due-total is the counting claims' figures
- * added up, each with its late charge on top while it is overdue (the charge is never bound); n/a
+ * person's grade in force on that date (rounded as the claim rounds by the sheet's policy date; none without a rate) — the rate figure, never floored. The due-total is the counting claims' dues
+ * added up: each figure with its late charge on top while it is overdue, then at least the floor in force on the claim's date (neither is bound); n/a
  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure; at most the sheet's cap in force on its today.
  */
 public class TakeStatement {
@@ -66,6 +66,6 @@ public class TakeStatement {
             return claim.getStatedDue();
         }
         BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        return claim.figureAt(rate, late.settings().floor(claim.getDate()), late.rounding(claim));
+        return claim.figureAt(rate, late.rounding(claim));
     }
 }

@@ -252,7 +252,7 @@ function ExcessCell({ sheetId, personId }: { sheetId: string; user: string; pers
 }
 
 // A claim's due: fixed when it was settled; the bound figure while a statement binds it; otherwise its amount times the rate in force on the claim's
-// date of its person's grade on that date (at least the sheet's floor); with its late charge on top while it is overdue; n/a when no rate of the grade applies then.
+// date of its person's grade on that date; with its late charge on top while it is overdue, then at least the sheet's floor; n/a when no rate of the grade applies then.
 function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
     dueBy: string; corrects?: string | null; deferred?: boolean } }) {

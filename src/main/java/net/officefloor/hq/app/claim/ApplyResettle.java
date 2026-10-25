@@ -16,8 +16,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * A steward's re-settle of a SETTLED claim: freezes its due again at the figure it would have today as an OPEN claim bound
- * by no statement — the rate in force on the claim's date of its person's grade on that date (at least the sheet's
- * floor in force on the claim's date), with its late charge as of the sheet's today on top. Without a rate its due becomes n/a.
+ * by no statement — the rate in force on the claim's date of its person's grade on that date, with its late charge as of the sheet's
+ * today on top, and at least the sheet's floor in force on the claim's date. Without a rate its due becomes n/a.
  */
 public class ApplyResettle {
     public void apply(@Val Claim claim, @Val ChangedBy by, ClaimRepository repository, PersonRepository people,
@@ -33,7 +33,7 @@ public class ApplyResettle {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null
                 : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        BigDecimal figure = claim.figureAt(rate, late.settings().floor(claim.getDate()), late.rounding(claim));
+        BigDecimal figure = claim.figureAt(rate, late.rounding(claim));
         BigDecimal before = claim.getSettledDue();
         BigDecimal after = late.dueAsOpen(claim, figure);
         claim.setSettledDue(after);

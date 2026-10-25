@@ -123,30 +123,35 @@ export function lateCents(late: Late | undefined, claim: { amount: string; date:
 
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
  *  otherwise (or while it is PENDING) its amount times its person's grade's rate
- *  in force on the claim's date, rounded half to even (half up when `halfUp`), and at least the sheet's floor in force on the claim's date (in cents) unless it is a correction. Null when there is
- *  no figure (no rate of the grade then). */
+ *  in force on the claim's date, rounded half to even (half up when `halfUp`). The floor is not applied here (see
+ *  claimDueCents). Null when there is no figure (no rate of the grade then). */
 export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null },
-  floorOn: (date: string) => bigint, halfUp = false): bigint | null {
+  halfUp = false): bigint | null {
   if (claim.settledDue != null) return toHundredths(claim.settledDue);
   if (isBound(claim)) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
   const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
   if (found === undefined) return null;
   const correction = isCorrection(claim);
   const amount = toHundredths(correction ? claim.amount.trim().slice(1) : claim.amount);
-  const due = dueCents(correction ? -amount : amount, toHundredths(found.rate), halfUp);
-  const floor = floorOn(claim.date);
-  return correction || due >= floor ? due : floor;
+  return dueCents(correction ? -amount : amount, toHundredths(found.rate), halfUp);
 }
 
-/** A claim's due in cents: its figure (claimFigureCents) with its late charge on top while it is overdue. The
- *  charge is never bound by a statement; a settled claim's due already has it frozen in. Null without a figure. */
+/** A claim's due in cents: fixed when it was settled; otherwise the greater of the sheet's floor in force on the
+ *  claim's date and its figure (claimFigureCents: the rate figure, or the one a statement bound) with its late charge
+ *  on top while it is overdue. The charge and the floor are never bound by a statement; a correction has neither.
+ *  Null without a figure. */
 export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
     dueBy: string; corrects?: string | null; deferred?: boolean },
   floorOn: (date: string) => bigint, late: Late | undefined): bigint | null {
-  const figure = claimFigureCents(rates, grade, claim, floorOn, roundsHalfUp(late, claim));
-  return figure == null ? null : figure + lateCents(late, claim, figure);
+  const figure = claimFigureCents(rates, grade, claim, roundsHalfUp(late, claim));
+  if (figure == null) return null;
+  if (claim.settledDue != null) return figure;
+  const due = figure + lateCents(late, claim, figure);
+  if (isCorrection(claim)) return due;
+  const floor = floorOn(claim.date);
+  return due >= floor ? due : floor;
 }
 
 /** Figures added up, leaving out the single highest and the single lowest when there are three or more. */

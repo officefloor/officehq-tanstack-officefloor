@@ -24,8 +24,8 @@ import net.officefloor.plugin.variable.Val;
  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
  * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
  * returns it to OPEN, bound again by its last statement if that bound it. Opening records who opened it; a voided claim keeps its number. Settling
- * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date (at least the sheet's floor in force on the claim's date) — or, while a statement binds it, at
- * the figure it was bound to — with its late charge as of the sheet's today frozen in on top; without a figure its due stays live.
+ * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
+ * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
@@ -110,7 +110,7 @@ public class ApplyClaimStatus {
                 : period.name() + "-" + repository.nextNumber(sheetId, String.valueOf(period.id()));
     }
 
-    /** The figure a statement binds the claim to (not while PENDING), else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date and at least the sheet's floor (a correction has none); null when there is no rate. */
+    /** The figure a statement binds the claim to (not while PENDING), else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date (not floored); null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings, LateCharge late) {
         if (claim.isBound()) {
@@ -118,6 +118,6 @@ public class ApplyClaimStatus {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        return claim.figureAt(rate, late.settings().floor(claim.getDate()), late.rounding(claim));
+        return claim.figureAt(rate, late.rounding(claim));
     }
 }

@@ -214,14 +214,13 @@ public class Claim {
     }
 
     /**
-     * The claim's live figure at the rate: its amount times the rate, rounded to two decimals by the rounding given and
-     * at least the floor — a correction has no floor. Null without a rate.
+     * The claim's rate figure: its amount times the rate, rounded to two decimals by the rounding given. The floor is
+     * not applied here; it comes last, after the late charge (see LateCharge). Null without a rate.
      */
-    public BigDecimal figureAt(BigDecimal rate, BigDecimal floor, java.math.RoundingMode rounding) {
+    public BigDecimal figureAt(BigDecimal rate, java.math.RoundingMode rounding) {
         if (rate == null) {
             return null;
         }
-        BigDecimal figure = amount.multiply(rate).movePointLeft(2).setScale(2, rounding);
-        return isCorrection() ? figure : figure.max(floor);
+        return amount.multiply(rate).movePointLeft(2).setScale(2, rounding);
     }
 }
