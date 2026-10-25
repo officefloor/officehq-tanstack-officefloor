@@ -5,7 +5,8 @@ import java.util.Map;
 
 /**
  * The sheet's figures at one moment: each person's (by id, in the order they were added), and the sheet's
- * claimed-total and due-total (everyone's due-total added up, skipping those that are n/a).
+ * claimed-total, due-total (everyone's due-total added up, skipping those that are n/a) and overdue-total.
  */
-public record RollupSnapshot(Map<Long, Figures> people, BigDecimal claimedTotal, BigDecimal dueTotal) {
+public record RollupSnapshot(Map<Long, Figures> people, BigDecimal claimedTotal, BigDecimal dueTotal,
+        BigDecimal overdueTotal) {
 }
