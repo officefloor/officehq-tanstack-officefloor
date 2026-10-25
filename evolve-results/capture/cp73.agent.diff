@@ -1,0 +1,440 @@
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index de85bb9a..936498f9 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -1,3 +1,4 @@
++import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { ClaimCells } from '../../slots/defs/claimRow';
+@@ -19,17 +20,23 @@ function StatementHeads() {
+ }
+ 
+ // A person's statement count, the last statement's due-total and date, the button that takes a statement and the one that cancels the last:
+-// it records their due-total and binds their counting claims to the figures they have now. A refusal shows on
++// it records their due-total and binds their counting claims to the figures they have now — or, with a date in the
++// as-of field (on or before the sheet's today), the figures they had at the end of that date. A refusal shows on
+ // the person until the next action on their row.
+ function StatementCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
+   const [user] = useUser();
+   const queryClient = useQueryClient();
++  const [asOf, setAsOf] = useState('');
+   const take = useMutation({
+     mutationKey: personActionKey(sheetId, personId),
+-    mutationFn: () =>
+-      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statements`, { by: user ?? '' }),
++    mutationFn: (date: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statements`, {
++        by: user ?? '',
++        asOf: date.trim(),
++      }),
+     onSuccess: async () => {
++      setAsOf('');
+       await Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+@@ -57,7 +64,16 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string;
+       <td data-testid="person-stated-total">{person?.statedTotal ?? ''}</td>
+       <td data-testid="person-statement-date">{person?.statementDate ?? ''}</td>
+       <td>
+-        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => take.mutate()}>
++        <input
++          type="date"
++          data-testid="person-statement-asof"
++          value={asOf}
++          onChange={(e) => {
++            setAsOf(e.target.value);
++            take.reset();
++          }}
++        />{' '}
++        <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => take.mutate(asOf)}>
+           Statement
+         </button>
+         <button
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+new file mode 100644
+index 00000000..a36a8ace
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+@@ -0,0 +1,99 @@
++package net.officefloor.hq.app.history;
++
++import java.sql.Connection;
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.List;
++import java.util.function.Function;
++import javax.sql.DataSource;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.datasource.DataSourceUtils;
++import org.springframework.jdbc.datasource.SingleConnectionDataSource;
++import org.springframework.stereotype.Repository;
++
++/**
++ * A sheet as it stood at the end of a date. As the sheet's today moves on, the sheet is snapshotted (schema hist): the
++ * snapshot holds every change made while its today was the old one or earlier, and none made later. Read as of a date,
++ * the latest snapshot taken as the today moved on from that date or before it to a later one is laid out as the live
++ * tables (schema asof), its today standing at that date, and read by the app's own repositories.
++ */
++@Repository
++public class SheetHistory {
++
++    /** The tables a statement's figures read, parents before children. */
++    private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold",
++            "person_patron", "statement", "claim", "rate", "sheet_setting", "sheet_setting_from");
++
++    private final JdbcTemplate jdbc;
++
++    private final DataSource dataSource;
++
++    public SheetHistory(JdbcTemplate jdbc, DataSource dataSource) {
++        this.jdbc = jdbc;
++        this.dataSource = dataSource;
++    }
++
++    /** Snapshot the sheet as its today moves on from {@code through} to the later {@code until}. */
++    public void snapshot(String sheetId, LocalDate through, LocalDate until) {
++        long id = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO sheet_snapshot (sheet_id, through, until)"
++                + " VALUES (?, ?, ?))", Long.class, sheetId, Date.valueOf(through), Date.valueOf(until));
++        for (String table : TABLES) {
++            String columns = columns(jdbc, table);
++            jdbc.update("INSERT INTO hist." + table + " (" + columns + ", snapshot_id) SELECT " + columns + ", ? FROM "
++                    + "public." + table + " WHERE " + ofSheet(table, "public"), id, sheetId);
++        }
++    }
++
++    /** The snapshot holding the sheet as it stood at the end of the date; null when its today never moved on past it. */
++    public Long snapshotAsOf(String sheetId, LocalDate on) {
++        return jdbc.query("SELECT id FROM sheet_snapshot WHERE sheet_id = ? AND through <= ? AND until > ?"
++                + " ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getLong(1), sheetId, Date.valueOf(on), Date.valueOf(on))
++                .stream().findFirst().orElse(null);
++    }
++
++    /**
++     * Read the snapshot, its today standing at {@code on}: {@code reader} is given a JdbcTemplate over the snapshot laid
++     * out as the live tables, for the app's repositories to read it as they read the live sheet.
++     */
++    public <T> T read(String sheetId, long snapshotId, LocalDate on, Function<JdbcTemplate, T> reader) {
++        Connection con = DataSourceUtils.getConnection(dataSource);
++        try {
++            JdbcTemplate asOf = new JdbcTemplate(new SingleConnectionDataSource(con, true));
++            for (String table : TABLES) {
++                String columns = columns(asOf, table);
++                asOf.update("INSERT INTO asof." + table + " (" + columns + ") SELECT " + columns + " FROM hist." + table
++                        + " WHERE snapshot_id = ?", snapshotId);
++            }
++            asOf.update("UPDATE asof.sheet SET today = ? WHERE id = ?", Date.valueOf(on), sheetId);
++            asOf.execute("SET SCHEMA asof");
++            try {
++                return reader.apply(asOf);
++            } finally {
++                asOf.execute("SET SCHEMA public");
++                for (int i = TABLES.size() - 1; i >= 0; i--) {
++                    String table = TABLES.get(i);
++                    asOf.update("DELETE FROM asof." + table + " WHERE " + ofSheet(table, "asof"), sheetId);
++                }
++            }
++        } finally {
++            DataSourceUtils.releaseConnection(con, dataSource);
++        }
++    }
++
++    /** The table's columns, as the live table lists them. */
++    private static String columns(JdbcTemplate jdbc, String table) {
++        return String.join(", ", jdbc.queryForList("SELECT column_name FROM information_schema.columns"
++                + " WHERE table_schema = 'PUBLIC' AND table_name = ? ORDER BY ordinal_position", String.class,
++                table.toUpperCase()));
++    }
++
++    /** The condition picking the sheet's rows of the table in the schema (the sheet id its one parameter). */
++    private static String ofSheet(String table, String schema) {
++        return switch (table) {
++            case "sheet" -> "id = ?";
++            case "person_grade", "person_hold", "person_patron" ->
++                "person_id IN (SELECT id FROM " + schema + ".person WHERE sheet_id = ?)";
++            default -> "sheet_id = ?";
++        };
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/SnapshotSheet.java b/src/main/java/net/officefloor/hq/app/history/SnapshotSheet.java
+new file mode 100644
+index 00000000..219cbb62
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/SnapshotSheet.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.history;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++
++/** Snapshots the sheet as its today moves on to a later one, so a statement can be taken as of a date gone by. */
++public class SnapshotSheet {
++    public void snapshot(@Val SheetResponse sheet, @Val LocalDate today, SheetRepository sheets, SheetHistory history) {
++        LocalDate was = sheets.today(sheet.id());
++        if (today.isAfter(was)) {
++            history.snapshot(sheet.id(), was, today);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/RecordStatement.java b/src/main/java/net/officefloor/hq/app/statement/RecordStatement.java
+index 641c6c5d..e5535148 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/RecordStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/RecordStatement.java
+@@ -9,6 +9,6 @@ public class RecordStatement {
+     public void record(@Val Person person, @Val Statement statement, @Val ChangedBy by, Audit audit) {
+         audit.record("STATEMENT sheet=" + person.getSheetId() + " by=" + by.name() + " name=" + person.getName()
+                 + " due-total=" + (statement.dueTotal() == null ? "n/a" : statement.dueTotal().toPlainString())
+-                + " claims=" + statement.claims());
++                + " claims=" + statement.claims() + (statement.asOf() == null ? "" : " asof=" + statement.asOf()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statement.java b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+index 42ba878b..95f1e7d6 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Statement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app.statement;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ 
+-/** A statement just taken: the person's due-total then (null: n/a) and how many of their claims counted. */
+-public record Statement(BigDecimal dueTotal, int claims) {
++/** A statement just taken: the person's due-total then (null: n/a), how many of their claims counted, and the date it
++ *  was taken as of (null: none given, taken now). */
++public record Statement(BigDecimal dueTotal, int claims, LocalDate asOf) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementAsOf.java b/src/main/java/net/officefloor/hq/app/statement/StatementAsOf.java
+new file mode 100644
+index 00000000..4cb9fc98
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementAsOf.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.statement;
++
++import java.time.LocalDate;
++
++/** The date a statement is taken as of; null {@code on}: the sheet's today, taken now. */
++public record StatementAsOf(LocalDate on) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+index c7640304..7e5c8ea9 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.statement;
+ 
+-/** A statement to take, and the signed-in user (`by`) taking it. */
+-public record StatementRequest(String by) {
++/** A statement to take, as of a date (yyyy-MM-dd; blank: now), and the signed-in user (`by`) taking it. */
++public record StatementRequest(String by, String asOf) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index e5c6f849..701a6c76 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -2,12 +2,17 @@ package net.officefloor.hq.app.statement;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.access.LateCharge;
+ import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.SheetHistory;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.Statements;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+@@ -22,25 +27,65 @@ import net.officefloor.plugin.variable.Val;
+  * person's grade in force on that date (rounded as the claim rounds by the sheet's policy date; none without a rate) — the rate figure, never floored. The due-total is the counting claims' dues
+  * added up: each figure with its late charge on top while it is overdue, then at least the floor in force on the claim's date (neither is bound); n/a
+  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure; at most the sheet's cap in force on its today.
++ * <p>
++ * Taken as of a date on or before the sheet's today, the statement reads the sheet as it stood at the end of that
++ * date (every change made while the sheet's today was that date or earlier, none made later; see SheetHistory), that
++ * date standing in for the sheet's today in every figure: the claims of theirs that counted then are bound to their
++ * figures then, every other claim of theirs is unbound, and the statement is dated that date. A date after the
++ * sheet's today is refused, as is one before the person was on the sheet.
+  */
+ public class TakeStatement {
+-    public void take(@Val Person person, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
+-            SettingRepository settings, StatementRepository statements, Out<Statement> taken) {
++    public void take(@Val Person person, @Val StatementAsOf asOf, ClaimRepository claims, RateRepository rates,
++            SheetRepository sheets, SettingRepository settings, StatementRepository statements, SheetHistory history,
++            Out<Statement> taken) throws BadRequestException {
+         String sheetId = person.getSheetId();
+         LocalDate today = sheets.today(sheetId);
++        LocalDate on = asOf.on() == null ? today : asOf.on();
++        if (on.isAfter(today)) {
++            throw new BadRequestException("A statement cannot be taken as of a date after the sheet's today (" + today + ")");
++        }
++        Figures figures;
++        if (on.equals(today)) {
++            figures = figures(person, claims, rates, settings, today);
++        } else {
++            Long snapshot = history.snapshotAsOf(sheetId, on);
++            figures = snapshot == null ? null : history.read(sheetId, snapshot, on, jdbc -> {
++                Person then = new PersonRepository(jdbc).find(sheetId, person.getId());
++                return then == null ? null
++                        : figures(then, new ClaimRepository(jdbc), new RateRepository(jdbc), new SettingRepository(jdbc), on);
++            });
++            if (figures == null) {
++                throw new BadRequestException(person.getName() + " was not on the sheet on " + on);
++            }
++        }
++        for (Claim c : claims.listOf(sheetId, person.getId())) {
++            boolean counted = figures.bound().containsKey(c.getId());
++            claims.bind(c.getId(), counted, counted ? figures.bound().get(c.getId()) : null);
++        }
++        statements.insert(sheetId, person.getId(), figures.dueTotal(), on);
++        person.setStatements(new Statements(person.getStatements().count() + 1, figures.dueTotal(), on));
++        taken.set(new Statement(figures.dueTotal(), figures.bound().size(), asOf.on()));
++    }
++
++    /** A statement's figures: its due-total (null: n/a) and the figure each counting claim is bound to (null: n/a), by id. */
++    private record Figures(BigDecimal dueTotal, Map<Long, BigDecimal> bound) {
++    }
++
++    /** The person's statement figures as of {@code today}, read through the repositories given. */
++    private static Figures figures(Person person, ClaimRepository claims, RateRepository rates,
++            SettingRepository settings, LocalDate today) {
++        String sheetId = person.getSheetId();
+         LateCharge late = settings.lateCharge(sheetId, today);
+         List<Claim> mine = claims.listOf(sheetId, person.getId());
++        Map<Long, BigDecimal> bound = new HashMap<>();
+         BigDecimal sum = BigDecimal.ZERO.setScale(2);
+         boolean kept = false;
+-        int counted = 0;
+         for (Claim c : mine) {
+             // OPEN and PENDING claims dated within a hold, or once the retirement date is reached, do not count, unless the last statement bound them; a claim
+             // deferred past today does not count and is left unbound.
+             if (!c.getStatus().counts() || Rollup.held(c, person, today) || c.isDeferredOn(today)) {
+-                claims.bind(c.getId(), false, null);
+                 continue;
+             }
+-            counted++;
+             kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
+             BigDecimal figure = figure(c, person, rates, late);
+             // A figure at a grade other than today's does not hang on today's grade having a rate; nor does one
+@@ -49,13 +94,11 @@ public class TakeStatement {
+             if (figure != null) {
+                 sum = sum.add(late.due(c, figure));
+             }
+-            claims.bind(c.getId(), true, figure);
++            bound.put(c.getId(), figure);
+         }
+         BigDecimal dueTotal = SettingRepository.capped(
+                 kept || rates.find(sheetId, person.getGrade(), today) != null ? sum : null, late.settings().cap(today));
+-        statements.insert(sheetId, person.getId(), dueTotal, today);
+-        person.setStatements(new Statements(person.getStatements().count() + 1, dueTotal, today));
+-        taken.set(new Statement(dueTotal, counted));
++        return new Figures(dueTotal, bound);
+     }
+ 
+     private static BigDecimal figure(Claim claim, Person person, RateRepository rates, LateCharge late) {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+index 91f5cfce..31b61987 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+@@ -1,13 +1,22 @@
+ package net.officefloor.hq.app.statement;
+ 
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Publishes the user taking the statement. */
++/** Publishes the user taking the statement, and the date it is taken as of (blank: now). */
+ public class ValidateStatement {
+-    public void validate(@RequestBody StatementRequest request, Out<ChangedBy> changedBy) throws BadRequestException {
++    public void validate(@RequestBody StatementRequest request, Out<ChangedBy> changedBy, Out<StatementAsOf> asOf)
++            throws BadRequestException {
+         changedBy.set(ChangedBy.of(request == null ? null : request.by()));
++        String text = request == null || request.asOf() == null ? "" : request.asOf().trim();
++        try {
++            asOf.set(new StatementAsOf(text.isEmpty() ? null : LocalDate.parse(text)));
++        } catch (DateTimeParseException e) {
++            throw new BadRequestException("Enter a date as yyyy-mm-dd");
++        }
+     }
+ }
+diff --git a/src/main/resources/db/migration/V40__sheet_snapshot.sql b/src/main/resources/db/migration/V40__sheet_snapshot.sql
+new file mode 100644
+index 00000000..4b416d49
+--- /dev/null
++++ b/src/main/resources/db/migration/V40__sheet_snapshot.sql
+@@ -0,0 +1,47 @@
++-- A sheet as it stood at the end of a run of its todays: taken as the sheet's today moves on from `through` to
++-- `until`, it holds every change made while the sheet's today was `through` or earlier, and none made later. A
++-- statement as of a date reads the latest snapshot with through <= date < until (see SheetHistory).
++CREATE TABLE sheet_snapshot (
++    id       BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    through  DATE         NOT NULL,
++    until    DATE         NOT NULL
++);
++CREATE INDEX sheet_snapshot_sheet ON sheet_snapshot (sheet_id, id);
++
++-- The snapshotted rows: each table a statement's figures read, with the snapshot's id last.
++CREATE SCHEMA hist;
++CREATE TABLE hist.sheet AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM sheet t WHERE FALSE;
++CREATE TABLE hist.person AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM person t WHERE FALSE;
++CREATE TABLE hist.person_grade AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM person_grade t WHERE FALSE;
++CREATE TABLE hist.person_hold AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM person_hold t WHERE FALSE;
++CREATE TABLE hist.person_patron AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM person_patron t WHERE FALSE;
++CREATE TABLE hist.statement AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM statement t WHERE FALSE;
++CREATE TABLE hist.claim AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM claim t WHERE FALSE;
++CREATE TABLE hist.rate AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM rate t WHERE FALSE;
++CREATE TABLE hist.sheet_setting AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM sheet_setting t WHERE FALSE;
++CREATE TABLE hist.sheet_setting_from AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM sheet_setting_from t WHERE FALSE;
++CREATE INDEX hist_sheet_snapshot ON hist.sheet (snapshot_id);
++CREATE INDEX hist_person_snapshot ON hist.person (snapshot_id);
++CREATE INDEX hist_person_grade_snapshot ON hist.person_grade (snapshot_id);
++CREATE INDEX hist_person_hold_snapshot ON hist.person_hold (snapshot_id);
++CREATE INDEX hist_person_patron_snapshot ON hist.person_patron (snapshot_id);
++CREATE INDEX hist_statement_snapshot ON hist.statement (snapshot_id);
++CREATE INDEX hist_claim_snapshot ON hist.claim (snapshot_id);
++CREATE INDEX hist_rate_snapshot ON hist.rate (snapshot_id);
++CREATE INDEX hist_sheet_setting_snapshot ON hist.sheet_setting (snapshot_id);
++CREATE INDEX hist_sheet_setting_from_snapshot ON hist.sheet_setting_from (snapshot_id);
++
++-- A snapshot laid out as the live tables, for the length of one request: the repositories read it unchanged with
++-- this schema current, the sheet's today standing at the statement's date. Emptied again before the request ends.
++CREATE SCHEMA asof;
++CREATE TABLE asof.sheet AS SELECT * FROM sheet WHERE FALSE;
++CREATE TABLE asof.person AS SELECT * FROM person WHERE FALSE;
++CREATE TABLE asof.person_grade AS SELECT * FROM person_grade WHERE FALSE;
++CREATE TABLE asof.person_hold AS SELECT * FROM person_hold WHERE FALSE;
++CREATE TABLE asof.person_patron AS SELECT * FROM person_patron WHERE FALSE;
++CREATE TABLE asof.statement AS SELECT * FROM statement WHERE FALSE;
++CREATE TABLE asof.claim AS SELECT * FROM claim WHERE FALSE;
++CREATE TABLE asof.rate AS SELECT * FROM rate WHERE FALSE;
++CREATE TABLE asof.sheet_setting AS SELECT * FROM sheet_setting WHERE FALSE;
++CREATE TABLE asof.sheet_setting_from AS SELECT * FROM sheet_setting_from WHERE FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 13ec6754..9b620d1a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -11,6 +11,10 @@ viewer:
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+   govern: [ transaction ]
++  next: history
++history:
++  class: net.officefloor.hq.app.history.SnapshotSheet
++  govern: [ transaction ]
+   next: rollup-before
+ rollup-before:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
