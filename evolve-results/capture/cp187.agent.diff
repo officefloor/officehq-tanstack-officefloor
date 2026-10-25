@@ -1,0 +1,385 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 7e01d957..f94d85a4 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { usePeople } from '../people/people';
+ import { poolsPath, poolsQueryKey, usePools, type Pool } from './pools';
+ 
+-// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced), total share and whether it is balanced, and the entry that adds a pool.
++// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced, and their cut at the end of each period ended by the sheet's today), total share and whether it is balanced, and the entry that adds a pool.
+ // A blank name, or one already a pool's or a crew's, is refused by the server and shows the error beside the entry, which goes
+ // as soon as the entry changes.
+ function Pools() {
+@@ -99,6 +99,11 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
+               <span data-testid="pool-member-name">{m.name}</span>{' '}
+               <span data-testid="pool-share">{m.share}</span>{' '}
+               <span data-testid="pool-cut">{m.cut}</span>
++              {m.periodCuts.map((c) => (
++                <span key={c.period}>
++                  {' '}{c.period}: <span data-testid={`pool-cut-${c.period}`}>{c.cut}</span>
++                </span>
++              ))}
+             </li>
+           ))}
+         </ul>
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 9eba15b4..783521d4 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -12,7 +12,14 @@ export type Pool = { id: number; name: string; totalShare: string; balanced: boo
+  *  cut of the pool's pot (two decimals; "" when the pool is not balanced or has no pot, or every member is retired, or the member's dates do not include the
+  *  sheet's today — such a member is left out of the total share and balance too). A pool that is a member of
+  *  none has the sheet's pot; a pool that is a member of another has its cut there as its pot. */
+-export type PoolMember = { personId: number | null; poolId: number | null; name: string; share: string; cut: string };
++export type PoolMember = {
++  personId: number | null; poolId: number | null; name: string; share: string; cut: string; periodCuts: PeriodCut[];
++};
++
++/** A member's cut as it stood at the end of a period whose to-date is on or before the sheet's today (the pool, its
++ *  members, the pot and the holds as they were then, that day the sheet's today): "" when there was none. The
++ *  periods by from-date. */
++export type PeriodCut = { period: string; cut: string };
+ 
+ export const poolsQueryKey = (sheetId: string) => ['sheet', sheetId, 'pools'] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index e6bd9f44..78c575b8 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -10,6 +10,10 @@ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimLog;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.crew.Crew;
++import net.officefloor.hq.app.crew.CrewMember;
++import net.officefloor.hq.app.crew.CrewMemberRepository;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Patron;
+@@ -20,6 +24,10 @@ import net.officefloor.hq.app.person.PersonAliasRepository;
+ import net.officefloor.hq.app.person.PersonGrade;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.Pool;
++import net.officefloor.hq.app.pool.PoolMember;
++import net.officefloor.hq.app.pool.PoolMemberRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateLogRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -59,11 +67,17 @@ public class AsOf {
+     private final RoleRepository roles;
+     private final DelegationRepository delegations;
+     private final WatchRepository watches;
++    private final PoolRepository pools;
++    private final PoolMemberRepository poolMembers;
++    private final CrewRepository crews;
++    private final CrewMemberRepository crewMembers;
+ 
+     public AsOf(History history, SettingLogRepository settingLogs, RateLogRepository rateLogs, RateRepository rates,
+             PersonRepository people, PersonGradeRepository grades, PatronRepository patrons,
+             PersonAliasRepository aliases, StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
+-            PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches) {
++            PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches,
++            PoolRepository pools, PoolMemberRepository poolMembers, CrewRepository crews,
++            CrewMemberRepository crewMembers) {
+         this.history = history;
+         this.settingLogs = settingLogs;
+         this.rateLogs = rateLogs;
+@@ -79,6 +93,10 @@ public class AsOf {
+         this.roles = roles;
+         this.delegations = delegations;
+         this.watches = watches;
++        this.pools = pools;
++        this.poolMembers = poolMembers;
++        this.crews = crews;
++        this.crewMembers = crewMembers;
+     }
+ 
+     /** The as-of date a read asks for: null when none is given; refuses one that is not a calendar date. */
+@@ -205,6 +223,38 @@ public class AsOf {
+                         .stream().filter(w -> user.equals(w.getUserName())).toList();
+     }
+ 
++    /** The sheet's pools, in the order they were added. */
++    public List<Pool> pools(String sheetId, LocalDate date) {
++        List<Pool> now = pools.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Pool.class, date, now, Pool::getId), Comparator.comparing(Pool::getId));
++    }
++
++    /** The members of each of the sheet's pools, in the order they were added, by pool id. */
++    public Map<Long, List<PoolMember>> poolMembers(String sheetId, LocalDate date) {
++        List<PoolMember> now = pools.findBySheetIdOrderByIdAsc(sheetId).stream()
++                .flatMap(p -> poolMembers.findByPoolIdOrderByIdAsc(p.getId()).stream()).toList();
++        List<PoolMember> then = date == null ? now : history.asOf(sheetId, PoolMember.class, date, now, PoolMember::getId);
++        return sorted(then, Comparator.comparing(PoolMember::getId)).stream()
++                .collect(Collectors.groupingBy(PoolMember::getPoolId));
++    }
++
++    /** The sheet's crews, in the order they were added. */
++    public List<Crew> crews(String sheetId, LocalDate date) {
++        List<Crew> now = crews.findBySheetIdOrderByIdAsc(sheetId);
++        return date == null ? now
++                : sorted(history.asOf(sheetId, Crew.class, date, now, Crew::getId), Comparator.comparing(Crew::getId));
++    }
++
++    /** The members of each of the sheet's crews, in the order they were added, by crew id. */
++    public Map<Long, List<CrewMember>> crewMembers(String sheetId, LocalDate date) {
++        List<CrewMember> now = crews.findBySheetIdOrderByIdAsc(sheetId).stream()
++                .flatMap(c -> crewMembers.findByCrewIdOrderByIdAsc(c.getId()).stream()).toList();
++        List<CrewMember> then = date == null ? now : history.asOf(sheetId, CrewMember.class, date, now, CrewMember::getId);
++        return sorted(then, Comparator.comparing(CrewMember::getId)).stream()
++                .collect(Collectors.groupingBy(CrewMember::getCrewId));
++    }
++
+     private static <T> List<T> sorted(List<T> list, Comparator<T> order) {
+         return list.stream().sorted(order).toList();
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/history/History.java b/src/main/java/net/officefloor/hq/app/history/History.java
+index 30057100..eda03f19 100644
+--- a/src/main/java/net/officefloor/hq/app/history/History.java
++++ b/src/main/java/net/officefloor/hq/app/history/History.java
+@@ -12,11 +12,15 @@ import java.util.Map;
+ import java.util.Set;
+ import java.util.function.Function;
+ import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.crew.Crew;
++import net.officefloor.hq.app.crew.CrewMember;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.person.Patron;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonAlias;
+ import net.officefloor.hq.app.person.PersonGrade;
++import net.officefloor.hq.app.pool.Pool;
++import net.officefloor.hq.app.pool.PoolMember;
+ import net.officefloor.hq.app.role.Delegation;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.statement.Statement;
+@@ -37,10 +41,13 @@ import tools.jackson.databind.json.JsonMapper;
+ public class History {
+ 
+     /** The kind each kept entity is recorded under. */
+-    private static final Map<Class<?>, String> KINDS = Map.of(Claim.class, "claim", Person.class, "person",
+-            PersonGrade.class, "person-grade", Period.class, "period", Patron.class, "patron", Watch.class, "watch",
+-            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement", PersonAlias.class,
+-            "person-alias");
++    private static final Map<Class<?>, String> KINDS = Map.ofEntries(Map.entry(Claim.class, "claim"),
++            Map.entry(Person.class, "person"), Map.entry(PersonGrade.class, "person-grade"),
++            Map.entry(Period.class, "period"), Map.entry(Patron.class, "patron"), Map.entry(Watch.class, "watch"),
++            Map.entry(Role.class, "role"), Map.entry(Delegation.class, "delegation"),
++            Map.entry(Statement.class, "statement"), Map.entry(PersonAlias.class, "person-alias"),
++            Map.entry(Pool.class, "pool"), Map.entry(PoolMember.class, "pool-member"), Map.entry(Crew.class, "crew"),
++            Map.entry(CrewMember.class, "crew-member"));
+ 
+     /** An entity's state as its fields hold it: every field, no getter. */
+     private final JsonMapper json = JsonMapper.builder()
+diff --git a/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java b/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
+index 0aba72d2..05fe89c6 100644
+--- a/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
++++ b/src/main/java/net/officefloor/hq/app/history/HistoryRecorder.java
+@@ -142,11 +142,14 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
+             for (Map.Entry<Object, Boolean> e : done.entrySet()) {
+                 Object entity = e.getKey();
+                 JsonNode state = history.stateOf(entity);
+-                if (state.get("id") == null || state.get("id").isNull() || state.get("sheetId") == null) {
++                if (state.get("id") == null || state.get("id").isNull()) {
+                     continue;
+                 }
+                 long id = state.get("id").asLong();
+-                String sheetId = state.get("sheetId").asString();
++                String sheetId = sheetOf(connection, state);
++                if (sheetId == null) {
++                    continue;
++                }
+                 java.sql.Date today = todays.computeIfAbsent(sheetId, k -> todayOf(connection, k));
+                 java.time.LocalDate on = recordedOn.remove(entity);
+                 if (today == null) {
+@@ -175,6 +178,33 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
+         }
+     }
+ 
++    /** The sheet the state is of: its own, or (a pool's or a crew's member, which holds none) its pool's or crew's. */
++    private static String sheetOf(Connection connection, JsonNode state) throws SQLException {
++        if (state.get("sheetId") != null && !state.get("sheetId").isNull()) {
++            return state.get("sheetId").asString();
++        }
++        String sql;
++        JsonNode owner;
++        if (state.get("poolId") != null) {
++            sql = "SELECT sheet_id FROM pool WHERE id = ?";
++            owner = state.get("poolId");
++        } else if (state.get("crewId") != null) {
++            sql = "SELECT sheet_id FROM crew WHERE id = ?";
++            owner = state.get("crewId");
++        } else {
++            return null;
++        }
++        if (owner.isNull()) {
++            return null;
++        }
++        try (PreparedStatement select = connection.prepareStatement(sql)) {
++            select.setLong(1, owner.asLong());
++            try (ResultSet rs = select.executeQuery()) {
++                return rs.next() ? rs.getString(1) : null;
++            }
++        }
++    }
++
+     private static java.sql.Date todayOf(Connection connection, String sheetId) {
+         try (PreparedStatement select = connection.prepareStatement("SELECT today FROM sheet WHERE id = ?")) {
+             select.setString(1, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 918ff340..f601163b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -9,8 +9,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
+ 
+ /** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
+  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
+- *  replacing the grade recorded for that date and keeping the others, even when it is the same as the one in force —
+- *  but a grade with no from-date the same as the one in force on the sheet's today is left unrecorded, like terms;
++ *  replacing the grade recorded for that date and keeping the others, even when it is the same as the one in force;
+  *  terms with no from-date the same as those already in force are left unrecorded, so terms later recorded from an
+  *  earlier date still reach past them. */
+ public class ApplyPerson {
+@@ -57,12 +56,7 @@ public class ApplyPerson {
+             throw new PersonConflictException();
+         }
+         // The grade is recorded from the from-date (the sheet's today when none is given), even one the same as the grade in
+-        // force on that date; with no from-date, the grade in force on the sheet's today left as it is changes nothing,
+-        // so a grade later recorded from an earlier date still reaches past it.
+-        boolean undated = request.gradeFrom() == null || request.gradeFrom().isEmpty();
+-        if (undated && request.grade().equals(grades.gradesOf(person).on(sheet.getToday()))) {
+-            return;
+-        }
++        // force on that date, so a grade later recorded from an earlier date does not reach past it.
+         PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
+                 .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));
+         dated.setGrade(request.grade());
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 581449a9..6aa432cf 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -8,7 +8,20 @@ import java.util.List;
+ public record PoolResponse(long id, String name, String totalShare, boolean balanced, boolean crew, List<Member> members) {
+ 
+     /** A member: the person (or the member pool, the other null), its name, their share and their cut of the sheet's pot ("" when the pool is not
+-     *  balanced or there is no pot). */
+-    public record Member(Long personId, Long poolId, String name, String share, String cut) {
++     *  balanced or there is no pot), and, for each period ended by the sheet's today, their cut as it stood at the
++     *  end of it. */
++    public record Member(Long personId, Long poolId, String name, String share, String cut, List<PeriodCut> periodCuts) {
++
++        public Member(Long personId, Long poolId, String name, String share, String cut) {
++            this(personId, poolId, name, share, cut, List.of());
++        }
++
++        public Member withPeriodCuts(List<PeriodCut> periodCuts) {
++            return new Member(personId, poolId, name, share, cut, periodCuts);
++        }
++    }
++
++    /** A member's cut as it stood at the end of a period (its to-date the sheet's today): "" when there was none. */
++    public record PeriodCut(String period, String cut) {
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 384882b2..df69da5c 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -16,8 +16,7 @@ import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import net.officefloor.hq.app.crew.Crew;
+ import net.officefloor.hq.app.crew.CrewMember;
+-import net.officefloor.hq.app.crew.CrewMemberRepository;
+-import net.officefloor.hq.app.crew.CrewRepository;
++import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.sheet.InvalidTodayException;
+@@ -37,24 +36,63 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  it to the last member with a share), so the cuts total exactly the pot. A member whose dates do not include the
+  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
+  *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
+- *  sheet is left out. Each crew is also a pool, listed after them (see crewPool). */
++ *  sheet is left out (as are the pools, members and crews not then made). Each crew is also a pool, listed after them
++ *  (see crewPool). Each member also has, for each period whose to-date is on or before the sheet's today (by
++ *  from-date), its cut as the sheet stood at the end of that period, that day its today: "" when it had none. */
+ public class RespondWithPools {
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+     public void respond(@Val Sheet current, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+-            PoolRepository pools, PoolMemberRepository members, CrewRepository crews, CrewMemberRepository crewMembers,
+             ObjectResponse<List<PoolResponse>> response)
+             throws InvalidTodayException {
+         LocalDate date = AsOf.dateOf(asOfParam);
++        Sheet sheet = asOf.sheet(current, date);
++        List<PoolResponse> shown = poolsAsOf(current, date, asOf);
++        // Each period ended by the sheet's today: every member's cut as the sheet stood at the end of it.
++        List<Period> ended = asOf.periods(current.getId(), date).stream()
++                .filter(p -> sheet.getToday() != null && p.getToDate() != null && !p.getToDate().isAfter(sheet.getToday()))
++                .toList();
++        Map<String, Map<String, String>> cutsThen = new HashMap<>();
++        for (Period period : ended) {
++            Map<String, String> then = new HashMap<>();
++            for (PoolResponse pool : poolsAsOf(current, period.getToDate(), asOf)) {
++                pool.members().forEach(m -> then.put(memberKey(pool, m), m.cut()));
++            }
++            cutsThen.put(period.getName(), then);
++        }
++        List<PoolResponse> out = new ArrayList<>();
++        for (PoolResponse pool : shown) {
++            List<PoolResponse.Member> members = new ArrayList<>();
++            for (PoolResponse.Member m : pool.members()) {
++                List<PoolResponse.PeriodCut> periodCuts = new ArrayList<>();
++                for (Period period : ended) {
++                    periodCuts.add(new PoolResponse.PeriodCut(period.getName(),
++                            cutsThen.get(period.getName()).getOrDefault(memberKey(pool, m), "")));
++                }
++                members.add(m.withPeriodCuts(periodCuts));
++            }
++            out.add(new PoolResponse(pool.id(), pool.name(), pool.totalShare(), pool.balanced(), pool.crew(), members));
++        }
++        response.send(out);
++    }
++
++    /** The member of the pool it is: the pool's id with the person, or the member pool. */
++    private static String memberKey(PoolResponse pool, PoolResponse.Member m) {
++        return pool.id() + (m.poolId() != null ? ":pool:" + m.poolId() : ":person:" + m.personId());
++    }
++
++    /** The sheet's pools, then its crews, as they stood at the end of the date (now, when none). */
++    private static List<PoolResponse> poolsAsOf(Sheet current, LocalDate date, AsOf asOf) {
+         Sheet sheet = asOf.sheet(current, date);
+         Map<Long, Person> byId = asOf.people(current.getId(), date).stream()
+                 .collect(Collectors.toMap(Person::getId, Function.identity()));
+-        List<Pool> sheetPools = pools.findBySheetIdOrderByIdAsc(sheet.getId());
++        List<Pool> sheetPools = asOf.pools(current.getId(), date);
+         Map<Long, Pool> poolsById = sheetPools.stream().collect(Collectors.toMap(Pool::getId, Function.identity()));
++        Map<Long, List<PoolMember>> allMembers = asOf.poolMembers(current.getId(), date);
+         Map<Long, List<PoolMember>> membersOf = new HashMap<>();
+         Set<Long> inAPool = new HashSet<>();
+         for (Pool pool : sheetPools) {
+-            List<PoolMember> list = members.findByPoolIdOrderByIdAsc(pool.getId());
++            List<PoolMember> list = allMembers.getOrDefault(pool.getId(), List.of());
+             membersOf.put(pool.getId(), list);
+             list.forEach(m -> { if (m.getMemberPoolId() != null) inAPool.add(m.getMemberPoolId()); });
+         }
+@@ -129,10 +167,11 @@ public class RespondWithPools {
+         }
+         // Each crew is also a pool, after the sheet's pools: its lead then its members at equal shares, with the
+         // sheet's pot, cut as any pool that is a member of none.
+-        for (Crew crew : crews.findBySheetIdOrderByIdAsc(sheet.getId())) {
+-            out.add(crewPool(crew, crewMembers.findByCrewIdOrderByIdAsc(crew.getId()), byId, sheet));
++        Map<Long, List<CrewMember>> crewMembersOf = asOf.crewMembers(current.getId(), date);
++        for (Crew crew : asOf.crews(current.getId(), date)) {
++            out.add(crewPool(crew, crewMembersOf.getOrDefault(crew.getId(), List.of()), byId, sheet));
+         }
+-        response.send(out);
++        return out;
+     }
+ 
+     /** The crew as a pool (its id the crew's, negated): the lead and the members, in the order they were added, each
