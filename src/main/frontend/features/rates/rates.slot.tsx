@@ -216,11 +216,17 @@ function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string;
   return <span data-testid="claim-due">{due == null ? NA : showHundredths(due)}</span>;
 }
 
-// The sheet's due-total: everyone's due-total added up, skipping those that are n/a.
-function DueTotal({ sheetId }: { sheetId: string; user: string }) {
+/** The sheet's due-total: everyone's due-total added up, skipping those that are n/a. */
+export function useSheetDueTotal(sheetId: string): bigint {
   const totals = useDueTotals(sheetId);
   let sum = 0n;
   for (const t of totals.values()) if (t != null) sum += t;
+  return sum;
+}
+
+// The sheet's due-total, as the rollup shows it.
+function DueTotal({ sheetId }: { sheetId: string; user: string }) {
+  const sum = useSheetDueTotal(sheetId);
   return (
     <section data-testid="due-rollup">
       <p>

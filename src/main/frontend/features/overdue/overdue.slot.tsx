@@ -16,7 +16,7 @@ function useIsOverdue(sheetId: string): (claim: { status: string; dueBy: string 
 type Overdue = { count: number; cents: bigint };
 
 /** The overdue claims that count, per person and for the sheet: how many, and their due (late charge included) added up (n/a as 0). */
-function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: Overdue } {
+export function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: Overdue } {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);

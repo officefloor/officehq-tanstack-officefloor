@@ -6,7 +6,7 @@ import { useDueTotals } from '../rates/rates.slot';
 import { showHundredths } from '../rates/useRates';
 
 const GRADES = ['A', 'B', 'C'] as const;
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The summary panel, built from the same figures as the lists so it always agrees with them. Per grade: the people
 // on it today, retired people left out, and their due-totals added up (skipping those that are n/a). Per period:
