@@ -1,0 +1,252 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index e35040f2..208a5572 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -4,10 +4,11 @@ import { putJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useUser } from '../session/useSession';
+-import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, type Role, type Setting } from './useAccess';
++import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
+ 
+ const ROLES = ['clerk', 'steward'];
+ const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
++const DAYS = /^\d{1,5}$/;
+ 
+ // The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
+ // assigned roles are listed under it. The server decides who may settle what.
+@@ -102,13 +103,16 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+ }
+ 
+ // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
+-// floor, the least a claim's live due may be (1.00 until it is set). The value in force shows beside each. Saving
++// floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
++// due by (14 until they are set). The value in force shows beside each. Saving
+ // sends only the settings whose field was touched since the last save.
+ const SETTINGS = [
+-  { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true,
++  { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A clerk limit is an amount with up to two decimals, or blank for no limit' },
+-  { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false,
++  { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A floor is an amount with up to two decimals' },
++  { key: 'terms', label: 'Terms (days)', placeholder: TERMS_DEFAULT, blank: false, valid: DAYS, inputMode: 'numeric',
++    invalid: 'Terms are a whole number of days' },
+ ] as const;
+ 
+ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+@@ -125,7 +129,7 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+       if (changes.length === 0) throw new Error('Change a setting first');
+       for (const s of changes) {
+         const value = (body.values[s.key] ?? '').trim();
+-        if (value === '' ? !s.blank : !AMOUNT.test(value)) throw new Error(s.invalid);
++        if (value === '' ? !s.blank : !s.valid.test(value)) throw new Error(s.invalid);
+       }
+       for (const s of changes) {
+         await putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`,
+@@ -154,7 +158,7 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+               {s.label}{' '}
+               <input
+                 data-testid={`setting-${s.key}`}
+-                inputMode="decimal"
++                inputMode={s.inputMode}
+                 placeholder={s.placeholder}
+                 value={values[s.key] ?? ''}
+                 onFocus={() => touch(s.key)}
+diff --git a/src/main/frontend/features/access/useAccess.ts b/src/main/frontend/features/access/useAccess.ts
+index 18f26f92..52bdefcb 100644
+--- a/src/main/frontend/features/access/useAccess.ts
++++ b/src/main/frontend/features/access/useAccess.ts
+@@ -35,3 +35,12 @@ export function useFloorCents(sheetId: string): bigint {
+   const value = useSettings(sheetId).data?.find((s) => s.key === 'floor')?.value ?? FLOOR_DEFAULT;
+   return toHundredths(value);
+ }
++
++/** The terms a sheet starts with, until they are set: the days after its date a claim is due by. */
++export const TERMS_DEFAULT = '14';
++
++/** The sheet's terms in days: a claim is due by its date plus these (14 until they are set). */
++export function useTermsDays(sheetId: string): number {
++  const value = useSettings(sheetId).data?.find((s) => s.key === 'terms')?.value ?? TERMS_DEFAULT;
++  return Number(value);
++}
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+new file mode 100644
+index 00000000..d0f85d9b
+--- /dev/null
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -0,0 +1,106 @@
++import { ClaimCells } from '../../slots/defs/claimRow';
++import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useFloorCents, useTermsDays } from '../access/useAccess';
++import { counts, useClaims } from '../claims/useClaims';
++import { useHeld, usePeople } from '../people/people.slot';
++import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
++import { useSheetToday } from '../today/today.slot';
++
++/** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
++function addDays(date: string, days: number): string {
++  const d = new Date(`${date}T00:00:00Z`);
++  d.setUTCDate(d.getUTCDate() + days);
++  return d.toISOString().slice(0, 10);
++}
++
++/** A claim's due-by: its date plus the sheet's terms in force. */
++function useDueBy(sheetId: string): (claim: { date: string }) => string {
++  const terms = useTermsDays(sheetId);
++  return (claim) => addDays(claim.date, terms);
++}
++
++/** Whether a claim is overdue: OPEN, and its due-by before the sheet's today. */
++function useIsOverdue(sheetId: string): (claim: { status: string; date: string }) => boolean {
++  const dueBy = useDueBy(sheetId);
++  const today = useSheetToday(sheetId).data?.today;
++  return (claim) => today !== undefined && claim.status === 'OPEN' && dueBy(claim) < today;
++}
++
++type Overdue = { count: number; cents: bigint };
++
++/** The overdue claims that count, per person and for the sheet: how many, and their due added up (n/a as 0). */
++function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: Overdue } {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const held = useHeld(sheetId);
++  const floor = useFloorCents(sheetId);
++  const isOverdue = useIsOverdue(sheetId);
++  const byPerson = new Map<number, Overdue>();
++  const sheet: Overdue = { count: 0, cents: 0n };
++  for (const p of people.data ?? []) {
++    const mine: Overdue = { count: 0, cents: 0n };
++    for (const c of claims.data ?? []) {
++      if (c.personId !== p.id || !counts(c, held) || !isOverdue(c)) continue;
++      mine.count += 1;
++      mine.cents += claimDueCents(rates.data ?? [], p.grade, c, floor) ?? 0n;
++    }
++    byPerson.set(p.id, mine);
++    sheet.count += mine.count;
++    sheet.cents += mine.cents;
++  }
++  return { byPerson, sheet };
++}
++
++function OverdueHeads() {
++  return (
++    <>
++      <th>Overdue</th>
++      <th>Overdue total</th>
++    </>
++  );
++}
++
++// A person's overdue count and overdue-total: their counted OPEN claims past their due-by, and those claims' due added up.
++function OverdueCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
++  const mine = useOverdue(sheetId).byPerson.get(personId) ?? { count: 0, cents: 0n };
++  return (
++    <>
++      <td data-testid="person-overdue-count">{mine.count}</td>
++      <td data-testid="person-overdue-total">{showHundredths(mine.cents)}</td>
++    </>
++  );
++}
++
++// A claim's due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and due-by before the sheet's today).
++function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { date: string; status: string } }) {
++  const dueBy = useDueBy(sheetId);
++  const isOverdue = useIsOverdue(sheetId);
++  return (
++    <>
++      Due by <span data-testid="claim-due-by">{dueBy(claim)}</span>{' '}
++      Overdue <span data-testid="claim-overdue">{isOverdue(claim) ? 'yes' : 'no'}</span>{' '}
++    </>
++  );
++}
++
++// The sheet's overdue count and overdue-total: everyone's added up.
++function OverdueTotal({ sheetId }: { sheetId: string; user: string }) {
++  const { sheet } = useOverdue(sheetId);
++  return (
++    <section data-testid="overdue-rollup">
++      <p>
++        Overdue: <strong data-testid="rollup-overdue-count">{sheet.count}</strong>{' '}
++        Overdue total: <strong data-testid="rollup-overdue-total">{showHundredths(sheet.cents)}</strong>
++      </p>
++    </section>
++  );
++}
++
++export const contributions = [
++  PersonHeads.fill({ order: 25, Component: OverdueHeads }),
++  PersonCells.fill({ order: 25, Component: OverdueCells }),
++  ClaimCells.fill({ order: 12, Component: ClaimOverdue }),
++  SheetBody.fill({ order: 26, Component: OverdueTotal }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 317101cf..59d370ae 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -11,4 +11,10 @@ public record Setting(String sheetId, String key, String value) {
+ 
+     /** The floor a sheet starts with, until it is set. */
+     public static final String FLOOR_DEFAULT = "1.00";
++
++    /** The number of days after its date a claim is due by; a whole number. */
++    public static final String TERMS = "terms";
++
++    /** The terms a sheet starts with, until they are set. */
++    public static final String TERMS_DEFAULT = "14";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+index cc6c8819..af4c6845 100644
+--- a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -19,13 +19,16 @@ public class SettingRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's settings, by key; the floor shows its starting value until it is set. */
++    /** The sheet's settings, by key; the floor and the terms show their starting values until they are set. */
+     public List<Setting> list(String sheetId) {
+         List<Setting> found = new java.util.ArrayList<>(jdbc.query("SELECT sheet_id, setting_key, setting_value"
+                 + " FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key", ROW, sheetId));
+         if (found.stream().noneMatch(s -> Setting.FLOOR.equals(s.key()))) {
+             found.add(new Setting(sheetId, Setting.FLOOR, Setting.FLOOR_DEFAULT));
+         }
++        if (found.stream().noneMatch(s -> Setting.TERMS.equals(s.key()))) {
++            found.add(new Setting(sheetId, Setting.TERMS, Setting.TERMS_DEFAULT));
++        }
+         return found;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index c0610b3b..86482114 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,16 +7,25 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key and its value. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. */
++/** A setting's fields: a known key and its value. The terms are a whole number of days. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
++    private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+ 
+     public void validate(@RequestBody SettingRequest request, Out<SettingInput> setting, Out<ChangedBy> changedBy)
+             throws BadRequestException {
+         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
+         String key = request == null || request.key() == null ? "" : request.key().trim();
+         String text = request == null || request.value() == null ? "" : request.value().trim();
++        if (Setting.TERMS.equals(key)) {
++            if (!DAYS.matcher(text).matches()) {
++                throw new BadRequestException("Terms are a whole number of days");
++            }
++            setting.set(new SettingInput(key, String.valueOf(Integer.parseInt(text))));
++            changedBy.set(by);
++            return;
++        }
+         if (Setting.FLOOR.equals(key)) {
+             if (!AMOUNT.matcher(text).matches()) {
+                 throw new BadRequestException("A floor is an amount with up to two decimals");
