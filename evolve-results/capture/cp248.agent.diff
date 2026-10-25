@@ -1,0 +1,316 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index a408a89d..a8d9b6c7 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser, useRealToday, useSheetToday } from '..
+ import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/people';
+ import { chargedOf, useRates } from '../rates/rates';
+ import { periodOn, usePeriods } from '../periods/periods';
+-import { useSettings } from '../roles/roles';
++import { policyVersionOn, useSettings } from '../roles/roles';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ import { templateClaimsPath, useTemplates } from '../templates/templates';
+ import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, isPendingLate, isReviewLate, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
+@@ -58,6 +58,7 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
+             <span data-testid="claim-period">{periodOn(periods.data, dueByOf(c))?.name ?? ''}</span>{' '}
+             <span data-testid="claim-due">{chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)}</span>{' '}
++            <span data-testid="claim-policy">{policyVersionOn(settings.data, c.date)}</span>{' '}
+             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+             <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 8f9aa82f..f9ae83c3 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -3,7 +3,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { gradeOn, usePeople, type Person } from '../people/people';
+ import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
+-import { useSettings, type Settings } from '../roles/roles';
++import { settingOn, useSettings, type Settings } from '../roles/roles';
+ import { chargedOf, formatCents, holderPart, hundredths, rateOn, roundsHalfUp, sumDue, trimmedSum, useRates, type Rate } from './rates';
+ import { useColumnShown } from '../people/columns';
+ import { cutTotalOf, usePools, type Pool } from '../pools/pools';
+@@ -23,14 +23,14 @@ import { cutTotalOf, usePools, type Pool } from '../pools/pools';
+ // and they hold a part at a rate), and its own person's counts its due less the holders' parts — before the cap.
+ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
+-  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).due;
++  return capped(withShares(person, claims, rates, today, settings, people), capOf(person, claims, today, settings), cutTotalOf(pools ?? [], person.id)).due;
+ }
+ 
+ /** A person's excess: how much the sum of their figures plus their cut total is above the sheet's cap; 0.00 when
+  *  it is not (or n/a). */
+ export function personExcess(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
+-  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).excess;
++  return capped(withShares(person, claims, rates, today, settings, people), capOf(person, claims, today, settings), cutTotalOf(pools ?? [], person.id)).excess;
+ }
+ 
+ /** The sum of a person's figures with the shares: their own claims' holders' parts taken off, and their parts of
+@@ -65,10 +65,19 @@ function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined,
+   return formatCents(hundredths(sum) - given + (held ?? 0n));
+ }
+ 
+-/** A sum of figures held to the sheet's cap ("" for none) less the cut total (not below 0.00), and how much it was
+- *  above that; n/a is not capped. */
+-function capped(sum: string, settings: Settings | undefined, cut: string): { due: string; excess: string } {
+-  const cap = settings?.cap ?? '';
++/** A person's cap: the sheet's in force on the date of their latest claim that counts (on the sheet's today when
++ *  none does); "" for none. */
++function capOf(person: Person, claims: Claim[], today: string | undefined, settings: Settings | undefined): string {
++  if (!settings) return '';
++  const dates = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person]), today)).map((c) => c.date);
++  const latest = dates.reduce<string | undefined>((a, d) => (a === undefined || d > a ? d : a), undefined);
++  const on = latest ?? today;
++  return on === undefined ? settings.cap : settingOn(settings, 'cap', on, '');
++}
++
++/** A sum of figures held to a cap ("" for none) less the cut total (not below 0.00), and how much it was above
++ *  that; n/a is not capped. */
++function capped(sum: string, cap: string, cut: string): { due: string; excess: string } {
+   if (sum === 'n/a' || cap === '') return { due: sum, excess: '0.00' };
+   const diff = subtract(cap, cut);
+   const limit = diff.startsWith('-') ? '0.00' : diff;
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 52f7d5b4..01626e7a 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -11,9 +11,9 @@ export type Role = { user: string; role: string };
+  *  dated before it rounds half up, one on or after it half to even), and its period numbering from (YYYY-MM-DD; "" when off — while the sheet's today is
+  *  on or after it, a claim opened is numbered within its period), and the own terms in days of grades A, B and C ("" when the
+  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
+- *  two decimals ("" when there is none — a person's due-total is at most it), and its proof threshold with two decimals ("" when there is none — a claim whose due is
++ *  two decimals ("" when there is none — a person's due-total is at most the one in force on the date of their latest claim that counts), and its proof threshold with two decimals ("" when there is none — a claim whose due is
+  *  above the one in force on its date cannot be settled or approved without a proof), and its grace days ("" when off; not dated), and its note threshold with two decimals ("" when there is none — a claim whose due is
+- *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's), and its pot with two decimals ("" when there is none; not dated — shared out among the members of each balanced pool by their shares), and its parent sheet's id ("" when none; not dated — a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up), and its fiscal year start month (1 to 12; "1" unless set; not dated — a fiscal year starts on its first day in that month and is named FY<yyyy> by the calendar year that day falls in), and its alert threshold with two decimals ("" when off; not dated — a person whose due-total goes above it is alerted in the audit), and its rounding mode (half-up or half-even; "" when none — a claim with one in force on the date it rounds by rounds by it, else by the policy date), and its review threshold with two decimals ("" when there is none — a claim whose due is above the one in force on its date goes to REVIEW when opened), and its escalation gap in days ("" when off; not dated — reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim), and its review SLA in days ("" when none; not dated — a REVIEW claim whose review day plus that many days is before the sheet's today is late), and its proof kinds (comma separated; "" when none; not dated — while set, a claim whose due is above its proof threshold needs a proof of each to be settled or approved), and the clerk limits of grades A, B and C with two decimals ("" when none — a claim of its person's grade on the sheet's today uses the one in force then in place of the sheet's), and its default grade (A, B or C; "" when blank, meaning A; not dated — a person added by the quick-add bar, or by an import line with a blank grade, gets it), and its score thresholds, mid and high (whole numbers; "" when blank; not dated — while both are set, each person shows a band). Each of those is the value in force on the
++ *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's), and its pot with two decimals ("" when there is none; not dated — shared out among the members of each balanced pool by their shares), and its parent sheet's id ("" when none; not dated — a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up), and its fiscal year start month (1 to 12; "1" unless set; not dated — a fiscal year starts on its first day in that month and is named FY<yyyy> by the calendar year that day falls in), and its alert threshold with two decimals ("" when off; not dated — a person whose due-total goes above it is alerted in the audit), and its rounding mode (half-up or half-even; "" when none — a claim with one in force on the date it rounds by rounds by it, else by the policy date), and its review threshold with two decimals ("" when there is none — a claim whose due is above the one in force on its date goes to REVIEW when opened), and its escalation gap in days ("" when off; not dated — reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim), and its review SLA in days ("" when none; not dated — a REVIEW claim whose review day plus that many days is before the sheet's today is late), and its proof kinds (comma separated; "" when none; not dated — while set, a claim whose due is above its proof threshold needs a proof of each to be settled or approved), and the clerk limits of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force on its date in place of the sheet's in force then), and its default grade (A, B or C; "" when blank, meaning A; not dated — a person added by the quick-add bar, or by an import line with a blank grade, gets it), and its score thresholds, mid and high (whole numbers; "" when blank; not dated — while both are set, each person shows a band). Each of those is the value in force on the
+  *  sheet's today; `dated` holds the values recorded for each setting that carries a figure, by key (floor, late-pct,
+  *  terms, terms-A/B/C, clerk-limit, clerk-limit-A/B/C, cap, proof-threshold, note-threshold, grace-A/B/C, proof-threshold-A/B/C, rounding, review-threshold), each from its from-date on (null: from the beginning of time; a null value is blank). */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string;
+@@ -27,7 +27,10 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string;
+   escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string;
+   clerkLimitA: string; clerkLimitB: string; clerkLimitC: string;
+-  scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string };
++  scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string;
++  /** The policy versions (each change to the rounding mode, floor, cap, terms, late percent or clerk limit), in the
++   *  order made, numbered from 1: each one's from-date (null: none — it counts always). */
++  policyVersions: (string | null)[] };
+ 
+ /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
+  *  before it, else `start` (the sheet's starting value). */
+@@ -40,6 +43,16 @@ export function settingOn(settings: Settings | undefined, key: string, date: str
+   return found ? (found.value ?? start) : start;
+ }
+ 
++/** The current policy version: how many have been made (0: none). */
++export function policyVersion(settings: Settings | undefined): number {
++  return settings?.policyVersions?.length ?? 0;
++}
++
++/** The policy version in force on a date (YYYY-MM-DD): how many versions have a from-date on or before it, or none. */
++export function policyVersionOn(settings: Settings | undefined, date: string): number {
++  return (settings?.policyVersions ?? []).filter((from) => from === null || from <= date).length;
++}
++
+ /** The terms a sheet starts at, in days. */
+ export const DEFAULT_TERMS = '14';
+ 
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index 541731c6..6bde9f87 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { poolsQueryKey } from '../pools/pools';
+ import { ratesQueryKey } from '../rates/rates';
+-import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
++import { policyVersion, settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+ type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'maxOpen' | 'pendingSla' | PermKey;
+ 
+@@ -190,6 +190,9 @@ function SheetSettings() {
+           <span data-testid={`setting-terms-${grade}-current`}>{settings.data?.[key] ?? ''}</span>
+         </p>
+       ))}
++      <p>
++        Policy version: <span data-testid="policy-version">{policyVersion(settings.data)}</span>
++      </p>
+       <p>
+         Cap: <span data-testid="setting-cap-current">{settings.data?.cap ?? ''}</span>
+       </p>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 3defc592..d97cf3e0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -252,7 +252,7 @@ public class ApplyClaimStatus {
+                 if (dryRun) {
+                     return claim.getNumber();
+                 }
+-                BigDecimal limit = sheet.clerkLimitFor(personGrades == null ? null : personGrades.on(sheet.getToday()));
++                BigDecimal limit = sheet.clerkLimitFor(personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());
+                 if ("settle".equals(action) && limit != null && due != null && due.compareTo(limit) > 0 && !steward) {
+                     next = ClaimStatus.PENDING;
+                 } else {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 402cec15..f53d320a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -40,21 +40,18 @@ public class ClaimFigures {
+ 
+     private final LocalDate policyDate;
+ 
+-    private final BigDecimal cap;
+-
+     private Function<Long, PersonGrades> holders = id -> null;
+ 
+     /** @param rates the sheet's rates.
+      *  @param grades the person's grades over time.
+      *  @param sheet the sheet: its floor on a claim's date (a live due is at least it), and its late percent on each
+-     *  30-day boundary of a claim's due-by up to its today (the late charge), and its cap in force on its today. */
++     *  30-day boundary of a claim's due-by up to its today (the late charge), and its cap in force on the date of a person's latest claim that counts. */
+     public ClaimFigures(List<Rate> rates, PersonGrades grades, Sheet sheet) {
+         this.rates = rates;
+         this.grades = grades;
+         this.sheet = sheet;
+         this.today = sheet.getToday();
+         this.policyDate = sheet.policyDateInForce();
+-        this.cap = sheet.getCap();
+     }
+ 
+     /** Gives the grades over time of a holder of a share, by their person id (null: not known — no rate applies
+@@ -299,9 +296,12 @@ public class ClaimFigures {
+     }
+ 
+     /** The person's live due-total, as {@link #dueTotal(List, LocalDate, Person, BigDecimal)}, with the cap covering
+-     *  it plus their cut total (null: none): it is held to the cap less their cut total, not below 0.00. */
++     *  it plus their cut total (null: none): it is held to the cap less their cut total, not below 0.00. Their cap is
++     *  the one in force on the date of their latest claim that counts (the sheet's today when none counts). */
+     public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held, BigDecimal cut) {
+         String sum = uncappedDueTotal(claims, today, person);
++        BigDecimal cap = sheet.capOn(claims.stream().filter(c -> countsLive(c, person, today)).map(Claim::getDate)
++                .max(Comparator.naturalOrder()).orElse(today));
+         if (held != null) {
+             sum = ("n/a".equals(sum) ? held : new BigDecimal(sum).add(held)).setScale(2).toPlainString();
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 69ddabb7..a34b44b3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -1,16 +1,28 @@
+ package net.officefloor.hq.app.setting;
+ 
++import java.time.LocalDate;
++import java.util.List;
+ import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.sheet.InvalidTodayException;
++import net.officefloor.hq.app.sheet.SettingLog;
++import net.officefloor.hq.app.sheet.SettingLogRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The sheet's settings; as of a date (asOf), as they stood at the end of it. */
++/** The sheet's settings; as of a date (asOf), as they stood at the end of it — with the policy versions made by
++ *  then. */
+ public class RespondWithSettings {
+     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+-            ObjectResponse<SettingsResponse> response) throws InvalidTodayException {
+-        response.send(SettingsResponse.from(asOf.sheet(sheet, AsOf.dateOf(asOfParam))));
++            SettingLogRepository settingLogs, ObjectResponse<SettingsResponse> response) throws InvalidTodayException {
++        LocalDate date = AsOf.dateOf(asOfParam);
++        List<String> versions = settingLogs.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++                .filter(set -> Sheet.POLICY_KEYS.contains(set.getKey()))
++                .filter(set -> date == null || !set.getMadeOn().isAfter(date))
++                .map(SettingLog::getFromDate)
++                .map(from -> from == null ? null : from.toString())
++                .toList();
++        response.send(SettingsResponse.from(asOf.sheet(sheet, date), versions));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 17f71641..8785f056 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetSetting;
+  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
+  *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
+  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date; and the permission matrix
+- *  entry of each of open, settle, void, reassign, close, reopen and today (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated); and the review SLA in days ("" when none; not dated); and the proof kinds (comma separated; "" when none; not dated); and the default grade ("" when blank, meaning A; not dated); and the clerk limits of grades A, B and C in force ("" when none); and the maximum of open claims per person ("" when none; not dated); and the pending SLA in days ("" when none; not dated). */
++ *  entry of each of open, settle, void, reassign, close, reopen and today (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated); and the review SLA in days ("" when none; not dated); and the proof kinds (comma separated; "" when none; not dated); and the default grade ("" when blank, meaning A; not dated); and the clerk limits of grades A, B and C in force ("" when none); and the maximum of open claims per person ("" when none; not dated); and the pending SLA in days ("" when none; not dated); and the policy versions, in the order made (each change to the rounding mode, floor, cap, terms, late percent or clerk limit), each by its from-date (null: none — it counts always). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
+         Map<String, List<Dated>> dated, String permOpen, String permSettle, String permVoid, String permReassign,
+@@ -21,13 +21,19 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+-        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla, String permToday) {
++        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla, String permToday,
++        List<String> policyVersions) {
+ 
+     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
+     public record Dated(String from, String value) {
+     }
+ 
+     public static SettingsResponse from(Sheet sheet) {
++        return from(sheet, List.of());
++    }
++
++    /** @param policyVersions the from-dates of the sheet's policy versions, in the order made (null: none). */
++    public static SettingsResponse from(Sheet sheet, List<String> policyVersions) {
+         Map<String, List<Dated>> dated = new LinkedHashMap<>();
+         for (SheetSetting s : sheet.getSettings()) {
+             dated.computeIfAbsent(s.getKey(), k -> new ArrayList<>())
+@@ -63,7 +69,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 sheet.isScoreLog() ? "on" : "",
+                 sheet.getMaxOpen() == null ? "" : String.valueOf(sheet.getMaxOpen()),
+                 sheet.getPendingSla() == null ? "" : String.valueOf(sheet.getPendingSla()),
+-                sheet.permOf("today"));
++                sheet.permOf("today"), policyVersions);
+     }
+ 
+     /** A score threshold (score-mid or score-high); "" when blank. */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index e762e1ef..7ea91ab3 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -211,11 +211,11 @@ public class Sheet {
+         return grade == null ? null : amountOn(clerkLimitKey(grade), on);
+     }
+ 
+-    /** The clerk limit in force for a claim of a grade: the grade's own in force on the sheet's today when one is
+-     *  set, else the sheet's; null when there is none. */
+-    public BigDecimal clerkLimitFor(String grade) {
+-        BigDecimal own = gradeClerkLimitOn(grade, today);
+-        return own != null ? own : getClerkLimit();
++    /** The clerk limit in force for a claim of a grade on its date: the grade's own in force then when one is
++     *  set, else the sheet's in force then; null when there is none. */
++    public BigDecimal clerkLimitFor(String grade, LocalDate on) {
++        BigDecimal own = gradeClerkLimitOn(grade, on);
++        return own != null ? own : amountOn(CLERK_LIMIT, on);
+     }
+ 
+     /** The floor in force on a date; the starting 1.00 before every from-date. */
+@@ -268,9 +268,17 @@ public class Sheet {
+ 
+     /** The cap in force on the sheet's today; null when there is none. */
+     public BigDecimal getCap() {
+-        return amountOn(CAP, today);
++        return capOn(today);
++    }
++
++    /** The cap in force on a date; null when there is none. */
++    public BigDecimal capOn(LocalDate on) {
++        return amountOn(CAP, on);
+     }
+ 
++    /** The settings that make up the policy: each change to one of them is a new policy version. */
++    public static final List<String> POLICY_KEYS = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
++
+     /** The proof threshold in force on a date; null when there is none. */
+     public BigDecimal proofThresholdOn(LocalDate on) {
+         return amountOn(PROOF_THRESHOLD, on);
