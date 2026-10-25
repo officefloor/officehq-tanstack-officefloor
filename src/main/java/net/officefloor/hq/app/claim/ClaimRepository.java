@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -40,6 +40,7 @@ public class ClaimRepository {
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
+        claim.setEditedBy(rs.getString("edited_by"));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -172,8 +173,9 @@ public class ClaimRepository {
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ? WHERE id = ?", claim.getAmount(),
-                Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getId());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, edited_by = ? WHERE id = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(),
+                claim.getEditedBy(), claim.getId());
         used(claim.getSheetId(), claim.getTags());
     }
 

@@ -16,6 +16,8 @@ public class Claim {
     private String number;
     private BigDecimal settledDue;
     private String openedBy;
+
+    private String editedBy;
     private boolean stated;
     private BigDecimal statedDue;
     private String corrects;
@@ -254,6 +256,15 @@ public class Claim {
 
     public void setOpenedBy(String openedBy) {
         this.openedBy = openedBy;
+    }
+
+    /** The signed-in user who last edited the claim through its form or amount entry; null when never edited. */
+    public String getEditedBy() {
+        return editedBy;
+    }
+
+    public void setEditedBy(String editedBy) {
+        this.editedBy = editedBy;
     }
 
     /** Whether the person's last statement bound the claim to a figure. */

@@ -21,10 +21,10 @@ import net.officefloor.plugin.variable.Val;
  * Moves the claim to the asked status, refusing a change its current status does not allow, an open, settle or void
  * the sheet's permission for it does not give the user's role, an open of a claim with an empty note whose due (as open) is above the
  * sheet's note threshold in force on the claim's date, and
- * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
+ * refusing to let the user who opened it, or who last edited it, settle it; a clerk's settle whose due is above the sheet's
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
- * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
+ * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it or last edited it), rejecting
  * returns it to OPEN, bound again by its last statement if that bound it. A steward may void a SETTLED claim within
  * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. While the sheet has void reasons,
  * a void needs one of them, kept on the claim. Opening records who opened it; a voided claim keeps its number. Settling
@@ -48,6 +48,9 @@ public class ApplyClaimStatus {
             }
             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
                 throw new BadRequestException("The user who opened a claim cannot approve it");
+            }
+            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getEditedBy())) {
+                throw new BadRequestException("The user who last edited a claim cannot approve it");
             }
         } else {
             if (!from.canBecome(status)) {
@@ -79,6 +82,9 @@ public class ApplyClaimStatus {
             }
             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
                 throw new BadRequestException("The user who opened a claim cannot settle it");
+            }
+            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getEditedBy())) {
+                throw new BadRequestException("The user who last edited a claim cannot settle it");
             }
             if (status == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
                 throw new BadRequestException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
