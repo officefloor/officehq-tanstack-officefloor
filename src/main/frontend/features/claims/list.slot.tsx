@@ -25,6 +25,9 @@ function PersonClaims({ person }: { person: Person }) {
   // Bumped each time the editor is submitted: the edited claim's lock error then goes. Counted from the editor's
   // opening, for the claim it opened on, so a submit of the add form (or an earlier editor) does not count.
   const [submits, setSubmits] = useState<{ id: number | null; count: number }>({ id: null, count: 0 });
+  // A refused save of the editor closes it (releasing the claim's lock), so the form is back to adding; the add form
+  // shows the refusal until it is changed or submitted, or an editor is opened.
+  const [refusal, setRefusal] = useState<unknown>(null);
   const { selected, toggle } = useSelectedClaims();
   const claims = useClaims();
   const people = usePeople();
@@ -78,7 +81,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-batch">{c.settleBatch ?? ''}</span>{' '}
             <span data-testid="claim-review-late">{isReviewLate(c, today, settings.data) ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-pending-late">{isPendingLate(c, today, settings.data) ? 'yes' : 'no'}</span>{' '}
-            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => { setSubmits({ id: c.id, count: 0 }); setEditing(String(c.id)); }}
+            <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => { setRefusal(null); setSubmits({ id: c.id, count: 0 }); setEditing(String(c.id)); }}
               editorSubmits={claim?.id === c.id && submits.id === c.id ? submits.count : 0}>
               {claim?.id === c.id && (
                 <button
@@ -115,6 +118,13 @@ function PersonClaims({ person }: { person: Person }) {
       </ul>
       {/* Keyed by the claim being edited, so opening an editor fills the form with its values. */}
       <ClaimForm key={`${sheet}:${claim?.id ?? ''}`} sheet={sheet} person={person} claim={claim}
+        refusal={claim ? null : refusal}
+        onRefused={(error, refusedId) => {
+          setRefusal(error);
+          setEditing(undefined);
+          putJson(`${claimsPath(sheet)}/${refusedId}/unlock`, undefined, user).catch(() => undefined);
+        }}
+        clearRefusal={() => setRefusal(null)}
         onSubmitted={() => setSubmits((s) => claim && s.id === claim.id ? { ...s, count: s.count + 1 } : s)} />
     </td>
   );
@@ -948,8 +958,9 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   );
 }
 
-function ClaimForm({ sheet, person, claim, onSubmitted }: {
-  sheet: string; person: Person; claim?: Claim; onSubmitted: () => void;
+function ClaimForm({ sheet, person, claim, refusal, onRefused, clearRefusal, onSubmitted }: {
+  sheet: string; person: Person; claim?: Claim; refusal: unknown;
+  onRefused: (error: unknown, claimId: number) => void; clearRefusal: () => void; onSubmitted: () => void;
 }) {
   const [user] = useCurrentUser();
   const [, setEditing] = useEditingClaim();
@@ -979,6 +990,9 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
         setTags('');
       }
     },
+    onError: (error) => {
+      if (claim) onRefused(error, claim.id);
+    },
   });
   const submit = useSubmitOnce(save);
   // A new claim can instead be made from a template (picked beside the form): its amount and note as they are now,
@@ -1000,6 +1014,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
         e.preventDefault();
         onSubmitted();
         fromTemplate.reset();
+        clearRefusal();
         submit({ amount, date, note, corrects, ref, tags });
       }}
     >
@@ -1008,38 +1023,38 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
         placeholder="Amount"
         inputMode="decimal"
         value={amount}
-        onChange={(e) => { setAmount(e.target.value); save.reset(); fromTemplate.reset(); }}
+        onChange={(e) => { setAmount(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
       />
       <input
         data-testid="claim-form-date"
         placeholder={today ?? 'YYYY-MM-DD'}
         value={date}
-        onChange={(e) => { setDate(e.target.value); save.reset(); fromTemplate.reset(); }}
+        onChange={(e) => { setDate(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
       />
       <input
         data-testid="claim-form-note"
         placeholder="Note"
         value={note}
-        onChange={(e) => { setNote(e.target.value); save.reset(); fromTemplate.reset(); }}
+        onChange={(e) => { setNote(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
       />
       <input
         data-testid="claim-form-corrects"
         placeholder="Corrects claim no."
         inputMode="numeric"
         value={corrects}
-        onChange={(e) => { setCorrects(e.target.value); save.reset(); fromTemplate.reset(); }}
+        onChange={(e) => { setCorrects(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
       />
       <input
         data-testid="claim-form-ref"
         placeholder="Reference"
         value={ref}
-        onChange={(e) => { setRef(e.target.value); save.reset(); fromTemplate.reset(); }}
+        onChange={(e) => { setRef(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
       />
       <input
         data-testid="claim-form-tags"
         placeholder="Tags (comma separated)"
         value={tags}
-        onChange={(e) => { setTags(e.target.value); save.reset(); fromTemplate.reset(); }}
+        onChange={(e) => { setTags(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
       />
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
         {claim ? 'Save claim' : 'Add claim'}
@@ -1050,7 +1065,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
           <select
             data-testid="claim-template-select"
             value={template}
-            onChange={(e) => { setTemplate(e.target.value); save.reset(); fromTemplate.reset(); }}
+            onChange={(e) => { setTemplate(e.target.value); save.reset(); fromTemplate.reset(); clearRefusal(); }}
           >
             <option value="">Template…</option>
             {(templates.data ?? []).map((t) => (
@@ -1061,15 +1076,15 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
             type="button"
             data-testid="claim-template-add"
             disabled={fromTemplate.isPending}
-            onClick={() => { save.reset(); submitTemplate({ template }); }}
+            onClick={() => { save.reset(); clearRefusal(); submitTemplate({ template }); }}
           >
             Add from template
           </button>
         </>
       )}
-      {(save.isError || fromTemplate.isError) && (
+      {(save.isError || fromTemplate.isError || refusal !== null) && (
         <span data-testid="claim-form-error">
-          {save.error instanceof HttpError && save.error.status === 423 && 'Another user is editing this claim. '}
+          {(save.error ?? refusal) instanceof HttpError && (save.error ?? refusal as HttpError).status === 423 && 'Another user is editing this claim. '}
           The amount must be a number with up to two decimals, and the date a calendar date whose due-by (it plus the
           terms) is in no closed period and not after the person's retirement date; a negative amount is a correction and must name, by
           number, a settled claim of this person (only a correction may) and not exceed what remains of it (its amount less the

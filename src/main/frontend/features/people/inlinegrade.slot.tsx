@@ -4,13 +4,13 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
 import { peoplePath, peopleQueryKey, type Person } from './people';
 import { useGradeCodes } from '../grades/grades';
 
-// A grade select and save button on each person's row: gives them the chosen grade from the sheet's today. It is
-// saved exactly as the person form would save it (same name, terms, contact and tags, the version the row was
+// A grade select and save button on each person's row: gives them the chosen grade from the sheet's today (recorded
+// from that date, even when it is the grade already in force). It is saved exactly as the person form would save it (same name, terms, contact and tags, the version the row was
 // loaded with), so the server writes the same PERSON_EDITED and rollup lines, and refuses it the same way.
 function InlineGradeHeader() {
   return <th>Regrade</th>;
@@ -20,6 +20,7 @@ function PersonInlineGrade({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [grade, setGrade] = useState(person.grade);
+  const today = useRealToday();
   const queryClient = useQueryClient();
   const gradeCodes = useGradeCodes();
   const save = useMutation({
@@ -27,7 +28,7 @@ function PersonInlineGrade({ person }: { person: Person }) {
       putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}`, {
         name: person.name,
         grade: body.grade,
-        gradeFrom: '',
+        gradeFrom: today ?? '',
         terms: person.terms == null ? '' : String(person.terms),
         contact: person.contact ?? '',
         tags: (person.tags ?? []).join(', '),
