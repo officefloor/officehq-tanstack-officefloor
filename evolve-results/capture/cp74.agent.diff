@@ -1,0 +1,682 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 7622aaf0..48a8b2bf 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -7,8 +7,22 @@ export class HttpError extends Error {
+   }
+ }
+ 
++// The date the signed-in user's screen shows the sheet as of (none: as it stands now). Every request carries
++// it as `asof`: a read answers as the sheet stood at the end of that date, and a change is refused while it is set.
++// It belongs to this screen only, so it is kept here and in the URL (search param `asof`), never in the store.
++let viewAsOf = new URLSearchParams(window.location.search).get('asof') ?? '';
++
++export function getViewAsOf(): string {
++  return viewAsOf;
++}
++
++export function setViewAsOf(date: string): void {
++  viewAsOf = date;
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const res = await fetch(path, init);
++  const url = viewAsOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asof=${encodeURIComponent(viewAsOf)}`;
++  const res = await fetch(url, init);
+   if (!res.ok) {
+     // A refusal carries {"error": "<why>"}; show that, else the status line.
+     const body = (await res.json().catch(() => null)) as { error?: string } | null;
+diff --git a/src/main/frontend/features/asof/asof.slot.tsx b/src/main/frontend/features/asof/asof.slot.tsx
+new file mode 100644
+index 00000000..139a575a
+--- /dev/null
++++ b/src/main/frontend/features/asof/asof.slot.tsx
+@@ -0,0 +1,70 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { setViewAsOf } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The as-of date of this user's screen: while it is set, every panel shows the sheet as it stood at the end of that
++// date (the date standing in for the sheet's today) and every change is refused. Setting or clearing it re-reads the
++// whole sheet. It lives in the URL (search param `asof`), so it outlives loading another sheet; other users' screens
++// are not affected.
++function AsOfPanel({ sheetId }: { sheetId: string; user: string }) {
++  const [asOf, setAsOf] = useSearchParam('asof', asString);
++  const [input, setInput] = useState('');
++  const [error, setError] = useState('');
++  const queryClient = useQueryClient();
++
++  const show = async (date: string) => {
++    setViewAsOf(date);
++    setAsOf(date);
++    await queryClient.resetQueries({ queryKey: ['sheet', sheetId] });
++  };
++
++  return (
++    <section data-testid="asof-panel">
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          const date = input.trim();
++          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
++            setError('Enter a date');
++            return;
++          }
++          setError('');
++          void show(date);
++        }}
++      >
++        As of: <strong data-testid="sheet-asof">{asOf}</strong>{' '}
++        <input
++          type="date"
++          data-testid="asof-date"
++          value={input}
++          onChange={(e) => {
++            setInput(e.target.value);
++            setError('');
++          }}
++        />{' '}
++        <button type="submit" data-testid="asof-set">
++          Show as of
++        </button>{' '}
++        <button
++          type="button"
++          data-testid="asof-clear"
++          onClick={() => {
++            setError('');
++            void show('');
++          }}
++        >
++          Clear
++        </button>
++      </form>
++      {error !== '' && (
++        <p data-testid="asof-error" role="alert">
++          {error}
++        </p>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 1, Component: AsOfPanel });
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 936498f9..fd1c3215 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -35,8 +35,9 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string;
+         by: user ?? '',
+         asOf: date.trim(),
+       }),
++    // The date typed is used once: a refused one never carries into the next statement.
++    onSettled: () => setAsOf(''),
+     onSuccess: async () => {
+-      setAsOf('');
+       await Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithDelegations.java b/src/main/java/net/officefloor/hq/app/access/RespondWithDelegations.java
+index 3656bbf9..7cc74c6f 100644
+--- a/src/main/java/net/officefloor/hq/app/access/RespondWithDelegations.java
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithDelegations.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.access;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithDelegations {
+-    public void respond(@Val SheetResponse sheet, DelegationRepository repository,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<DelegationResponse>> response) {
+-        response.send(repository.list(sheet.id()).stream().map(DelegationResponse::from).toList());
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new DelegationRepository(jdbc).list(sheet.id())
++                .stream().map(DelegationResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java b/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java
+index ea4b4400..f1011c4b 100644
+--- a/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.access;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithRoles {
+-    public void respond(@Val SheetResponse sheet, RoleRepository repository,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<RoleResponse>> response) {
+-        response.send(repository.list(sheet.id()).stream().map(RoleResponse::from).toList());
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new RoleRepository(jdbc, new DelegationRepository(jdbc))
++                .list(sheet.id()).stream().map(RoleResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java
+index 3fab5774..e7604c3d 100644
+--- a/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java
+@@ -1,14 +1,17 @@
+ package net.officefloor.hq.app.access;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithSettings {
+-    public void respond(@Val SheetResponse sheet, SettingRepository repository, SheetRepository sheets,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<SettingResponse>> response) {
+-        response.send(repository.listOn(sheet.id(), sheets.today(sheet.id())));
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new SettingRepository(jdbc).listOn(sheet.id(),
++                new SheetRepository(jdbc).today(sheet.id()))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index b635e994..73f4a08c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -2,17 +2,22 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
+ import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithClaims {
+-    public void respond(@Val SheetResponse sheet, ClaimRepository repository, ClaimLogRepository log,
+-            SheetRepository sheets, ObjectResponse<List<ClaimResponse>> response) {
+-        java.util.Map<Long, List<String>> lines = log.lines(sheet.id());
+-        LocalDate today = sheets.today(sheet.id());
+-        response.send(repository.list(sheet.id()).stream()
+-                .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()), today)).toList());
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
++            ObjectResponse<List<ClaimResponse>> response) {
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> {
++            Map<Long, List<String>> lines = new ClaimLogRepository(jdbc).lines(sheet.id());
++            LocalDate today = new SheetRepository(jdbc).today(sheet.id());
++            return new ClaimRepository(jdbc).list(sheet.id()).stream()
++                    .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()), today)).toList();
++        }));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/history/RefuseAsOfChanges.java b/src/main/java/net/officefloor/hq/app/history/RefuseAsOfChanges.java
+new file mode 100644
+index 00000000..fc6070fe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/RefuseAsOfChanges.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.history;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.MediaType;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * While the signed-in user's screen shows the sheet as of a date (every request carries {@code asof}), every change is
++ * refused before it reaches its endpoint, so it writes nothing to the store or the audit file. Reads, signing in and
++ * loading a sheet go through.
++ */
++@Component
++public class RefuseAsOfChanges extends OncePerRequestFilter {
++
++    @Override
++    protected boolean shouldNotFilter(HttpServletRequest request) {
++        String path = request.getRequestURI().substring(request.getContextPath().length());
++        String asof = request.getParameter("asof");
++        return "GET".equals(request.getMethod()) || asof == null || asof.isBlank() || !path.startsWith("/api/")
++                || path.equals("/api/signin") || ("PUT".equals(request.getMethod()) && path.matches("/api/sheets/[^/]+"));
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        response.setStatus(HttpStatus.BAD_REQUEST.value());
++        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
++        response.getWriter().write("{\"error\":\"The sheet is shown as of a date: clear it to make changes\"}");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+index a36a8ace..b3fb6b4a 100644
+--- a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
++++ b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+@@ -2,6 +2,8 @@ package net.officefloor.hq.app.history;
+ 
+ import java.sql.Connection;
+ import java.sql.Date;
++import java.sql.SQLException;
++import java.sql.Savepoint;
+ import java.time.LocalDate;
+ import java.util.List;
+ import java.util.function.Function;
+@@ -20,9 +22,10 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class SheetHistory {
+ 
+-    /** The tables a statement's figures read, parents before children. */
++    /** The tables the screen reads (a statement's figures among them), parents before children. */
+     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold",
+-            "person_patron", "statement", "claim", "rate", "sheet_setting", "sheet_setting_from");
++            "person_patron", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
++            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation");
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -80,6 +83,61 @@ public class SheetHistory {
+         }
+     }
+ 
++    /**
++     * Read the sheet as the signed-in user's screen shows it: live when {@code on} is null, else as it stood at the end
++     * of that date, the date standing in for the sheet's today. {@code reader} is given a JdbcTemplate over the sheet
++     * laid out as the live tables (schema asof), for the app's repositories to read it as they read the live sheet. A
++     * date on or after the sheet's today reads every change made; a date before the earliest snapshot reads none.
++     * The layout is rolled back once read (to a savepoint inside the request's transaction), so no other request sees it.
++     */
++    public <T> T view(String sheetId, LocalDate on, Function<JdbcTemplate, T> reader) {
++        if (on == null) {
++            return reader.apply(jdbc);
++        }
++        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
++                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
++        Long snapshot = today == null || !on.isBefore(today) ? null : snapshotAsOf(sheetId, on);
++        Connection con = DataSourceUtils.getConnection(dataSource);
++        try {
++            boolean autoCommit = con.getAutoCommit();
++            String schema = con.getSchema();
++            Savepoint before = autoCommit ? null : con.setSavepoint();
++            con.setAutoCommit(false);
++            try {
++                JdbcTemplate asOf = new JdbcTemplate(new SingleConnectionDataSource(con, true));
++                for (String table : TABLES) {
++                    String columns = columns(asOf, table);
++                    if (snapshot != null) {
++                        asOf.update("INSERT INTO asof." + table + " (" + columns + ") SELECT " + columns + " FROM hist."
++                                + table + " WHERE snapshot_id = ?", snapshot);
++                    } else if (today != null && (!on.isBefore(today) || table.equals("sheet"))) {
++                        // On or after its today: every change counts. Before its earliest snapshot: none does.
++                        asOf.update("INSERT INTO asof." + table + " (" + columns + ") SELECT " + columns + " FROM public."
++                                + table + " WHERE " + ofSheet(table, "public"), sheetId);
++                    }
++                }
++                if (snapshot == null && today != null && on.isBefore(today)) {
++                    asOf.update("UPDATE asof.sheet SET archived = FALSE WHERE id = ?", sheetId);
++                }
++                asOf.update("UPDATE asof.sheet SET today = ? WHERE id = ?", Date.valueOf(on), sheetId);
++                con.setSchema("ASOF");
++                return reader.apply(asOf);
++            } finally {
++                con.setSchema(schema);
++                if (before == null) {
++                    con.rollback();
++                    con.setAutoCommit(true);
++                } else {
++                    con.rollback(before);
++                }
++            }
++        } catch (SQLException e) {
++            throw new IllegalStateException("Cannot read the sheet as of " + on, e);
++        } finally {
++            DataSourceUtils.releaseConnection(con, dataSource);
++        }
++    }
++
+     /** The table's columns, as the live table lists them. */
+     private static String columns(JdbcTemplate jdbc, String table) {
+         return String.join(", ", jdbc.queryForList("SELECT column_name FROM information_schema.columns"
+@@ -91,8 +149,9 @@ public class SheetHistory {
+     private static String ofSheet(String table, String schema) {
+         return switch (table) {
+             case "sheet" -> "id = ?";
+-            case "person_grade", "person_hold", "person_patron" ->
++            case "person_grade", "person_hold", "person_patron", "person_watch" ->
+                 "person_id IN (SELECT id FROM " + schema + ".person WHERE sheet_id = ?)";
++            case "period_person_total" -> "period_id IN (SELECT id FROM " + schema + ".period WHERE sheet_id = ?)";
+             default -> "sheet_id = ?";
+         };
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/history/ValidateViewAsOf.java b/src/main/java/net/officefloor/hq/app/history/ValidateViewAsOf.java
+new file mode 100644
+index 00000000..0af0da0c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/ValidateViewAsOf.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.history;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The date a read shows the sheet as of (the {@code asof} parameter; none: as it stands now). Publishes it. */
++public class ValidateViewAsOf {
++    public void validate(@RequestParam(value = "asof", required = false) String asof, Out<ViewAsOf> view)
++            throws BadRequestException {
++        String text = asof == null ? "" : asof.trim();
++        try {
++            view.set(new ViewAsOf(text.isEmpty() ? null : LocalDate.parse(text)));
++        } catch (DateTimeParseException e) {
++            throw new BadRequestException("Enter an as-of date as yyyy-mm-dd");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/ViewAsOf.java b/src/main/java/net/officefloor/hq/app/history/ViewAsOf.java
+new file mode 100644
+index 00000000..c2f5657c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/history/ViewAsOf.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.history;
++
++import java.time.LocalDate;
++
++/** The date the signed-in user's screen shows the sheet as of; null {@code on}: the sheet as it stands now. */
++public record ViewAsOf(LocalDate on) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index f29056a7..8a7febb7 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.period;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPeriods {
+-    public void respond(@Val SheetResponse sheet, PeriodRepository repository,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<PeriodResponse>> response) {
+-        response.send(repository.list(sheet.id()).stream().map(PeriodResponse::from).toList());
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new PeriodRepository(jdbc).list(sheet.id()).stream()
++                .map(PeriodResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 09bc7930..f27a31dc 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPeople {
+-    public void respond(@Val SheetResponse sheet, PersonRepository repository,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<PersonResponse>> response) {
+-        response.send(repository.list(sheet.id()).stream().map(PersonResponse::from).toList());
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new PersonRepository(jdbc).list(sheet.id()).stream()
++                .map(PersonResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithWatched.java b/src/main/java/net/officefloor/hq/app/person/RespondWithWatched.java
+index d312b3d5..904c848d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithWatched.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithWatched.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+@@ -8,8 +10,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** The ids of the people on the sheet the user watches. */
+ public class RespondWithWatched {
+-    public void respond(@Val SheetResponse sheet, @PathVariable("user") String user, WatchRepository watches,
+-            ObjectResponse<List<Long>> response) {
+-        response.send(watches.watchedBy(sheet.id(), user == null ? "" : user.trim()));
++    public void respond(@Val SheetResponse sheet, @PathVariable("user") String user, @Val ViewAsOf asOf,
++            SheetHistory history, ObjectResponse<List<Long>> response) {
++        response.send(history.view(sheet.id(), asOf.on(),
++                jdbc -> new WatchRepository(jdbc).watchedBy(sheet.id(), user == null ? "" : user.trim())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index b5c19d16..f1dafe34 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -1,13 +1,16 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithRates {
+-    public void respond(@Val SheetResponse sheet, RateRepository repository,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<RateResponse>> response) {
+-        response.send(repository.list(sheet.id()).stream().map(RateResponse::from).toList());
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new RateRepository(jdbc).list(sheet.id()).stream()
++                .map(RateResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java
+new file mode 100644
+index 00000000..aaeb6142
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.history.SheetHistory;
++import net.officefloor.hq.app.history.ViewAsOf;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The sheet's today as the signed-in user's screen shows it: an as-of date stands in for it. */
++public class RespondWithSheetTodayAsOf {
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
++            ObjectResponse<SheetTodayResponse> response) {
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> {
++            SheetRepository sheets = new SheetRepository(jdbc);
++            return new SheetTodayResponse(sheet.id(), sheets.today(sheet.id()).toString(), sheets.isArchived(sheet.id()));
++        }));
++    }
++}
+diff --git a/src/main/resources/db/migration/V41__sheet_snapshot_whole.sql b/src/main/resources/db/migration/V41__sheet_snapshot_whole.sql
+new file mode 100644
+index 00000000..17fc9109
+--- /dev/null
++++ b/src/main/resources/db/migration/V41__sheet_snapshot_whole.sql
+@@ -0,0 +1,24 @@
++-- The as-of view: the whole screen is shown as the sheet stood at the end of a date, so a snapshot (see V40) holds
++-- every table the screen reads, not only those a statement's figures read.
++CREATE TABLE hist.person_watch AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM person_watch t WHERE FALSE;
++CREATE TABLE hist.claim_log AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM claim_log t WHERE FALSE;
++CREATE TABLE hist.claim_lock AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM claim_lock t WHERE FALSE;
++CREATE TABLE hist.period AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM period t WHERE FALSE;
++CREATE TABLE hist.period_person_total AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM period_person_total t WHERE FALSE;
++CREATE TABLE hist.sheet_role AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM sheet_role t WHERE FALSE;
++CREATE TABLE hist.sheet_delegation AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM sheet_delegation t WHERE FALSE;
++CREATE INDEX hist_person_watch_snapshot ON hist.person_watch (snapshot_id);
++CREATE INDEX hist_claim_log_snapshot ON hist.claim_log (snapshot_id);
++CREATE INDEX hist_claim_lock_snapshot ON hist.claim_lock (snapshot_id);
++CREATE INDEX hist_period_snapshot ON hist.period (snapshot_id);
++CREATE INDEX hist_period_person_total_snapshot ON hist.period_person_total (snapshot_id);
++CREATE INDEX hist_sheet_role_snapshot ON hist.sheet_role (snapshot_id);
++CREATE INDEX hist_sheet_delegation_snapshot ON hist.sheet_delegation (snapshot_id);
++
++CREATE TABLE asof.person_watch AS SELECT * FROM person_watch WHERE FALSE;
++CREATE TABLE asof.claim_log AS SELECT * FROM claim_log WHERE FALSE;
++CREATE TABLE asof.claim_lock AS SELECT * FROM claim_lock WHERE FALSE;
++CREATE TABLE asof.period AS SELECT * FROM period WHERE FALSE;
++CREATE TABLE asof.period_person_total AS SELECT * FROM period_person_total WHERE FALSE;
++CREATE TABLE asof.sheet_role AS SELECT * FROM sheet_role WHERE FALSE;
++CREATE TABLE asof.sheet_delegation AS SELECT * FROM sheet_delegation WHERE FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
+index 24bc2405..03c588c5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
+@@ -1,6 +1,9 @@
+ # Every claim on the sheet, newest first.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaims
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
+index 0d4f9e04..74bc199a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
+@@ -1,6 +1,9 @@
+ # The sheet's delegations of the steward role.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.access.RespondWithDelegations
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+index f303c775..0641d78b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+@@ -1,6 +1,9 @@
+ # The people on the sheet, in the order they were added.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPeople
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
+index 1e656ac4..0af5cb89 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
+@@ -1,6 +1,9 @@
+ # The sheet's periods, by from-date.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.period.RespondWithPeriods
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+index 80dbe46f..5d50de05 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+@@ -1,6 +1,9 @@
+ # The sheet's rate for each grade that has one, by grade.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.rate.RespondWithRates
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+index 7ce190ec..c113bf73 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+@@ -1,6 +1,9 @@
+ # The sheet's roles.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.access.RespondWithRoles
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+index 7e554ed2..3feb6612 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+@@ -1,6 +1,9 @@
+ # The sheet's settings.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.access.RespondWithSettings
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.GET.yml
+index ab0ee62d..ff66646e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.GET.yml
+@@ -1,11 +1,14 @@
+ # The sheet's today (a sheet never loaded is created, on the real date).
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+   govern: [ transaction ]
+   next: respond
+ respond:
+-  class: net.officefloor.hq.app.sheet.RespondWithSheetToday
++  class: net.officefloor.hq.app.sheet.RespondWithSheetTodayAsOf
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml
+index d6d06c4f..410e7afb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watches/{user}.GET.yml
+@@ -1,6 +1,9 @@
+ # The ids of the people on the sheet the user watches.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: asof
++asof:
++  class: net.officefloor.hq.app.history.ValidateViewAsOf
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithWatched
