@@ -2,14 +2,22 @@ package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.session.ChangedBy;
 
-/** A claim's audit record: the event, sheet, user, then person, amount (two decimals) and date. */
+/**
+ * A claim's audit record: the event, sheet, user, then person, amount (two decimals) and date, and
+ * the claim's number when it has one.
+ */
 final class ClaimAudit {
 
     private ClaimAudit() {
     }
 
     static String line(String event, Claim claim, ChangedBy by, String personName) {
+        return line(event, claim, by, personName, claim.getNumber());
+    }
+
+    static String line(String event, Claim claim, ChangedBy by, String personName, Integer number) {
         return event + " sheet=" + claim.getSheetId() + " by=" + by.name() + " person=" + personName + " amount="
-                + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate();
+                + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate()
+                + (number == null ? "" : " number=" + number);
     }
 }

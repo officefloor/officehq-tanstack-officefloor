@@ -4,7 +4,9 @@ import { asNumber, useSearchParam } from '../../url/useSearchParam';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+  /** Given when the claim is opened; none for a draft or a void claim. */
+  number: number | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do. */
 export function counts(claim: { status: ClaimStatus }): boolean {

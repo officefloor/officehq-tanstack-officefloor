@@ -13,9 +13,10 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
+    private Integer number;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status) {
+            ClaimStatus status, Integer number) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -23,6 +24,7 @@ public class Claim {
         this.date = date;
         this.note = note;
         this.status = status;
+        this.number = number;
     }
 
     public long getId() {
@@ -67,5 +69,14 @@ public class Claim {
 
     public void setStatus(ClaimStatus status) {
         this.status = status;
+    }
+
+    /** The number given when the claim was opened; null for a draft or a void claim. */
+    public Integer getNumber() {
+        return number;
+    }
+
+    public void setNumber(Integer number) {
+        this.number = number;
     }
 }

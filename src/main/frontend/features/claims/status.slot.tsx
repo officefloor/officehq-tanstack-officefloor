@@ -10,7 +10,7 @@ const ACTIONS: Array<{ action: string; status: ClaimStatus; label: string }> = [
   { action: 'void', status: 'VOID', label: 'Void' },
 ];
 
-// A claim's status, and the buttons that open, settle or void it. A change its status does not
+// A claim's number and status, and the buttons that open, settle or void it. A change its status does not
 // allow is refused by the server, and the refusal shows on the claim until its next action.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
@@ -23,6 +23,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
 
   return (
     <>
+      <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
       {ACTIONS.map((a) => (
         <button
