@@ -21,8 +21,8 @@ import net.officefloor.hq.app.sheet.Sheet;
  * sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus
  * the charges of the boundaries before it (compounding), rounded like a due, and
  * the charges added up (a boundary whose percent is 0.00 adds nothing). The floor comes last: an unsettled claim's due is the
- * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the figure only (never
- * the floor or the charge); settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
+ * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the due as shown (the floor
+ * and the late charge included), which then no longer follows the sheet's today; settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
  * never takes a late charge. The rounding policy: a claim dated before the sheet's policy date (its today when blank)
  * rounds half up, one dated on or after it half to even — unless the sheet has a rounding mode (half-up or half-even) in force on
  * that date, which it then rounds by; a correction goes by the date of the claim it corrects.
@@ -188,17 +188,21 @@ public class ClaimFigures {
         return floored(claim, figure.add(chargeByBoundary(claim, figure)));
     }
 
-    /** The claim's due: its frozen due when settled, else the greater of its floor and its figure plus the late
-     *  charge; null when it has none (n/a). */
+    /** The claim's due: its frozen due when settled, else the due its person's last statement bound it to, else the
+     *  greater of its floor and its figure plus the late charge; null when it has none (n/a). */
     public BigDecimal due(Claim claim) {
         if (claim.getDue() != null) {
             return claim.getDue();
+        }
+        if (claim.isBound()) {
+            return claim.getStatedDue();
         }
         BigDecimal figure = figure(claim);
         return figure == null ? null : floored(claim, figure.add(lateCharge(claim, figure)));
     }
 
-    /** The claim's figure, without any late charge or floor; null when it has none (n/a). */
+    /** The claim's figure, without any late charge or floor (a bound claim's: the due it is bound to); null when it
+     *  has none (n/a). */
     public BigDecimal figure(Claim claim) {
         if (claim.getDue() != null) {
             return claim.getDue();

@@ -29,7 +29,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Takes a statement for the person: records their due-total now, on the sheet's today, and binds each of
- * their claims that counts to the figure it has now (never its late charge, which keeps following the sheet's today); their claims that do not count (a person's unbound OPEN ones dated within a
+ * their claims that counts to the due it shows now, late charge and floor included (a claim already bound keeps the due
+ * it is bound to, and a bound due no longer follows the sheet's today); their claims that do not count (a person's unbound OPEN ones dated within a
  * hold among them) are unbound (live again).
  * <p>
  * Taken as of a date (on or before the sheet's today, and not before the person was added), it works the same out
@@ -57,7 +58,7 @@ public class TakeStatement {
             dueTotal = figures.dueTotal(mine, sheet.getToday(), person);
             for (Claim claim : mine) {
                 if (ClaimFigures.countsLive(claim, person, sheet.getToday())) {
-                    BigDecimal figure = figures.figure(claim);
+                    BigDecimal figure = figures.due(claim);
                     claim.bind(true, figure);
                     binding.bind(claim.getId(), figure);
                     counted++;
@@ -87,7 +88,7 @@ public class TakeStatement {
             mine.forEach(c -> c.bind(false, null));
             for (Claim claimThen : claimsThen) {
                 if (ClaimFigures.countsLive(claimThen, personThen, asOf)) {
-                    BigDecimal figure = figures.figure(claimThen);
+                    BigDecimal figure = figures.due(claimThen);
                     byId.get(claimThen.getId()).bind(true, figure);
                     binding.bind(claimThen.getId(), figure);
                     counted++;

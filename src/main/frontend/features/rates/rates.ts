@@ -91,10 +91,11 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, hal
  *  plus its late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that
  *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
  *  before it, rounded like a due, added up; a boundary at 0.00 adds
- *  nothing ("n/a" when it has no figure). A statement binds only the figure: the charge and the floor keep following the
- *  sheet. A correction takes neither floor nor late charge; a claim whose late charge is waived takes no late charge. */
+ *  nothing ("n/a" when it has no figure). A statement binds the due as shown, the charge and the floor included: while
+ *  bound it no longer follows the sheet's today. A correction takes neither floor nor late charge; a claim whose late charge is waived takes no late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
   today: string | undefined): string {
+  if (c.due === null && isBound(c)) return c.statedDue ?? 'n/a';
   const halfUp = roundsHalfUp(c, settings, today);
   const figure = figureOf(c, rates, grade, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
