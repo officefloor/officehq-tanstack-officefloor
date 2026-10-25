@@ -1,17 +1,32 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type Rate = { grade: string; rate: string };
+/** A grade's rate, in force from its from-date (yyyy-mm-dd); null applies from the beginning of time. */
+export type Rate = { grade: string; rate: string; from: string | null };
 
 /** The key every feature reads the sheet's rates under. */
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
-/** The sheet's rate for each grade that has one. */
+/** The sheet's rates: each grade may have several, with different from-dates. */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
     queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`),
   });
+}
+
+/**
+ * The grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or
+ * before it, a rate without a from-date counting as the earliest. Undefined when none applies.
+ */
+export function rateOn(rates: readonly Rate[], grade: string, date: string): Rate | undefined {
+  let found: Rate | undefined;
+  for (const r of rates) {
+    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+    // ISO dates compare as text; no from-date ('') sorts before every date.
+    if (found === undefined || (r.from ?? '') > (found.from ?? '')) found = r;
+  }
+  return found;
 }
 
 /** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n), exactly. */

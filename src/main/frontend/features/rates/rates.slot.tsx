@@ -6,20 +6,29 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/people.slot';
+import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
-import { dueCents, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
+import { dueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
 
 const GRADES = ['A', 'B', 'C'] as const;
 const RATE = /^\d{1,3}(\.\d{1,2})?$/;
 const NA = 'n/a';
 
-/** The rate (in hundredths of a percent) for each grade that has one. */
+/** The rate (in hundredths of a percent) in force on the sheet's today for each grade that has one. */
 function useRateByGrade(sheetId: string): Map<string, bigint> {
   const rates = useRates(sheetId);
-  return new Map((rates.data ?? []).map((r) => [r.grade, toHundredths(r.rate)]));
+  const today = useSheetToday(sheetId).data?.today;
+  const byGrade = new Map<string, bigint>();
+  if (today === undefined) return byGrade;
+  for (const g of GRADES) {
+    const r = rateOn(rates.data ?? [], g, today);
+    if (r) byGrade.set(g, toHundredths(r.rate));
+  }
+  return byGrade;
 }
 
-/** A person's due-total in cents (their counted claims times their grade's rate), or null when the grade has no rate. */
+/** A person's due-total in cents (their counted claims times their grade's rate in force on the sheet's today), or
+ *  null when the grade has no rate then. */
 function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -39,28 +48,32 @@ function useDueTotals(sheetId: string): Map<number, bigint | null> {
   return totals;
 }
 
-// The rate form: sets a grade's rate. Each grade's current rate is listed under it.
+// The rate form: sets a grade's rate from a date (blank: from the beginning of time), replacing one
+// already set for that grade and date. Every rate is listed under it, with each grade's rate in
+// force on the sheet's today.
 function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
+  const [from, setFrom] = useState('');
+  const today = useSheetToday(sheetId).data?.today;
   const [user] = useUser();
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: async (body: { grade: string; rate: string }) => {
+    mutationFn: async (body: { grade: string; rate: string; from: string }) => {
       if (body.rate.trim() === '') throw new Error('Enter a rate');
       if (!RATE.test(body.rate.trim()) || Number(body.rate) > 100) {
         throw new Error('A rate is a percent, 0.00 to 100.00, with up to two decimals');
       }
       // `by` is the signed-in user the change is recorded against.
-      return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, by: user ?? '' });
+      return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, from: body.from.trim(), by: user ?? '' });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
       setPct('');
+      setFrom('');
     },
   });
-  const byGrade = new Map((rates.data ?? []).map((r) => [r.grade, r]));
 
   return (
     <section data-testid="rates-panel">
@@ -69,7 +82,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate({ grade, rate: pct });
+          save.mutate({ grade, rate: pct, from });
         }}
       >
         <label>
@@ -102,6 +115,18 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            type="date"
+            data-testid="rate-form-from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -116,25 +141,41 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
           {rates.error.message}
         </p>
       )}
-      <table data-testid="rate-list">
+      <table data-testid="rate-current-list">
         <thead>
           <tr>
             <th>Grade</th>
-            <th>Rate %</th>
+            <th>Rate % today</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const r = byGrade.get(g);
+            const r = today === undefined ? undefined : rateOn(rates.data ?? [], g, today);
             return (
-              <tr key={g} data-testid={r ? `rate-row-${g}-start` : undefined}>
+              <tr key={g}>
                 <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>
-                  {r ? <span data-testid="rate-pct">{showHundredths(toHundredths(r.rate))}</span> : NA}
-                </td>
+                <td data-testid={`rate-current-${g}`}>{r ? showHundredths(toHundredths(r.rate)) : NA}</td>
               </tr>
             );
           })}
+        </tbody>
+      </table>
+      <table data-testid="rate-list">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>From</th>
+            <th>Rate %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(rates.data ?? []).map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-from">{r.from ?? ''}</td>
+              <td data-testid="rate-pct">{showHundredths(toHundredths(r.rate))}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>
@@ -151,14 +192,15 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
 }
 
-// A claim's due: fixed when it was settled; otherwise its amount times its person's grade's rate,
-// n/a when the grade has no rate.
+// A claim's due: fixed when it was settled; otherwise its amount times its person's grade's rate in
+// force on the claim's date, n/a when no rate of the grade applies then.
 function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
-  claim: { amount: string; settledDue: string | null } }) {
+  claim: { amount: string; date: string; settledDue: string | null } }) {
   const people = usePeople(sheetId);
-  const rates = useRateByGrade(sheetId);
+  const rates = useRates(sheetId);
   const grade = people.data?.find((p) => p.id === personId)?.grade;
-  const rate = grade === undefined ? undefined : rates.get(grade);
+  const found = grade === undefined ? undefined : rateOn(rates.data ?? [], grade, claim.date);
+  const rate = found === undefined ? undefined : toHundredths(found.rate);
   if (claim.settledDue != null) {
     return <span data-testid="claim-due">{showHundredths(toHundredths(claim.settledDue))}</span>;
   }
