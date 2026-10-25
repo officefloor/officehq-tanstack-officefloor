@@ -23,6 +23,7 @@ public class Claim {
     private LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
+    private String splitFrom;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -59,6 +60,22 @@ public class Claim {
 
     public void setDeferredUntil(LocalDate deferredUntil) {
         this.deferredUntil = deferredUntil;
+    }
+
+    /** The number of the claim this one was split off; null when it was not split off one. */
+    public String getSplitFrom() {
+        return splitFrom;
+    }
+
+    public void setSplitFrom(String splitFrom) {
+        this.splitFrom = splitFrom;
+    }
+
+    /** Keep {@code amount} of the claim, the rest split off: it loses any figure a statement bound it to. */
+    public void keep(BigDecimal amount) {
+        this.amount = amount;
+        this.stated = false;
+        this.statedDue = null;
     }
 
     /** How many proofs the claim carries. */

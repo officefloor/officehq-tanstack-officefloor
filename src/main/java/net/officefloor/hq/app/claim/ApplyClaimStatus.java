@@ -98,7 +98,7 @@ public class ApplyClaimStatus {
      * date, the next within the claim's period (by its date) as {@code <period name>-<n>}, or {@code X-<n>} in no period;
      * otherwise the sheet's next.
      */
-    private static String number(Claim claim, ClaimRepository repository, SettingRepository settings,
+    static String number(Claim claim, ClaimRepository repository, SettingRepository settings,
             SheetRepository sheets, PeriodRepository periods) {
         String sheetId = claim.getSheetId();
         java.time.LocalDate from = settings.periodNumberingFrom(sheetId);

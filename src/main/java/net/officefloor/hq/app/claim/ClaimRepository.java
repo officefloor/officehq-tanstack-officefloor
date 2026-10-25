@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -29,6 +29,7 @@ public class ClaimRepository {
         claim.setDueBy(rs.getObject("due_by", LocalDate.class));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
+        claim.setSplitFrom(rs.getString("split_from"));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -91,6 +92,27 @@ public class ClaimRepository {
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
         claim.setDueBy(dueBy);
         return claim;
+    }
+
+    /**
+     * Split {@code amount} off the OPEN claim: it keeps the rest, unbound from any statement figure, and a new OPEN claim
+     * with the amount, its date and note, opened by {@code openedBy}, due by {@code dueBy} and split from its number is
+     * listed as its person's newest. Null when the claim was no longer OPEN at its amount: another user changed it.
+     */
+    public Claim split(Claim claim, BigDecimal amount, String openedBy, LocalDate dueBy) {
+        BigDecimal rest = claim.getAmount().subtract(amount);
+        if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE id = ? AND status = ? AND amount = ?",
+                rest, claim.getId(), ClaimStatus.OPEN.name(), claim.getAmount()) != 1) {
+            return null;
+        }
+        claim.keep(rest);
+        Claim into = insert(claim.getSheetId(), claim.getPersonId(), amount, claim.getDate(), claim.getNote(), null, dueBy);
+        into.setStatus(ClaimStatus.OPEN);
+        into.setOpenedBy(openedBy);
+        into.setSplitFrom(claim.getNumber());
+        jdbc.update("UPDATE claim SET status = ?, opened_by = ?, split_from = ? WHERE id = ?",
+                ClaimStatus.OPEN.name(), openedBy, claim.getNumber(), into.getId());
+        return into;
     }
 
     public void update(Claim claim) {

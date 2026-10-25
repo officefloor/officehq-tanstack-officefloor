@@ -2,10 +2,11 @@ package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
 
-/** A claim as the screen shows it; `deferred` as of the sheet's today, and `deferredUntil` the date it was last deferred until (null when never deferred). */
+/** A claim as the screen shows it; `deferred` as of the sheet's today, and `deferredUntil` the date it was last deferred until (null when never deferred), and `splitFrom` the number of the claim it was split off (null when none). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
         String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
-        java.util.List<String> log, boolean deferred, String deferredUntil, int proofs) {
+        java.util.List<String> log, boolean deferred, String deferredUntil, int proofs,
+        String splitFrom) {
 
     /** The claim with its status log, oldest first, as of the sheet's today. */
     public static ClaimResponse from(Claim claim, java.util.List<String> log, LocalDate today) {
@@ -16,6 +17,6 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 claim.getOpenedBy(), claim.isStated(),
                 claim.getStatedDue() == null ? null : claim.getStatedDue().toPlainString(), claim.getCorrects(),
                 claim.getDueBy().toString(), log, deferred, claim.getDeferredUntil() == null ? null : claim.getDeferredUntil().toString(),
-                claim.getProofs());
+                claim.getProofs(), claim.getSplitFrom());
     }
 }

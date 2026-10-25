@@ -24,12 +24,15 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // total, is not overdue and cannot be settled; whether it is deferred, and until when, shows on the claim.
 // A claim not SETTLED or VOID takes a proof, raising its proofs count by one; one whose due is above the proof threshold
 // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
+// An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
+// OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState('');
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
+  const [splitAmount, setSplitAmount] = useState('');
   const people = usePeople(sheetId);
   const change = useMutation({
     mutationFn: (to: Change) =>
@@ -66,16 +69,23 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`, { by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const split = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/split`,
+        { amount: amount.trim(), by: user ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     change.mutate(to);
   };
-  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending;
-  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error;
+  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending;
+  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error;
 
   return (
     <>
@@ -124,6 +134,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resettle.reset();
           defer.reset();
           proof.reset();
+          split.reset();
           reassign.mutate(moveTo);
         }}
       >
@@ -138,6 +149,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           reassign.reset();
           defer.reset();
           proof.reset();
+          split.reset();
           resettle.mutate();
         }}
       >
@@ -163,6 +175,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           reassign.reset();
           resettle.reset();
           proof.reset();
+          split.reset();
           defer.mutate(deferUntil);
         }}
       >
@@ -178,10 +191,36 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           reassign.reset();
           resettle.reset();
           defer.reset();
+          split.reset();
           proof.mutate();
         }}
       >
         Add proof
+      </button>{' '}
+      Split from <span data-testid="claim-split-from">{claim.splitFrom ?? ''}</span>{' '}
+      <input
+        data-testid="claim-split-amount"
+        placeholder="Split amount"
+        value={splitAmount}
+        onChange={(e) => {
+          setSplitAmount(e.target.value);
+          split.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-split"
+        disabled={busy}
+        onClick={() => {
+          change.reset();
+          reassign.reset();
+          resettle.reset();
+          defer.reset();
+          proof.reset();
+          split.mutate(splitAmount);
+        }}
+      >
+        Split
       </button>{' '}
       {error && (
         <span data-testid="claim-error" role="alert">
