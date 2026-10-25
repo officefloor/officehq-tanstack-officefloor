@@ -4,13 +4,15 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useFloorCents, useLate } from '../access/useAccess';
 import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
-import { claimDueCents, isOpen, showHundredths, trimmedSum, useRates } from '../rates/useRates';
+import { claimDueCents, isOpen, lateFrom, showHundredths, trimmedSum, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 
-/** Whether a claim is overdue: OPEN or PENDING, not deferred past the sheet's today, and its due-by before the sheet's today. */
-function useIsOverdue(sheetId: string): (claim: { status: string; dueBy: string; deferred?: boolean }) => boolean {
+/** Whether a claim is overdue: OPEN or PENDING, not deferred past the sheet's today, and its due-by plus its grade's
+ *  grace (see lateFrom; `grade` is its person's grade on its date) before the sheet's today. */
+function useIsOverdue(sheetId: string): (claim: { status: string; date: string; dueBy: string; deferred?: boolean }, grade: string | undefined) => boolean {
   const today = useSheetToday(sheetId).data?.today;
-  return (claim) => today !== undefined && isOpen(claim) && !claim.deferred && claim.dueBy < today;
+  const late = useLate(sheetId);
+  return (claim, grade) => today !== undefined && isOpen(claim) && !claim.deferred && lateFrom(late, grade, claim) < today;
 }
 
 type Overdue = { count: number; cents: bigint };
@@ -30,7 +32,7 @@ export function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; s
   for (const p of people.data ?? []) {
     const mine: Overdue = { count: 0, cents: 0n };
     for (const c of claims.data ?? []) {
-      if (c.personId !== p.id || !counts(c, held) || !isOverdue(c)) continue;
+      if (c.personId !== p.id || !counts(c, held) || !isOverdue(c, gradeOn(p, c.date))) continue;
       mine.count += 1;
       mine.cents += claimDueCents(rates.data ?? [], gradeOn(p, c.date), c, floor, late) ?? 0n;
     }
@@ -61,13 +63,14 @@ function OverdueCells({ sheetId, personId }: { sheetId: string; user: string; pe
   );
 }
 
-// A claim's due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now) and whether it is overdue (OPEN and due-by before the sheet's today).
-function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { status: string; dueBy: string; deferred?: boolean } }) {
+// A claim's due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now) and whether it is overdue (OPEN and due-by plus its grade's grace before the sheet's today).
+function ClaimOverdue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number; claim: { status: string; date: string; dueBy: string; deferred?: boolean } }) {
   const isOverdue = useIsOverdue(sheetId);
+  const person = usePeople(sheetId).data?.find((p) => p.id === personId);
   return (
     <>
       Due by <span data-testid="claim-due-by">{claim.dueBy}</span>{' '}
-      Overdue <span data-testid="claim-overdue">{isOverdue(claim) ? 'yes' : 'no'}</span>{' '}
+      Overdue <span data-testid="claim-overdue">{isOverdue(claim, gradeOn(person, claim.date)) ? 'yes' : 'no'}</span>{' '}
     </>
   );
 }

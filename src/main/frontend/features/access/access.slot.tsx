@@ -185,7 +185,8 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 
 // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
-// due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and the late percent, what an overdue claim's due gains of its figure for every
+// due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and each grade's grace (blank: none),
+// the days past its due-by a claim of that grade (on its date) goes overdue and counts its late charge from, and the late percent, what an overdue claim's due gains of its figure for every
 // full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
@@ -209,6 +210,9 @@ const SETTINGS: readonly SettingField[] = [
   ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `terms-${grade}`, label: `Terms for grade ${grade} (days)`,
     placeholder: 'sheet\'s terms', blank: true, valid: DAYS, inputMode: 'numeric',
     invalid: 'A grade\'s terms are a whole number of days, or blank for the sheet\'s terms' })),
+  ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `grace-${grade}`, label: `Grace for grade ${grade} (days)`,
+    placeholder: 'none', blank: true, valid: DAYS, inputMode: 'numeric',
+    invalid: 'A grade\'s grace is a whole number of days, or blank for none' })),
   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A late percent is a number with up to two decimals' },
   { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',

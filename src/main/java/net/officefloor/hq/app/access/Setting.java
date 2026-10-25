@@ -50,7 +50,10 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** A grade's own terms (the key is this plus the grade, terms-A); blank means the sheet's terms. */
     public static final String TERMS_OF_GRADE = "terms-";
 
-    /** The grades that may have their own terms. */
+    /** A grade's grace (the key is this plus the grade, grace-A): the days past its due-by a claim of that grade on its date goes overdue and counts its late charge from; blank means none. */
+    public static final String GRACE_OF_GRADE = "grace-";
+
+    /** The grades that may have their own terms and grace. */
     public static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
 
     /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue, the one in force on each 30-day boundary date; two decimals. */

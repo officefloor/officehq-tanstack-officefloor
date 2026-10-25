@@ -78,7 +78,8 @@ export const TERMS_DEFAULT = '14';
 /** The late percent a sheet starts with, until it is set. */
 export const LATE_PCT_DEFAULT = '0.00';
 
-/** The sheet's late charge as of its today: its late percent in force on each date (0.00 before any is); with its
+/** The sheet's late charge as of its today: its late percent in force on each date (0.00 before any is), and each
+ *  grade's grace in force on a date (0 while blank); with its
  *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
  *  until the sheet's today is known. */
 export function useLate(sheetId: string): Late | undefined {
@@ -89,6 +90,11 @@ export function useLate(sheetId: string): Late | undefined {
   const claims = useClaims(sheetId).data;
   const dateOfNumber = new Map<string, string>();
   for (const c of claims ?? []) if (c.number != null) dateOfNumber.set(c.number, c.date);
+  const graceOn = (grade: string | undefined, date: string) => {
+    const value = grade === undefined ? '' : settingOn(settings?.find((s) => s.key === `grace-${grade}`), date, '');
+    return value === '' ? 0 : Number(value);
+  };
   return today === undefined ? undefined
-    : { today, pctOn: (date) => toHundredths(settingOn(pct, date, LATE_PCT_DEFAULT)), policyDate: policy === '' ? today : policy, dateOfNumber };
+    : { today, pctOn: (date) => toHundredths(settingOn(pct, date, LATE_PCT_DEFAULT)), graceOn,
+      policyDate: policy === '' ? today : policy, dateOfNumber };
 }

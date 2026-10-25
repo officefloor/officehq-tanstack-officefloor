@@ -46,6 +46,12 @@ public record DatedSettings(List<DatedValue> values) {
         return terms(person == null ? null : person.gradeOn(date), date);
     }
 
+    /** The grace of the grade in force on the date (setting grace-<grade>): the days past its due-by a claim goes overdue; 0 while blank. */
+    public int grace(String grade, LocalDate date) {
+        String value = grade == null ? null : on(Setting.GRACE_OF_GRADE + grade, date);
+        return value == null ? 0 : Integer.parseInt(value);
+    }
+
     /** The clerk limit in force on the date; null when there is none. */
     public BigDecimal clerkLimit(LocalDate date) {
         String value = on(Setting.CLERK_LIMIT, date);

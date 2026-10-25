@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
  * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even;
  * none without a rate) with its late charge added on top while it is overdue, and then — unless it is settled or a correction — at least the sheet's floor in force on its date, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
  * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
- * those of their claims that are OPEN or PENDING and past their due-by on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
+ * those of their claims that are OPEN or PENDING and past their due-by plus their grade's grace on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
  * then a TOTALS line when any of the sheet's three totals moved. The sheet's due-total and overdue-total leave out the
  * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
  * binds them; their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
@@ -85,7 +85,7 @@ public class Rollup {
                 kept |= figure != null && (!grade.equals(p.getGrade()) || !c.getDate().isAfter(today));
                 if (figure != null) {
                     due = due.add(figure);
-                    if (overdue(c, today)) {
+                    if (late.overdue(c)) {
                         overdue = overdue.add(figure);
                     }
                 }
@@ -203,11 +203,6 @@ public class Rollup {
     public static boolean held(Claim claim, Person person, LocalDate today) {
         return claim.getStatus().isOpen() && !claim.isBound()
                 && (person.heldOn(claim.getDate()) || person.retiredOn(today));
-    }
-
-    /** Whether the claim is overdue as of the sheet's today: OPEN or PENDING, and its due-by before today. */
-    private static boolean overdue(Claim claim, LocalDate today) {
-        return claim.getStatus().isOpen() && claim.getDueBy() != null && claim.getDueBy().isBefore(today);
     }
 
     private static String show(BigDecimal figure) {

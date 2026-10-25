@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -23,9 +25,17 @@ public class SettingRepository {
             rs.getObject("from_date", LocalDate.class), rs.getString("setting_value"));
 
     private final JdbcTemplate jdbc;
+    private final PersonRepository people;
 
+    /** Settings over the connection, with its people (a past view of the sheet reads both as they were). */
     public SettingRepository(JdbcTemplate jdbc) {
+        this(jdbc, new PersonRepository(jdbc));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SettingRepository(JdbcTemplate jdbc, PersonRepository people) {
         this.jdbc = jdbc;
+        this.people = people;
     }
 
     /** The sheet's undated settings, by key (the policy date, period numbering from, the entry date, the grace days and the permissions); a key without a row is not listed. */
@@ -82,9 +92,11 @@ public class SettingRepository {
         return value == null ? null : Integer.valueOf(value);
     }
 
-    /** The sheet's late charge as of its today, each 30-day boundary's late percent the one in force on its date, with its policy date for rounding. */
+    /** The sheet's late charge as of its today, each 30-day boundary's late percent the one in force on its date, with its policy date for rounding and its people for each claim's grade's grace. */
     public LateCharge lateCharge(String sheetId, LocalDate today) {
-        return new LateCharge(today, dated(sheetId), policyDate(sheetId, today));
+        java.util.Map<Long, Person> byId = new java.util.HashMap<>();
+        people.list(sheetId).forEach(p -> byId.put(p.getId(), p));
+        return new LateCharge(today, dated(sheetId), policyDate(sheetId, today), byId);
     }
 
     /** Set an undated setting's value (null: blank), replacing the one there before. */

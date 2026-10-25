@@ -4,17 +4,39 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.person.Person;
 
 /**
- * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now) gains, for every
- * full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of its figure,
+ * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now)
+ * plus its grade's grace (see {@link #lateFrom}) gains, for every
+ * full 30 days it is overdue, the late percent in force on that boundary date (that date plus 30, 60, 90 ... days) of its figure,
  * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its
  * late charge (a correction has no floor).
  */
-public record LateCharge(LocalDate today, DatedSettings settings, LocalDate policyDate) {
+public record LateCharge(LocalDate today, DatedSettings settings, LocalDate policyDate, Map<Long, Person> people) {
+
+    /**
+     * The date the claim's lateness counts from: its due-by plus the grace in force on its date of its person's grade
+     * on that date (none while blank). It is overdue once this is before today; the 30-day boundaries count from it.
+     */
+    public LocalDate lateFrom(Claim claim) {
+        LocalDate dueBy = claim.getDueBy();
+        Person person = people.get(claim.getPersonId());
+        if (dueBy == null || person == null) {
+            return dueBy;
+        }
+        return dueBy.plusDays(settings.grace(person.gradeOn(claim.getDate()), claim.getDate()));
+    }
+
+    /** Whether the claim is overdue as of today: OPEN or PENDING, and its due-by plus its grace before today. */
+    public boolean overdue(Claim claim) {
+        LocalDate from = lateFrom(claim);
+        return claim.getStatus().isOpen() && from != null && from.isBefore(today);
+    }
 
     /**
      * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after
@@ -39,14 +61,15 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
         if (figure == null || claim.isCorrection()) {
             return none;
         }
-        long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
+        LocalDate from = lateFrom(claim);
+        long overdue = ChronoUnit.DAYS.between(from, today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) {
             return none;
         }
         BigDecimal charge = none;
         for (long n = 1; n <= periods; n++) {
-            BigDecimal pct = settings.latePct(claim.getDueBy().plusDays(30 * n));
+            BigDecimal pct = settings.latePct(from.plusDays(30 * n));
             if (pct.signum() != 0) {
                 charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding(claim)));
             }
