@@ -106,6 +106,10 @@ public class Plan {
         return amount;
     }
 
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
     public LocalDate getStart() {
         return start;
     }

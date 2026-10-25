@@ -19,7 +19,9 @@ function PlansHeader() {
 const blank = { amount: '', start: '', every: '', day: '', end: '' };
 
 // One plan, with its pause and resume buttons: pausing on the sheet's today skips its dates from then until it is
-// resumed. Pausing a paused plan, or resuming a running one, is refused.
+// resumed. Pausing a paused plan, or resuming a running one, is refused. Its amount is an entry with a save button:
+// the new amount applies to the claims generated from then on (a bad amount is refused), and the plan lists its
+// changes, oldest first.
 function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -32,11 +34,34 @@ function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
     },
   });
   const submit = useSubmitOnce(toggle);
+  const [amount, setAmount] = useState(p.amount);
+  const [shownAmount, setShownAmount] = useState(p.amount);
+  if (p.amount !== shownAmount) {
+    setShownAmount(p.amount);
+    setAmount(p.amount);
+  }
+  const change = useMutation({
+    mutationFn: (value: string) =>
+      putJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/plans/${p.id}/amount`, { amount: value }, user),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(plansQueryKey(sheet ?? ''), saved);
+    },
+  });
+  const submitChange = useSubmitOnce(change);
   const rowAction = useRowAction(`person-${person.id}`);
-  const take = (action: 'pause' | 'resume') => { rowAction.take(); submit(action); };
+  const take = (action: 'pause' | 'resume') => { rowAction.take(); change.reset(); submit(action); };
+  const save = () => { rowAction.take(); toggle.reset(); submitChange(amount); };
   return (
     <li data-testid={`plan-row-${p.id}`}>
-      <span data-testid="plan-amount">{p.amount}</span> from <span data-testid="plan-start">{p.start}</span>{' '}
+      <input
+        data-testid="plan-amount"
+        value={amount}
+        onChange={(e) => { setAmount(e.target.value); change.reset(); }}
+      />{' '}
+      <button type="button" data-testid="plan-amount-save" disabled={change.isPending} onClick={save}>
+        Save amount
+      </button>{' '}
+      from <span data-testid="plan-start">{p.start}</span>{' '}
       {p.day != null ? (
         <>monthly on day <span data-testid="plan-day">{p.day}</span></>
       ) : (
@@ -57,6 +82,12 @@ function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
           {toggle.variables === 'pause' ? 'The plan is already paused.' : 'The plan is not paused.'}
         </span>
       )}
+      {change.isError && rowAction.isLatest && (
+        <span data-testid="plan-error">The amount must be 0.00 or more with up to two decimals.</span>
+      )}
+      <ul>
+        {p.changes.map((line, i) => <li key={i} data-testid="plan-change-line">{line}</li>)}
+      </ul>
     </li>
   );
 }
