@@ -35,10 +35,10 @@ function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefine
   const current = people.filter((p) => p.retiredFrom === null);
   return {
     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
-    dues: people.map((p) => personDue(p, claims, rates, today, settings)),
+    dues: people.map((p) => personDue(p, claims, rates, today, settings, people)),
     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
-      .map((p) => personDue(p, claims, rates, today, settings)))])),
+      .map((p) => personDue(p, claims, rates, today, settings, people)))])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
   };
 }

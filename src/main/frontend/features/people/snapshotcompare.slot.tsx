@@ -32,7 +32,7 @@ async function compareSnapshots(sheetId: string, from: string, to: string): Prom
   const fromDate = from.trim() === '' ? info.today : from.trim();
   return people.map((p) => {
     const then = snapshotOn(p, fromDate);
-    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings) : snapshotOn(p, to.trim());
+    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings, people) : snapshotOn(p, to.trim());
     return [p.name, then, now].filter((s) => s !== '').join(' ');
   });
 }

@@ -70,6 +70,8 @@ export type Claim = {
   lines: string[];
   /** The number of the bulk settle batch that settled it (or left it PENDING); null when settled one at a time. */
   settleBatch: number | null;
+  /** The people it is shared with, in the order added: each person's id and share (two decimals). */
+  shares: { personId: number; share: string }[];
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

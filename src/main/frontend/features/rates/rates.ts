@@ -120,7 +120,7 @@ export function atLeast(due: string, floor: string | null | undefined): string {
 }
 
 /** A two-decimal string ("12.50") in hundredths, exactly. */
-const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
+export const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
 
 /**
  * The due on an amount: amount times the percent, divided by 100, rounded half to even (or half up, away from
@@ -162,4 +162,15 @@ export function trimmedSum(dues: string[]): string {
   const figures = dues.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
   return formatCents(kept.reduce((n, d) => n + d, 0n));
+}
+
+/** A holder's part of a due, in hundredths: the due times their share divided by 100, rounded half to even. */
+export function sharePart(due: string, share: string): bigint {
+  const n = hundredths(due) * hundredths(share);
+  const neg = n < 0n;
+  const abs = neg ? -n : n;
+  let q = abs / 10_000n;
+  const r = abs % 10_000n;
+  if (r * 2n > 10_000n || (r * 2n === 10_000n && q % 2n === 1n)) q += 1n;
+  return neg ? -q : q;
 }

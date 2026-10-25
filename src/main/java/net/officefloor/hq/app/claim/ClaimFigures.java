@@ -237,6 +237,13 @@ public class ClaimFigures {
                 .orElse(null);
     }
 
+    /** The claim's due less its holders' parts (each its due times their share divided by 100, rounded half to
+     *  even): what its own person's due-total counts of it; null when it has none (n/a). */
+    public BigDecimal ownDue(Claim claim) {
+        BigDecimal due = due(claim);
+        return due == null ? null : due.subtract(ClaimShares.parts(claim, due));
+    }
+
     /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade
      *  in force on the day has no rate in force then, unless a counted claim keeps a figure: a fixed one (settled or bound), or a
      *  live one at another grade they had on its date, or one dated on or before the day (at a rate that has ended since). */
@@ -247,7 +254,17 @@ public class ClaimFigures {
     /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims do not count once their
      *  retirement date is reached, unless a statement binds them. At most the sheet's cap (n/a is not capped). */
     public String dueTotal(List<Claim> claims, LocalDate today, Person person) {
+        return dueTotal(claims, today, person, null);
+    }
+
+    /** The person's live due-total, as {@link #dueTotal(List, LocalDate, Person)}, with their parts of the claims of
+     *  others shared with them (null: they hold no share of a counted claim) added before the cap: their own claims
+     *  count less the holders' parts, and when they would have none (n/a) their parts are their due-total. */
+    public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held) {
         String sum = uncappedDueTotal(claims, today, person);
+        if (held != null) {
+            sum = ("n/a".equals(sum) ? held : new BigDecimal(sum).add(held)).setScale(2).toPlainString();
+        }
         if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
             return sum;
         }
@@ -263,7 +280,7 @@ public class ClaimFigures {
         if (rateOn(grade, today).isEmpty() && !kept) {
             return "n/a";
         }
-        return counted.stream().map(this::due).filter(f -> f != null)
+        return counted.stream().map(this::ownDue).filter(f -> f != null)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
     }
 }

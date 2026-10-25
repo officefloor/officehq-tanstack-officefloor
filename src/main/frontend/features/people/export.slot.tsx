@@ -39,7 +39,7 @@ function ExportPeople() {
     const today = info.today;
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
-      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings)]);
+      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people)]);
     }
     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

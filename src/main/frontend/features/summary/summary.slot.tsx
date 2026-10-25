@@ -51,7 +51,7 @@ function Summary() {
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
-                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data)))}
+                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)))}
                 </td>
                 <td data-testid={`summary-grade-${g}-active`}>
                   {onGrade.filter((p) => isActive(p, allClaims, today)).length}

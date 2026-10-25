@@ -158,6 +158,10 @@ public class Claim {
     @Column(name = "void_reason")
     private String voidReason;
 
+    /** The people the claim is shared with, in the order added: <person id>:<share>, comma separated; null for none. */
+    @Column(name = "shares", length = 2000)
+    private String shares;
+
     protected Claim() {
     }
 
@@ -463,6 +467,7 @@ public class Claim {
         then.ref = ref;
         then.tags = tags;
         then.tagsUsed = tagsUsed;
+        then.shares = shares;
         then.voidReason = status == ClaimStatus.VOID ? voidReason : null;
         then.bind(stated, statedDue);
         return then;
@@ -534,5 +539,14 @@ public class Claim {
 
     public void setVoidReason(String voidReason) {
         this.voidReason = voidReason;
+    }
+
+    public String getShares() {
+        return shares;
+    }
+
+    /** Gives the claim its shares (null: none). */
+    public void setShares(String shares) {
+        this.shares = shares;
     }
 }

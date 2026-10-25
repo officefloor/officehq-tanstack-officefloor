@@ -20,7 +20,7 @@ import type { Settings } from '../roles/roles';
 export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): string {
   const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
-  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings)));
+  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings, people)));
 }
 
 // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.

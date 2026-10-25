@@ -16,7 +16,7 @@ import { crewDue } from '../crews/crews.slot';
 export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): { due: string; overdue: string } {
   return {
-    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings))),
+    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings, people))),
     overdue: trimmedSum(people.map((p) => overdueOf(p, claims, rates, today, settings).total)),
   };
 }
@@ -48,7 +48,7 @@ function HeaderCounters() {
   const [user] = useCurrentUser();
   const me = personNamed(allPeople, user);
   const mine = me
-    ? { due: personDue(me, allClaims, rates.data, today, settings.data),
+    ? { due: personDue(me, allClaims, rates.data, today, settings.data, allPeople),
         overdue: sheetTotals([me], allClaims, rates.data, today, settings.data).overdue }
     : { due: '', overdue: '' };
   const led = me ? (crews.data ?? []).filter((c) => c.lead?.id === me.id) : [];

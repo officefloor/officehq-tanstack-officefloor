@@ -61,7 +61,7 @@ function PeopleList() {
   const visible = visibleTo(people.data ?? [], roles.data, delegations.data, crews.data, user, today);
   const listed = (people.data ?? []).filter((p) => (visible(p) || quickAdded.includes(p.id)) && (showRetired || p.retiredFrom === null));
   const due = (p: Person) => {
-    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data);
+    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data);
     return d === 'n/a' ? null : Number(d);
   };
   const shown = sort === 'name' ? sortedBy(listed, (p) => nameKey(p.name))

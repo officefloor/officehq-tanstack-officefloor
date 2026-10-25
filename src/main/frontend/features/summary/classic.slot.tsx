@@ -34,7 +34,7 @@ function ClassicSummary() {
   if (!user || !sheet) return null;
   const allClaims = claims.data ?? [];
   const sortedPeriods = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
-  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data)));
+  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)));
   return (
     <section data-testid="classic-summary">
       <h2>Classic summary</h2>

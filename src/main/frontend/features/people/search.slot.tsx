@@ -30,7 +30,7 @@ async function linesOf(sheetId: string, text: string): Promise<string[]> {
   const key = text.toLowerCase();
   return people
     .filter((p) => [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(key)))
-    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings)}`);
+    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings, people)}`);
 }
 
 async function searchTree(sheetId: string, text: string): Promise<string[]> {
