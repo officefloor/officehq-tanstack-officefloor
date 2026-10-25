@@ -5,7 +5,7 @@ import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/useClaims';
-import { usePeople } from '../people/people.slot';
+import { useHeld, usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
@@ -36,9 +36,10 @@ function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useRateByGrade(sheetId);
+  const held = useHeld(sheetId);
   const totals = new Map<number, bigint | null>();
   for (const p of people.data ?? []) {
-    const counted = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c));
+    const counted = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
     if (!today.has(p.grade) && !counted.some((c) => c.settledDue != null || (c.stated && c.statedDue != null))) {
       totals.set(p.id, null);
       continue;

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version, p.retired_from,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version, p.retired_from, p.held,"
             + " (SELECT COUNT(*) FROM statement s WHERE s.person_id = p.id) AS statement_count,"
             + " (SELECT s.due_total FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS stated_total,"
             + " (SELECT s.taken_on FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS statement_date";
@@ -24,6 +24,7 @@ public class PersonRepository {
         person.setStatements(new Statements(rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
                 rs.getObject("statement_date", LocalDate.class)));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
+        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -90,5 +91,10 @@ public class PersonRepository {
     public boolean retire(long id, LocalDate from) {
         return jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND retired_from IS NULL",
                 java.sql.Date.valueOf(from), id) == 1;
+    }
+
+    /** Put the person on hold, or take them off it; false (nothing written) when they were in that state already. */
+    public boolean hold(long id, boolean held) {
+        return jdbc.update("UPDATE person SET held = ? WHERE id = ? AND held = ?", held, id, !held) == 1;
     }
 }

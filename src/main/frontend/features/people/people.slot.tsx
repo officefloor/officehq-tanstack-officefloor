@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
@@ -10,9 +10,10 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
- *  is retired from; set at all, they count as retired. */
+ *  is retired from; set at all, they count as retired. `held`: whether they are on hold, when their OPEN claims
+ *  count in no live total. */
 export type Person = { id: number; name: string; grade: string; version: number;
-  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null };
+  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean };
 
 const GRADES = ['A', 'B', 'C'] as const;
 
@@ -24,6 +25,12 @@ export function usePeople(sheetId: string) {
     queryKey: peopleKey(sheetId),
     queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheetId)}/people`),
   });
+}
+
+/** The ids of the people on hold: their OPEN claims count in no live total. */
+export function useHeld(sheetId: string): ReadonlySet<number> {
+  const people = usePeople(sheetId);
+  return useMemo(() => new Set((people.data ?? []).filter((p) => p.held).map((p) => p.id)), [people.data]);
 }
 
 /** Which person's editor is open (search param `editPerson`); none means the form adds. */

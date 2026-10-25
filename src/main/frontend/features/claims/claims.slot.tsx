@@ -5,6 +5,7 @@ import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
+import { useHeld } from '../people/people.slot';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
@@ -85,12 +86,13 @@ function ClaimsHead() {
 function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
   const claims = useClaims(sheetId);
   const [editingId, setEditing] = useEditingClaim();
+  const held = useHeld(sheetId);
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   const editing = mine.find((c) => c.id === editingId);
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(mine)}</td>
+      <td data-testid="person-claimed">{sumAmounts(mine, held)}</td>
       <td>
         <ClaimForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} personId={personId} editing={editing} />
         <ul data-testid="claim-list">
@@ -120,10 +122,11 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
 // The sheet's claimed-total: everyone's counted claims added up.
 function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
   const claims = useClaims(sheetId);
+  const held = useHeld(sheetId);
   return (
     <section data-testid="claims-rollup">
       <p>
-        Claimed total: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [])}</strong>
+        Claimed total: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], held)}</strong>
       </p>
       {claims.isError && (
         <p data-testid="claims-error" role="alert">

@@ -10,6 +10,7 @@ import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -24,7 +25,7 @@ import org.springframework.stereotype.Service;
  * bound it to, else its amount times the grade's rate in force on its date, rounded half to even; none without a
  * rate), n/a when their grade has no rate on the sheet's today and no counting claim keeps a settled or bound
  * figure. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
- * sheet's totals moved.
+ * sheet's totals moved. A held person's OPEN claims count in none of these; their SETTLED claims still do.
  */
 @Service
 public class Rollup {
@@ -58,7 +59,7 @@ public class Rollup {
             BigDecimal due = ZERO;
             boolean kept = false;
             for (Claim c : sheetClaims) {
-                if (c.getPersonId() != p.getId() || !c.getStatus().counts()) {
+                if (c.getPersonId() != p.getId() || !counts(c, p.isHeld())) {
                     continue;
                 }
                 claimed = claimed.add(c.getAmount().setScale(2));
@@ -84,16 +85,17 @@ public class Rollup {
      */
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         List<Rate> sheetRates = rates.list(sheetId);
-        Map<Long, String> grades = new LinkedHashMap<>();
+        Map<Long, Person> byId = new LinkedHashMap<>();
         for (Person p : people.list(sheetId)) {
-            grades.put(p.getId(), p.getGrade());
+            byId.put(p.getId(), p);
         }
         BigDecimal total = ZERO;
         for (Claim c : claims.list(sheetId)) {
-            if (!c.getStatus().counts() || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
+            Person p = byId.get(c.getPersonId());
+            if (p == null || !counts(c, p.isHeld()) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
                 continue;
             }
-            BigDecimal figure = figure(c, grades.get(c.getPersonId()), sheetRates);
+            BigDecimal figure = figure(c, p.getGrade(), sheetRates);
             if (figure != null) {
                 total = total.add(figure);
             }
@@ -118,6 +120,11 @@ public class Rollup {
                     + after.dueTotal().toPlainString());
         }
         lines.forEach(audit::record);
+    }
+
+    /** Whether the claim counts in the live totals: a held person's OPEN claims do not; their SETTLED ones do. */
+    private static boolean counts(Claim claim, boolean held) {
+        return claim.getStatus().counts() && !(held && claim.getStatus() == ClaimStatus.OPEN);
     }
 
     private static String show(BigDecimal figure) {

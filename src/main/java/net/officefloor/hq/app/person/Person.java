@@ -12,6 +12,7 @@ public class Person {
     private long version;
     private Statements statements = Statements.NONE;
     private LocalDate retiredFrom;
+    private boolean held;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -73,5 +74,14 @@ public class Person {
 
     public boolean isRetired() {
         return retiredFrom != null;
+    }
+
+    /** Whether the person is on hold: their OPEN claims then count in no live total. */
+    public boolean isHeld() {
+        return held;
+    }
+
+    public void setHeld(boolean held) {
+        this.held = held;
     }
 }

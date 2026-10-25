@@ -15,9 +15,11 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   stated: boolean;
   statedDue: string | null };
 
-/** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do. */
-export function counts(claim: { status: ClaimStatus }): boolean {
-  return claim.status === 'OPEN' || claim.status === 'SETTLED';
+/** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do, and a held
+ *  person's (`held`: the ids of the people on hold) OPEN claims do not. */
+export function counts(claim: { status: ClaimStatus; personId: number }, held: ReadonlySet<number>): boolean {
+  if (claim.status === 'OPEN') return !held.has(claim.personId);
+  return claim.status === 'SETTLED';
 }
 
 /** The key every feature reads the sheet's claims under. */
@@ -37,7 +39,7 @@ export function useEditingClaim() {
 }
 
 /** The counted claims' amounts added up exactly, in cents, shown with two decimals. */
-export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.filter(counts).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+export function sumAmounts(claims: Claim[], held: ReadonlySet<number>): string {
+  const cents = claims.filter((c) => counts(c, held)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
