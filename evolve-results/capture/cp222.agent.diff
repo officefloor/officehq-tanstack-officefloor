@@ -1,0 +1,144 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 2f9c4761..a527beeb 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -19,24 +19,27 @@ import { STATUSES } from '../summary/summary.slot';
+ // date as its today. Per grade, the due-totals of the people not retired on that grade (in force on each sheet's
+ // today), added up over the tree (skipping n/a); per status, how many claims over the tree have it.
+ 
+-type Figures = {
++export type Figures = {
+   /** Per person, the names they go by (name and aliases), as names are compared. */
+   people: string[][];
+   /** Per person, their due-total and overdue-total. */
+   dues: string[];
+   overdues: string[];
++  /** How many of its people's claims are overdue, as the rollup counts them. */
++  overdueCount: number;
+   grades: Record<string, string>;
+   statuses: Record<string, number>;
+ };
+ 
+ /** A sheet's figures, from its people, claims, rates, today and settings. */
+-function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++export function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined): Figures {
+   const current = people.filter((p) => p.retiredFrom === null);
+   return {
+     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
+     dues: people.map((p) => personDue(p, claims, rates, today, settings, people)),
+     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
++    overdueCount: people.reduce((n, p) => n + overdueOf(p, claims, rates, today, settings).count, 0),
+     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
+       .map((p) => personDue(p, claims, rates, today, settings, people)))])),
+     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+@@ -74,7 +77,7 @@ export async function figuresOf(id: string): Promise<Figures> {
+ }
+ 
+ /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
+-async function descendantFigures(sheetId: string): Promise<Figures[]> {
++export async function descendantFigures(sheetId: string): Promise<Figures[]> {
+   const seen = new Set([sheetId]);
+   const ids: string[] = [];
+   for (let level = [sheetId]; level.length > 0; ) {
+diff --git a/src/main/frontend/features/header/dashboard.slot.tsx b/src/main/frontend/features/header/dashboard.slot.tsx
+index a9d433e6..e7903c93 100644
+--- a/src/main/frontend/features/header/dashboard.slot.tsx
++++ b/src/main/frontend/features/header/dashboard.slot.tsx
+@@ -1,8 +1,10 @@
++import { useQuery } from '@tanstack/react-query';
++import { currentAsOf } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+-import { useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+ import { usePeople } from '../people/people';
+ import { useClaims } from '../claims/claims';
+-import { overdueOf } from '../claims/overdue.slot';
++import { descendantFigures, descendantsQueryKey, figuresFrom } from '../consolidated/consolidated.slot';
+ import { useRates } from '../rates/rates';
+ import { useDelegations, useRoles, useSettings, type Delegation, type Role } from '../roles/roles';
+ 
+@@ -15,11 +17,12 @@ export function roleOf(roles: Role[], delegations: Delegation[], user: string |
+   return own !== 'steward' && delegated ? 'steward' : own;
+ }
+ 
+-// The steward's dashboard: over the sheet, how many claims are PENDING, how many are in REVIEW, and how many claims
++// The steward's dashboard: over the sheet and all its descendants (each read as its own sheet shows it), how many claims are PENDING, how many are in REVIEW, and how many claims
+ // that count are overdue (as the rollup counts them). A user who is not a steward (in the role they act in on the
+ // sheet's today) sees the three cells blank. In an as-of view every input is as of that date, the role included.
+ function StewardDashboard() {
+   const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
+   const people = usePeople();
+   const claims = useClaims();
+   const rates = useRates();
+@@ -27,14 +30,19 @@ function StewardDashboard() {
+   const roles = useRoles();
+   const delegations = useDelegations();
+   const today = useSheetToday();
++  const asOf = currentAsOf();
++  const descendants = useQuery({
++    queryKey: [...descendantsQueryKey(sheet ?? ''), asOf],
++    queryFn: () => descendantFigures(sheet ?? ''),
++    enabled: !!sheet,
++  });
+   const steward = roles.data !== undefined && delegations.data !== undefined
+     && roleOf(roles.data, delegations.data, user, today) === 'steward';
+-  const allClaims = claims.data ?? [];
+-  const pending = steward ? String(allClaims.filter((c) => c.status === 'PENDING').length) : '';
+-  const review = steward ? String(allClaims.filter((c) => c.status === 'REVIEW').length) : '';
+-  const overdue = steward
+-    ? String((people.data ?? []).reduce((n, p) => n + overdueOf(p, allClaims, rates.data, today, settings.data).count, 0))
+-    : '';
++  const all = [figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data),
++    ...(descendants.data ?? [])];
++  const pending = steward ? String(all.reduce((n, f) => n + f.statuses.PENDING, 0)) : '';
++  const review = steward ? String(all.reduce((n, f) => n + f.statuses.REVIEW, 0)) : '';
++  const overdue = steward ? String(all.reduce((n, f) => n + f.overdueCount, 0)) : '';
+   return (
+     <section data-testid="steward-dashboard">
+       Pending <strong data-testid="dash-pending-count">{pending}</strong>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+index f07d6384..52e23e23 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+@@ -26,9 +26,10 @@ public class ApplyPartSettle {
+             throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+         Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades);
+         Claim made = split.made();
++        String splitNumber = made.getNumber();
+         String number = ApplyClaimStatus.run("settle", made, repository, entityManager, people, rates, grades, periods,
+                 sheet, roles, log, voidReasons, userHeader, null, null, false, true);
+         ClaimRules.log(made, sheet, log, people, rates, grades, AuditUser.decode(userHeader));
+-        return new PartSettle(split, between, number);
++        return new PartSettle(split, between, splitNumber, number);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
+index 70615d8a..04c8b689 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
+@@ -25,7 +25,7 @@ public class AuditPartSettle {
+         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
+         String by = AuditUser.decode(user);
+         Claim made = part.split().made();
+-        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + Objects.requireNonNullElse(made.getNumber(), ""));
++        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + Objects.requireNonNullElse(part.splitNumber(), ""));
+         audit.record(ClaimAudit.line(ClaimStatus.OPEN.event(), made, person, by, null));
+         part.between().changesSince(before, claim.getSheetId(), by).forEach(audit::record);
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PartSettle.java b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+index c58fe848..9dcf605f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+@@ -2,7 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.rollup.Rollup;
+ 
+-/** A part-settle: the split that made the new claim, the sheet's figures between the split and the settle, and the
+- *  new claim's number as its settle left it. */
+-public record PartSettle(Split split, Rollup between, String number) {
++/** A part-settle: the split that made the new claim, the sheet's figures between the split and the settle, the new
++ *  claim's number as the split made it (before its settle), and its number as its settle left it. */
++public record PartSettle(Split split, Rollup between, String splitNumber, String number) {
+ }
