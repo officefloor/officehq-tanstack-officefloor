@@ -11,9 +11,10 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
  *  is retired from; set at all, they count as retired. `held`: whether they are on hold, when their OPEN claims
- *  count in no live total. */
+ *  count in no live total. `patrons`: the names of the people they have named as patrons, sorted. */
 export type Person = { id: number; name: string; grade: string; version: number;
-  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean };
+  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
+  patrons: string[] };
 
 const GRADES = ['A', 'B', 'C'] as const;
 

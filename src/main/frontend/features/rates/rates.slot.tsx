@@ -32,7 +32,7 @@ function useRateByGrade(sheetId: string): Map<string, bigint> {
 /** A person's due-total in cents: their counted claims' already-rounded figures added up (0 with none). Null when
  *  their grade has no rate on the sheet's today, unless a counted settled or stated claim keeps a figure: then the figures
  *  there are, added up. */
-function useDueTotals(sheetId: string): Map<number, bigint | null> {
+export function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);

@@ -3,6 +3,9 @@ package net.officefloor.hq.app.person;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -40,18 +43,21 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
+        return withPatrons(sheetId,
+                jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId));
     }
 
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND p.id = ?", ROW, sheetId, id)
+        return withPatrons(sheetId,
+                jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND p.id = ?", ROW, sheetId, id))
                 .stream().findFirst().orElse(null);
     }
 
     /** The person on the sheet with this name, ignoring case and surrounding spaces; null when none. */
     public Person findByName(String sheetId, String name) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND p.name_key = LOWER(TRIM(?))",
-                ROW, sheetId, name).stream().findFirst().orElse(null);
+        return withPatrons(sheetId, jdbc.query(
+                "SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND p.name_key = LOWER(TRIM(?))", ROW, sheetId,
+                name)).stream().findFirst().orElse(null);
     }
 
     /** Whether another person on the sheet has this name, ignoring case and surrounding spaces. */
@@ -96,5 +102,33 @@ public class PersonRepository {
     /** Put the person on hold, or take them off it; false (nothing written) when they were in that state already. */
     public boolean hold(long id, boolean held) {
         return jdbc.update("UPDATE person SET held = ? WHERE id = ? AND held = ?", held, id, !held) == 1;
+    }
+
+    /** Name the patron as the person's patron; false (nothing written) when they are one already. */
+    public boolean addPatron(long personId, long patronId) {
+        try {
+            return jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT ?, ? WHERE NOT EXISTS"
+                    + " (SELECT 1 FROM person_patron WHERE person_id = ? AND patron_id = ?)",
+                    personId, patronId, personId, patronId) == 1;
+        } catch (DuplicateKeyException e) {
+            return false;
+        }
+    }
+
+    /** Sets each person's patrons' names, sorted. */
+    private List<Person> withPatrons(String sheetId, List<Person> people) {
+        if (people.isEmpty()) {
+            return people;
+        }
+        Map<Long, List<String>> patrons = jdbc.query(
+                "SELECT pp.person_id, q.name FROM person_patron pp JOIN person q ON q.id = pp.patron_id"
+                        + " WHERE q.sheet_id = ?",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), rs.getString("name")), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setPatrons(patrons.getOrDefault(person.getId(), List.of()).stream().sorted().toList());
+        }
+        return people;
     }
 }

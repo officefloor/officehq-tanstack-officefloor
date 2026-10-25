@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /** A person on a sheet. Mutable so an Apply step can change it in place. */
 public class Person {
@@ -13,6 +14,7 @@ public class Person {
     private Statements statements = Statements.NONE;
     private LocalDate retiredFrom;
     private boolean held;
+    private List<String> patrons = List.of();
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -83,5 +85,14 @@ public class Person {
 
     public void setHeld(boolean held) {
         this.held = held;
+    }
+
+    /** The names of the person's patrons, sorted. */
+    public List<String> getPatrons() {
+        return patrons;
+    }
+
+    public void setPatrons(List<String> patrons) {
+        this.patrons = patrons;
     }
 }
