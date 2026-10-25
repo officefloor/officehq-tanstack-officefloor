@@ -15,7 +15,11 @@ public class RefuseClosedDate {
     public void check(@Val SheetResponse sheet, @Val ClaimInput input, SheetRepository sheets,
             PeriodRepository periods) throws BadRequestException {
         LocalDate date = input.date() != null ? input.date() : sheets.today(sheet.id());
-        if (periods.closedOn(sheet.id(), date)) {
+        refuse(sheet.id(), date, periods);
+    }
+
+    static void refuse(String sheetId, LocalDate date, PeriodRepository periods) throws BadRequestException {
+        if (periods.closedOn(sheetId, date)) {
             throw new BadRequestException(CLOSED);
         }
     }

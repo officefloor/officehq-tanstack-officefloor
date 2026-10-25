@@ -28,7 +28,7 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's undated settings, by key (the policy date, period numbering from, the grace days and the permissions); a key without a row is not listed. */
+    /** The sheet's undated settings, by key (the policy date, period numbering from, the entry date, the grace days and the permissions); a key without a row is not listed. */
     public List<Setting> listUndated(String sheetId) {
         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
                 + " ORDER BY setting_key", ROW, sheetId);
@@ -68,6 +68,12 @@ public class SettingRepository {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = find(sheetId, Setting.PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The date a new claim with a blank date takes: the sheet's entry date while set, else its today. */
+    public LocalDate entryDate(String sheetId, LocalDate today) {
+        String value = find(sheetId, Setting.ENTRY_DATE);
+        return value == null ? today : LocalDate.parse(value);
     }
 
     /** The sheet's grace days; null while off. */

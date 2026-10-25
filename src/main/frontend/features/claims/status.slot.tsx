@@ -49,8 +49,10 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   // An edit the screen can already tell is refused shows its refusal at once, before any request: the claim form must
   // not be taken for its editor. The server refuses the same edits (and any it alone can tell).
   const [refused, setRefused] = useState<string>();
+  // A viewer's edit is refused too, but its editor opens (to be cancelled), as for a lock another user holds.
+  const viewer = () => (roles.data ?? []).some((r) => r.user === user && r.role === 'viewer');
   const refusal = (): string | undefined => {
-    if ((roles.data ?? []).some((r) => r.user === user && r.role === 'viewer')) return 'A viewer may not change anything on this sheet';
+    if (viewer()) return 'A viewer may not change anything on this sheet';
     if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';
     if (periodOn(periods.data ?? [], claim.date)?.closed) return "That claim's date is in a closed period";
     return undefined;
@@ -344,7 +346,10 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resetAll();
           const why = refusal();
           if (why === undefined) lock.mutate();
-          else setRefused(why);
+          else {
+            setRefused(why);
+            if (viewer()) openEditor();
+          }
         }}
       >
         Edit

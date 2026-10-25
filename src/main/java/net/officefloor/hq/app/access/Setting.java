@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the grace days and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -64,6 +64,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
+    /** The default date of a new claim (the claim form, the quick-add bar, a pasted line, a correction) in place of the sheet's today; blank means off. */
+    public static final String ENTRY_DATE = "entry-date";
 
     /** The days after its to-date an open period is closed by itself when the sheet's today moves past them; a whole number, blank for off. */
     public static final String GRACE_DAYS = "grace-days";

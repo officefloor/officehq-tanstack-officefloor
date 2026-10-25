@@ -28,7 +28,7 @@ public class AddPastedClaims {
     public void add(@Val SheetResponse sheet, @Val PasteLines pasted, @Val ChangedBy by, PersonRepository people,
             ClaimRepository claims, SheetRepository sheets, PeriodRepository periods, SettingRepository settings,
             Rollup rollup, Audit audit, ClaimLog log, Out<PasteResponse> response) throws BadRequestException {
-        LocalDate today = sheets.today(sheet.id());
+        LocalDate today = settings.entryDate(sheet.id(), sheets.today(sheet.id()));
         List<Person> persons = new ArrayList<>();
         int n = 0;
         for (PasteLine line : pasted.lines()) {
