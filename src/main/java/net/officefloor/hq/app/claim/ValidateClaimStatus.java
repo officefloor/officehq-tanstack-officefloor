@@ -5,10 +5,10 @@ import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** The status asked for: OPEN, SETTLED or VOID. Publishes it with the user making the change. */
+/** The status asked for: OPEN, SETTLED or VOID. Publishes it with the user making the change and whether it is a review. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatus> status,
-            Out<ChangedBy> changedBy) throws BadRequestException {
+            Out<ChangedBy> changedBy, Out<ClaimReview> review) throws BadRequestException {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
         String asked = request == null || request.status() == null ? "" : request.status().trim();
         ClaimStatus parsed;
@@ -17,10 +17,19 @@ public class ValidateClaimStatus {
         } catch (IllegalArgumentException e) {
             throw new BadRequestException("A status is OPEN, SETTLED or VOID");
         }
-        if (parsed == ClaimStatus.DRAFT) {
+        if (parsed == ClaimStatus.DRAFT || parsed == ClaimStatus.PENDING) {
             throw new BadRequestException("A status is OPEN, SETTLED or VOID");
         }
         status.set(parsed);
         changedBy.set(by);
+        boolean reviewing = request != null && Boolean.TRUE.equals(request.review());
+        String reason = request == null || request.reason() == null ? "" : request.reason().trim();
+        if (reviewing && parsed == ClaimStatus.VOID) {
+            throw new BadRequestException("A review approves (SETTLED) or rejects (OPEN) a claim");
+        }
+        if (reviewing && parsed == ClaimStatus.OPEN && reason.isEmpty()) {
+            throw new BadRequestException("A rejection needs a reason");
+        }
+        review.set(reviewing ? new ClaimReview(true, parsed == ClaimStatus.OPEN ? reason : null) : ClaimReview.NONE);
     }
 }

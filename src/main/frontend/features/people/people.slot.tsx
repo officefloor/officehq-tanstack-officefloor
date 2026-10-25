@@ -10,7 +10,7 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
- *  is retired from; set at all, they count as retired. `held`: whether they are on hold, when their OPEN claims
+ *  is retired from; set at all, they count as retired. `held`: whether they are on hold, when their OPEN and PENDING claims
  *  count in no live total. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
  *  the beginning of time). */

@@ -14,7 +14,7 @@ function HoldHeads() {
   );
 }
 
-// Whether the person is on hold, and the button that holds or releases them. While held, their OPEN claims count
+// Whether the person is on hold, and the button that holds or releases them. While held, their OPEN and PENDING claims count
 // in no live total; their SETTLED claims still do. A refusal shows on the person until the next action on their row.
 function HoldCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);

@@ -11,7 +11,6 @@ import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -26,7 +25,7 @@ import org.springframework.stereotype.Service;
  * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor;
  * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
  * figure or one at another grade. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
- * sheet's totals moved. A held person's OPEN claims count in none of these; their SETTLED claims still do.
+ * sheet's totals moved. A held person's OPEN and PENDING claims count in none of these; their SETTLED claims still do.
  */
 @Service
 public class Rollup {
@@ -68,7 +67,7 @@ public class Rollup {
                     continue;
                 }
                 claimed = claimed.add(c.getAmount().setScale(2));
-                kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
+                kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
                 String grade = p.gradeOn(c.getDate());
                 BigDecimal figure = late.due(c, figure(c, grade, sheetRates, floor, late));
                 // A figure at a grade other than today's does not hang on today's grade having a rate.
@@ -132,9 +131,9 @@ public class Rollup {
         lines.forEach(audit::record);
     }
 
-    /** Whether the claim counts in the live totals: a held person's OPEN claims do not; their SETTLED ones do. */
+    /** Whether the claim counts in the live totals: a held person's OPEN and PENDING claims do not; their SETTLED ones do. */
     private static boolean counts(Claim claim, boolean held) {
-        return claim.getStatus().counts() && !(held && claim.getStatus() == ClaimStatus.OPEN);
+        return claim.getStatus().counts() && !(held && claim.getStatus().isOpen());
     }
 
     private static String show(BigDecimal figure) {
@@ -146,7 +145,7 @@ public class Rollup {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue().setScale(2);
         }
-        if (claim.isStated()) {
+        if (claim.isBound()) {
             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
         }
         BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());

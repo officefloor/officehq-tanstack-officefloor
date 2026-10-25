@@ -5,10 +5,9 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.claim.Claim;
-import net.officefloor.hq.app.claim.ClaimStatus;
 
 /**
- * The late charge as of the sheet's today: an OPEN claim past its due-by (its date plus the terms) gains the late
+ * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (its date plus the terms) gains the late
  * percent of its figure for every full 30 days it is overdue, rounded to two decimals as the claim rounds (see
  * {@link #rounding}). A correction
  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
@@ -26,7 +25,7 @@ public record LateCharge(LocalDate today, int terms, BigDecimal pct, LocalDate p
     /** The claim's late charge on its figure (zero when it is not overdue, or has no figure). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.getStatus() != ClaimStatus.OPEN || claim.isCorrection()) {
+        if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) {
             return none;
         }
         long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today);

@@ -8,7 +8,7 @@ import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
-import { claimDueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
+import { claimDueCents, isBound, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useFloorCents, useLate } from '../access/useAccess';
 
@@ -48,7 +48,7 @@ export function useDueTotals(sheetId: string): Map<number, bigint | null> {
     for (const c of counted) {
       const grade = gradeOn(p, c.date);
       const due = claimDueCents(rates.data ?? [], grade, c, floor, late);
-      kept ||= c.settledDue != null || (c.stated && c.statedDue != null) || (due != null && grade !== p.grade);
+      kept ||= c.settledDue != null || (isBound(c) && c.statedDue != null) || (due != null && grade !== p.grade);
       sum += due ?? 0n;
     }
     totals.set(p.id, today.has(p.grade) || kept ? sum : null);

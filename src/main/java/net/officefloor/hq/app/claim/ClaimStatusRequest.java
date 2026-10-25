@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.claim;
 
-/** The status a claim is to move to (OPEN, SETTLED or VOID), and the signed-in user (`by`) making the change. */
-public record ClaimStatusRequest(String status, String by) {
+/**
+ * The status a claim is to move to (OPEN, SETTLED or VOID), and the signed-in user (`by`) making the change. With
+ * `review`, a steward's review of a PENDING claim: SETTLED approves it, OPEN rejects it with the `reason`.
+ */
+public record ClaimStatusRequest(String status, String by, Boolean review, String reason) {
 }

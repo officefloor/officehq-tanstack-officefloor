@@ -128,6 +128,12 @@ public class Claim {
         return stated;
     }
 
+    /** Whether the last statement's figure is the claim's: it was stated, and is not PENDING (a PENDING claim shows and
+     *  totals its live figure; rejected back to OPEN, it is bound again). */
+    public boolean isBound() {
+        return stated && status != ClaimStatus.PENDING;
+    }
+
     /** The figure the last statement bound the claim to; null when bound without one (n/a) or not bound. */
     public BigDecimal getStatedDue() {
         return statedDue;

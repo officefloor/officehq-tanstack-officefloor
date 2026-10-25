@@ -4,7 +4,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useFloorCents, useLate, useTermsDays } from '../access/useAccess';
 import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
-import { addDays, claimDueCents, showHundredths, useRates } from '../rates/useRates';
+import { addDays, claimDueCents, isOpen, showHundredths, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 
 /** A claim's due-by: its date plus the sheet's terms in force. */
@@ -13,11 +13,11 @@ function useDueBy(sheetId: string): (claim: { date: string }) => string {
   return (claim) => addDays(claim.date, terms);
 }
 
-/** Whether a claim is overdue: OPEN, and its due-by before the sheet's today. */
+/** Whether a claim is overdue: OPEN or PENDING, and its due-by before the sheet's today. */
 function useIsOverdue(sheetId: string): (claim: { status: string; date: string }) => boolean {
   const dueBy = useDueBy(sheetId);
   const today = useSheetToday(sheetId).data?.today;
-  return (claim) => today !== undefined && claim.status === 'OPEN' && dueBy(claim) < today;
+  return (claim) => today !== undefined && isOpen(claim) && dueBy(claim) < today;
 }
 
 type Overdue = { count: number; cents: bigint };

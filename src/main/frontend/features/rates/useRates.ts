@@ -91,25 +91,36 @@ export function isCorrection(claim: { amount: string }): boolean {
   return claim.amount.trim().startsWith('-') && toHundredths(claim.amount.trim().slice(1)) > 0n;
 }
 
-/** A claim's late charge in cents on its figure: for an OPEN claim past its due-by (its date plus the terms), the
+/** Whether a claim is still live and payable: OPEN, or PENDING a steward's approval of its settle. */
+export function isOpen(claim: { status: string }): boolean {
+  return claim.status === 'OPEN' || claim.status === 'PENDING';
+}
+
+/** Whether the person's last statement binds the claim to its `statedDue`: it was stated, and is not PENDING (a PENDING
+ *  claim shows and totals its live figure; rejected back to OPEN, it is bound again). */
+export function isBound(claim: { stated: boolean; status?: string }): boolean {
+  return claim.stated && claim.status !== 'PENDING';
+}
+
+/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (its date plus the terms), the
  *  late percent of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
 export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; corrects?: string | null },
   figureCents: bigint): bigint {
-  if (late === undefined || claim.status !== 'OPEN' || isCorrection(claim)) return 0n;
+  if (late === undefined || !isOpen(claim) || isCorrection(claim)) return 0n;
   const overdue = daysBetween(addDays(claim.date, late.termsDays), late.today);
   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
   return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths, roundsHalfUp(late, claim));
 }
 
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
- *  otherwise its amount times its person's grade's rate
+ *  otherwise (or while it is PENDING) its amount times its person's grade's rate
  *  in force on the claim's date, rounded half to even (half up when `halfUp`), and at least the sheet's floor (in cents) unless it is a correction. Null when there is
  *  no figure (no rate of the grade then). */
 export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
-  claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null },
+  claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null },
   floorCents: bigint, halfUp = false): bigint | null {
   if (claim.settledDue != null) return toHundredths(claim.settledDue);
-  if (claim.stated) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
+  if (isBound(claim)) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
   const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
   if (found === undefined) return null;
   const correction = isCorrection(claim);

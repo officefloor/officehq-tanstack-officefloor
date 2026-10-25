@@ -17,47 +17,62 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves the claim to the asked status, refusing a change its current status does not allow,
- * refusing to let the user who opened it settle it, and refusing a clerk a settle whose due is above the sheet's
- * clerk limit (a due of n/a is within any limit; a steward settles anything). Opening records who opened it; a voided claim keeps its number. Settling
+ * Moves the claim to the asked status, refusing a change its current status does not allow and
+ * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
+ * clerk limit leaves it PENDING instead (a due of n/a is within any limit; a steward settles anything). A review of a
+ * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
+ * returns it to OPEN, bound again by its last statement if that bound it. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date (at least the sheet's floor) — or, while a statement binds it, at
  * the figure it was bound to — with its late charge as of the sheet's today frozen in on top; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
-            PeriodRepository periods, @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
+            PeriodRepository periods, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
-        if (!from.canBecome(status)) {
-            throw new BadRequestException("A " + from + " claim cannot become " + status);
-        }
-        if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
-            throw new BadRequestException("The user who opened a claim cannot settle it");
+        boolean steward = Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()));
+        if (review.asked()) {
+            if (from != ClaimStatus.PENDING) {
+                throw new BadRequestException("Only a PENDING claim is approved or rejected; this one is " + from);
+            }
+            if (!steward) {
+                throw new BadRequestException("Only a steward approves or rejects a claim");
+            }
+            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+                throw new BadRequestException("The user who opened a claim cannot approve it");
+            }
+        } else {
+            if (!from.canBecome(status)) {
+                throw new BadRequestException("A " + from + " claim cannot become " + status);
+            }
+            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+                throw new BadRequestException("The user who opened a claim cannot settle it");
+            }
         }
         LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
         BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;
-        if (status == ClaimStatus.SETTLED && due != null
-                && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
+        ClaimStatus to = status;
+        if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && due.compareTo(limit) > 0) {
-                throw new BadRequestException("A clerk can settle a claim only when its due is at or below the clerk limit ("
-                        + limit.toPlainString() + ")");
+                to = ClaimStatus.PENDING; // awaits a steward's approval
             }
         }
-        claim.setStatus(status);
-        if (status == ClaimStatus.OPEN) {
+        claim.setStatus(to);
+        boolean opening = to == ClaimStatus.OPEN && !review.asked();
+        if (opening) {
             claim.setOpenedBy(by.name());
         }
-        if (status == ClaimStatus.SETTLED) {
+        if (to == ClaimStatus.SETTLED) {
             claim.setSettledDue(due);
         }
         if (!repository.updateStatus(claim, from)) {
             throw new BadRequestException("The claim was changed by someone else; reload the sheet");
         }
-        if (status == ClaimStatus.OPEN) {
+        if (opening) {
             // Numbered only once the claim is surely moving, so a refused open uses up no number.
             claim.setNumber(number(claim, repository, settings, sheets, periods));
-            repository.updateStatus(claim, status);
+            repository.updateStatus(claim, to);
         }
         audited.set(new ClaimNumber(claim.getNumber()));
     }
@@ -79,10 +94,10 @@ public class ApplyClaimStatus {
                 : period.name() + "-" + repository.nextNumber(sheetId, String.valueOf(period.id()));
     }
 
-    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date and at least the sheet's floor (a correction has none); null when there is no rate. */
+    /** The figure a statement binds the claim to (not while PENDING), else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date and at least the sheet's floor (a correction has none); null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings, LateCharge late) {
-        if (claim.isStated()) {
+        if (claim.isBound()) {
             return claim.getStatedDue();
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());

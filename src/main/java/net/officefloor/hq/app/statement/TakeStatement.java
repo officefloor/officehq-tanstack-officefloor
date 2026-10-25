@@ -7,7 +7,6 @@ import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.Statements;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -35,13 +34,13 @@ public class TakeStatement {
         boolean kept = false;
         int counted = 0;
         for (Claim c : mine) {
-            // A held person's OPEN claims do not count; their SETTLED ones still do.
-            if (!c.getStatus().counts() || (person.isHeld() && c.getStatus() == ClaimStatus.OPEN)) {
+            // A held person's OPEN and PENDING claims do not count; their SETTLED ones still do.
+            if (!c.getStatus().counts() || (person.isHeld() && c.getStatus().isOpen())) {
                 claims.bind(c.getId(), false, null);
                 continue;
             }
             counted++;
-            kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
+            kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
             BigDecimal figure = figure(c, person, rates, floor, late);
             // A figure at a grade other than today's does not hang on today's grade having a rate.
             kept |= figure != null && !person.gradeOn(c.getDate()).equals(person.getGrade());
@@ -60,7 +59,7 @@ public class TakeStatement {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue();
         }
-        if (claim.isStated()) {
+        if (claim.isBound()) {
             return claim.getStatedDue();
         }
         BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
