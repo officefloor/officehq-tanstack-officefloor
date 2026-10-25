@@ -1,0 +1,124 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index e7c4254f..cfcf2ce1 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -108,7 +108,7 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+ // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
+ // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
+ // due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and the late percent, what an overdue claim's due gains of its figure for every
+-// full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
++// full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
+ // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
+ // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
+ // the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most
+diff --git a/src/main/frontend/features/access/useAccess.ts b/src/main/frontend/features/access/useAccess.ts
+index 419d68ce..0c37a2f8 100644
+--- a/src/main/frontend/features/access/useAccess.ts
++++ b/src/main/frontend/features/access/useAccess.ts
+@@ -65,7 +65,7 @@ export const TERMS_DEFAULT = '14';
+ /** The late percent a sheet starts with, until it is set. */
+ export const LATE_PCT_DEFAULT = '0.00';
+ 
+-/** The sheet's late charge as of its today: its late percent in force on each claim's date (0.00 before any is); with its
++/** The sheet's late charge as of its today: its late percent in force on each date (0.00 before any is); with its
+  *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
+  *  until the sheet's today is known. */
+ export function useLate(sheetId: string): Late | undefined {
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index c294a973..a8e61336 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -62,7 +62,7 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = f
+   return whole;
+ }
+ 
+-/** The late charge's terms as of the sheet's today: its late percent (in hundredths) in force on a claim's date; and
++/** The late charge's terms as of the sheet's today: its late percent (in hundredths) in force on a date; and
+  *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
+  *  live figures round. */
+ export type Late = { today: string; pctOn: (date: string) => bigint; policyDate: string;
+@@ -104,15 +104,21 @@ export function isBound(claim: { stated: boolean; status?: string }): boolean {
+   return claim.stated && claim.status !== 'PENDING';
+ }
+ 
+-/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), the
+- *  late percent in force on its date of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction,
++/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), for every
++ *  full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of the figure,
++ *  each rounded as the claim rounds (roundsHalfUp), the charges added up; otherwise (or for a correction,
+  *  or a claim deferred past the sheet's today) 0. */
+ export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; dueBy: string; corrects?: string | null;
+   deferred?: boolean }, figureCents: bigint): bigint {
+   if (late === undefined || !isOpen(claim) || isCorrection(claim) || claim.deferred) return 0n;
+   const overdue = daysBetween(claim.dueBy, late.today);
+   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
+-  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctOn(claim.date), roundsHalfUp(late, claim));
++  let charge = 0n;
++  for (let n = 1n; n <= periods; n++) {
++    const pct = late.pctOn(addDays(claim.dueBy, Number(n) * 30));
++    if (pct !== 0n) charge += dueCents(figureCents, pct, roundsHalfUp(late, claim));
++  }
++  return charge;
+ }
+ 
+ /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
+diff --git a/src/main/java/net/officefloor/hq/app/access/LateCharge.java b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+index 77413c39..22306b0c 100644
+--- a/src/main/java/net/officefloor/hq/app/access/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+@@ -7,9 +7,9 @@ import java.time.temporal.ChronoUnit;
+ import net.officefloor.hq.app.claim.Claim;
+ 
+ /**
+- * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (fixed when it was added) gains the late
+- * percent in force on its date of its figure for every full 30 days it is overdue, rounded to two decimals as the claim rounds (see
+- * {@link #rounding}). A correction
++ * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (fixed when it was added) gains, for every
++ * full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of its figure,
++ * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
+  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
+  */
+ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate policyDate) {
+@@ -42,8 +42,14 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
+         if (periods == 0) {
+             return none;
+         }
+-        return figure.multiply(settings.latePct(claim.getDate())).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
+-                .setScale(2, rounding(claim));
++        BigDecimal charge = none;
++        for (long n = 1; n <= periods; n++) {
++            BigDecimal pct = settings.latePct(claim.getDueBy().plusDays(30 * n));
++            if (pct.signum() != 0) {
++                charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding(claim)));
++            }
++        }
++        return charge;
+     }
+ 
+     /** The figure with the claim's late charge added on top; null without a figure. */
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 58ebf0e0..10ba3d1e 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -50,7 +50,7 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The grades that may have their own terms. */
+     public static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
+ 
+-    /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue; two decimals. */
++    /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue, the one in force on each 30-day boundary date; two decimals. */
+     public static final String LATE_PCT = "late-pct";
+ 
+     /** The late percent a sheet starts with, until it is set. */
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+index 2919b46c..36c5eb3e 100644
+--- a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -76,7 +76,7 @@ public class SettingRepository {
+         return value == null ? null : Integer.valueOf(value);
+     }
+ 
+-    /** The sheet's late charge as of its today, each claim's late percent the one in force on its date, with its policy date for rounding. */
++    /** The sheet's late charge as of its today, each 30-day boundary's late percent the one in force on its date, with its policy date for rounding. */
+     public LateCharge lateCharge(String sheetId, LocalDate today) {
+         return new LateCharge(today, dated(sheetId), policyDate(sheetId, today));
+     }
