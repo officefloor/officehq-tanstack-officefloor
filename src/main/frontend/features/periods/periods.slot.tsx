@@ -8,13 +8,14 @@ import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { fiscalYearOf, periodClosePath, periodDue, periodLockPath, periodsGenerateFyPath, periodUnlockPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { fiscalYearOf, periodClosePath, periodDue, periodLockPath, periodsGenerateFyPath, periodsGenerateQuartersPath, periodUnlockPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a person's unbound OPEN ones dated within a hold of theirs),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // buttons that close and reopen it, the form that adds one, and the form that generates one per calendar month
 // (named yyyy-mm, leaving out a month whose name or days the sheet's periods already take), showing how many were made,
-// a cap on each person's open claims in it (blank for none), and the entry that generates a fiscal year's twelve the same way; each period shows the fiscal year its from-date falls in.
+// a cap on each person's open claims in it (blank for none), and the entry that generates a fiscal year's twelve the same way, and the entry that generates a calendar year's four quarters (yyyy-Q1 to yyyy-Q4,
+// leaving out one whose name or days the sheet's periods already take); each period shows the fiscal year its from-date falls in.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -56,8 +57,18 @@ function Periods() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') }),
   });
   const submitGenerateFy = useSubmitOnce(generateFy);
-  // The two generators share one count and one error: the one pressed last shows.
-  const generated = generate.isSuccess ? generate.data.generated : generateFy.isSuccess ? generateFy.data.generated : null;
+  const [qYear, setQYear] = useState('');
+  const generateQuarters = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ generated: number }>(periodsGenerateQuartersPath(sheet ?? ''), body, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') }),
+  });
+  const submitGenerateQuarters = useSubmitOnce(generateQuarters);
+  // The generators share one count and one error: the one pressed last shows.
+  const generated = generate.isSuccess ? generate.data.generated
+    : generateFy.isSuccess ? generateFy.data.generated
+    : generateQuarters.isSuccess ? generateQuarters.data.generated : null;
+  const resetGenerators = () => { generate.reset(); generateFy.reset(); generateQuarters.reset(); };
 
   if (!user || !sheet) return null;
   const dueTotal = (period: Period) =>
@@ -141,6 +152,7 @@ function Periods() {
         onSubmit={(e) => {
           e.preventDefault();
           generateFy.reset();
+          generateQuarters.reset();
           submitGenerate({ from: genFrom, to: genTo });
         }}
       >
@@ -148,13 +160,13 @@ function Periods() {
           data-testid="period-generate-from"
           placeholder="From (YYYY-MM-DD)"
           value={genFrom}
-          onChange={(e) => { setGenFrom(e.target.value); generate.reset(); generateFy.reset(); }}
+          onChange={(e) => { setGenFrom(e.target.value); resetGenerators(); }}
         />
         <input
           data-testid="period-generate-to"
           placeholder="To (YYYY-MM-DD)"
           value={genTo}
-          onChange={(e) => { setGenTo(e.target.value); generate.reset(); generateFy.reset(); }}
+          onChange={(e) => { setGenTo(e.target.value); resetGenerators(); }}
         />
         <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
           Generate monthly periods
@@ -173,6 +185,7 @@ function Periods() {
         onSubmit={(e) => {
           e.preventDefault();
           generate.reset();
+          generateQuarters.reset();
           submitGenerateFy({ year: fyYear });
         }}
       >
@@ -181,13 +194,36 @@ function Periods() {
           placeholder="Fiscal year (yyyy)"
           inputMode="numeric"
           value={fyYear}
-          onChange={(e) => { setFyYear(e.target.value); generate.reset(); generateFy.reset(); }}
+          onChange={(e) => { setFyYear(e.target.value); resetGenerators(); }}
         />
         <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
           Generate fiscal year
         </button>
         {generateFy.isError && (
           <span data-testid="period-generate-error">Nothing was made: the fiscal year must be a year (yyyy).</span>
+        )}
+      </form>
+      <form
+        data-testid="period-generate-quarters-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          generate.reset();
+          generateFy.reset();
+          submitGenerateQuarters({ year: qYear });
+        }}
+      >
+        <input
+          data-testid="period-generate-quarters-year"
+          placeholder="Year (yyyy)"
+          inputMode="numeric"
+          value={qYear}
+          onChange={(e) => { setQYear(e.target.value); resetGenerators(); }}
+        />
+        <button type="submit" data-testid="period-generate-quarters" disabled={generateQuarters.isPending}>
+          Generate quarters
+        </button>
+        {generateQuarters.isError && (
+          <span data-testid="period-generate-error">Nothing was made: the year must be a year (yyyy).</span>
         )}
       </form>
     </section>

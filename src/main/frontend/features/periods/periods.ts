@@ -31,6 +31,9 @@ export const periodsGeneratePath = (sheetId: string) => `/api/sheets/${encodeURI
 /** Generates a fiscal year's twelve monthly periods, as the period generator does. */
 export const periodsGenerateFyPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-fy`;
 
+/** Generates a calendar year's four quarters (yyyy-Q1 to yyyy-Q4), as the period form would add each. */
+export const periodsGenerateQuartersPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-quarters`;
+
 /** Pastes opening balances: lines of name,period,amount. */
 export const openingsImportPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/import-openings`;
 
