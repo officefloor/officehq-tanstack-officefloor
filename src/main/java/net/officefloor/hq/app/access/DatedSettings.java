@@ -64,6 +64,12 @@ public record DatedSettings(List<DatedValue> values) {
         return value == null ? null : new BigDecimal(value).setScale(2);
     }
 
+    /** The proof threshold in force on the date for a claim of the grade: the grade's own (setting proof-threshold-<grade>) when set, else the sheet's; null when there is none. */
+    public BigDecimal proofThreshold(String grade, LocalDate date) {
+        String value = grade == null ? null : on(Setting.PROOF_THRESHOLD_OF_GRADE + grade, date);
+        return value == null ? proofThreshold(date) : new BigDecimal(value).setScale(2);
+    }
+
     /** The note threshold in force on the date; null when there is none. */
     public BigDecimal noteThreshold(LocalDate date) {
         String value = on(Setting.NOTE_THRESHOLD, date);

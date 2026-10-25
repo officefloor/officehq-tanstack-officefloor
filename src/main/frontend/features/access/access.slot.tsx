@@ -193,7 +193,8 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // the entry date (blank: off), the default date of a new claim in place of the sheet's today,
 // the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
-// it is settled or approved, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
+// it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
+// date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
 // roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from, the entry date, the grace days and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
@@ -227,6 +228,9 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
   { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A proof threshold is an amount with up to two decimals, or blank for none' },
+  ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `proof-threshold-${grade}`,
+    label: `Proof threshold for grade ${grade}`, placeholder: 'sheet\'s threshold', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A grade\'s proof threshold is an amount with up to two decimals, or blank for the sheet\'s' })),
   { key: 'note-threshold', label: 'Note threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
