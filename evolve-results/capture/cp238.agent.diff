@@ -1,0 +1,525 @@
+diff --git a/src/main/frontend/features/people/mergeUndo.slot.tsx b/src/main/frontend/features/people/mergeUndo.slot.tsx
+new file mode 100644
+index 00000000..86ffbbd5
+--- /dev/null
++++ b/src/main/frontend/features/people/mergeUndo.slot.tsx
+@@ -0,0 +1,47 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/submitOnce';
++import { useRowAction } from '../../api/rowAction';
++import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { peoplePath, type Person } from './people';
++
++// The button that undoes the last merge into this person (the steward who made it, on the sheet's today it was
++// made): the merged person is back at the end of the list with the claims that came from them and their aliases.
++function MergeUndoHeader() {
++  return <th>Undo merge</th>;
++}
++
++function PersonMergeUndo({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++  const undo = useMutation({
++    mutationFn: () => putJson<unknown>(`${peoplePath(sheet ?? '')}/${person.id}/merge-undo`, {}, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: ['sheet', sheet ?? ''] });
++    },
++  });
++  const submit = useSubmitOnce(undo);
++  const rowAction = useRowAction(`person-${person.id}`);
++  return (
++    <td>
++      <button
++        type="button"
++        data-testid="person-merge-undo"
++        disabled={undo.isPending}
++        onClick={() => { rowAction.take(); submit(undefined); }}
++      >
++        Undo merge
++      </button>
++      {undo.isError && rowAction.isLatest && (
++        <span data-testid="person-error">The merge could not be undone.</span>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PeopleColumns.fill({ order: 49.5, Component: MergeUndoHeader }),
++  PersonCells.fill({ order: 49.5, Component: PersonMergeUndo }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/history/History.java b/src/main/java/net/officefloor/hq/app/history/History.java
+index eda03f19..bf1cdaa9 100644
+--- a/src/main/java/net/officefloor/hq/app/history/History.java
++++ b/src/main/java/net/officefloor/hq/app/history/History.java
+@@ -76,6 +76,16 @@ public class History {
+         return json.writeValueAsString(state);
+     }
+ 
++    /** The entity's state as recorded, written out: kept to bring the entity back as it stood (see {@link #read}). */
++    public String written(Object entity) {
++        return write(stateOf(entity));
++    }
++
++    /** An entity read back from a state written out; only worked out, never saved. */
++    public <T> T read(String state, Class<T> type) {
++        return json.readValue(state, type);
++    }
++
+     /**
+      * The sheet's things of a type as they stood at the end of a date, in no particular order: each as its last
+      * state saved while the sheet's today was on or before it; none deleted or not yet made by then. A thing with no
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java b/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
+index e7330ead..3e5d0420 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
+@@ -8,6 +8,7 @@ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClerkLimitException;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.hq.app.plan.Plan;
+ import net.officefloor.hq.app.plan.PlanRepository;
+ import net.officefloor.hq.app.crew.Crew;
+@@ -18,6 +19,7 @@ import net.officefloor.hq.app.pool.PoolMember;
+ import net.officefloor.hq.app.pool.PoolMemberRepository;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.statement.BindingLogRepository;
+ import net.officefloor.hq.app.statement.BindingLogs;
+@@ -36,14 +38,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  * other is already a member). The crews they lead are left without a lead, and their crew
+  * memberships move to the other (dropped where the other already leads or is in the crew). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
+  * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
+- * are dropped, and they leave the sheet.
++ * are dropped, and they leave the sheet. The merge is kept, so it can be undone (see ApplyMergeUndo).
+  */
+ public class ApplyMerge {
+     public void apply(@Val MergeInput input, @Val Person person, PersonRepository people, ClaimRepository claims,
+             PersonAliasRepository aliases, PatronRepository patrons, PoolMemberRepository members,
+             StatementRepository statements, BindingLogRepository bindings, SheetRepository sheets, WatchRepository watches, PersonGradeRepository grades,
+             PlanRepository plans, CrewRepository crews, CrewMemberRepository crewMembers,
+-            RoleRepository roles, EntityManager entityManager,
++            RoleRepository roles, PersonMergeRepository merges, History history, EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMerged> merged)
+             throws InvalidPersonException, ClerkLimitException {
+         String sheetId = person.getSheetId();
+@@ -63,6 +65,7 @@ public class ApplyMerge {
+         }
+         Long from = person.getId();
+         Long to = into.getId();
++        String state = history.written(person);
+ 
+         // Claims: moved in the order they were added, each listed as the other's newest and released when held.
+         List<Claim> moved = new ArrayList<>(claims.findBySheetIdOrderByIdDesc(sheetId).stream()
+@@ -87,8 +90,9 @@ public class ApplyMerge {
+         List<PersonAlias> theirAliases = aliases.findByPersonIdOrderByIdAsc(from);
+         aliases.deleteAll(theirAliases);
+         aliases.flush();
+-        aliases.save(new PersonAlias(sheetId, to, person.getName()));
+-        theirAliases.forEach(a -> aliases.save(new PersonAlias(sheetId, to, a.getAlias())));
++        List<Long> givenAliases = new ArrayList<>();
++        givenAliases.add(aliases.save(new PersonAlias(sheetId, to, person.getName())).getId());
++        theirAliases.forEach(a -> givenAliases.add(aliases.save(new PersonAlias(sheetId, to, a.getAlias())).getId()));
+ 
+         // Patrons: theirs added to the other's; those naming them name the other instead.
+         for (Patron patron : patrons.findByPersonIdOrderByIdAsc(from)) {
+@@ -153,6 +157,10 @@ public class ApplyMerge {
+         statements.flush();
+         people.delete(person);
+         people.flush();
++        merges.saveAndFlush(new PersonMerge(sheetId, to, from,
++                sheets.findById(sheetId).map(Sheet::getToday).orElseGet(() -> new Sheet(sheetId).getToday()), user,
++                state, moved.stream().map(Claim::getId).toList(),
++                theirAliases.stream().map(PersonAlias::getAlias).toList(), givenAliases));
+         entityManager.refresh(into);
+         merged.set(new PersonMerged(person.getName(), into));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyMergeUndo.java b/src/main/java/net/officefloor/hq/app/person/ApplyMergeUndo.java
+new file mode 100644
+index 00000000..4ad7bf3d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyMergeUndo.java
+@@ -0,0 +1,108 @@
++package net.officefloor.hq.app.person;
++
++import jakarta.persistence.EntityManager;
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Locale;
++import java.util.Set;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClerkLimitException;
++import net.officefloor.hq.app.history.History;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.statement.BindingLogRepository;
++import net.officefloor.hq.app.statement.BindingLogs;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/**
++ * Undoes the last merge into the person: only by the steward who made it, on the sheet's today it was made. The merged
++ * person is back, under their own id, at the end of the list, with the claims that came from them (as they are now)
++ * and their own aliases, which leave the other's. Patron, pool, crew, plan and statement changes stay, as do the
++ * holds, dated grades, watchers and contact the merge dropped. Refused when their name or an alias of theirs is now
++ * someone else's.
++ */
++public class ApplyMergeUndo {
++    public void apply(@Val Person into, @Val Sheet sheet, PersonRepository people, ClaimRepository claims,
++            PersonAliasRepository aliases, PersonMergeRepository merges, BindingLogRepository bindings,
++            SheetRepository sheets, RoleRepository roles, History history, EntityManager entityManager,
++            @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonMergeUndone> undone)
++            throws InvalidPersonException, ClerkLimitException {
++        String sheetId = into.getSheetId();
++        String user = AuditUser.decode(userHeader);
++        if (!Role.STEWARD.equals(roles.roleOf(sheetId, user))) {
++            throw new ClerkLimitException("Only a steward can undo a merge.");
++        }
++        claims.lockSheet(sheetId);
++        entityManager.refresh(into);
++        PersonMerge merge = merges.findFirstBySheetIdAndIntoIdOrderByIdDesc(sheetId, into.getId())
++                .orElseThrow(() -> new InvalidPersonException("There is no merge into the person to undo."));
++        if (!merge.getMadeOn().equals(sheet.getToday())) {
++            throw new InvalidPersonException("A merge can only be undone on the day it was made.");
++        }
++        if (!merge.getMadeBy().equals(user)) {
++            throw new InvalidPersonException("Only the steward who made the merge can undo it.");
++        }
++        Person was = history.read(merge.getState(), Person.class);
++
++        // The aliases the merge gave the other that they still have leave them; the names coming back must be free.
++        Set<Long> given = new HashSet<>(merge.getAliasIds());
++        List<PersonAlias> leaving = aliases.findByPersonIdOrderByIdAsc(into.getId()).stream()
++                .filter(a -> given.contains(a.getId())).toList();
++        Set<Long> leavingIds = new HashSet<>(leaving.stream().map(PersonAlias::getId).toList());
++        Set<String> taken = new HashSet<>();
++        people.findListed(sheetId).forEach(p -> taken.add(p.getName().toLowerCase(Locale.ROOT)));
++        aliases.findBySheetIdOrderByIdAsc(sheetId).stream().filter(a -> !leavingIds.contains(a.getId()))
++                .forEach(a -> taken.add(a.getAlias().toLowerCase(Locale.ROOT)));
++        List<String> names = new ArrayList<>(merge.getAliases());
++        names.add(was.getName());
++        for (String name : names) {
++            if (taken.contains(name.toLowerCase(Locale.ROOT))) {
++                throw new InvalidPersonException("The name " + name + " is now someone else's.");
++            }
++        }
++        aliases.deleteAll(leaving);
++        aliases.flush();
++
++        // They are back under their own id, at the end of the list.
++        long end = people.findListed(sheetId).stream().mapToLong(Person::getPlace).max().orElse(0) + 1;
++        merges.restore(was);
++        entityManager.flush();
++        Person restored = people.findById(was.getId()).orElseThrow();
++        entityManager.refresh(restored);
++        restored.getDatedTerms().addAll(was.getDatedTerms());
++        restored.getRetirements().addAll(was.getRetirements());
++        restored.getSnapshots().addAll(was.getSnapshots());
++        restored.placeAt(Math.max(end, restored.getId()));
++        people.saveAndFlush(restored);
++        merge.getAliases().forEach(a -> aliases.save(new PersonAlias(sheetId, restored.getId(), a)));
++        aliases.flush();
++
++        // The claims that came from them and are still the other's go back, in the order they were added.
++        boolean moved = false;
++        for (Long claimId : merge.getClaimIds()) {
++            Claim claim = claims.findByIdAndSheetId(claimId, sheetId).orElse(null);
++            if (claim != null && into.getId().equals(claim.getPersonId())) {
++                claim.setPersonId(restored.getId());
++                claims.saveAndFlush(claim);
++                claims.relist(claim.getId());
++                moved = true;
++            }
++        }
++        if (moved) {
++            BindingLogs.record(bindings, claims, sheets, sheetId, into.getId());
++            BindingLogs.record(bindings, claims, sheets, sheetId, restored.getId());
++        }
++
++        merges.delete(merge);
++        merges.flush();
++        entityManager.refresh(into);
++        undone.set(new PersonMergeUndone(restored, into));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonMergeUndone.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonMergeUndone.java
+new file mode 100644
+index 00000000..c19c4cf0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonMergeUndone.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the merge undone, once it is saved. */
++public class AuditPersonMergeUndone {
++    public void audit(@Val PersonMergeUndone undone, @RequestHeader(name = "X-User", required = false) String user,
++            Audit audit) {
++        audit.record("PERSON_MERGE_UNDONE sheet=" + undone.from().getSheetId() + " by=" + AuditUser.decode(user)
++                + " name=" + undone.restored().getName() + " from=" + undone.from().getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 8d3ef440..0b9bd891 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -142,6 +142,11 @@ public class Person {
+         return position != null ? position : id;
+     }
+ 
++    /** Puts them at a place in the list. */
++    public void placeAt(long place) {
++        position = place;
++    }
++
+     /** Swaps their place in the list with another person's. */
+     public void swapPlace(Person other) {
+         long mine = getPlace();
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerge.java b/src/main/java/net/officefloor/hq/app/person/PersonMerge.java
+new file mode 100644
+index 00000000..54e005ff
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerge.java
+@@ -0,0 +1,124 @@
++package net.officefloor.hq.app.person;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Lob;
++import jakarta.persistence.Table;
++import java.time.LocalDate;
++import java.util.Arrays;
++import java.util.List;
++import java.util.stream.Collectors;
++
++/** A merge of a person into another, kept so the last merge into a person can be undone on the sheet's today it was
++ *  made, by the user who made it: the merged person as they stood, the claims that moved from them, their own aliases
++ *  and the aliases the merge gave the other. */
++@Entity
++@Table(name = "person_merge")
++public class PersonMerge {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "sheet_id", nullable = false)
++    private String sheetId;
++
++    @Column(name = "into_id", nullable = false)
++    private Long intoId;
++
++    @Column(name = "person_id", nullable = false)
++    private Long personId;
++
++    @Column(name = "made_on", nullable = false)
++    private LocalDate madeOn;
++
++    @Column(name = "made_by", nullable = false)
++    private String madeBy;
++
++    /** The merged person's state as entity_history keeps it. */
++    @Lob
++    @Column(nullable = false)
++    private String state;
++
++    @Lob
++    @Column(name = "claim_ids", nullable = false)
++    private String claimIds;
++
++    @Lob
++    @Column(nullable = false)
++    private String aliases;
++
++    @Lob
++    @Column(name = "alias_ids", nullable = false)
++    private String aliasIds;
++
++    protected PersonMerge() {
++    }
++
++    public PersonMerge(String sheetId, Long intoId, Long personId, LocalDate madeOn, String madeBy, String state,
++            List<Long> claimIds, List<String> aliases, List<Long> aliasIds) {
++        this.sheetId = sheetId;
++        this.intoId = intoId;
++        this.personId = personId;
++        this.madeOn = madeOn;
++        this.madeBy = madeBy;
++        this.state = state;
++        this.claimIds = join(claimIds);
++        this.aliases = String.join("\n", aliases);
++        this.aliasIds = join(aliasIds);
++    }
++
++    private static String join(List<Long> ids) {
++        return ids.stream().map(String::valueOf).collect(Collectors.joining("\n"));
++    }
++
++    private static List<Long> split(String ids) {
++        return ids.isEmpty() ? List.of() : Arrays.stream(ids.split("\n")).map(Long::valueOf).toList();
++    }
++
++    public Long getId() {
++        return id;
++    }
++
++    public String getSheetId() {
++        return sheetId;
++    }
++
++    public Long getIntoId() {
++        return intoId;
++    }
++
++    public Long getPersonId() {
++        return personId;
++    }
++
++    public LocalDate getMadeOn() {
++        return madeOn;
++    }
++
++    public String getMadeBy() {
++        return madeBy;
++    }
++
++    public String getState() {
++        return state;
++    }
++
++    /** The ids of the claims that moved from them, in the order they were added. */
++    public List<Long> getClaimIds() {
++        return split(claimIds);
++    }
++
++    /** Their own aliases, in the order they were added. */
++    public List<String> getAliases() {
++        return aliases.isEmpty() ? List.of() : List.of(aliases.split("\n"));
++    }
++
++    /** The ids of the aliases the merge gave the other: their name and their own aliases. */
++    public List<Long> getAliasIds() {
++        return split(aliasIds);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMergeRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonMergeRepository.java
+new file mode 100644
+index 00000000..5e5af58f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMergeRepository.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.person;
++
++import java.util.Optional;
++import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.data.jpa.repository.Modifying;
++import org.springframework.data.jpa.repository.Query;
++import org.springframework.data.repository.query.Param;
++
++public interface PersonMergeRepository extends JpaRepository<PersonMerge, Long> {
++
++    /** The last merge into the person still standing. */
++    Optional<PersonMerge> findFirstBySheetIdAndIntoIdOrderByIdDesc(String sheetId, Long intoId);
++
++    /** Puts a merged person's row back as it stood, under their own id; their collections are added after. */
++    @Modifying(flushAutomatically = true)
++    @Query(value = "INSERT INTO person (id, sheet_id, name, grade, terms, tags, position, version, added_on,"
++            + " origin_sheet, arrived_on, flag_reason, flag_until, approver) VALUES (:#{#p.id}, :#{#p.sheetId},"
++            + " :#{#p.name}, :#{#p.grade}, :#{#p.terms}, :#{#p.tags}, NULL, :#{#p.version}, :#{#p.addedOn},"
++            + " :#{#p.originSheet}, :#{#p.arrivedOn}, :#{#p.flagReason}, :#{#p.flagUntil}, :#{#p.approver})",
++            nativeQuery = true)
++    int restore(@Param("p") Person p);
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMergeUndone.java b/src/main/java/net/officefloor/hq/app/person/PersonMergeUndone.java
+new file mode 100644
+index 00000000..740ba8d4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMergeUndone.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A merge undone: the person restored, and the person they had been merged into. */
++public record PersonMergeUndone(Person restored, Person from) {
++}
+diff --git a/src/main/resources/db/migration/V106__person_merge.sql b/src/main/resources/db/migration/V106__person_merge.sql
+new file mode 100644
+index 00000000..b451619b
+--- /dev/null
++++ b/src/main/resources/db/migration/V106__person_merge.sql
+@@ -0,0 +1,16 @@
++-- Each merge of a person into another, so the last merge into a person can be undone on the sheet's today it was
++-- made, by the user who made it: the merged person as they stood (their state, as entity_history keeps it), the ids
++-- of the claims that moved, their own aliases and the ids of the aliases the merge gave the other (newline separated).
++CREATE TABLE person_merge (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL,
++    into_id BIGINT NOT NULL,
++    person_id BIGINT NOT NULL,
++    made_on DATE NOT NULL,
++    made_by VARCHAR(255) NOT NULL,
++    state CLOB NOT NULL,
++    claim_ids CLOB NOT NULL,
++    aliases CLOB NOT NULL,
++    alias_ids CLOB NOT NULL
++);
++CREATE INDEX person_merge_into ON person_merge (into_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge-undo.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge-undo.PUT.yml
+new file mode 100644
+index 00000000..75c83d0e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge-undo.PUT.yml
+@@ -0,0 +1,35 @@
++# PUT /api/sheets/{sheetId}/people/{personId}/merge-undo — the steward who made the last merge into the person undoes
++# it, on the sheet's today it was made: the merged person is back with the claims that came from them and their aliases.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: person
++person:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.ApplyMergeUndo
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonMergeUndone
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
