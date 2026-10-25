@@ -36,6 +36,9 @@ public class Sheet {
     /** The key of the review SLA: undated, a whole number of days (null: none). */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The key of the proof kinds: undated, a comma separated list of kinds (null: none). */
+    public static final String PROOF_KINDS = "proof-kinds";
+
     /** The key of the pot: undated, an amount with two decimals (null: none). */
     public static final String POT = "pot";
 
@@ -303,6 +306,13 @@ public class Sheet {
     public Integer getReviewSla() {
         String days = valueOn(REVIEW_SLA, today);
         return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** The proof kinds: while set, a claim whose due is above its proof threshold needs at least one proof of each
+     *  to be settled or approved. Not dated; empty when none. */
+    public List<String> getProofKinds() {
+        String kinds = valueOn(PROOF_KINDS, today);
+        return kinds == null || kinds.isBlank() ? List.of() : List.of(kinds.split(","));
     }
 
     /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */

@@ -9,8 +9,8 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 /** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
- *  replacing the grade recorded for that date and keeping the others; a grade already in force on that date is recorded too,
- *  so a grade later recorded from an earlier date does not reach past it. */
+ *  replacing the grade recorded for that date and keeping the others; a grade (or terms with no from-date) the same as
+ *  the one already in force is left unrecorded, so a grade or terms later recorded from an earlier date still reach past it. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
             PersonAliasRepository aliases, TreeNames tree,
@@ -37,7 +37,10 @@ public class ApplyPerson {
                 : LocalDate.parse(request.gradeFrom());
         person.setName(request.name());
         if (request.termsFromDate() == null) {
-            person.setTerms(request.termsDays());
+            // Terms left as they are in force on the sheet's today change nothing (their dated history is kept).
+            if (!java.util.Objects.equals(request.termsDays(), person.termsOn(sheet.getToday()))) {
+                person.setTerms(request.termsDays());
+            }
         } else {
             person.setTermsFrom(request.termsFromDate(), request.termsDays());
         }
@@ -50,6 +53,12 @@ public class ApplyPerson {
         } catch (ObjectOptimisticLockingFailureException | jakarta.persistence.OptimisticLockException e) {
             // saved by someone else between the load and this save
             throw new PersonConflictException();
+        }
+        // A grade left as it is in force on the from-date records nothing, so a grade later recorded from an earlier
+        // date still reaches it.
+        if (request.grade().equals(grades.gradesOf(person).on(from))
+                && grades.findByPersonIdAndFromDate(person.getId(), from).isEmpty()) {
+            return;
         }
         PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
                 .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));

@@ -40,6 +40,10 @@ export type Claim = {
   deferredUntil: string | null;
   /** How many proofs it has: raised by one at a time (not on a SETTLED or VOID claim). */
   proofs: number;
+  /** How many of its proofs are receipts (a proof added with no kind chosen is a receipt). */
+  proofsReceipt: number;
+  /** How many of its proofs are photos. */
+  proofsPhoto: number;
   /** The number of the claim it was split off from, or null when it was not made by a split. */
   splitFrom: string | null;
   /** Whether it was added while the period its due-by falls in was soft-closed. */

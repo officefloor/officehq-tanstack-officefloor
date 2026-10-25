@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.claim.ProofKind;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. The alert threshold is an amount like the floor, or blank (off); not dated. The rounding mode is half-up or half-even, or blank (none); dated. A blank review threshold is none (else an amount like the floor); dated. The escalation gap must be a whole number of days, or blank (off); not dated. A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. The alert threshold is an amount like the floor, or blank (off); not dated. The rounding mode is half-up or half-even, or blank (none); dated. A blank review threshold is none (else an amount like the floor); dated. The escalation gap must be a whole number of days, or blank (off); not dated. The proof kinds are a comma separated list of receipt and photo, or blank (none); not dated. A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -83,8 +84,28 @@ public class ValidateSettings {
                     "The escalation gap must be a whole number of days, 0 or more, or blank.");
             undatedDays(changes, Sheet.REVIEW_SLA, request.reviewSla(),
                     "The review SLA must be a whole number of days, 0 or more, or blank.");
+            proofKinds(changes, request.proofKinds());
         }
         body.set(new SettingsInput(changes));
+    }
+
+    /** Adds the proof kinds when the form sets them: a comma separated list of kinds (receipt, photo), each once, or
+     *  blank (none); not dated. */
+    private static void proofKinds(List<SettingsInput.Change> changes, String value) throws InvalidSettingsException {
+        if (value == null) {
+            return;
+        }
+        List<String> kinds = new ArrayList<>();
+        if (!value.trim().isEmpty()) {
+            for (String part : value.split(",", -1)) {
+                String kind = part.trim();
+                if (!ProofKind.ALL.contains(kind) || kinds.contains(kind)) {
+                    throw new InvalidSettingsException("The proof kinds must be a comma separated list of receipt and photo, or blank.");
+                }
+                kinds.add(kind);
+            }
+        }
+        changes.add(new SettingsInput.Change(Sheet.PROOF_KINDS, kinds.isEmpty() ? null : String.join(",", kinds), false, null));
     }
 
     /** Adds an amount setting when the form sets it: blank is the given default (null: none). */

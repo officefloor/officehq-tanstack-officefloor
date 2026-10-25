@@ -122,6 +122,10 @@ public class Claim {
     @Column(nullable = false)
     private int proofs;
 
+    /** How many of the claim's proofs are photos; the rest are receipts. 0 for a new claim. */
+    @Column(name = "proofs_photo", nullable = false)
+    private int proofsPhoto;
+
     /** The number of the claim this one was split off from; null for a claim not made by a split. */
     @Column(name = "split_from")
     private String splitFrom;
@@ -374,9 +378,27 @@ public class Claim {
         return proofs;
     }
 
-    /** Raises the claim's proofs count by one. */
-    public void addProof() {
+    /** How many of the claim's proofs are receipts. */
+    public int getProofsReceipt() {
+        return proofs - proofsPhoto;
+    }
+
+    /** How many of the claim's proofs are photos. */
+    public int getProofsPhoto() {
+        return proofsPhoto;
+    }
+
+    /** How many of the claim's proofs are of a kind (receipt or photo). */
+    public int proofsOf(String kind) {
+        return ProofKind.PHOTO.equals(kind) ? getProofsPhoto() : ProofKind.RECEIPT.equals(kind) ? getProofsReceipt() : 0;
+    }
+
+    /** Raises the claim's proofs count by one, of a kind (receipt or photo). */
+    public void addProof(String kind) {
         proofs++;
+        if (ProofKind.PHOTO.equals(kind)) {
+            proofsPhoto++;
+        }
     }
 
     public String getSplitFrom() {
@@ -422,6 +444,7 @@ public class Claim {
         then.waived = waived;
         then.reviewOn = reviewOn;
         then.proofs = proofs;
+        then.proofsPhoto = proofsPhoto;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.ref = ref;
@@ -451,6 +474,7 @@ public class Claim {
         moved.waived = waived;
         moved.reviewOn = reviewOn;
         moved.proofs = proofs;
+        moved.proofsPhoto = proofsPhoto;
         moved.lateEntry = lateEntry;
         moved.tags = tags;
         moved.tagsUsed = tagsUsed;

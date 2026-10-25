@@ -63,6 +63,8 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-deferred">{c.deferredUntil !== null && today !== undefined && today < c.deferredUntil ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
             <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+            (receipts <span data-testid="claim-proofs-receipt">{c.proofsReceipt}</span>, photos{' '}
+            <span data-testid="claim-proofs-photo">{c.proofsPhoto}</span>){' '}
             <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
             <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
@@ -163,8 +165,8 @@ const ACTIONS = [
 // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
 // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
 // whose due-by is in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
-// proofs count by one; on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
-// threshold in force on its date cannot be settled or approved while it has no proof: that shows the claim's error.
+// proofs count by one, of the kind chosen beside it (receipt when none is chosen); on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
+// threshold in force on its date cannot be settled or approved while it has no proof, nor while it lacks a proof of each of the sheet's proof kinds: that shows the claim's error.
 // An OPEN claim splits off an amount (typed beside the split button; more than 0.00 and less than its amount) into a
 // new OPEN claim; any other status, a deferred claim, a claim whose due-by is in a closed period or an amount out of range shows the
 // claim's error. A steward re-dates an OPEN or PENDING claim (the date typed beside the re-date button); anyone
@@ -189,6 +191,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   const queryClient = useQueryClient();
   const [reason, setReason] = useState('');
   const voidReasons = useVoidReasons();
+  const settings = useSettings();
   const [voidReason, setVoidReason] = useState('');
   const change = useMutation({
     mutationFn: ({ action, reason }: { action: string; reason?: string }) =>
@@ -235,9 +238,15 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     },
   });
   const submitRedate = useSubmitOnce(redate);
+  // The kind of the next proof: '' when none is chosen (the proof is a receipt, and no kind is recorded).
+  const [proofKind, setProofKind] = useState('');
   const proof = useMutation({
-    mutationFn: () => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/proof`, undefined, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
+    mutationFn: (kind: string) =>
+      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/proof${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, undefined, user),
+    onSuccess: () => {
+      setProofKind('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
   });
   const submitProof = useSubmitOnce(proof);
   const remind = useMutation({
@@ -419,6 +428,15 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
       >
         Re-date
       </button>{' '}
+      <select
+        data-testid="claim-proof-kind"
+        value={proofKind}
+        onChange={(e) => { setProofKind(e.target.value); proof.reset(); }}
+      >
+        <option value="">Kind (receipt)</option>
+        <option value="receipt">receipt</option>
+        <option value="photo">photo</option>
+      </select>{' '}
       <button
         type="button"
         data-testid="claim-proof"
@@ -428,7 +446,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           move.reset();
           defer.reset(); redate.reset(); split.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
-          submitProof(undefined);
+          submitProof(proofKind);
         }}
       >
         Add proof
@@ -682,7 +700,9 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             : action === 'resettle'
             ? `Only a settled claim can be re-settled; this one is ${claim.status}.`
             : (action === 'settle' || action === 'approve') && change.error instanceof HttpError && change.error.status === 422
-            ? 'This claim\'s due is above the proof threshold, so it needs a proof before it can be settled or approved.'
+            ? (settings.data?.proofKinds ?? '') !== ''
+              ? `This claim's due is above the proof threshold, so it needs a proof of each kind (${settings.data?.proofKinds}) before it can be settled or approved.`
+              : 'This claim\'s due is above the proof threshold, so it needs a proof before it can be settled or approved.'
             : action === 'settle' && isDeferred(claim, today)
             ? `This claim is deferred until ${claim.deferredUntil}, so it cannot be settled before then.`
             : action === 'settle' && claim.openedBy === user
