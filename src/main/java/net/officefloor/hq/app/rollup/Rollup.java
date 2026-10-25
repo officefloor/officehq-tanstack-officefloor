@@ -10,7 +10,9 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -39,10 +41,12 @@ public class Rollup {
     private final RateRepository rates;
     private final SheetRepository sheets;
     private final SettingRepository settings;
+    private final ClaimLogRepository log;
     private final Audit audit;
 
     public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            SettingRepository settings, Audit audit) {
+            SettingRepository settings, ClaimLogRepository log, Audit audit) {
+        this.log = log;
         this.settings = settings;
         this.people = people;
         this.claims = claims;
@@ -97,8 +101,8 @@ public class Rollup {
     }
 
     /**
-     * The due-total of the counting claims dated from..to (inclusive), as the screen shows a period's: each claim's
-     * figure (with its late charge) added up, a claim without one adding nothing.
+     * The due-total of the claims dated from..to (inclusive) counting by their status at the end of {@code to}, as the
+     * screen shows a period's: each claim's figure now (with its late charge) added up, a claim without one adding nothing.
      */
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         return dueBetweenByPerson(sheetId, from, to).values().stream().reduce(ZERO, BigDecimal::add);
@@ -107,6 +111,8 @@ public class Rollup {
     /**
      * Each person's due-total for the dates from..to (inclusive), by person id, every person on the sheet included
      * (0.00 when none of their counting claims falls there): their counting claims' figures (with late charge) added up.
+     * A claim counts by the status its log records at the end of {@code to} (one added after it does not count); its
+     * figure is the one it shows now, and a deferred or held claim is left out as the live totals leave it out.
      */
     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         List<Rate> sheetRates = rates.list(sheetId);
@@ -118,9 +124,12 @@ public class Rollup {
             byId.put(p.getId(), p);
             totals.put(p.getId(), ZERO);
         }
+        Map<Long, ClaimStatus> asOf = log.statusesAsOf(sheetId, to);
         for (Claim c : claims.list(sheetId)) {
             Person p = byId.get(c.getPersonId());
-            if (p == null || !counts(c, p, today) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
+            ClaimStatus then = asOf.get(c.getId());
+            if (p == null || then == null || !countsAs(c, then, p, today) || c.getDate().isBefore(from)
+                    || c.getDate().isAfter(to)) {
                 continue;
             }
             BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, late));
@@ -166,6 +175,12 @@ public class Rollup {
      *  unless a statement binds them, nor does a claim deferred past the sheet's today; their other ones do. */
     private static boolean counts(Claim claim, Person person, LocalDate today) {
         return claim.getStatus().counts() && !held(claim, person) && !claim.isDeferredOn(today);
+    }
+
+    /** Whether the claim counts as it would in the live totals were its status {@code then}. */
+    private static boolean countsAs(Claim claim, ClaimStatus then, Person person, LocalDate today) {
+        boolean held = then.isOpen() && !claim.isStated() && person.heldOn(claim.getDate());
+        return then.counts() && !held && !claim.isDeferredOn(today);
     }
 
     /** Whether a hold leaves the claim out: it is OPEN or PENDING, unbound, and dated within one of its person's holds. */

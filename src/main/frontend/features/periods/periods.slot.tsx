@@ -4,7 +4,7 @@ import { getJson, postJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { counts, useClaims } from '../claims/useClaims';
+import { counts, useClaims, type ClaimStatus } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
@@ -37,8 +37,21 @@ export function periodOn(periods: readonly Period[], date: string): Period | und
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-/** A person's live due-total for a period in cents: the due figures of their counted claims whose date falls in it,
- *  added up. With no person given, every person's together: the period's own due-total. */
+/** A claim's status at the end of a day (yyyy-mm-dd) as its log records it: its last line logged on or before the
+ *  day (the log is oldest first). None when it has no such line: it was added after the day. */
+export function statusAsOf(log: readonly string[] | undefined, day: string): ClaimStatus | undefined {
+  let status: ClaimStatus | undefined;
+  for (const line of log ?? []) {
+    const m = /^(\w+) by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(line);
+    if (m && m[2] <= day) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/** A person's live due-total for a period in cents: the due figures (as shown now) of their claims whose date falls
+ *  in it and that count by the status they had at the end of its last day, added up — a claim added after then does
+ *  not count; a deferred or held one is left out as in the live totals. With no person given, every person's
+ *  together: the period's own due-total. */
 export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: number) => bigint {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
@@ -51,7 +64,9 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
     let sum = 0n;
     for (const c of claims.data ?? []) {
       if (personId !== undefined && c.personId !== personId) continue;
-      if (!counts(c, held) || c.date < p.from || c.date > p.to) continue;
+      if (c.date < p.from || c.date > p.to) continue;
+      const then = statusAsOf(c.log, p.to);
+      if (then === undefined || !counts({ ...c, status: then }, held)) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
     return sum;

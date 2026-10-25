@@ -25,6 +25,19 @@ public class ClaimLogRepository {
                 claim.getSheetId(), claim.getId(), claim.getStatus().name(), by, java.sql.Date.valueOf(on), due);
     }
 
+    /**
+     * Each claim's status at the end of the day, by claim id, as its log records it: its last line (in log order)
+     * logged on or before the day. A claim with no such line (added after it) is absent.
+     */
+    public Map<Long, ClaimStatus> statusesAsOf(String sheetId, LocalDate day) {
+        Map<Long, ClaimStatus> statuses = new HashMap<>();
+        jdbc.query("SELECT claim_id, status FROM claim_log WHERE sheet_id = ? AND logged_on <= ? ORDER BY id",
+                rs -> {
+                    statuses.put(rs.getLong("claim_id"), ClaimStatus.valueOf(rs.getString("status")));
+                }, sheetId, java.sql.Date.valueOf(day));
+        return statuses;
+    }
+
     /** The sheet's log lines by claim id, each claim's oldest first, as {@code <STATUS> by <user> on <date> due=<due>}. */
     public Map<Long, List<String>> lines(String sheetId) {
         Map<Long, List<String>> lines = new HashMap<>();
