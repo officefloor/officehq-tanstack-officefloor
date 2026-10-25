@@ -1,0 +1,515 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 76065a9e..3a6ae40a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -53,6 +53,9 @@ export type Claim = {
+   reviewOn: string | null;
+   /** Whether a steward waived its late charge: it bears no late charge from then on, whatever its overdue state. */
+   waived: boolean;
++  /** Whether it is held: while held, an OPEN or PENDING claim counts in no live total unless a statement binds it,
++   *  as a held person's claims do. */
++  held: boolean;
+   /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
+   ref: string | null;
+   /** Its tags, trimmed, lower-cased and sorted, without repeats; empty when it has none. */
+@@ -96,9 +99,10 @@ export type Holds = Map<number, { holds: Hold[]; retiredFrom: string | null }>;
+ export const holdsOf = (people: { id: number; holds: Hold[]; retiredFrom?: string | null }[] | undefined): Holds =>
+   new Map((people ?? []).map((p) => [p.id, { holds: p.holds, retiredFrom: p.retiredFrom ?? null }]));
+ 
+-/** Whether the claim's person has its OPEN and PENDING claims out of the live totals on the sheet's today: a hold
+- *  of theirs covers its date, or their retirement date is reached (today on or after it). */
++/** Whether the claim, when OPEN or PENDING, is out of the live totals on the sheet's today: it is held itself, or a
++ *  hold of its person's covers its date, or their retirement date is reached (today on or after it). */
+ const heldOn = (c: Claim, holds: Holds, today: string | undefined) => {
++  if (c.held) return true;
+   const p = holds.get(c.personId);
+   if (!p) return false;
+   if (p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today) return true;
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 0809a965..653c48a0 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -68,6 +68,7 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+             <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+             <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
++            <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+             <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+             <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
+             <span data-testid="claim-tags">{(c.tags ?? []).join(', ')}</span>{' '}
+@@ -174,7 +175,9 @@ const ACTIONS = [
+ // the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number. An OPEN or PENDING claim is
+ // reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
+ // the claim's error. A steward waives an OPEN or PENDING claim's late charge (it bears none from then on, whatever its
+-// overdue state); anyone else, any other status, or a claim already waived shows the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
++// overdue state); anyone else, any other status, or a claim already waived shows the claim's error. An OPEN or PENDING
++// claim is held, or released when held (while held it counts in no live total unless a statement binds it); any other
++// status shows the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
+ // beside the void button); a void without one shows the claim's error. A claim of any status is commented with the
+ // text typed beside the comment button (shown on the claim, oldest first, as <user> on <date>: <text>); an empty
+ // comment shows the claim's error. A DRAFT gains a line (a label, a whole quantity of at least 1 and a unit amount with
+@@ -262,6 +265,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     ]),
+   });
+   const submitWaive = useSubmitOnce(waive);
++  const hold = useMutation({
++    mutationFn: () => putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/hold`, undefined, user),
++    onSuccess: () => Promise.all([
++      queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) }),
++      queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) }),
++    ]),
++  });
++  const submitHold = useSubmitOnce(hold);
+   const [commentText, setCommentText] = useState('');
+   const comment = useMutation({
+     mutationFn: (text: string) => postJson<Claim>(`${claimsPath(sheet)}/${claim.id}/comments`, { text }, user),
+@@ -332,12 +343,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-reject-reason"
+         placeholder="Reason to reject"
+         value={reason}
+-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <select
+         data-testid="claim-void-reason"
+         value={voidReason}
+-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         <option value="">(no void reason)</option>
+         {(voidReasons.data ?? []).map((r) => (
+@@ -354,7 +365,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+             setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+             move.reset();
+             defer.reset(); redate.reset(); split.reset();
+-            proof.reset(); remind.reset(); waive.reset(); comment.reset();
++            proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+             submitChange(action === 'reject' ? { action, reason }
+               : action === 'void' && voidReason !== '' ? { action, reason: voidReason } : { action });
+           }}
+@@ -365,7 +376,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+       <select
+         data-testid="claim-reassign-to"
+         value={target ? String(target.id) : ''}
+-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         {others.map((p) => (
+           <option key={p.id} value={String(p.id)}>{p.name}</option>
+@@ -378,7 +389,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           if (target) submitMove(target.id);
+         }}
+@@ -389,7 +400,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-defer-date"
+         placeholder="Defer until YYYY-MM-DD"
+         value={deferTo}
+-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -398,7 +409,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           split.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitDefer(deferTo);
+@@ -410,7 +421,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-date-new"
+         placeholder="Re-date to YYYY-MM-DD"
+         value={redateTo}
+-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -420,7 +431,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           split.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRedate(redateTo);
+@@ -459,7 +470,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); comment.reset(); waive.reset();
++          proof.reset(); comment.reset(); waive.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRemind(undefined);
+         }}
+@@ -474,18 +485,33 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); remind.reset(); comment.reset();
++          proof.reset(); remind.reset(); comment.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitWaive(undefined);
+         }}
+       >
+         Waive late charge
+       </button>{' '}
++      <button
++        type="button"
++        data-testid="claim-hold"
++        disabled={hold.isPending}
++        onClick={() => {
++          change.reset();
++          move.reset();
++          defer.reset(); redate.reset(); split.reset();
++          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
++          submitHold(undefined);
++        }}
++      >
++        {claim.held ? 'Release' : 'Hold'}
++      </button>{' '}
+       <input
+         data-testid="claim-comment-text"
+         placeholder="Comment"
+         value={commentText}
+-        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -495,7 +521,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); remind.reset(); waive.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitComment(commentText);
+         }}
+@@ -506,21 +532,21 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-line-label"
+         placeholder="Line label"
+         value={lineLabel}
+-        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-qty"
+         placeholder="Qty"
+         inputMode="numeric"
+         value={lineQty}
+-        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-unit"
+         placeholder="Unit amount"
+         inputMode="decimal"
+         value={lineUnit}
+-        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -530,7 +556,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset();
+           submitLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
+         }}
+@@ -542,7 +568,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to split off"
+         inputMode="decimal"
+         value={splitAmount}
+-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -552,14 +578,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitSplit(splitAmount);
+         }}
+       >
+         Split
+       </button>{' '}
+-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
++      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
+         <input
+           data-testid="claim-inline-amount"
+           placeholder="Amount"
+@@ -593,7 +619,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         </button>
+         {children}
+       </span>
+-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || comment.isError || line.isError || split.isError || editRefused || lock.isError || inline.isError) && (
++      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || line.isError || split.isError || editRefused || lock.isError || inline.isError) && (
+         <span data-testid="claim-error">
+           {line.isError
+             ? line.error instanceof HttpError && line.error.status === 423
+@@ -651,6 +677,10 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+               : claim.waived
+               ? 'This claim\'s late charge is already waived.'
+               : 'Only a steward can waive a claim\'s late charge.'
++            : hold.isError
++            ? hold.error instanceof HttpError && hold.error.status === 403
++              ? 'A viewer cannot hold or release a claim.'
++              : `Only an open or pending claim can be held or released; this one is ${claim.status}.`
+             : proof.isError
+             ? `A ${claim.status} claim cannot gain a proof.`
+             : redate.isError
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyHold.java b/src/main/java/net/officefloor/hq/app/claim/ApplyHold.java
+new file mode 100644
+index 00000000..81705333
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyHold.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Holds an OPEN or PENDING claim, or releases it when it is held. A claim in any other status is refused. While held,
++ * the claim counts in no live total, as a held person's claims do, unless a statement binds it.
++ */
++public class ApplyHold {
++    public void apply(@Val Claim claim, ClaimRepository repository) throws ClaimStatusException {
++        if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.PENDING) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be held or released.");
++        }
++        claim.setHeld(!claim.isHeld());
++        repository.saveAndFlush(claim);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimHeld.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimHeld.java
+new file mode 100644
+index 00000000..621aa385
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimHeld.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the hold or the release, once it is saved: the claim's line, CLAIM_HELD or CLAIM_RELEASED. */
++public class AuditClaimHeld {
++    public void audit(@Val Claim claim, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
++        audit.record(ClaimAudit.line(claim.isHeld() ? "CLAIM_HELD" : "CLAIM_RELEASED", claim, person, AuditUser.decode(user)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 52b6ed00..c3509e00 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -114,6 +114,11 @@ public class Claim {
+     @Column(nullable = false)
+     private boolean waived;
+ 
++    /** Whether the claim is held: while held, an OPEN or PENDING claim counts in no live total unless a statement
++     *  binds it, as a held person's claims do. */
++    @Column(nullable = false)
++    private boolean held;
++
+     /** The sheet's today when the claim last went to REVIEW; null for a claim never in review. */
+     @Column(name = "review_on")
+     private LocalDate reviewOn;
+@@ -368,6 +373,14 @@ public class Claim {
+         this.waived = waived;
+     }
+ 
++    public boolean isHeld() {
++        return held;
++    }
++
++    public void setHeld(boolean held) {
++        this.held = held;
++    }
++
+     /** Whether the claim is deferred on a day: it is OPEN and deferred until a date after that day. Until then it counts
+      *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+     public boolean isDeferredOn(LocalDate today) {
+@@ -442,6 +455,7 @@ public class Claim {
+         then.remindedOn = remindedOn;
+         then.escalated = escalated;
+         then.waived = waived;
++        then.held = held;
+         then.reviewOn = reviewOn;
+         then.proofs = proofs;
+         then.proofsPhoto = proofsPhoto;
+@@ -472,6 +486,7 @@ public class Claim {
+         moved.remindedOn = remindedOn;
+         moved.escalated = escalated;
+         moved.waived = waived;
++        moved.held = held;
+         moved.reviewOn = reviewOn;
+         moved.proofs = proofs;
+         moved.proofsPhoto = proofsPhoto;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 159eba54..dd50def8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -127,12 +127,11 @@ public class ClaimFigures {
+         return (claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED) && !claim.isDeferredOn(today);
+     }
+ 
+-    /** Whether a claim counts toward the live totals: as {@link #counts}, except its person's OPEN and PENDING
+-     *  claims dated within a hold of theirs, or all of them once their retirement date is reached, unless a statement
++    /** Whether a claim counts toward the live totals: as {@link #counts}, except an OPEN or PENDING claim that is
++     *  held, and its person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is reached, unless a statement
+      *  binds them (null person: no holds). */
+     public static boolean countsLive(Claim claim, Person person, LocalDate today) {
+-        return counts(claim, today) && !(person != null && claim.getStatus().isOpen() && !claim.isBound()
+-                && person.leftOn(claim.getDate(), today));
++        return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
+     }
+ 
+     /** Whether a claim counts toward a period's live totals: as {@link #countsLive}, taking the status it had at the
+@@ -143,7 +142,13 @@ public class ClaimFigures {
+             return false;
+         }
+         boolean deferred = then == ClaimStatus.OPEN && claim.getDeferredUntil() != null && claim.getDeferredUntil().isAfter(today);
+-        return !deferred && !(person != null && claim.getStatus().isOpen() && !claim.isBound() && person.leftOn(claim.getDate(), today));
++        return !deferred && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
++    }
++
++    /** Whether the claim, while OPEN or PENDING and unbound, leaves the live totals on the day: it is held itself, or
++     *  its person's claims on its date do ({@link Person#leftOn}; null person: no holds). */
++    private static boolean leftOn(Claim claim, Person person, LocalDate today) {
++        return claim.isHeld() || (person != null && person.leftOn(claim.getDate(), today));
+     }
+ 
+     /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. When the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 7dbd0cef..727c9c69 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -7,13 +7,13 @@ import java.util.List;
+  * whether its person's last statement binds it, and the figure it binds it to (null: none, or n/a); the number of the
+  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
+  * the date of the claim it corrects, else its own); and its due-by (YYYY-MM-DD), fixed when it was created; and its status log, oldest first
+- * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived. */
++ * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held. */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy,
+         boolean stated, String statedDue, String corrects, String roundsOn, String dueBy,
+         List<String> log, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, boolean lateEntry, String remindedOn, String ref,
+         List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, String editedBy,
+-        Integer settleBatch, List<String> lines, String reviewOn, boolean waived) {
++        Integer settleBatch, List<String> lines, String reviewOn, boolean waived, boolean held) {
+ 
+     public static ClaimResponse from(Claim claim, List<String> log, List<String> comments, List<String> lines) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),
+@@ -27,6 +27,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getRemindedOn() == null ? null : claim.getRemindedOn().toString(), claim.getRef(),
+                 Tags.list(claim.getTags()), Tags.list(claim.getTagsUsed()), claim.getVoidReason(), comments, claim.getEditedBy(),
+                 claim.getSettleBatch(), lines, claim.getReviewOn() == null ? null : claim.getReviewOn().toString(),
+-                claim.isWaived());
++                claim.isWaived(), claim.isHeld());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index a4fb8012..0d7b991c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -9,9 +9,9 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
+ 
+ /** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
+  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
+- *  replacing the grade recorded for that date and keeping the others; a grade (or terms with no from-date) the same as
+- *  the one already in force is left unrecorded when no from-date is given, so a grade or terms later recorded from an
+- *  earlier date still reach past it; a grade given with a from-date is recorded from it. */
++ *  replacing the grade recorded for that date and keeping the others, even when it is the same as the one in force;
++ *  terms with no from-date the same as those already in force are left unrecorded, so terms later recorded from an
++ *  earlier date still reach past them. */
+ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
+             PersonAliasRepository aliases, TreeNames tree,
+@@ -55,13 +55,8 @@ public class ApplyPerson {
+             // saved by someone else between the load and this save
+             throw new PersonConflictException();
+         }
+-        // A grade left as it is in force on the sheet's today, with no from-date given, records nothing, so a grade later
+-        // recorded from an earlier date still reaches it. A grade given with a from-date is recorded from that date.
+-        boolean fromGiven = request.gradeFrom() != null && !request.gradeFrom().isEmpty();
+-        if (!fromGiven && request.grade().equals(grades.gradesOf(person).on(from))
+-                && grades.findByPersonIdAndFromDate(person.getId(), from).isEmpty()) {
+-            return;
+-        }
++        // The grade is recorded from the from-date (the sheet's today when none is given), even one the same as the grade in
++        // force, so a grade recorded later from an earlier date does not reach past it.
+         PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
+                 .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));
+         dated.setGrade(request.grade());
+diff --git a/src/main/resources/db/migration/V90__claim_held.sql b/src/main/resources/db/migration/V90__claim_held.sql
+new file mode 100644
+index 00000000..a4fe2dc6
+--- /dev/null
++++ b/src/main/resources/db/migration/V90__claim_held.sql
+@@ -0,0 +1,3 @@
++-- Whether the claim is held: while held, an OPEN or PENDING claim counts in no live total, as a held person's claims
++-- do, unless a statement binds it.
++ALTER TABLE claim ADD COLUMN held BOOLEAN NOT NULL DEFAULT FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml
+new file mode 100644
+index 00000000..2ff0aff4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/hold.PUT.yml
+@@ -0,0 +1,34 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/hold — holds an OPEN or PENDING claim, or releases a held one.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: claim
++claim:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyHold
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimHeld
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
