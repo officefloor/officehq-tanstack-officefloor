@@ -112,6 +112,17 @@ public class Rollup {
         return total;
     }
 
+    /** The claim's due as the screen shows it now: its figure with its late charge on top; null (n/a) without one. */
+    public BigDecimal dueOf(Claim claim) {
+        String sheetId = claim.getSheetId();
+        Person p = people.find(sheetId, claim.getPersonId());
+        if (p == null) {
+            return null;
+        }
+        LateCharge late = settings.lateCharge(sheetId, sheets.today(sheetId));
+        return late.due(claim, figure(claim, p.gradeOn(claim.getDate()), rates.list(sheetId), settings.floor(sheetId), late));
+    }
+
     /** Record the figures the change moved, from {@code before} to the sheet's figures now. */
     public void record(String sheetId, RollupSnapshot before, ChangedBy by) {
         RollupSnapshot after = snapshot(sheetId);

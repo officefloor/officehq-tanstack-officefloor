@@ -24,7 +24,7 @@ import net.officefloor.plugin.variable.Val;
 public class OpenClaims {
     public void open(@Val SheetResponse sheet, @Val BulkOpenIds selected, @Val ChangedBy by, ClaimRepository claims,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
-            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit,
+            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
             Out<BulkOpenResponse> result) {
         int opened = 0;
         ApplyClaimStatus apply = new ApplyClaimStatus();
@@ -41,7 +41,7 @@ public class OpenClaims {
                     ClaimNumber[] number = new ClaimNumber[1];
                     Out<ClaimNumber> audited = value -> number[0] = value;
                     apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, by, ClaimReview.NONE, audited);
-                    record.record(claim, number[0], by, ClaimReview.NONE, people, audit);
+                    record.record(claim, number[0], by, ClaimReview.NONE, people, audit, log);
                     rollup.record(sheet.id(), before, by);
                     opened++;
                 } catch (BadRequestException refused) {
