@@ -1,0 +1,53 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 21802420..41c59c4f 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -4,8 +4,9 @@ import { postJson } from '../../api/http';
+ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+ import { peopleKey, usePeople, type Person } from '../people/people.slot';
+ import { personActionKey, useLastPersonAction } from '../people/personAction';
+-import { showHundredths } from '../rates/useRates';
+-import { useDueTotals } from '../rates/rates.slot';
++import { addDays, showHundredths, toHundredths } from '../rates/useRates';
++import { useClaims } from '../claims/useClaims';
++import { useSheetToday } from '../today/today.slot';
+ import { useUser } from '../session/useSession';
+ 
+ function PatronHeads() {
+@@ -18,13 +19,14 @@ function PatronHeads() {
+   );
+ }
+ 
+-// The person's patrons (names, sorted), their backing — the patrons' due-totals added up, skipping those that are
+-// n/a — and the picker that names one more. Only other people not yet their patrons are offered. A refusal shows on
++// The person's patrons (names, sorted), their backing — the patrons' SETTLED claims dated within the 90 days up to and
++// including the sheet's today, each at its frozen figure, added up (0.00 with none) — and the picker that names one more. Only other people not yet their patrons are offered. A refusal shows on
+ // the person until the picker is changed or the next action on their row.
+ function PatronCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+   const people = usePeople(sheetId).data ?? [];
+   const person = people.find((p) => p.id === personId);
+-  const totals = useDueTotals(sheetId);
++  const claims = useClaims(sheetId).data ?? [];
++  const today = useSheetToday(sheetId).data?.today;
+   const [chosen, setChosen] = useState('');
+   const [user] = useUser();
+   const queryClient = useQueryClient();
+@@ -46,10 +48,14 @@ function PatronCells({ sheetId, personId }: { sheetId: string; user: string; per
+   const patrons = person?.patrons ?? [];
+   const offered = people.filter((p) => p.id !== personId && !patrons.includes(p.name));
+   let backing = 0n;
+-  for (const p of people) {
+-    if (!patrons.includes(p.name)) continue;
+-    const t = totals.get(p.id);
+-    if (t != null) backing += t;
++  if (today !== undefined) {
++    const since = addDays(today, -89);
++    const patronIds = new Set(people.filter((p) => patrons.includes(p.name)).map((p) => p.id));
++    for (const c of claims) {
++      if (!patronIds.has(c.personId) || c.status !== 'SETTLED' || c.settledDue == null) continue;
++      if (c.date < since || c.date > today) continue;
++      backing += toHundredths(c.settledDue);
++    }
+   }
+ 
+   return (
