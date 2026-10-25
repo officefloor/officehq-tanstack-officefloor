@@ -88,6 +88,8 @@ public class ValidateSettings {
                     "The escalation gap must be a whole number of days, 0 or more, or blank.");
             undatedDays(changes, Sheet.REVIEW_SLA, request.reviewSla(),
                     "The review SLA must be a whole number of days, 0 or more, or blank.");
+            undatedDays(changes, Sheet.PENDING_SLA, request.pendingSla(),
+                    "The pending SLA must be a whole number of days, 0 or more, or blank.");
             proofKinds(changes, request.proofKinds());
             defaultGrade(changes, request.defaultGrade());
             amount(changes, Sheet.clerkLimitKey("A"), request.clerkLimitA(), null, request.clerkLimitAFrom(),

@@ -1,7 +1,7 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { gradeOn, usePeople } from '../people/people';
-import { isReviewLate, useClaims } from '../claims/claims';
+import { isPendingLate, isReviewLate, useClaims } from '../claims/claims';
 import { personDue } from '../rates/due.slot';
 import { diffDue, sumDue, useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
@@ -103,6 +103,12 @@ function Summary() {
             <td>REVIEW late</td>
             <td data-testid="summary-review-late-count">
               {allClaims.filter((c) => isReviewLate(c, today, settings.data)).length}
+            </td>
+          </tr>
+          <tr>
+            <td>PENDING late</td>
+            <td data-testid="summary-pending-late-count">
+              {allClaims.filter((c) => isPendingLate(c, today, settings.data)).length}
             </td>
           </tr>
         </tbody>

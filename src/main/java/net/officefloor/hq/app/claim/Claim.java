@@ -122,6 +122,10 @@ public class Claim {
     @Column(name = "review_on")
     private LocalDate reviewOn;
 
+    /** The sheet's today when the claim last went to PENDING; null for a claim never pending. */
+    @Column(name = "pending_on")
+    private LocalDate pendingOn;
+
     /** The user name a steward assigned the claim's review to; null while never assigned. */
     @Column(name = "review_assigned")
     private String reviewAssigned;
@@ -364,6 +368,14 @@ public class Claim {
         this.reviewOn = reviewOn;
     }
 
+    public LocalDate getPendingOn() {
+        return pendingOn;
+    }
+
+    public void setPendingOn(LocalDate pendingOn) {
+        this.pendingOn = pendingOn;
+    }
+
     public String getReviewAssigned() {
         return reviewAssigned;
     }
@@ -472,6 +484,7 @@ public class Claim {
         then.waived = waived;
         then.held = held;
         then.reviewOn = reviewOn;
+        then.pendingOn = pendingOn;
         then.reviewAssigned = reviewAssigned;
         then.proofs = proofs;
         then.proofsPhoto = proofsPhoto;
@@ -505,6 +518,7 @@ public class Claim {
         moved.waived = waived;
         moved.held = held;
         moved.reviewOn = reviewOn;
+        moved.pendingOn = pendingOn;
         moved.reviewAssigned = reviewAssigned;
         moved.proofs = proofs;
         moved.proofsPhoto = proofsPhoto;

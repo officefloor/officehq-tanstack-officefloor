@@ -38,6 +38,7 @@ public class Sheet {
 
     /** The key of the review SLA: undated, a whole number of days (null: none). */
     public static final String REVIEW_SLA = "review-sla";
+    public static final String PENDING_SLA = "pending-sla";
     public static final String SCORE_MID = "score-mid";
     public static final String SCORE_HIGH = "score-high";
 
@@ -344,6 +345,13 @@ public class Sheet {
      *  Not dated; null when none. */
     public Integer getReviewSla() {
         String days = valueOn(REVIEW_SLA, today);
+        return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** The pending SLA: a PENDING claim whose pending day plus this many days is before the sheet's today is late.
+     *  Not dated; null when none. */
+    public Integer getPendingSla() {
+        String days = valueOn(PENDING_SLA, today);
         return days == null ? null : Integer.valueOf(days);
     }
 

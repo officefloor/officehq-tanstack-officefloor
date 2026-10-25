@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
 import { ratesQueryKey } from '../rates/rates';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'maxOpen' | PermKey;
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'maxOpen' | 'pendingSla' | PermKey;
 
 /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
  *  Not dated. */
@@ -120,6 +120,7 @@ function SheetSettings() {
     scoreHigh: settings.data?.scoreHigh ?? '',
     scoreLog: settings.data?.scoreLog ?? '',
     maxOpen: settings.data?.maxOpen ?? '',
+    pendingSla: settings.data?.pendingSla ?? '',
     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
@@ -216,6 +217,10 @@ function SheetSettings() {
       <p>
         Review SLA days (blank: none):{' '}
         <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Pending SLA days (blank: none):{' '}
+        <span data-testid="setting-pending-sla-current">{settings.data?.pendingSla ?? ''}</span>
       </p>
       <p>
         Mid score threshold (blank: none):{' '}
@@ -444,6 +449,15 @@ function SheetSettings() {
           onChange={edit('reviewSla')}
           onInput={edit('reviewSla')}
           onFocus={touch('reviewSla')}
+        />
+        <input
+          data-testid="setting-pending-sla"
+          placeholder="Pending SLA days (blank: none)"
+          inputMode="numeric"
+          value={valueOf('pendingSla')}
+          onChange={edit('pendingSla')}
+          onInput={edit('pendingSla')}
+          onFocus={touch('pendingSla')}
         />
         <input
           data-testid="setting-score-mid"

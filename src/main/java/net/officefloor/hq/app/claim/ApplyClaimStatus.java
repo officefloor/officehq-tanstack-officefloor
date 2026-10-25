@@ -266,6 +266,9 @@ public class ApplyClaimStatus {
                     claim.setSettleBatch(key.isEmpty() ? null : repository.batchFor(claim.getSheetId(), key));
                 }
             }
+            if (next == ClaimStatus.PENDING) {
+                claim.setPendingOn(sheet.getToday());
+            }
             claim.setStatus(next);
         }
         repository.saveAndFlush(claim);

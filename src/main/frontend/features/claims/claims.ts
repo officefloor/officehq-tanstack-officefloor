@@ -74,6 +74,8 @@ export type Claim = {
   shares: { personId: number; share: string }[];
   /** The user its review is assigned to (null when none). */
   reviewAssigned: string | null;
+  /** The sheet's today when it last went to PENDING (YYYY-MM-DD), or null when it never did. */
+  pendingOn: string | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
@@ -190,6 +192,14 @@ export function isReviewLate(c: Claim, today: string | undefined, settings: Sett
   const sla = settings?.reviewSla ?? '';
   if (c.status !== 'REVIEW' || c.reviewOn === null || sla === '' || today === undefined) return false;
   return new Date(Date.parse(`${c.reviewOn}T00:00:00Z`) + Number(sla) * 86_400_000).toISOString().slice(0, 10) < today;
+}
+
+/** Whether a claim is late pending: it is PENDING and its pending day plus the sheet's pending SLA (setting
+ *  pending-sla; none: never late) is before the sheet's today. */
+export function isPendingLate(c: Claim, today: string | undefined, settings: Settings | undefined): boolean {
+  const sla = settings?.pendingSla ?? '';
+  if (c.status !== 'PENDING' || c.pendingOn === null || sla === '' || today === undefined) return false;
+  return new Date(Date.parse(`${c.pendingOn}T00:00:00Z`) + Number(sla) * 86_400_000).toISOString().slice(0, 10) < today;
 }
 
 /** The id of the claim whose editor is open (search param `editClaim`), or '' for none. */

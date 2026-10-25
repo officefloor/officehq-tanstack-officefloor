@@ -27,7 +27,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string;
   escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string;
   clerkLimitA: string; clerkLimitB: string; clerkLimitC: string;
-  scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string };
+  scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string };
 
 /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
  *  before it, else `start` (the sheet's starting value). */
