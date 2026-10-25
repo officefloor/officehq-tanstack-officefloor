@@ -80,6 +80,11 @@ export function periodDue(period: Period, people: Person[] | undefined, claims: 
     .map((c) => chargedOf(c, rates, gradeOn(personOf.get(c.personId)!, c.date), settings, today)));
 }
 
+/** A period's claim count: the claims whose due-by falls in it, VOID and DELETED ones left out. */
+export function periodClaimsCount(period: Period, claims: Claim[]): number {
+  return claims.filter((c) => c.status !== 'VOID' && c.status !== 'DELETED' && periodOn([period], dueByOf(c))).length;
+}
+
 /** A person's due-total for a period: the dues (with any late charge, as shown now) of their claims whose due-by falls in
  *  it that counted by the status they had at the end of its last day
  *  (not their unbound OPEN ones dated within a hold of theirs), added up, skipping n/a; for a closed period, the one

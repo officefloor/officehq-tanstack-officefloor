@@ -8,14 +8,15 @@ import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { fiscalYearOf, periodClosePath, periodDue, periodLockPath, periodsGenerateFyPath, periodsGenerateQuartersPath, periodUnlockPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { fiscalYearOf, periodClaimsCount, periodClosePath, periodDue, periodLockPath, periodsGenerateFyPath, periodsGenerateQuartersPath, periodUnlockPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a person's unbound OPEN ones dated within a hold of theirs),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
 // buttons that close and reopen it, the form that adds one, and the form that generates one per calendar month
 // (named yyyy-mm, leaving out a month whose name or days the sheet's periods already take), showing how many were made,
 // a cap on each person's open claims in it (blank for none), and the entry that generates a fiscal year's twelve the same way, and the entry that generates a calendar year's four quarters (yyyy-Q1 to yyyy-Q4,
-// leaving out one whose name or days the sheet's periods already take); each period shows the fiscal year its from-date falls in.
+// leaving out one whose name or days the sheet's periods already take); each period shows the fiscal year its from-date falls in,
+// and the count of claims whose due-by falls in it (VOID and DELETED ones left out).
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -87,6 +88,7 @@ function Periods() {
             <th>Fiscal year</th>
             <th>Cap</th>
             <th>Locked</th>
+            <th>Claims</th>
             <th></th>
           </tr>
         </thead>
@@ -101,6 +103,7 @@ function Periods() {
               <td data-testid="period-fy">{fiscalYearOf(p.from, settings.data)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
+              <td data-testid="period-claims-count">{periodClaimsCount(p, claims.data ?? [])}</td>
               <td>
                 <PeriodActions key={`${sheet}:${p.id}`} sheet={sheet} period={p} />
               </td>
