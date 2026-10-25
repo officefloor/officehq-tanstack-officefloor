@@ -40,7 +40,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The reason the claim was voided with, from the sheet's list; none when none was given. */
   voidReason: string | null;
   /** The claim's comments, oldest first: `<user> on <date>: <text>` (the sheet's today when written). */
-  comments: string[] };
+  comments: string[];
+  /** The number of the bulk settle batch that settled the claim; none when no batch settled it. */
+  settleBatch: number | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
@@ -76,6 +78,15 @@ export function useClaimTags(sheetId: string) {
   return useQuery({
     queryKey: [...claimsKey(sheetId), 'tags'] as const,
     queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/tags`),
+  });
+}
+
+/** The number of the sheet's last bulk settle batch (none when there has been none); under the claims' key, so
+ *  whatever refreshes the claims refreshes it. */
+export function useLastSettleBatch(sheetId: string) {
+  return useQuery({
+    queryKey: [...claimsKey(sheetId), 'settle-batch'] as const,
+    queryFn: () => getJson<{ batch: number | null }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/settle-batch`),
   });
 }
 

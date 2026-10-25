@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
  * Settles each selected claim in list order — the people in the order they were added, each one's claims newest
  * first. Each is settled exactly as settling it alone would (the same refusals, the same audit and rollup lines);
  * one a clerk's settle leaves PENDING counts as settled, one that cannot be settled is left as it is and counted as
- * refused.
+ * refused. A press that settles at least one is the sheet's next batch, and each claim it settles carries its number.
  */
 public class SettleClaims {
     public void settle(@Val SheetResponse sheet, @Val BulkSettleIds selected, @Val ChangedBy by, ClaimRepository claims,
@@ -31,6 +31,7 @@ public class SettleClaims {
             VoidReasonRepository voidReasons,
             Out<BulkSettleResponse> result) {
         int settled = 0;
+        Integer batch = null;
         if (roles.isViewer(sheet.id(), by.name()) || sheets.isArchived(sheet.id())) {
             // A viewer's press, or one on an archived sheet, goes through with nothing done: every selected claim is
             // refused.
@@ -53,6 +54,11 @@ public class SettleClaims {
                     apply.apply(ClaimStatus.SETTLED, claim, claims, people, rates, roles, settings, sheets, periods, logs, by, ClaimReview.NONE, VoidChoice.NONE, voidReasons, audited);
                     record.record(claim, number[0], by, ClaimReview.NONE, people, watches, logs, audit, log);
                     rollup.record(sheet.id(), before, by);
+                    if (batch == null) {
+                        // The first claim it settles makes the press a batch.
+                        batch = claims.nextSettleBatch(sheet.id());
+                    }
+                    claims.markSettleBatch(claim, batch);
                     settled++;
                 } catch (BadRequestException refused) {
                     // left as it is

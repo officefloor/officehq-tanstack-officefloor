@@ -18,6 +18,7 @@ public class Claim {
     private String openedBy;
 
     private String editedBy;
+    private Integer settleBatch;
     private boolean stated;
     private BigDecimal statedDue;
     private String corrects;
@@ -256,6 +257,15 @@ public class Claim {
 
     public void setOpenedBy(String openedBy) {
         this.openedBy = openedBy;
+    }
+
+    /** The number of the bulk settle batch that settled the claim; null when no batch settled it. */
+    public Integer getSettleBatch() {
+        return settleBatch;
+    }
+
+    public void setSettleBatch(Integer settleBatch) {
+        this.settleBatch = settleBatch;
     }
 
     /** The signed-in user who last edited the claim through its form or amount entry; null when never edited. */

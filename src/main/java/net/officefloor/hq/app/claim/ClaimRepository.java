@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -42,6 +42,7 @@ public class ClaimRepository {
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
+        claim.setSettleBatch(rs.getObject("settle_batch", Integer.class));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -290,6 +291,24 @@ public class ClaimRepository {
     private long nextListed(String sheetId) {
         return jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE "
                 + "(UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)", Long.class, sheetId);
+    }
+
+    /** Take the sheet's next bulk settle batch number (1, 2, ...), in one statement so two users never get the same one. */
+    public int nextSettleBatch(String sheetId) {
+        return jdbc.queryForObject("SELECT last_settle_batch FROM FINAL TABLE "
+                + "(UPDATE sheet SET last_settle_batch = last_settle_batch + 1 WHERE id = ?)", Integer.class, sheetId);
+    }
+
+    /** The number of the sheet's last bulk settle batch; null when there has been none. */
+    public Integer lastSettleBatch(String sheetId) {
+        return jdbc.query("SELECT last_settle_batch FROM sheet WHERE id = ?",
+                rs -> rs.next() && rs.getInt(1) > 0 ? rs.getInt(1) : null, sheetId);
+    }
+
+    /** Mark the claim settled by the bulk settle batch. */
+    public void markSettleBatch(Claim claim, int batch) {
+        jdbc.update("UPDATE claim SET settle_batch = ? WHERE id = ?", batch, claim.getId());
+        claim.setSettleBatch(batch);
     }
 
     /** Take the sheet's next claim number, in one statement so two users never get the same one. */

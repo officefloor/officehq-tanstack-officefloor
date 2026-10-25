@@ -4,7 +4,8 @@ import { postJson, putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { usePeople } from '../people/people.slot';
 import { periodOn, usePeriods } from '../periods/periods.slot';
-import { useRoles } from '../access/useAccess';
+import { useDelegations, useRoles } from '../access/useAccess';
+import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
 import { useVoidReasons } from '../voidreasons/voidReasons.slot';
 import { HttpError } from '../../api/http';
@@ -55,11 +56,21 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [editingId, setEditing] = useEditingClaim();
   const periods = usePeriods(sheetId);
   const roles = useRoles(sheetId);
+  const delegations = useDelegations(sheetId);
+  const sheetToday = useSheetToday(sheetId);
   // An edit the screen can already tell is refused shows its refusal at once, before any request: the claim form must
   // not be taken for its editor. The server refuses the same edits (and any it alone can tell).
   const [refused, setRefused] = useState<string>();
   // A viewer's edit is refused too, but its editor opens (to be cancelled), as for a lock another user holds.
-  const viewer = () => (roles.data ?? []).some((r) => r.user === user && r.role === 'viewer');
+  // One a steward's delegation holds on the sheet's today acts as a steward, as the server decides.
+  const viewer = () => {
+    const assigned = roles.data ?? [];
+    const steward = (name: string) => assigned.some((r) => r.user === name && r.role === 'steward');
+    const today = sheetToday.data?.today;
+    const acting = today !== undefined && (delegations.data ?? []).some((d) =>
+      d.user === user && steward(d.by) && d.from <= today && today <= d.to);
+    return !acting && assigned.some((r) => r.user === user && r.role === 'viewer');
+  };
   const refusal = (): string | undefined => {
     if (viewer()) return 'A viewer may not change anything on this sheet';
     if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';

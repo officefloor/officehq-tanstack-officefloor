@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
-import { claimsKey } from '../claims/useClaims';
+import { claimsKey, useLastSettleBatch } from '../claims/useClaims';
 import { usePeople } from '../people/people.slot';
 
 // The claims selected for a bulk action. Kept in a small store rather than the URL so a checkbox
@@ -47,6 +47,11 @@ function ClaimSelect({ sheetId, claim }: { sheetId: string; user: string; person
       }}
     />
   );
+}
+
+// The number of the bulk settle batch that settled the claim; nothing when none did.
+function ClaimBatch({ claim }: { sheetId: string; user: string; personId: number; claim: { settleBatch?: number | null } }) {
+  return <span data-testid="claim-batch">{claim.settleBatch ?? ''}</span>;
 }
 
 type BulkOpenResult = { opened: number; refused: number };
@@ -96,6 +101,7 @@ type BulkSettleResult = { settled: number; refused: number };
 function BulkSettle({ sheetId }: { sheetId: string; user: string }) {
   const chosen = useSelected(sheetId);
   const [user] = useUser();
+  const lastBatch = useLastSettleBatch(sheetId);
   const queryClient = useQueryClient();
   const settle = useMutation({
     mutationFn: (ids: number[]) => {
@@ -113,6 +119,7 @@ function BulkSettle({ sheetId }: { sheetId: string; user: string }) {
       <button type="button" data-testid="bulk-settle" disabled={settle.isPending} onClick={() => settle.mutate([...chosen])}>
         Settle selected
       </button>{' '}
+      <span data-testid="bulk-settle-batch">{lastBatch.data?.batch ?? ''}</span>{' '}
       {settle.isSuccess && (
         <span>
           Settled <strong data-testid="bulk-settled">{settle.data.settled}</strong>, refused{' '}
@@ -194,6 +201,7 @@ function BulkReassign({ sheetId }: { sheetId: string; user: string }) {
 
 export const contributions = [
   ClaimCells.fill({ order: 0, Component: ClaimSelect }),
+  ClaimCells.fill({ order: 21, Component: ClaimBatch }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),
   SheetBody.fill({ order: 16, Component: BulkSettle }),
   SheetBody.fill({ order: 16.5, Component: BulkReassign }),
