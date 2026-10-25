@@ -15,6 +15,8 @@ import type { Settings } from '../roles/roles';
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; softClosed: boolean; closedTotal: string | null;
   personTotals: Record<string, string>; cap: number | null; personCarried: Record<string, string>;
+  /** Each person's opening balance for the period (by person id; absent for none), added to their carried figure. */
+  personOpening: Record<string, string>;
 };
 
 export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -26,6 +28,9 @@ export const periodsGeneratePath = (sheetId: string) => `/api/sheets/${encodeURI
 
 /** Generates a fiscal year's twelve monthly periods, as the period generator does. */
 export const periodsGenerateFyPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-fy`;
+
+/** Pastes opening balances: lines of name,period,amount. */
+export const openingsImportPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/import-openings`;
 
 export const periodClosePath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/close`;
 
@@ -75,20 +80,21 @@ export function personPeriodDue(period: Period, person: Person, people: Person[]
 
 /** A person's carried figure for a period: the dues (with any late charge, as shown now) of their claims that count whose
  *  due-by falls in a period ending before this one starts and that were still OPEN or PENDING at the end of this one's
- *  last day (by the status log, as `personPeriodDue` counts), added up, skipping n/a; 0.00 for nothing carried. For a closed
+ *  last day (by the status log, as `personPeriodDue` counts), added up, skipping n/a, plus their opening balance for it; 0.00 for nothing carried. For a closed
  *  (or soft-closed) period, the one fixed when it was closed — 0.00 for a person added since. */
 export function personPeriodCarried(period: Period, periods: Period[], person: Person, people: Person[] | undefined,
   claims: Claim[], rates: Rate[] | undefined, settings: Settings | undefined, today: string | undefined): string {
   if (period.closed || period.softClosed) return period.personCarried?.[String(person.id)] ?? '0.00';
   const held = holdsOf(people);
   const earlier = periods.filter((q) => q.to < period.from);
-  return sumDue(claims
+  const opening = period.personOpening?.[String(person.id)];
+  return sumDue([...claims
     .filter((c) => {
       if (c.personId !== person.id || !periodOn(earlier, dueByOf(c))) return false;
       const status = statusOn(c, period.to);
       return (status === 'OPEN' || status === 'PENDING') && countsAsOf(c, held, today, period.to);
     })
-    .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)));
+    .map((c) => chargedOf(c, rates, gradeOn(person, c.date), settings, today)), ...(opening ? [opening] : [])]);
 }
 
 /** The fiscal year a date (YYYY-MM-DD) falls in, FY<yyyy>: a fiscal year starts on the first of the sheet's fiscal

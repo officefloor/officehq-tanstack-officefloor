@@ -51,7 +51,7 @@ public class ClosePeriod {
 
     /** Each person's carried figure for the period as it is now, by person id: the dues (with any late charge, as shown
      *  now) of their claims that count whose due-by falls in a period ending before this one starts and that were still
-     *  OPEN or PENDING at the end of this one's last day (by the status log), added up, skipping n/a; 0.00 for none. */
+     *  OPEN or PENDING at the end of this one's last day (by the status log), added up, skipping n/a, plus their opening balance for it; 0.00 for none. */
     static Map<Long, BigDecimal> carried(Period period, PeriodRepository repository, Sheet sheet, ClaimRepository claims,
             PersonRepository people, RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log) {
         Map<Long, Person> byId = people.findListed(period.getSheetId()).stream()
@@ -77,7 +77,7 @@ public class ClosePeriod {
                         carried.merge(c.getPersonId(), due, BigDecimal::add);
                     }
                 });
-        carried.replaceAll((id, t) -> t.setScale(2));
+        carried.replaceAll((id, t) -> t.add(period.openingOf(id)).setScale(2));
         return carried;
     }
 

@@ -69,6 +69,14 @@ public class Period {
     @Column(name = "carried", precision = 19, scale = 2)
     private Map<Long, BigDecimal> personCarried = new HashMap<>();
 
+    /** Each person's opening balance for the period, by person id, added to their carried figure for it; kept while closed
+     *  and reopened, though a closed period's fixed carried figures do not change. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "period_person_opening", joinColumns = @JoinColumn(name = "period_id"))
+    @MapKeyColumn(name = "person_id")
+    @Column(name = "opening", precision = 19, scale = 2)
+    private Map<Long, BigDecimal> personOpening = new HashMap<>();
+
     protected Period() {
     }
 
@@ -126,6 +134,20 @@ public class Period {
 
     public Map<Long, BigDecimal> getPersonCarried() {
         return personCarried;
+    }
+
+    public Map<Long, BigDecimal> getPersonOpening() {
+        return personOpening;
+    }
+
+    /** The person's opening balance for the period: 0.00 for none. */
+    public BigDecimal openingOf(Long personId) {
+        return personOpening.getOrDefault(personId, BigDecimal.ZERO).setScale(2);
+    }
+
+    /** Adds an amount to the person's opening balance for the period. */
+    public void addOpening(Long personId, BigDecimal amount) {
+        personOpening.merge(personId, amount.setScale(2), BigDecimal::add);
     }
 
     /** Closes the period, fixing each person's due-total and carried figure for it and its own due-total, their sum. */
