@@ -18,7 +18,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow, an open, settle or void
- * the sheet's permission for it does not give the user's role, and
+ * the sheet's permission for it does not give the user's role, an open of a claim with an empty note whose due (as open) is above the
+ * sheet's note threshold in force on the claim's date, and
  * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
@@ -73,6 +74,13 @@ public class ApplyClaimStatus {
         }
         LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
         BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;
+        if (status == ClaimStatus.OPEN && !review.asked() && (claim.getNote() == null || claim.getNote().isBlank())) {
+            BigDecimal threshold = late.settings().noteThreshold(claim.getDate());
+            BigDecimal opened = threshold == null ? null : late.dueAsOpen(claim, dueNow(claim, people, rates, settings, late));
+            if (opened != null && opened.compareTo(threshold) > 0) {
+                throw new BadRequestException("A claim whose due is above the note threshold needs a note before it is opened");
+            }
+        }
         if (status == ClaimStatus.SETTLED && due != null && claim.getProofs() == 0) {
             BigDecimal threshold = late.settings().proofThreshold(claim.getDate());
             if (threshold != null && due.compareTo(threshold) > 0) {

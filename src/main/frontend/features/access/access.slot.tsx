@@ -220,6 +220,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
   { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A proof threshold is an amount with up to two decimals, or blank for none' },
+  { key: 'note-threshold', label: 'Note threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
     ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
     key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',

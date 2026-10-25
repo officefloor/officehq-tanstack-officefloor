@@ -58,6 +58,12 @@ public record DatedSettings(List<DatedValue> values) {
         return value == null ? null : new BigDecimal(value).setScale(2);
     }
 
+    /** The note threshold in force on the date; null when there is none. */
+    public BigDecimal noteThreshold(LocalDate date) {
+        String value = on(Setting.NOTE_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
     /** The cap in force on the date: the most a person's due-total may be; null when there is none. */
     public BigDecimal cap(LocalDate date) {
         String value = on(Setting.CAP, date);
