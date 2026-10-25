@@ -85,10 +85,11 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  *  claim like any other). */
 export const isBound = (c: Claim) => c.stated;
 
-/** Whether a claim is deferred on the sheet's today: it is OPEN and deferred until a date after it. Until then it
- *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+/** Whether a claim is deferred on the sheet's today: it is OPEN (or was settled while a statement bound it) and
+ *  deferred until a date after it, and no statement binds it. Until then it counts in no total, is not overdue, cannot
+ *  be settled and is left unbound by a statement. While bound the deferral waits: it takes effect once the binding ends. */
 export const isDeferred = (c: Claim, today: string | undefined) =>
-  c.status === 'OPEN' && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+  (c.status === 'OPEN' || c.status === 'SETTLED') && !isBound(c) && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
 
 /** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do, but not a
  *  deferred one. */

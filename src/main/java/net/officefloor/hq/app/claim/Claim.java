@@ -429,10 +429,17 @@ public class Claim {
         this.held = held;
     }
 
-    /** Whether the claim is deferred on a day: it is OPEN and deferred until a date after that day. Until then it counts
-     *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+    /** Whether the claim is deferred on a day: it is OPEN (or was settled while a statement bound it) and deferred until
+     *  a date after that day, and no statement binds it. Until then it counts in no total, is not overdue, cannot be
+     *  settled and is left unbound by a statement. While bound the deferral waits: it takes effect once the binding ends. */
     public boolean isDeferredOn(LocalDate today) {
-        return getStatus() == ClaimStatus.OPEN && deferredUntil != null && deferredUntil.isAfter(today);
+        return isDeferralOn(getStatus(), today);
+    }
+
+    /** As {@link #isDeferredOn}, taking the claim at the given status. */
+    public boolean isDeferralOn(ClaimStatus status, LocalDate today) {
+        return (status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED) && !isBound()
+                && deferredUntil != null && deferredUntil.isAfter(today);
     }
 
     public int getProofs() {

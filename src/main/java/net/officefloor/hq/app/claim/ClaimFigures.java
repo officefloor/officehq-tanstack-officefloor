@@ -121,8 +121,8 @@ public class ClaimFigures {
         return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
     }
 
-    /** Whether a claim counts toward the totals on a day: only OPEN, PENDING and SETTLED claims do, but not an OPEN
-     *  one deferred until after that day. */
+    /** Whether a claim counts toward the totals on a day: only OPEN, PENDING and SETTLED claims do, but not one
+     *  deferred until after that day ({@link Claim#isDeferredOn}: a bound one's deferral waits for its binding to end). */
     public static boolean counts(Claim claim, LocalDate today) {
         return (claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED) && !claim.isDeferredOn(today);
     }
@@ -147,7 +147,7 @@ public class ClaimFigures {
         if (then == null || !(then.isOpen() || then == ClaimStatus.SETTLED)) {
             return false;
         }
-        boolean deferred = then == ClaimStatus.OPEN && claim.getDeferredUntil() != null && claim.getDeferredUntil().isAfter(today);
+        boolean deferred = claim.isDeferralOn(then, today);
         return !deferred && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
     }
 
