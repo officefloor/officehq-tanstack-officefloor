@@ -1,0 +1,298 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index f94d85a4..92cf4c2b 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { usePeople } from '../people/people';
+ import { poolsPath, poolsQueryKey, usePools, type Pool } from './pools';
+ 
+-// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced, and their cut at the end of each period ended by the sheet's today), total share and whether it is balanced, and the entry that adds a pool.
++// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced, and their cut for each period ended by the sheet's today, or closed or soft-closed: the cut fixed on closing), total share and whether it is balanced, and the entry that adds a pool.
+ // A blank name, or one already a pool's or a crew's, is refused by the server and shows the error beside the entry, which goes
+ // as soon as the entry changes.
+ function Pools() {
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index 73e60e94..e472aa53 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.history.HistoryRecorder;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -21,7 +22,7 @@ public class AutoClosePeriods {
+     public void close(@Val Sheet sheet, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
+             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, RoleRepository roles,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+-            HistoryRecorder history) {
++            HistoryRecorder history, AsOf asOf) {
+         Integer grace = sheet.getGraceDays();
+         if (grace == null) {
+             return;
+@@ -32,7 +33,7 @@ public class AutoClosePeriods {
+                 .sorted(Comparator.comparing(Period::getToDate).thenComparing(Period::getId))
+                 .toList();
+         for (Period period : due) {
+-            ClosePeriod.fix(period, repository, sheet, claims, people, rates, grades, log);
++            ClosePeriod.fix(period, repository, sheet, claims, people, rates, grades, log, asOf);
+             history.recordOn(period, period.getToDate());
+             repository.saveAndFlush(period);
+             audit.record("PERIOD_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 89c4ca8f..f1f01781 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -10,6 +10,8 @@ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimFigures;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.pool.PoolCuts;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGrade;
+@@ -23,13 +25,13 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Closes the period, fixing each person's due-total for it as it is now — the dues (with any late charge, as shown now) of the claims whose due-by falls in it that counted by the status they had at the end of its last day (not a person's
++/** Closes the period, fixing each person's due-total for it as it is now (and each pool member's cut for it as it is now) — the dues (with any late charge, as shown now) of the claims whose due-by falls in it that counted by the status they had at the end of its last day (not a person's
+  *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a, 0.00 for one with none — and its own, their sum. Each person's carried figure for it is fixed as it is now too. A soft-closed period can be closed, fixing them afresh. Refuses a period already closed, and a close by a role the sheet's permission matrix does not
+  *  allow to (by the standing rule, clerk and steward may). */
+ public class ClosePeriod {
+     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
+             RateRepository rates, SheetRepository sheets, PersonGradeRepository grades, ClaimLogRepository log,
+-            RoleRepository roles, @RequestHeader(name = "X-User", required = false) String user) throws InvalidPeriodException {
++            RoleRepository roles, AsOf asOf, @RequestHeader(name = "X-User", required = false) String user) throws InvalidPeriodException {
+         Sheet sheet = sheets.findById(period.getSheetId()).orElseGet(() -> new Sheet(period.getSheetId()));
+         String role = roles.roleOf(period.getSheetId(), AuditUser.decode(user));
+         if (!sheet.allows("close", role)) {
+@@ -38,15 +40,17 @@ public class ClosePeriod {
+         if (period.isClosed()) {
+             throw new InvalidPeriodException("The period is already closed.");
+         }
+-        fix(period, repository, sheet, claims, people, rates, grades, log);
++        fix(period, repository, sheet, claims, people, rates, grades, log, asOf);
+         repository.saveAndFlush(period);
+     }
+ 
+-    /** Closes the period on the sheet, fixing each person's due-total and carried figure for it as they are now (see above). */
++    /** Closes the period on the sheet, fixing each person's due-total and carried figure for it, and each pool
++     *  member's cut, as they are now (see above). */
+     static void fix(Period period, PeriodRepository repository, Sheet sheet, ClaimRepository claims, PersonRepository people,
+-            RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log) {
++            RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, AsOf asOf) {
+         period.close(totals(period, sheet, claims, people, rates, grades, log),
+                 carried(period, repository, sheet, claims, people, rates, grades, log));
++        period.fixPoolCuts(PoolCuts.live(sheet, asOf));
+     }
+ 
+     /** Each person's carried figure for the period as it is now, by person id: the dues (with any late charge, as shown
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 55380475..eab775fa 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -73,6 +73,14 @@ public class Period {
+     @Column(name = "carried", precision = 19, scale = 2)
+     private Map<Long, BigDecimal> personCarried = new HashMap<>();
+ 
++    /** Each pool member's cut fixed when the period was closed (or soft-closed), by the member of the pool it is ("" for
++     *  none); empty while it is open. */
++    @ElementCollection(fetch = FetchType.EAGER)
++    @CollectionTable(name = "period_pool_cut", joinColumns = @JoinColumn(name = "period_id"))
++    @MapKeyColumn(name = "member_key")
++    @Column(name = "cut", nullable = false)
++    private Map<String, String> poolCuts = new HashMap<>();
++
+     /** Each person's opening balance for the period, by person id, added to their carried figure for it; kept while closed
+      *  and reopened, though a closed period's fixed carried figures do not change. */
+     @ElementCollection(fetch = FetchType.EAGER)
+@@ -148,6 +156,16 @@ public class Period {
+         return personCarried;
+     }
+ 
++    public Map<String, String> getPoolCuts() {
++        return poolCuts;
++    }
++
++    /** Fixes each pool member's cut for the period as it is now (on closing or soft-closing). */
++    public void fixPoolCuts(Map<String, String> poolCuts) {
++        this.poolCuts.clear();
++        this.poolCuts.putAll(poolCuts);
++    }
++
+     public Map<Long, BigDecimal> getPersonOpening() {
+         return personOpening;
+     }
+@@ -184,13 +202,14 @@ public class Period {
+         this.closedTotal = personTotals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+     }
+ 
+-    /** Reopens the period, so its due-total and each person's figures for it are live again. */
++    /** Reopens the period, so its due-total, each person's figures and each pool member's cut for it are live again. */
+     public void reopen() {
+         this.closed = false;
+         this.softClosed = false;
+         this.closedTotal = null;
+         this.personTotals.clear();
+         this.personCarried.clear();
++        this.poolCuts.clear();
+     }
+ 
+     /** Whether a date falls in this period (inclusive). */
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index 4545ac50..3fb2cc43 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Reopens a closed or soft-closed period, so its due-total is live again. Only a role the sheet's permission matrix allows to
++/** Reopens a closed or soft-closed period, so its due-total and each pool member's cut for it are live again. Only a role the sheet's permission matrix allows to
+  *  reopen may (a steward, by the standing rule); refuses a period
+  *  that is not closed, or that is locked. */
+ public class ReopenPeriod {
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+index 4d5da5a6..141a76ae 100644
+--- a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+@@ -3,6 +3,8 @@ package net.officefloor.hq.app.period;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.pool.PoolCuts;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -12,13 +14,13 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** Soft-closes the period, fixing each person's due-total and carried figure for it and its own due-total exactly as closing does, while claims
++/** Soft-closes the period, fixing each person's due-total and carried figure for it, each pool member's cut for it, and its own due-total exactly as closing does, while claims
+  *  whose due-by falls in it can still be added, edited and change status. Refuses a period already closed or soft-closed, and a
+  *  soft close by a role the sheet's permission matrix does not allow to close. */
+ public class SoftClosePeriod {
+     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
+             RateRepository rates, SheetRepository sheets, PersonGradeRepository grades, ClaimLogRepository log,
+-            RoleRepository roles, @RequestHeader(name = "X-User", required = false) String user) throws InvalidPeriodException {
++            RoleRepository roles, AsOf asOf, @RequestHeader(name = "X-User", required = false) String user) throws InvalidPeriodException {
+         Sheet sheet = sheets.findById(period.getSheetId()).orElseGet(() -> new Sheet(period.getSheetId()));
+         String role = roles.roleOf(period.getSheetId(), AuditUser.decode(user));
+         if (!sheet.allows("close", role)) {
+@@ -29,6 +31,7 @@ public class SoftClosePeriod {
+         }
+         period.softClose(ClosePeriod.totals(period, sheet, claims, people, rates, grades, log),
+                 ClosePeriod.carried(period, repository, sheet, claims, people, rates, grades, log));
++        period.fixPoolCuts(PoolCuts.live(sheet, asOf));
+         repository.saveAndFlush(period);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java b/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
+new file mode 100644
+index 00000000..ec161c9f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.pool;
++
++import java.util.Map;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.sheet.Sheet;
++
++/** The pool members' cuts a period fixes when it is closed or soft-closed. */
++public final class PoolCuts {
++
++    private PoolCuts() {
++    }
++
++    /** Each pool member's cut as the sheet stands now (see RespondWithPools), by the member of the pool it is: the
++     *  pool's id with the person or the member pool; "" for one with no cut. */
++    public static Map<String, String> live(Sheet current, AsOf asOf) {
++        return RespondWithPools.cutsOf(RespondWithPools.poolsAsOf(current, null, asOf));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index df69da5c..5a460b12 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -37,8 +37,10 @@ import org.springframework.web.bind.annotation.RequestParam;
+  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
+  *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
+  *  sheet is left out (as are the pools, members and crews not then made). Each crew is also a pool, listed after them
+- *  (see crewPool). Each member also has, for each period whose to-date is on or before the sheet's today (by
+- *  from-date), its cut as the sheet stood at the end of that period, that day its today: "" when it had none. */
++ *  (see crewPool). Each member also has, for each period whose to-date is on or before the sheet's today or that is
++ *  closed or soft-closed (by from-date), its cut for that period: for a closed or soft-closed one, the cut fixed when
++ *  it was closed (see PoolCuts); otherwise as the sheet stood at the end of that period, that day its today: "" when
++ *  it had none. */
+ public class RespondWithPools {
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+@@ -48,17 +50,16 @@ public class RespondWithPools {
+         LocalDate date = AsOf.dateOf(asOfParam);
+         Sheet sheet = asOf.sheet(current, date);
+         List<PoolResponse> shown = poolsAsOf(current, date, asOf);
+-        // Each period ended by the sheet's today: every member's cut as the sheet stood at the end of it.
++        // Each closed (or soft-closed) period: every member's cut fixed on closing. Each other period ended by the
++        // sheet's today: every member's cut as the sheet stood at the end of it.
+         List<Period> ended = asOf.periods(current.getId(), date).stream()
+-                .filter(p -> sheet.getToday() != null && p.getToDate() != null && !p.getToDate().isAfter(sheet.getToday()))
++                .filter(p -> p.isClosed() || p.isSoftClosed() || (sheet.getToday() != null && p.getToDate() != null
++                        && !p.getToDate().isAfter(sheet.getToday())))
+                 .toList();
+         Map<String, Map<String, String>> cutsThen = new HashMap<>();
+         for (Period period : ended) {
+-            Map<String, String> then = new HashMap<>();
+-            for (PoolResponse pool : poolsAsOf(current, period.getToDate(), asOf)) {
+-                pool.members().forEach(m -> then.put(memberKey(pool, m), m.cut()));
+-            }
+-            cutsThen.put(period.getName(), then);
++            cutsThen.put(period.getName(), period.isClosed() || period.isSoftClosed()
++                    ? period.getPoolCuts() : cutsOf(poolsAsOf(current, period.getToDate(), asOf)));
+         }
+         List<PoolResponse> out = new ArrayList<>();
+         for (PoolResponse pool : shown) {
+@@ -76,13 +77,22 @@ public class RespondWithPools {
+         response.send(out);
+     }
+ 
++    /** Each pool member's cut in the pools, by the member of the pool it is ("" for none). */
++    static Map<String, String> cutsOf(List<PoolResponse> pools) {
++        Map<String, String> cuts = new HashMap<>();
++        for (PoolResponse pool : pools) {
++            pool.members().forEach(m -> cuts.put(memberKey(pool, m), m.cut()));
++        }
++        return cuts;
++    }
++
+     /** The member of the pool it is: the pool's id with the person, or the member pool. */
+     private static String memberKey(PoolResponse pool, PoolResponse.Member m) {
+         return pool.id() + (m.poolId() != null ? ":pool:" + m.poolId() : ":person:" + m.personId());
+     }
+ 
+     /** The sheet's pools, then its crews, as they stood at the end of the date (now, when none). */
+-    private static List<PoolResponse> poolsAsOf(Sheet current, LocalDate date, AsOf asOf) {
++    static List<PoolResponse> poolsAsOf(Sheet current, LocalDate date, AsOf asOf) {
+         Sheet sheet = asOf.sheet(current, date);
+         Map<Long, Person> byId = asOf.people(current.getId(), date).stream()
+                 .collect(Collectors.toMap(Person::getId, Function.identity()));
+diff --git a/src/main/resources/db/migration/V97__period_pool_cut.sql b/src/main/resources/db/migration/V97__period_pool_cut.sql
+new file mode 100644
+index 00000000..384b985f
+--- /dev/null
++++ b/src/main/resources/db/migration/V97__period_pool_cut.sql
+@@ -0,0 +1,8 @@
++-- Each pool member's cut fixed when a period was closed (or soft-closed), by the member of the pool it is
++-- (<pool id>:person:<id> or <pool id>:pool:<id>), '' for one with no cut; the rows go when it is reopened.
++CREATE TABLE period_pool_cut (
++    period_id BIGINT NOT NULL REFERENCES period (id),
++    member_key VARCHAR(255) NOT NULL,
++    cut VARCHAR(32) NOT NULL,
++    PRIMARY KEY (period_id, member_key)
++);
