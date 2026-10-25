@@ -1,0 +1,270 @@
+diff --git a/src/main/frontend/features/claims/score.slot.tsx b/src/main/frontend/features/claims/score.slot.tsx
+index c1d4a6a0..f3337767 100644
+--- a/src/main/frontend/features/claims/score.slot.tsx
++++ b/src/main/frontend/features/claims/score.slot.tsx
+@@ -22,8 +22,23 @@ export function scoreOf(settledTotal: string, overdueCount: number): string {
+   return `${negative && q !== 0n ? '-' : ''}${q}`;
+ }
+ 
++// A person's band by the score thresholds: HIGH at or above the high one, MID at or above the mid one, else LOW;
++// "" while either is blank.
++export function bandOf(score: string, mid: string, high: string): string {
++  if (mid === '' || high === '') return '';
++  const n = BigInt(score);
++  if (n >= BigInt(high)) return 'HIGH';
++  if (n >= BigInt(mid)) return 'MID';
++  return 'LOW';
++}
++
+ function ScoreHeader() {
+-  return <th>Score</th>;
++  return (
++    <>
++      <th>Score</th>
++      <th>Band</th>
++    </>
++  );
+ }
+ 
+ function PersonScore({ person }: { person: Person }) {
+@@ -34,7 +49,13 @@ function PersonScore({ person }: { person: Person }) {
+   const all = claims.data ?? [];
+   const { settled } = splitOf(person, all, rates.data, today, settings.data);
+   const { count } = overdueOf(person, all, rates.data, today, settings.data);
+-  return <td data-testid="person-score">{scoreOf(settled, count)}</td>;
++  const score = scoreOf(settled, count);
++  return (
++    <>
++      <td data-testid="person-score">{score}</td>
++      <td data-testid="person-band">{bandOf(score, settings.data?.scoreMid ?? '', settings.data?.scoreHigh ?? '')}</td>
++    </>
++  );
+ }
+ 
+ export const contributions = [
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index dcbe87ef..6aced987 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -13,7 +13,7 @@ export type Role = { user: string; role: string };
+  *  grade uses the sheet's terms; a claim's due-by is fixed when it is created, from its person's grade on its date), and its cap with
+  *  two decimals ("" when there is none — a person's due-total is at most it), and its proof threshold with two decimals ("" when there is none — a claim whose due is
+  *  above the one in force on its date cannot be settled or approved without a proof), and its grace days ("" when off; not dated), and its note threshold with two decimals ("" when there is none — a claim whose due is
+- *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's), and its pot with two decimals ("" when there is none; not dated — shared out among the members of each balanced pool by their shares), and its parent sheet's id ("" when none; not dated — a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up), and its fiscal year start month (1 to 12; "1" unless set; not dated — a fiscal year starts on its first day in that month and is named FY<yyyy> by the calendar year that day falls in), and its alert threshold with two decimals ("" when off; not dated — a person whose due-total goes above it is alerted in the audit), and its rounding mode (half-up or half-even; "" when none — a claim with one in force on the date it rounds by rounds by it, else by the policy date), and its review threshold with two decimals ("" when there is none — a claim whose due is above the one in force on its date goes to REVIEW when opened), and its escalation gap in days ("" when off; not dated — reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim), and its review SLA in days ("" when none; not dated — a REVIEW claim whose review day plus that many days is before the sheet's today is late), and its proof kinds (comma separated; "" when none; not dated — while set, a claim whose due is above its proof threshold needs a proof of each to be settled or approved), and the clerk limits of grades A, B and C with two decimals ("" when none — a claim of its person's grade on the sheet's today uses the one in force then in place of the sheet's), and its default grade (A, B or C; "" when blank, meaning A; not dated — a person added by the quick-add bar, or by an import line with a blank grade, gets it). Each of those is the value in force on the
++ *  above the one in force on its date cannot be opened with an empty note), and its entry date (YYYY-MM-DD; "" when off; not dated — while it is set, a new claim left without a date is dated it in place of the sheet's today), and the grace days of grades A, B and C ("" when none — an overdue claim's lateness counts from its due-by plus those of its person's grade on its date, in force on its date), and the proof thresholds of grades A, B and C with two decimals ("" when none — a claim of its person's grade on its date uses the one in force then in place of the sheet's), and its pot with two decimals ("" when there is none; not dated — shared out among the members of each balanced pool by their shares), and its parent sheet's id ("" when none; not dated — a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up), and its fiscal year start month (1 to 12; "1" unless set; not dated — a fiscal year starts on its first day in that month and is named FY<yyyy> by the calendar year that day falls in), and its alert threshold with two decimals ("" when off; not dated — a person whose due-total goes above it is alerted in the audit), and its rounding mode (half-up or half-even; "" when none — a claim with one in force on the date it rounds by rounds by it, else by the policy date), and its review threshold with two decimals ("" when there is none — a claim whose due is above the one in force on its date goes to REVIEW when opened), and its escalation gap in days ("" when off; not dated — reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim), and its review SLA in days ("" when none; not dated — a REVIEW claim whose review day plus that many days is before the sheet's today is late), and its proof kinds (comma separated; "" when none; not dated — while set, a claim whose due is above its proof threshold needs a proof of each to be settled or approved), and the clerk limits of grades A, B and C with two decimals ("" when none — a claim of its person's grade on the sheet's today uses the one in force then in place of the sheet's), and its default grade (A, B or C; "" when blank, meaning A; not dated — a person added by the quick-add bar, or by an import line with a blank grade, gets it), and its score thresholds, mid and high (whole numbers; "" when blank; not dated — while both are set, each person shows a band). Each of those is the value in force on the
+  *  sheet's today; `dated` holds the values recorded for each setting that carries a figure, by key (floor, late-pct,
+  *  terms, terms-A/B/C, clerk-limit, clerk-limit-A/B/C, cap, proof-threshold, note-threshold, grace-A/B/C, proof-threshold-A/B/C, rounding, review-threshold), each from its from-date on (null: from the beginning of time; a null value is blank). */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string;
+@@ -26,7 +26,8 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string;
+   fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string;
+   escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string;
+-  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string };
++  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string;
++  scoreMid: string; scoreHigh: string };
+ 
+ /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
+  *  before it, else `start` (the sheet's starting value). */
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index 3c30ebfb..361bc0db 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
+ import { ratesQueryKey } from '../rates/rates';
+ import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | PermKey;
++type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | PermKey;
+ 
+ /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
+  *  Not dated. */
+@@ -59,7 +59,7 @@ type Drafts = Partial<Record<Key, string>>;
+ // claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
+ // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
+ // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
+-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the proof kinds (a comma separated list of receipt and photo: while set, a claim whose due is above its proof threshold needs at least one proof of each to be settled or approved; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), the default grade (a person added by the quick-add bar, or by an import line with a blank grade, gets it; changing it changes no one; blank: A; not dated), each grade's clerk limit (on the sheet's today, it applies to a claim of its person's grade then in place of the sheet's; blank: none, the sheet's applies), and the form that sets them. A clerk settles a claim only when its due is at or below the
++// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the proof kinds (a comma separated list of receipt and photo: while set, a claim whose due is above its proof threshold needs at least one proof of each to be settled or approved; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), the default grade (a person added by the quick-add bar, or by an import line with a blank grade, gets it; changing it changes no one; blank: A; not dated), each grade's clerk limit (on the sheet's today, it applies to a claim of its person's grade then in place of the sheet's; blank: none, the sheet's applies), the score thresholds, mid and high (whole numbers: while both are set, each person shows a band; blank: none; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
+ // limit in force for it; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
+ // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
+ // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
+@@ -116,6 +116,8 @@ function SheetSettings() {
+     clerkLimitA: settings.data?.clerkLimitA ?? '',
+     clerkLimitB: settings.data?.clerkLimitB ?? '',
+     clerkLimitC: settings.data?.clerkLimitC ?? '',
++    scoreMid: settings.data?.scoreMid ?? '',
++    scoreHigh: settings.data?.scoreHigh ?? '',
+     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
+   };
+   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
+@@ -213,6 +215,14 @@ function SheetSettings() {
+         Review SLA days (blank: none):{' '}
+         <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
+       </p>
++      <p>
++        Mid score threshold (blank: none):{' '}
++        <span data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</span>
++      </p>
++      <p>
++        High score threshold (blank: none):{' '}
++        <span data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</span>
++      </p>
+       <p>
+         Proof kinds (blank: none):{' '}
+         <span data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</span>
+@@ -425,6 +435,22 @@ function SheetSettings() {
+           onInput={edit('reviewSla')}
+           onFocus={touch('reviewSla')}
+         />
++        <input
++          data-testid="setting-score-mid"
++          placeholder="Mid score threshold (blank: none)"
++          value={valueOf('scoreMid')}
++          onChange={edit('scoreMid')}
++          onInput={edit('scoreMid')}
++          onFocus={touch('scoreMid')}
++        />
++        <input
++          data-testid="setting-score-high"
++          placeholder="High score threshold (blank: none)"
++          value={valueOf('scoreHigh')}
++          onChange={edit('scoreHigh')}
++          onInput={edit('scoreHigh')}
++          onFocus={touch('scoreHigh')}
++        />
+         <input
+           data-testid="setting-proof-kinds"
+           placeholder="Proof kinds, e.g. receipt,photo (blank: none)"
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index 83de73cb..cab1cac0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -10,7 +10,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Sets the settings the form sets: a setting that carries a figure (the clerk limit, floor, terms, late percent,
+  *  each grade's own terms, cap, proof threshold, note threshold, each grade's grace days, each grade's proof threshold, review threshold) is recorded from its from-date (the sheet's today when none is given), replacing a
+  *  value recorded from that date and keeping the others; the policy date, period numbering from and entry date are set; a permission matrix entry
+- *  (key perm-<action>), the grace days, the pot, the parent sheet, the fiscal year start month and the alert threshold and the escalation gap and the review SLA and the proof kinds and the default grade are recorded undated. Each is logged with the sheet's today (so the
++ *  (key perm-<action>), the grace days, the pot, the parent sheet, the fiscal year start month and the alert threshold and the escalation gap and the review SLA and the proof kinds and the default grade and the score thresholds are recorded undated. Each is logged with the sheet's today (so the
+  *  settings can be worked out as they stood on an earlier date). */
+ public class ApplySettings {
+     public void apply(@Val SettingsInput input, @Val Sheet sheet, SheetRepository repository, SettingLogRepository log) {
+@@ -24,7 +24,8 @@ public class ApplySettings {
+                     || Sheet.PROOF_KINDS.equals(change.key()) || Sheet.DEFAULT_GRADE.equals(change.key())
+                     || Sheet.POT.equals(change.key()) || Sheet.PARENT.equals(change.key())
+                     || Sheet.FISCAL_START_MONTH.equals(change.key())
+-                    || Sheet.ALERT_THRESHOLD.equals(change.key())) {
++                    || Sheet.ALERT_THRESHOLD.equals(change.key())
++                    || Sheet.SCORE_MID.equals(change.key()) || Sheet.SCORE_HIGH.equals(change.key())) {
+                 sheet.record(change.key(), null, change.value());
+             } else if (Sheet.POLICY_DATE.equals(change.key())) {
+                 sheet.setPolicyDate(change.value() == null ? null : LocalDate.parse(change.value()));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 097f24e7..2c713d9d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -18,5 +18,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         String fiscalStartMonth, String alertThreshold, String rounding, String roundingFrom,
+         String reviewThreshold, String reviewThresholdFrom, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+         String clerkLimitA, String clerkLimitB, String clerkLimitC,
+-        String clerkLimitAFrom, String clerkLimitBFrom, String clerkLimitCFrom) {
++        String clerkLimitAFrom, String clerkLimitBFrom, String clerkLimitCFrom, String scoreMid, String scoreHigh) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 4a3dc307..d16a42ee 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -21,7 +21,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+-        String clerkLimitA, String clerkLimitB, String clerkLimitC) {
++        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh) {
+ 
+     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
+     public record Dated(String from, String value) {
+@@ -58,7 +58,14 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 sheet.getReviewSla() == null ? "" : String.valueOf(sheet.getReviewSla()),
+                 String.join(",", sheet.getProofKinds()),
+                 sheet.valueOn(Sheet.DEFAULT_GRADE, sheet.getToday()) == null ? "" : sheet.valueOn(Sheet.DEFAULT_GRADE, sheet.getToday()),
+-                gradeClerkLimit(sheet, "A"), gradeClerkLimit(sheet, "B"), gradeClerkLimit(sheet, "C"));
++                gradeClerkLimit(sheet, "A"), gradeClerkLimit(sheet, "B"), gradeClerkLimit(sheet, "C"),
++                scoreThreshold(sheet, Sheet.SCORE_MID), scoreThreshold(sheet, Sheet.SCORE_HIGH));
++    }
++
++    /** A score threshold (score-mid or score-high); "" when blank. */
++    public static String scoreThreshold(Sheet sheet, String key) {
++        Integer threshold = sheet.getScoreThreshold(key);
++        return threshold == null ? "" : String.valueOf(threshold);
+     }
+ 
+     /** The grade's grace days in force on the sheet's today; "" when it has none. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 6c6335c2..24f4819f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateSettings {
+ 
+     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
++    private static final Pattern WHOLE = Pattern.compile("-?\\d{1,9}");
+ 
+     private static final Pattern MONTH = Pattern.compile("\\d{1,2}");
+ 
+@@ -95,6 +96,8 @@ public class ValidateSettings {
+                     "The clerk limit of grade B must be an amount, 0.00 or more, with up to two decimals, or blank.");
+             amount(changes, Sheet.clerkLimitKey("C"), request.clerkLimitC(), null, request.clerkLimitCFrom(),
+                     "The clerk limit of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
++            wholeNumber(changes, Sheet.SCORE_MID, request.scoreMid(), "The mid score threshold must be a whole number, or blank.");
++            wholeNumber(changes, Sheet.SCORE_HIGH, request.scoreHigh(), "The high score threshold must be a whole number, or blank.");
+         }
+         body.set(new SettingsInput(changes));
+     }
+@@ -209,6 +212,23 @@ public class ValidateSettings {
+         undatedDays(changes, Sheet.GRACE_DAYS, value, "The grace days must be a whole number of days, 0 or more, or blank.");
+     }
+ 
++    /** Adds an undated whole-number setting (a score threshold) when the form sets it: a whole number, possibly
++     *  negative, or blank; not dated. */
++    private static void wholeNumber(List<SettingsInput.Change> changes, String key, String value, String message)
++            throws InvalidSettingsException {
++        if (value == null) {
++            return;
++        }
++        String number = null;
++        if (!value.trim().isEmpty()) {
++            if (!WHOLE.matcher(value.trim()).matches()) {
++                throw new InvalidSettingsException(message);
++            }
++            number = String.valueOf(Integer.parseInt(value.trim()));
++        }
++        changes.add(new SettingsInput.Change(key, number, false, null));
++    }
++
+     /** Adds an undated days setting when the form sets it: a whole number of days, or blank (off). */
+     private static void undatedDays(List<SettingsInput.Change> changes, String key, String value, String message)
+             throws InvalidSettingsException {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 523f70c1..f793df43 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -35,6 +35,8 @@ public class Sheet {
+ 
+     /** The key of the review SLA: undated, a whole number of days (null: none). */
+     public static final String REVIEW_SLA = "review-sla";
++    public static final String SCORE_MID = "score-mid";
++    public static final String SCORE_HIGH = "score-high";
+ 
+     /** The key of the proof kinds: undated, a comma separated list of kinds (null: none). */
+     public static final String PROOF_KINDS = "proof-kinds";
+@@ -332,6 +334,12 @@ public class Sheet {
+         return days == null ? null : Integer.valueOf(days);
+     }
+ 
++    /** A score threshold (score-mid or score-high): a whole number, possibly negative. Not dated; null when blank. */
++    public Integer getScoreThreshold(String key) {
++        String value = valueOn(key, today);
++        return value == null ? null : Integer.valueOf(value);
++    }
++
+     /** The proof kinds: while set, a claim whose due is above its proof threshold needs at least one proof of each
+      *  to be settled or approved. Not dated; empty when none. */
+     public List<String> getProofKinds() {
