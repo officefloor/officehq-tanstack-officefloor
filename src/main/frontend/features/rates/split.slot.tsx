@@ -4,12 +4,12 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { countsLive, holdsOf, isOpen, useClaims, type Claim } from '../claims/claims';
 import { useSettings, type Settings } from '../roles/roles';
-import { chargedOf, sumDue, useRates, type Rate } from './rates';
+import { chargedOf, sumDue, trimmedSum, useRates, type Rate } from './rates';
 
 // A person's settled-total and open-total: the dues of their counted SETTLED claims (frozen figures, corrections
 // included), and of their counted OPEN and PENDING claims (a deferred or retired-and-excluded one left out, as
 // from the due-total), each added up skipping n/a. Together they make their due-total before the cap. The sheet's are
-// everyone's added up (not trimmed).
+// everyone's added up, trimmed (the single highest and lowest person's figure left out when three or more have one).
 export function splitOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): { settled: string; open: string } {
   const mine = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person]), today));
@@ -53,8 +53,8 @@ function SplitTotal() {
   const each = (people.data ?? []).map(split);
   return (
     <p>
-      Settled in total <strong data-testid="rollup-settled-total">{sumDue(each.map((s) => s.settled))}</strong>{' '}
-      open in total <strong data-testid="rollup-open-total">{sumDue(each.map((s) => s.open))}</strong>
+      Settled in total <strong data-testid="rollup-settled-total">{trimmedSum(each.map((s) => s.settled))}</strong>{' '}
+      open in total <strong data-testid="rollup-open-total">{trimmedSum(each.map((s) => s.open))}</strong>
     </p>
   );
 }

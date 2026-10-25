@@ -9,14 +9,16 @@ import { settingsPath, useSettings, type Settings } from '../roles/roles';
 import { overdueOf } from '../claims/overdue.slot';
 import { personDue } from '../rates/due.slot';
 import { STATUSES } from '../summary/summary.slot';
-import { poolsPath, usePools, type Pool } from '../pools/pools';
+import { cutTotalOf, poolsPath, usePools, type Pool } from '../pools/pools';
+import { splitOf } from '../rates/split.slot';
 import { useGradeCodes } from '../grades/grades';
 
 // The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
 // parent, and so on down), the number of people — each person once across the tree: people whose names or aliases
 // match (as names are compared) are one person — and the due-total and the overdue-total: each person's figure as
 // their sheet shows it (its own today, rates, settings), with the trim applied once over all people of the tree (the
-// single highest and lowest figure left out when three or more have one). A sheet with no children shows its own figures. While the
+// single highest and lowest figure left out when three or more have one); likewise the settled-total, the open-total
+// and the cut total, each person's as their sheet shows it, trimmed once over the tree. A sheet with no children shows its own figures. While the
 // screen shows the sheet as of a date, every sheet of the tree is read as it stood at the end of that date, with that
 // date as its today. Per grade, the due-totals of the people not retired on that grade (in force on each sheet's
 // today), added up over the tree (skipping n/a); per status, how many claims over the tree have it.
@@ -27,6 +29,10 @@ export type Figures = {
   /** Per person, their due-total and overdue-total. */
   dues: string[];
   overdues: string[];
+  /** Per person, their settled-total, open-total and cut total. */
+  settleds: string[];
+  opens: string[];
+  cuts: string[];
   /** How many of its people's claims are overdue, as the rollup counts them. */
   overdueCount: number;
   /** Per grade (A, B, C and any a person not retired has in force), the due-total of the people on it. */
@@ -42,6 +48,9 @@ export function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | u
     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
     dues: people.map((p) => personDue(p, claims, rates, today, settings, people, pools)),
     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
+    settleds: people.map((p) => splitOf(p, claims, rates, today, settings).settled),
+    opens: people.map((p) => splitOf(p, claims, rates, today, settings).open),
+    cuts: people.map((p) => cutTotalOf(pools ?? [], p.id)),
     overdueCount: people.reduce((n, p) => n + overdueOf(p, claims, rates, today, settings).count, 0),
     grades: Object.fromEntries([...new Set([...GRADES, ...current.map((p) => gradeOn(p, today))])].map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
       .map((p) => personDue(p, claims, rates, today, settings, people, pools)))])),
@@ -116,6 +125,9 @@ function ConsolidatedFigures() {
       Consolidated: People <strong data-testid="consolidated-people-count">{distinctPeople(all.flatMap((f) => f.people))}</strong>
       {' · '}Due <strong data-testid="consolidated-due-total">{trimmedSum(all.flatMap((f) => f.dues))}</strong>
       {' · '}Overdue <strong data-testid="consolidated-overdue-total">{trimmedSum(all.flatMap((f) => f.overdues))}</strong>
+      {' · '}Settled <strong data-testid="consolidated-settled-total">{trimmedSum(all.flatMap((f) => f.settleds))}</strong>
+      {' · '}Open <strong data-testid="consolidated-open-total">{trimmedSum(all.flatMap((f) => f.opens))}</strong>
+      {' · '}Cut <strong data-testid="consolidated-cut-total">{trimmedSum(all.flatMap((f) => f.cuts))}</strong>
       <div>
         {gradeCodes.map((g) => (
           <span key={g}>
