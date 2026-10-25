@@ -18,6 +18,8 @@ import net.officefloor.hq.app.period.MonthlyPeriods;
 import net.officefloor.hq.app.period.GeneratedPeriods;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.period.SoftCloses;
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -39,12 +41,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * order) and records
  * ROLLOVER fy=FY&lt;old year&gt; periods=&lt;made&gt;. Keeps what it did as the sheet's last rollover (replacing any
  * earlier one), so the steward who made it can undo it on the same sheet-today. Rolling over again the year the last
- * rollover (not undone) was of carries no opening balance a second time.
+ * rollover (not undone) was of carries no opening balance a second time. Then soft-closes each period of the old year
+ * still open, in start-date order, as a soft close does (PERIOD_SOFT_CLOSED each).
  */
 public class ApplyRollover {
     public void apply(@Val RolloverRequest request, @Val Sheet sheet, PeriodRepository periods, ClaimRepository claims,
             PersonRepository people, RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log,
-            LastRolloverRepository lastRollovers, @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RolledOver> rolledOut)
+            LastRolloverRepository lastRollovers, AsOf asOf, @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RolledOver> rolledOut)
             throws InvalidRolloverException {
         String by = AuditUser.decode(user);
         int year = Integer.parseInt(request.year());
@@ -116,6 +119,14 @@ public class ApplyRollover {
                 made.periods().stream().map(Period::getId).toList(), openings));
         records.add("ROLLOVER sheet=" + sheet.getId() + " by=" + by + " fy=FY" + request.year()
                 + " periods=" + made.periods().size());
+        for (Period period : oldYear) {
+            if (period.isClosed() || period.isSoftClosed()) {
+                continue;
+            }
+            SoftCloses.fix(period, periods, sheet, claims, people, rates, grades, log, asOf);
+            records.add("PERIOD_SOFT_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
+                    + " total=" + period.getClosedTotal().toPlainString());
+        }
         records.forEach(audit::record);
         rolledOut.set(new RolledOver(made.periods().size()));
     }

@@ -4,7 +4,6 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.history.AsOf;
-import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -29,9 +28,6 @@ public class SoftClosePeriod {
         if (period.isClosed() || period.isSoftClosed()) {
             throw new InvalidPeriodException("The period is already closed.");
         }
-        period.softClose(ClosePeriod.totals(period, sheet, claims, people, rates, grades, log),
-                ClosePeriod.carried(period, repository, sheet, claims, people, rates, grades, log));
-        period.fixPoolCuts(PoolCuts.live(sheet, asOf));
-        repository.saveAndFlush(period);
+        SoftCloses.fix(period, repository, sheet, claims, people, rates, grades, log, asOf);
     }
 }
