@@ -37,6 +37,7 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
 // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
 // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
+// A claim in any status can be commented; an empty comment is refused.
 // A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
@@ -49,6 +50,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [splitAmount, setSplitAmount] = useState('');
   const [newDate, setNewDate] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
+  const [commentText, setCommentText] = useState('');
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingClaim();
   const periods = usePeriods(sheetId);
@@ -148,6 +150,17 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/remind`, { by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // A comment kept on the claim with the user and the sheet's today; the server refuses an empty one too.
+  const comment = useMutation({
+    mutationFn: (text: string) => {
+      if (text.trim() === '') throw new Error('Enter a comment');
+      return postJson<Claim>(`${base}/${claim.id}/comment`, { text: text.trim(), by: user ?? '' });
+    },
+    onSuccess: () => {
+      setCommentText('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   // A DRAFT's amount changed in the row: the claim form's edit, under its rules, keeping the claim's date, note, corrects, reference and tags.
   const inline = useMutation({
     mutationFn: (amount: string) => {
@@ -174,6 +187,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     lock.reset();
     remind.reset();
     inline.reset();
+    comment.reset();
     setRefused(undefined);
     change.mutate(to);
   };
@@ -188,11 +202,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     lock.reset();
     remind.reset();
     inline.reset();
+    comment.reset();
     setRefused(undefined);
   };
   const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
-    || redate.isPending || remind.isPending || inline.isPending;
-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error;
+    || redate.isPending || remind.isPending || inline.isPending || comment.isPending;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error ?? comment.error;
 
   return (
     <>
@@ -261,6 +276,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           lock.reset();
           remind.reset();
           inline.reset();
+          comment.reset();
           setRefused(undefined);
           reassign.mutate(moveTo);
         }}
@@ -281,6 +297,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           lock.reset();
           remind.reset();
           inline.reset();
+          comment.reset();
           setRefused(undefined);
           resettle.mutate();
         }}
@@ -312,6 +329,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           lock.reset();
           remind.reset();
           inline.reset();
+          comment.reset();
           setRefused(undefined);
           defer.mutate(deferUntil);
         }}
@@ -333,6 +351,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           lock.reset();
           remind.reset();
           inline.reset();
+          comment.reset();
           setRefused(undefined);
           proof.mutate();
         }}
@@ -363,6 +382,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           lock.reset();
           remind.reset();
           inline.reset();
+          comment.reset();
           setRefused(undefined);
           split.mutate(splitAmount);
         }}
@@ -392,6 +412,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           lock.reset();
           remind.reset();
           inline.reset();
+          comment.reset();
           setRefused(undefined);
           redate.mutate(newDate);
         }}
@@ -434,6 +455,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         onChange={(e) => {
           setInlineAmount(e.target.value);
           inline.reset();
+          comment.reset();
         }}
       />
       <button
@@ -446,6 +468,26 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         }}
       >
         Save amount
+      </button>{' '}
+      <input
+        data-testid="claim-comment-text"
+        placeholder="Comment"
+        value={commentText}
+        onChange={(e) => {
+          setCommentText(e.target.value);
+          comment.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-comment-add"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          comment.mutate(commentText);
+        }}
+      >
+        Comment
       </button>
       {editingId === claim.id && (
         <button

@@ -25,7 +25,7 @@ public class SheetHistory {
     /** The tables the screen reads (a statement's figures among them), parents before children. */
     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold",
             "person_patron", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
-            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason");
+            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment");
 
     private final JdbcTemplate jdbc;
 

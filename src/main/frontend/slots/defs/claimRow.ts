@@ -11,5 +11,6 @@ export const ClaimCells = defineSlot<{
   claim: { id: number; personId: number; amount: string; date: string; note: string; status: 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
     settledDue: string | null; openedBy: string | null; stated: boolean; statedDue: string | null; dueBy: string; log: string[];
     deferred?: boolean; deferredUntil?: string | null; proofs?: number; splitFrom?: string | null; lateEntry?: boolean;
-    reminded?: string | null; corrects?: string | null; ref?: string | null; tags?: string[] };
+    reminded?: string | null; corrects?: string | null; ref?: string | null; tags?: string[];
+    comments?: string[] };
 }>('claim.cells');
