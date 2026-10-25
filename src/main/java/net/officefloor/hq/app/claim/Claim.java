@@ -114,6 +114,11 @@ public class Claim {
     @Column(nullable = false)
     private boolean waived;
 
+    /** Whether the claim is held: while held, an OPEN or PENDING claim counts in no live total unless a statement
+     *  binds it, as a held person's claims do. */
+    @Column(nullable = false)
+    private boolean held;
+
     /** The sheet's today when the claim last went to REVIEW; null for a claim never in review. */
     @Column(name = "review_on")
     private LocalDate reviewOn;
@@ -368,6 +373,14 @@ public class Claim {
         this.waived = waived;
     }
 
+    public boolean isHeld() {
+        return held;
+    }
+
+    public void setHeld(boolean held) {
+        this.held = held;
+    }
+
     /** Whether the claim is deferred on a day: it is OPEN and deferred until a date after that day. Until then it counts
      *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
     public boolean isDeferredOn(LocalDate today) {
@@ -442,6 +455,7 @@ public class Claim {
         then.remindedOn = remindedOn;
         then.escalated = escalated;
         then.waived = waived;
+        then.held = held;
         then.reviewOn = reviewOn;
         then.proofs = proofs;
         then.proofsPhoto = proofsPhoto;
@@ -472,6 +486,7 @@ public class Claim {
         moved.remindedOn = remindedOn;
         moved.escalated = escalated;
         moved.waived = waived;
+        moved.held = held;
         moved.reviewOn = reviewOn;
         moved.proofs = proofs;
         moved.proofsPhoto = proofsPhoto;

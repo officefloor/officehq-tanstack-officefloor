@@ -127,12 +127,11 @@ public class ClaimFigures {
         return (claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED) && !claim.isDeferredOn(today);
     }
 
-    /** Whether a claim counts toward the live totals: as {@link #counts}, except its person's OPEN and PENDING
-     *  claims dated within a hold of theirs, or all of them once their retirement date is reached, unless a statement
+    /** Whether a claim counts toward the live totals: as {@link #counts}, except an OPEN or PENDING claim that is
+     *  held, and its person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is reached, unless a statement
      *  binds them (null person: no holds). */
     public static boolean countsLive(Claim claim, Person person, LocalDate today) {
-        return counts(claim, today) && !(person != null && claim.getStatus().isOpen() && !claim.isBound()
-                && person.leftOn(claim.getDate(), today));
+        return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
     }
 
     /** Whether a claim counts toward a period's live totals: as {@link #countsLive}, taking the status it had at the
@@ -143,7 +142,13 @@ public class ClaimFigures {
             return false;
         }
         boolean deferred = then == ClaimStatus.OPEN && claim.getDeferredUntil() != null && claim.getDeferredUntil().isAfter(today);
-        return !deferred && !(person != null && claim.getStatus().isOpen() && !claim.isBound() && person.leftOn(claim.getDate(), today));
+        return !deferred && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
+    }
+
+    /** Whether the claim, while OPEN or PENDING and unbound, leaves the live totals on the day: it is held itself, or
+     *  its person's claims on its date do ({@link Person#leftOn}; null person: no holds). */
+    private static boolean leftOn(Claim claim, Person person, LocalDate today) {
+        return claim.isHeld() || (person != null && person.leftOn(claim.getDate(), today));
     }
 
     /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. When the

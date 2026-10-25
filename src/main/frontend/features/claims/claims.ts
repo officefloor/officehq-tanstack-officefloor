@@ -53,6 +53,9 @@ export type Claim = {
   reviewOn: string | null;
   /** Whether a steward waived its late charge: it bears no late charge from then on, whatever its overdue state. */
   waived: boolean;
+  /** Whether it is held: while held, an OPEN or PENDING claim counts in no live total unless a statement binds it,
+   *  as a held person's claims do. */
+  held: boolean;
   /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
   ref: string | null;
   /** Its tags, trimmed, lower-cased and sorted, without repeats; empty when it has none. */
@@ -96,9 +99,10 @@ export type Holds = Map<number, { holds: Hold[]; retiredFrom: string | null }>;
 export const holdsOf = (people: { id: number; holds: Hold[]; retiredFrom?: string | null }[] | undefined): Holds =>
   new Map((people ?? []).map((p) => [p.id, { holds: p.holds, retiredFrom: p.retiredFrom ?? null }]));
 
-/** Whether the claim's person has its OPEN and PENDING claims out of the live totals on the sheet's today: a hold
- *  of theirs covers its date, or their retirement date is reached (today on or after it). */
+/** Whether the claim, when OPEN or PENDING, is out of the live totals on the sheet's today: it is held itself, or a
+ *  hold of its person's covers its date, or their retirement date is reached (today on or after it). */
 const heldOn = (c: Claim, holds: Holds, today: string | undefined) => {
+  if (c.held) return true;
   const p = holds.get(c.personId);
   if (!p) return false;
   if (p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today) return true;
