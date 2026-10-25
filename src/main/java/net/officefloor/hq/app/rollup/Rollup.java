@@ -75,7 +75,8 @@ public class Rollup {
                         .map(figures::due).filter(d -> d != null)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 BigDecimal settled = mine.stream()
-                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && c.getStatus() == ClaimStatus.SETTLED)
+                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && c.getStatus() == ClaimStatus.SETTLED
+                                && c.getCorrects() == null)
                         .map(figures::due).filter(d -> d != null)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 long overdueCount = mine.stream()
@@ -103,7 +104,7 @@ public class Rollup {
     }
 
     /** One SCORE line per person, in list order, with the score as it stands in these figures: their counted SETTLED
-     *  claims' dues divided by 100, minus 5 for each counted overdue claim, rounded half to even to a whole number. */
+     *  claims' dues (corrections left out) divided by 100, minus 5 for each counted overdue claim, rounded half to even to a whole number. */
     public List<String> scores(String sheetId, String user) {
         String head = " sheet=" + sheetId.trim() + " by=" + user;
         List<String> lines = new ArrayList<>();

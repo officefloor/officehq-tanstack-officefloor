@@ -2,12 +2,12 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useSheetToday } from '../session/session';
 import { type Person } from '../people/people';
 import { useSettings } from '../roles/roles';
-import { useRates } from '../rates/rates';
-import { splitOf } from '../rates/split.slot';
+import { gradeOn } from '../people/people';
+import { chargedOf, sumDue, useRates } from '../rates/rates';
 import { overdueOf } from './overdue.slot';
-import { useClaims } from './claims';
+import { countsLive, holdsOf, useClaims } from './claims';
 
-// A person's score: their settled-total divided by 100, minus 5 for each counted overdue claim, rounded half to even
+// A person's score: the dues of their counted SETTLED claims that correct nothing, divided by 100, minus 5 for each counted overdue claim, rounded half to even
 // to a whole number. Worked in hundredths of the score so the rounding is exact.
 export function scoreOf(settledTotal: string, overdueCount: number): string {
   const [whole, frac = '00'] = settledTotal.replace('-', '').split('.');
@@ -47,7 +47,11 @@ function PersonScore({ person }: { person: Person }) {
   const today = useSheetToday();
   const settings = useSettings();
   const all = claims.data ?? [];
-  const { settled } = splitOf(person, all, rates.data, today, settings.data);
+  // corrections are left out of the score's settled figures
+  const settled = sumDue(all
+    .filter((c) => c.personId === person.id && c.corrects === null && c.status === 'SETTLED'
+      && countsLive(c, holdsOf([person]), today))
+    .map((c) => chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)));
   const { count } = overdueOf(person, all, rates.data, today, settings.data);
   const score = scoreOf(settled, count);
   return (
