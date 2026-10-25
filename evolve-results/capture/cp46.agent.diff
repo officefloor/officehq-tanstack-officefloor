@@ -1,0 +1,256 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index c2e65326..c1476337 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useState } from 'react';
+-import { putJson } from '../../api/http';
++import { postJson, putJson } from '../../api/http';
+ import { ClaimCells } from '../../slots/defs/claimRow';
+ import { usePeople } from '../people/people.slot';
+ import { useUser } from '../session/useSession';
+@@ -42,13 +42,20 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     },
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+   });
++  // A steward's re-settle of a SETTLED claim at the figure it would have today as an open claim bound by no statement.
++  const resettle = useMutation({
++    mutationFn: () =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/resettle`, { by: user ?? '' }),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++  });
+   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
+   const changeTo = (to: Change) => {
+     reassign.reset();
++    resettle.reset();
+     change.mutate(to);
+   };
+-  const busy = change.isPending || reassign.isPending;
+-  const error = change.error ?? reassign.error;
++  const busy = change.isPending || reassign.isPending || resettle.isPending;
++  const error = change.error ?? reassign.error ?? resettle.error;
+ 
+   return (
+     <>
+@@ -94,11 +101,24 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+         disabled={busy}
+         onClick={() => {
+           change.reset();
++          resettle.reset();
+           reassign.mutate(moveTo);
+         }}
+       >
+         Move
+       </button>{' '}
++      <button
++        type="button"
++        data-testid="claim-resettle"
++        disabled={busy}
++        onClick={() => {
++          change.reset();
++          reassign.reset();
++          resettle.mutate();
++        }}
++      >
++        Re-settle
++      </button>{' '}
+       {error && (
+         <span data-testid="claim-error" role="alert">
+           {error.message}
+diff --git a/src/main/java/net/officefloor/hq/app/access/LateCharge.java b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+index 22cfd92c..093e9bd2 100644
+--- a/src/main/java/net/officefloor/hq/app/access/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+@@ -25,7 +25,16 @@ public record LateCharge(LocalDate today, BigDecimal pct, LocalDate policyDate)
+     /** The claim's late charge on its figure (zero when it is not overdue, or has no figure). */
+     public BigDecimal on(Claim claim, BigDecimal figure) {
+         BigDecimal none = BigDecimal.ZERO.setScale(2);
+-        if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) {
++        if (!claim.getStatus().isOpen()) {
++            return none;
++        }
++        return onAsOpen(claim, figure);
++    }
++
++    /** The late charge the claim would have on its figure were it OPEN. */
++    public BigDecimal onAsOpen(Claim claim, BigDecimal figure) {
++        BigDecimal none = BigDecimal.ZERO.setScale(2);
++        if (figure == null || claim.isCorrection()) {
+             return none;
+         }
+         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
+@@ -41,4 +50,9 @@ public record LateCharge(LocalDate today, BigDecimal pct, LocalDate policyDate)
+     public BigDecimal due(Claim claim, BigDecimal figure) {
+         return figure == null ? null : figure.setScale(2).add(on(claim, figure));
+     }
++
++    /** The figure with the late charge the claim would have were it OPEN; null without a figure. */
++    public BigDecimal dueAsOpen(Claim claim, BigDecimal figure) {
++        return figure == null ? null : figure.setScale(2).add(onAsOpen(claim, figure));
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+new file mode 100644
+index 00000000..2d465f45
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+@@ -0,0 +1,45 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.LateCharge;
++import net.officefloor.hq.app.access.Role;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.access.SettingRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * A steward's re-settle of a SETTLED claim: freezes its due again at the figure it would have today as an OPEN claim bound
++ * by no statement — the rate in force on the claim's date of its person's grade on that date (at least the sheet's
++ * floor), with its late charge as of the sheet's today on top. Without a rate its due becomes n/a.
++ */
++public class ApplyResettle {
++    public void apply(@Val Claim claim, @Val ChangedBy by, ClaimRepository repository, PersonRepository people,
++            RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
++            Out<Resettled> resettled) throws BadRequestException {
++        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
++            throw new BadRequestException("Only a steward re-settles a claim");
++        }
++        if (claim.getStatus() != ClaimStatus.SETTLED) {
++            throw new BadRequestException("Only a SETTLED claim is re-settled; this one is " + claim.getStatus());
++        }
++        LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        BigDecimal rate = person == null ? null
++                : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
++        BigDecimal figure = claim.figureAt(rate, settings.floor(claim.getSheetId()), late.rounding(claim));
++        BigDecimal before = claim.getSettledDue();
++        BigDecimal after = late.dueAsOpen(claim, figure);
++        claim.setSettledDue(after);
++        if (!repository.updateStatus(claim, ClaimStatus.SETTLED)) {
++            throw new BadRequestException("The claim was changed by someone else; reload the sheet");
++        }
++        resettled.set(new Resettled(before, after));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
+new file mode 100644
+index 00000000..a1fa34c1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimResettled.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** CLAIM_RESETTLED, naming the claim, then its settled due before and after; and its SETTLED status log line. */
++public class RecordClaimResettled {
++    public void record(@Val Claim claim, @Val Resettled resettled, @Val ChangedBy by, PersonRepository people,
++            Audit audit, ClaimLog log) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        audit.record(ClaimAudit.line("CLAIM_RESETTLED", claim, by, person == null ? "" : person.getName())
++                + " old=" + shown(resettled.before()) + " new=" + shown(resettled.after()));
++        log.record(claim, by);
++    }
++
++    private static String shown(BigDecimal due) {
++        return due == null ? "n/a" : due.toPlainString();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ResettleRequest.java b/src/main/java/net/officefloor/hq/app/claim/ResettleRequest.java
+new file mode 100644
+index 00000000..75ad19d6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ResettleRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The signed-in user (`by`) re-settling a SETTLED claim. */
++public record ResettleRequest(String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Resettled.java b/src/main/java/net/officefloor/hq/app/claim/Resettled.java
+new file mode 100644
+index 00000000..ee6e765c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Resettled.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** A re-settled claim's settled due before and after (null for n/a). */
++public record Resettled(BigDecimal before, BigDecimal after) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+new file mode 100644
+index 00000000..b4e61f2d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Publishes the user re-settling the claim. */
++public class ValidateResettle {
++    public void validate(@RequestBody ResettleRequest request, Out<ChangedBy> changedBy) throws BadRequestException {
++        changedBy.set(ChangedBy.of(request == null ? null : request.by()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+new file mode 100644
+index 00000000..fc164fb9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+@@ -0,0 +1,35 @@
++# Re-settle a SETTLED claim (a steward's): its settled due is frozen again at the figure it would have today as an OPEN
++# claim bound by no statement. Refused for anyone else, any other status, or a claim in a closed period.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: resettle
++resettle:
++  class: net.officefloor.hq.app.claim.ValidateResettle
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++closed:
++  class: net.officefloor.hq.app.claim.RefuseClosedClaim
++  govern: [ transaction ]
++  next: rollup-before
++rollup-before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyResettle
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimResettled
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
