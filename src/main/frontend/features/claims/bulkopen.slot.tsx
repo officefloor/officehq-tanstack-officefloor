@@ -7,7 +7,7 @@ import { usePeople, useShowRetired } from '../people/people';
 import { claimsPath, claimsQueryKey, useClaims, useSelectedClaims, type Claim } from './claims';
 
 // Opens every selected claim with one button, in list order: the people as listed, newest claim
-// first within a person, so the claims are numbered in that order. Each is opened as its own Open
+// first within a person. Each is opened as its own Open
 // button would (the server refuses what it refuses there, and that claim is left as it is); the
 // counts of opened and refused show once all are done, and are gone while it runs.
 function BulkOpen() {

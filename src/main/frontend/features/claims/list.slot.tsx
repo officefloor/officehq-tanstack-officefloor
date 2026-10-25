@@ -151,7 +151,7 @@ const ACTIONS = [
 // non-steward (other than the person's approver) approving or rejecting a PENDING claim, an open, settle or void by a role the permission matrix does
 // not allow, or rejecting one without a reason (typed beside the reject
 // button), or a review by anyone but a steward. A claim whose due is above the review threshold in force on its date goes to
-// REVIEW when opened; a steward's review button opens it (it is numbered then). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
+// REVIEW when opened; a steward's review button opens it. A claim is numbered when it is settled or approved. A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
 // the next action on the row is taken. Only a DRAFT can be edited: the edit button of any other claim shows the claim's error instead of opening
 // its editor (an open claim is voided and added anew); that of a DRAFT whose due-by is in a closed period opens its
 // editor but shows the claim's error, and the editor cannot save. Opening a
@@ -174,7 +174,7 @@ const ACTIONS = [
 // the split does and the new claim settled at once as the settle does; a refused split or settle (four-eyes and proof
 // judged on the original) shows the claim's error and changes nothing. A steward re-dates an OPEN or PENDING claim (the date typed beside the re-date button); anyone
 // else, any other status, a claim whose due-by is in a closed period, or a new date after the person's retirement shows
-// the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number. An OPEN or PENDING claim is
+// the claim's error. Re-dating keeps the due-by, so the claim keeps its period. An OPEN or PENDING claim is
 // reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
 // the claim's error. A steward waives an OPEN or PENDING claim's late charge (it bears none from then on, whatever its
 // overdue state); anyone else, any other status, or a claim already waived shows the claim's error. An OPEN or PENDING

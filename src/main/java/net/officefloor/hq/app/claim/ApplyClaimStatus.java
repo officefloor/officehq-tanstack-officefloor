@@ -25,14 +25,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Moves the claim to the status the action leads to; refuses a change its status does not allow, and an open,
- * settle or void by a role the sheet's permission matrix does not allow it to. Opening gives
- * the claim the sheet's next number in the fiscal year of its due-by (FY<year>-<n>, shared across the sheet's tree) (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
- * X-<n> for a claim in no period) and records who opened it; a voided claim keeps its number (never reused). The one who opened a
+ * settle or void by a role the sheet's permission matrix does not allow it to. Opening records
+ * who opened the claim; it takes no number. A claim is numbered when it is settled (or approved): the sheet's next number in the fiscal year of its due-by (FY<year>-<n>, shared across the sheet's tree) (or, while the sheet's period numbering is on, the next in its period: <period>-<n>,
+ * X-<n> for a claim in no period); a claim numbered already keeps its number, and a voided claim keeps its number (never reused). The one who opened a
  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
  * the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's; a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
  * above it leaves it PENDING instead. Only a steward, or its person's approver, approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. The one who last edited a claim (its form or its amount entry) cannot settle or approve it either. Settling fixes the claim's due at the rate of the grade its
- * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the proof threshold in force on the claim's date (its person's grade's on that date when one is set, else the sheet's) cannot be settled or approved while it has no proof, nor while the sheet's proof kinds are set and it lacks a proof of one of them — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due is above the sheet's review threshold in force on the claim's date goes to REVIEW when opened instead of OPEN: it records who opened it but takes no number yet. Only a steward reviews a REVIEW claim, which opens it (OPEN) and gives it its number then. A claim whose due-by is in a closed period cannot change status. A claim whose due-by is in a period with a cap cannot be opened while its person already has that many OPEN or PENDING claims whose due-by is in it. A DRAFT is deleted (DELETED: it counts nowhere and
+ * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the proof threshold in force on the claim's date (its person's grade's on that date when one is set, else the sheet's) cannot be settled or approved while it has no proof, nor while the sheet's proof kinds are set and it lacks a proof of one of them — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due is above the sheet's review threshold in force on the claim's date goes to REVIEW when opened instead of OPEN: it records who opened it. Only a steward reviews a REVIEW claim, which opens it (OPEN). A claim whose due-by is in a closed period cannot change status. A claim whose due-by is in a period with a cap cannot be opened while its person already has that many OPEN or PENDING claims whose due-by is in it. A DRAFT is deleted (DELETED: it counts nowhere and
  * cannot be edited, opened or voided) and restored (DRAFT again) only on the sheet's today it was deleted (its status log's last DELETED date). Only a steward voids a SETTLED claim, and only within 7 days of
  * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. While the sheet's list of
  * void reasons is not empty, a void needs a reason from it, which the claim keeps. Returns the claim's number for the
@@ -135,7 +135,7 @@ public class ApplyClaimStatus {
             throw new ClerkLimitException("Only a steward can review a claim.");
         }
         if (("open".equals(action) || "review".equals(action)) && claim.getStatus().after(action) != null) {
-            // Lock the sheet first (taking a number locks it), then re-read the claim so a concurrent open is seen.
+            // Lock the sheet first, then re-read the claim so a concurrent open is seen.
             boolean perPeriod = sheet.periodNumberingOn();
             if (perPeriod) {
                 repository.lockSheet(claim.getSheetId());
@@ -175,14 +175,6 @@ public class ApplyClaimStatus {
                 claim.setOpenedBy(user);
                 repository.saveAndFlush(claim);
                 return null;
-            }
-            if (perPeriod) {
-                String prefix = periods.findBySheetIdOrderByFromDateAscIdAsc(claim.getSheetId()).stream()
-                        .filter(p -> p.contains(claim.getDueBy())).map(Period::getName).findFirst().orElse(null);
-                String seq = prefix == null ? "X" : "P:" + prefix;
-                claim.setNumber((prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq));
-            } else {
-                claim.setNumber(repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), claim.getDueBy()));
             }
             claim.setStatus(next);
             if ("open".equals(action)) {
@@ -255,6 +247,9 @@ public class ApplyClaimStatus {
                     next = ClaimStatus.PENDING;
                 } else {
                     claim.setDue(due);
+                    if (claim.getNumber() == null) {
+                        claim.setNumber(takeNumber(claim, repository, periods, sheet));
+                    }
                 }
                 if ("settle".equals(action)) {
                     String key = batch == null ? "" : batch.trim();
@@ -265,6 +260,22 @@ public class ApplyClaimStatus {
         }
         repository.saveAndFlush(claim);
         return claim.getNumber();
+    }
+
+    /** The next number in the claim's sequence as it is settled now: within the period its due-by falls in
+     *  (<period>-<n>, X-<n> in none) while the sheet's period numbering is on, else in the fiscal year of its due-by
+     *  (FY<year>-<n>, shared across the sheet's tree). Locks the sheet (or tree) first, so two claims settled at once
+     *  are numbered one after the other. */
+    private static String takeNumber(Claim claim, ClaimRepository repository, PeriodRepository periods, Sheet sheet) {
+        if (sheet.periodNumberingOn()) {
+            repository.lockSheet(claim.getSheetId());
+            String prefix = periods.findBySheetIdOrderByFromDateAscIdAsc(claim.getSheetId()).stream()
+                    .filter(p -> p.contains(claim.getDueBy())).map(Period::getName).findFirst().orElse(null);
+            String seq = prefix == null ? "X" : "P:" + prefix;
+            return (prefix == null ? "X" : prefix) + "-" + repository.takeNextInSequence(claim.getSheetId(), seq);
+        }
+        repository.lockTree(claim.getSheetId());
+        return repository.takeNextInFiscalYear(claim.getSheetId(), sheet.getFiscalStartMonth(), claim.getDueBy());
     }
 
     private static ClaimStatus check(Claim claim, String action) throws ClaimStatusException {

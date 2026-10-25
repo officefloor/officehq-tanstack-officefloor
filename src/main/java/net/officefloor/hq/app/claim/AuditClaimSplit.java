@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.person.Person;
@@ -15,7 +16,7 @@ public class AuditClaimSplit {
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
         String by = AuditUser.decode(user);
-        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + split.made().getNumber());
+        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + Objects.requireNonNullElse(split.made().getNumber(), ""));
         audit.record(ClaimAudit.line(ClaimStatus.OPEN.event(), split.made(), person, by));
     }
 }

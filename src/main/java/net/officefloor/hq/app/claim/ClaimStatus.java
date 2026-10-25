@@ -6,7 +6,7 @@ package net.officefloor.hq.app.claim;
  * PENDING claim can be voided (VOID), and a steward may void a SETTLED one within 7 days of its settlement. VOID is final. A DRAFT
  * can be deleted (DELETED) and, on the sheet's today it was deleted, restored (DRAFT again). Only OPEN, PENDING and SETTLED claims count toward
  * totals. A claim whose due is above the sheet's review threshold in force on its date goes to REVIEW instead of OPEN
- * when opened, with no number; a steward reviews it (OPEN, numbered then). A REVIEW claim counts in no total and can be
+ * when opened, with no number; a steward reviews it (OPEN). A claim takes its number when it is settled (or approved). A REVIEW claim counts in no total and can be
  * voided.
  */
 public enum ClaimStatus {

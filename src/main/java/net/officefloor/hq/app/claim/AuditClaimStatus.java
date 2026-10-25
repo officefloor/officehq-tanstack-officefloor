@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Records the claim's status change, once it is saved, with the claim's number when it has one (a review is
- * recorded as CLAIM_REVIEWED, then CLAIM_OPENED with the number it took);
+ * recorded as CLAIM_REVIEWED, then CLAIM_OPENED);
  * a settle or approve adds the due it fixed (n/a when the grade had no rate), a reject its reason, and voiding a
  * settled claim the frozen figure it takes out of the totals (reversed=), then the reason it was voided with when one was given. */
 public class AuditClaimStatus {
