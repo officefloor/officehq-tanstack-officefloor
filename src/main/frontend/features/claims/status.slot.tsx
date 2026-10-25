@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { putJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
@@ -42,13 +42,20 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // A steward's re-settle of a SETTLED claim at the figure it would have today as an open claim bound by no statement.
+  const resettle = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/resettle`, { by: user ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
+    resettle.reset();
     change.mutate(to);
   };
-  const busy = change.isPending || reassign.isPending;
-  const error = change.error ?? reassign.error;
+  const busy = change.isPending || reassign.isPending || resettle.isPending;
+  const error = change.error ?? reassign.error ?? resettle.error;
 
   return (
     <>
@@ -94,10 +101,23 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         disabled={busy}
         onClick={() => {
           change.reset();
+          resettle.reset();
           reassign.mutate(moveTo);
         }}
       >
         Move
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-resettle"
+        disabled={busy}
+        onClick={() => {
+          change.reset();
+          reassign.reset();
+          resettle.mutate();
+        }}
+      >
+        Re-settle
       </button>{' '}
       {error && (
         <span data-testid="claim-error" role="alert">

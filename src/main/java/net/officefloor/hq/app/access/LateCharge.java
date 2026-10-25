@@ -25,7 +25,16 @@ public record LateCharge(LocalDate today, BigDecimal pct, LocalDate policyDate) 
     /** The claim's late charge on its figure (zero when it is not overdue, or has no figure). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) {
+        if (!claim.getStatus().isOpen()) {
+            return none;
+        }
+        return onAsOpen(claim, figure);
+    }
+
+    /** The late charge the claim would have on its figure were it OPEN. */
+    public BigDecimal onAsOpen(Claim claim, BigDecimal figure) {
+        BigDecimal none = BigDecimal.ZERO.setScale(2);
+        if (figure == null || claim.isCorrection()) {
             return none;
         }
         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
@@ -40,5 +49,10 @@ public record LateCharge(LocalDate today, BigDecimal pct, LocalDate policyDate) 
     /** The figure with the claim's late charge added on top; null without a figure. */
     public BigDecimal due(Claim claim, BigDecimal figure) {
         return figure == null ? null : figure.setScale(2).add(on(claim, figure));
+    }
+
+    /** The figure with the late charge the claim would have were it OPEN; null without a figure. */
+    public BigDecimal dueAsOpen(Claim claim, BigDecimal figure) {
+        return figure == null ? null : figure.setScale(2).add(onAsOpen(claim, figure));
     }
 }
