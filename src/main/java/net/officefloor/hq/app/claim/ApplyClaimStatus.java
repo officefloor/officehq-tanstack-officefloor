@@ -39,11 +39,11 @@ public class ApplyClaimStatus {
         audited.set(new ClaimNumber(status == ClaimStatus.VOID ? had : claim.getNumber()));
     }
 
-    /** The claim's amount times its person's grade's rate on the claim's date, rounded half up; null when there is no rate. */
+    /** The claim's amount times its person's grade's rate on the claim's date, rounded half to even; null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
         return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 }

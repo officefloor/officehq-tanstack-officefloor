@@ -44,9 +44,14 @@ export function showHundredths(n: bigint): string {
 
 /**
  * Due, in cents, on an amount (in cents) at a rate (a percent, in hundredths): amount times rate
- * divided by 100, rounded half up to two decimals. Amounts and rates are never negative.
+ * divided by 100, rounded half to even to two decimals (1.025 -> 1.02, 1.035 -> 1.04). Amounts and
+ * rates are never negative.
  */
 export function dueCents(amountCents: bigint, rateHundredths: bigint): bigint {
   // cents * (rate/100 %) / 100 = cents * rateHundredths / 10000
-  return (amountCents * rateHundredths * 2n + 10000n) / 20000n;
+  const exact = amountCents * rateHundredths;
+  const whole = exact / 10000n;
+  const rest = exact % 10000n;
+  if (rest > 5000n || (rest === 5000n && whole % 2n === 1n)) return whole + 1n;
+  return whole;
 }
