@@ -129,6 +129,7 @@ public class ApplyTransfer {
             arrived.setContact(person.getContact());
             arrived.setTags(person.getTags());
             arrived.setOriginSheet(sheetId);
+            arrived.setArrivedOn(today);
             arrived = people.saveAndFlush(arrived);
             for (PersonGrade grade : theirGrades) {
                 PersonGrade copy = new PersonGrade(to, arrived.getId(), grade.getGrade(), grade.getFromDate());

@@ -109,6 +109,10 @@ public class Person {
     @Column(name = "origin_sheet")
     private String originSheet;
 
+    /** The sheet's today when a transfer brought them here (null: they did not arrive by transfer). */
+    @Column(name = "arrived_on")
+    private LocalDate arrivedOn;
+
     protected Person() {
     }
 
@@ -211,6 +215,14 @@ public class Person {
 
     public void setOriginSheet(String originSheet) {
         this.originSheet = originSheet;
+    }
+
+    public LocalDate getArrivedOn() {
+        return arrivedOn;
+    }
+
+    public void setArrivedOn(LocalDate arrivedOn) {
+        this.arrivedOn = arrivedOn;
     }
 
     public String getContact() {
