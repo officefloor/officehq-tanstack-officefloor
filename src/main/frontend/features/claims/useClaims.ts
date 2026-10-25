@@ -23,8 +23,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   log: string[];
   /** Whether the OPEN claim is deferred past the sheet's today: it then counts in no total, is not overdue and cannot be settled. */
   deferred: boolean;
-  /** The date it is deferred until, while it is deferred; none otherwise. */
-  deferredUntil: string | null };
+  /** The date it was last deferred until; none when it was never deferred. */
+  deferredUntil: string | null;
+  /** How many proofs the claim carries; one above the proof threshold needs one before it is settled or approved. */
+  proofs: number };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;

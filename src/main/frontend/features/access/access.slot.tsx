@@ -109,7 +109,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the cap (blank: none), the most
-// a person's due-total may be. Every setting but the policy date and period numbering from is dated: saving it records
+// a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
+// it is settled or approved. Every setting but the policy date and period numbering from is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -133,6 +134,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off', dated: false },
   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
+  { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A proof threshold is an amount with up to two decimals, or blank for none' },
 ];
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {

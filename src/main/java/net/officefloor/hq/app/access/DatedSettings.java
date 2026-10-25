@@ -43,6 +43,12 @@ public record DatedSettings(List<DatedValue> values) {
         return value == null ? null : new BigDecimal(value);
     }
 
+    /** The proof threshold in force on the date; null when there is none. */
+    public BigDecimal proofThreshold(LocalDate date) {
+        String value = on(Setting.PROOF_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
     /** The cap in force on the date: the most a person's due-total may be; null when there is none. */
     public BigDecimal cap(LocalDate date) {
         String value = on(Setting.CAP, date);

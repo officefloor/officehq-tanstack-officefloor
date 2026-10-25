@@ -19,7 +19,8 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow and
  * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
- * clerk limit in force on its today leaves it PENDING instead (a due of n/a is within any limit; a steward settles anything). A review of a
+ * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
+ * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
  * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
  * returns it to OPEN, bound again by its last statement if that bound it. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date (at least the sheet's floor in force on the claim's date) — or, while a statement binds it, at
@@ -54,6 +55,12 @@ public class ApplyClaimStatus {
         }
         LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
         BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;
+        if (status == ClaimStatus.SETTLED && due != null && claim.getProofs() == 0) {
+            BigDecimal threshold = late.settings().proofThreshold(claim.getDate());
+            if (threshold != null && due.compareTo(threshold) > 0) {
+                throw new BadRequestException("A claim whose due is above the proof threshold needs a proof before it is settled");
+            }
+        }
         ClaimStatus to = status;
         if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
             BigDecimal limit = late.settings().clerkLimit(late.today());

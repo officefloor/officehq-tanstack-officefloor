@@ -2,10 +2,10 @@ package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
 
-/** A claim as the screen shows it; `deferred` and `deferredUntil` (null when not deferred) as of the sheet's today. */
+/** A claim as the screen shows it; `deferred` as of the sheet's today, and `deferredUntil` the date it was last deferred until (null when never deferred). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
         String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
-        java.util.List<String> log, boolean deferred, String deferredUntil) {
+        java.util.List<String> log, boolean deferred, String deferredUntil, int proofs) {
 
     /** The claim with its status log, oldest first, as of the sheet's today. */
     public static ClaimResponse from(Claim claim, java.util.List<String> log, LocalDate today) {
@@ -15,6 +15,7 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 claim.getNumber(), claim.getSettledDue() == null ? null : claim.getSettledDue().toPlainString(),
                 claim.getOpenedBy(), claim.isStated(),
                 claim.getStatedDue() == null ? null : claim.getStatedDue().toPlainString(), claim.getCorrects(),
-                claim.getDueBy().toString(), log, deferred, deferred ? claim.getDeferredUntil().toString() : null);
+                claim.getDueBy().toString(), log, deferred, claim.getDeferredUntil() == null ? null : claim.getDeferredUntil().toString(),
+                claim.getProofs());
     }
 }

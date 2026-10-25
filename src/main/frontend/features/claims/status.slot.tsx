@@ -22,6 +22,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // server, and the refusal shows on the claim until its next action (only the last action's error shows). A clerk's settle above the clerk limit leaves it PENDING.
 // An OPEN claim can be deferred to a date after the sheet's today (not in a closed period): until then it counts in no
 // total, is not overdue and cannot be settled; whether it is deferred, and until when, shows on the claim.
+// A claim not SETTLED or VOID takes a proof, raising its proofs count by one; one whose due is above the proof threshold
+// in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -59,15 +61,21 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const proof = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`, { by: user ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     change.mutate(to);
   };
-  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending;
-  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error;
+  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending;
+  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error;
 
   return (
     <>
@@ -115,6 +123,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           change.reset();
           resettle.reset();
           defer.reset();
+          proof.reset();
           reassign.mutate(moveTo);
         }}
       >
@@ -128,6 +137,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           change.reset();
           reassign.reset();
           defer.reset();
+          proof.reset();
           resettle.mutate();
         }}
       >
@@ -152,10 +162,26 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           change.reset();
           reassign.reset();
           resettle.reset();
+          proof.reset();
           defer.mutate(deferUntil);
         }}
       >
         Defer
+      </button>{' '}
+      Proofs <span data-testid="claim-proofs">{claim.proofs ?? 0}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-proof"
+        disabled={busy}
+        onClick={() => {
+          change.reset();
+          reassign.reset();
+          resettle.reset();
+          defer.reset();
+          proof.mutate();
+        }}
+      >
+        Add proof
       </button>{' '}
       {error && (
         <span data-testid="claim-error" role="alert">

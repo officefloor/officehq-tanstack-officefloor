@@ -22,6 +22,7 @@ public class Claim {
     private LocalDate roundOn;
     private LocalDate dueBy;
     private LocalDate deferredUntil;
+    private int proofs;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -58,6 +59,15 @@ public class Claim {
 
     public void setDeferredUntil(LocalDate deferredUntil) {
         this.deferredUntil = deferredUntil;
+    }
+
+    /** How many proofs the claim carries. */
+    public int getProofs() {
+        return proofs;
+    }
+
+    public void setProofs(int proofs) {
+        this.proofs = proofs;
     }
 
     /** Whether the claim is deferred as of {@code today}: OPEN, and deferred until a date after today. Until then it

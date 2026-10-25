@@ -21,6 +21,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** The most a clerk may settle a claim's due for; blank means no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    /** The due above which a claim needs a proof before it is settled or approved; blank means none. */
+    public static final String PROOF_THRESHOLD = "proof-threshold";
+
     /** The most a person's due-total may be; an amount with two decimals, blank for none. */
     public static final String CAP = "cap";
 
