@@ -11,8 +11,9 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive. */
-export type Period = { id: number; name: string; from: string; to: string };
+/** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
+ *  closed, and the due-total fixed when it was closed (null while open). */
+export type Period = { id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
 
 /** The key every feature reads the sheet's periods under. */
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -115,20 +116,53 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
             <th>From</th>
             <th>To</th>
             <th>Due total</th>
+            <th>Closed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {(periods.data ?? []).map((p) => (
-            <tr key={p.id} data-testid={`period-row-${p.name}`}>
-              <td data-testid="period-name">{p.name}</td>
-              <td data-testid="period-from">{p.from}</td>
-              <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{showHundredths(dueTotal(p))}</td>
-            </tr>
+            <PeriodRow key={p.id} sheetId={sheetId} period={p} dueTotal={dueTotal(p)} />
           ))}
         </tbody>
       </table>
     </section>
+  );
+}
+
+// A period's row. A closed period shows the due-total fixed when it was closed; an open one, the live
+// figure. Closing is refused with the row's error when someone else closed it first.
+function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: Period; dueTotal: bigint }) {
+  const [user] = useUser();
+  const queryClient = useQueryClient();
+  const close = useMutation({
+    mutationFn: () => postJson<Period>(
+      `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/close`, { by: user ?? '' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
+  const submit = useSubmitOnce(close);
+  return (
+    <tr data-testid={`period-row-${p.name}`}>
+      <td data-testid="period-name">{p.name}</td>
+      <td data-testid="period-from">{p.from}</td>
+      <td data-testid="period-to">{p.to}</td>
+      <td data-testid="period-due-total">
+        {p.closed && p.closedTotal != null ? p.closedTotal : showHundredths(dueTotal)}
+      </td>
+      <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+      <td>
+        {!p.closed && (
+          <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => submit(undefined)}>
+            Close
+          </button>
+        )}
+        {close.isError && (
+          <p data-testid="period-error" role="alert">
+            {close.error.message}
+          </p>
+        )}
+      </td>
+    </tr>
   );
 }
 

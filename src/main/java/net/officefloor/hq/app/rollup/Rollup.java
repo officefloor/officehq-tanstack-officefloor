@@ -78,6 +78,29 @@ public class Rollup {
         return new RollupSnapshot(figures, claimedTotal, dueTotal);
     }
 
+    /**
+     * The due-total of the counting claims dated from..to (inclusive), as the screen shows a period's: each claim's
+     * figure added up, a claim without one adding nothing.
+     */
+    public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
+        List<Rate> sheetRates = rates.list(sheetId);
+        Map<Long, String> grades = new LinkedHashMap<>();
+        for (Person p : people.list(sheetId)) {
+            grades.put(p.getId(), p.getGrade());
+        }
+        BigDecimal total = ZERO;
+        for (Claim c : claims.list(sheetId)) {
+            if (!c.getStatus().counts() || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
+                continue;
+            }
+            BigDecimal figure = figure(c, grades.get(c.getPersonId()), sheetRates);
+            if (figure != null) {
+                total = total.add(figure);
+            }
+        }
+        return total;
+    }
+
     /** Record the figures the change moved, from {@code before} to the sheet's figures now. */
     public void record(String sheetId, RollupSnapshot before, ChangedBy by) {
         RollupSnapshot after = snapshot(sheetId);

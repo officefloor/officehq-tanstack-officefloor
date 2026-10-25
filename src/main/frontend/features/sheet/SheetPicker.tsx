@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { getJson, putJson } from '../../api/http';
+import { claimsKey } from '../claims/useClaims';
+import { peopleKey } from '../people/people.slot';
+import { periodsKey } from '../periods/periods.slot';
 import { useSheetId } from '../session/useSession';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 // Choose a sheet by typing its id and loading it. Loading drops everything cached for that sheet,
-// so the screen re-reads it from the store (an id never used before starts empty).
+// so the screen re-reads it from the store (an id never used before starts empty). Its people, claims
+// and periods are read before it becomes the active sheet, so its rows show as soon as its id does.
 export function SheetPicker() {
   const [sheetId, setSheetId] = useSheetId();
   const [input, setInput] = useState('');
@@ -15,8 +19,16 @@ export function SheetPicker() {
       if (id.trim() === '') throw new Error('Enter a sheet id');
       return putJson<{ id: string }>(`/api/sheets/${encodeURIComponent(id.trim())}`);
     },
-    onSuccess: (sheet) => {
+    onSuccess: async (sheet) => {
       queryClient.removeQueries({ queryKey: ['sheet', sheet.id] });
+      const base = `/api/sheets/${encodeURIComponent(sheet.id)}`;
+      await Promise.all([
+        queryClient.fetchQuery({ queryKey: peopleKey(sheet.id), queryFn: () => getJson(`${base}/people`) }),
+        queryClient.fetchQuery({ queryKey: claimsKey(sheet.id), queryFn: () => getJson(`${base}/claims`) }),
+        queryClient.fetchQuery({ queryKey: periodsKey(sheet.id), queryFn: () => getJson(`${base}/periods`) }),
+      ]).catch(() => {
+        // the panels show their own read errors
+      });
       setSheetId(sheet.id);
     },
   });
