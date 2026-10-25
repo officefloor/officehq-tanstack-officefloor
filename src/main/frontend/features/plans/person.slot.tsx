@@ -6,6 +6,7 @@ import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peoplePath, type Person } from '../people/people';
+import { claimsQueryKey } from '../claims/claims';
 import { plansQueryKey, usePlans, type Plan } from './plans';
 
 // A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
@@ -44,8 +45,10 @@ function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
   const change = useMutation({
     mutationFn: (value: string) =>
       putJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/plans/${p.id}/amount`, { amount: value }, user),
-    onSuccess: (saved) => {
+    onSuccess: async (saved) => {
       queryClient.setQueryData(plansQueryKey(sheet ?? ''), saved);
+      // The plan's draft claims take the new amount.
+      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(p.sheet ?? sheet ?? '') });
     },
   });
   const submitChange = useSubmitOnce(change);
