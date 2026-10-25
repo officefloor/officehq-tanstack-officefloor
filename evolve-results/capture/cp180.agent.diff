@@ -1,0 +1,105 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index c0f87685..1f1bfac5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -36,8 +36,7 @@ public class ApplyClaim {
+         }
+         Person person = people.findById(claim.getPersonId()).orElse(null);
+         if (person != null && !date.equals(claim.getDate())) {
+-            int terms = sheet.termsFor(person.termsOn(date), grades.gradesOf(person).on(date), date);
+-            if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
++            if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, claim.getDueTerms()))) {
+                 throw new InvalidClaimException("No claim can be moved to a date whose due-by is in a closed period.");
+             }
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index 6d70f2f3..602b3d47 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -56,7 +56,7 @@ public class ApplySplit {
+             throw new ClaimStatusException("The amount to split off must be more than 0.00 and less than the claim's.");
+         }
+         int terms = people.findById(claim.getPersonId())
+-                .map(p -> sheet.termsFor(p.termsOn(claim.getDate()), grades.gradesOf(p).on(claim.getDate()), claim.getDate())).orElse(0);
++                .map(p -> sheet.termsFor(p.termsOn(sheet.getToday()), grades.gradesOf(p).on(sheet.getToday()), sheet.getToday())).orElse(0);
+         LocalDate dueBy = holidays.dueBy(claim.getSheetId(), claim.getDate(), terms);
+         String number;
+         if (perPeriod) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 024fcc77..52b6ed00 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -80,8 +80,8 @@ public class Claim {
+     @Column(name = "due_from", nullable = false)
+     private LocalDate dueFrom;
+ 
+-    /** The terms its due-by was fixed with when it was created: its person's own, else their grade's in force on its
+-     *  date, else the sheet's. It does not change when the terms change later. */
++    /** The terms its due-by was fixed with when it was created: its person's own, else their grade's, else the sheet's,
++     *  each in force on the day it was created (the sheet's today then). It does not change when the terms change later. */
+     @Column(name = "due_terms", nullable = false)
+     private int dueTerms;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+index 95f24036..c71aecdc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRules.java
+@@ -63,11 +63,13 @@ public final class ClaimRules {
+     }
+ 
+     /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is the
+-     *  terms-th business day after its date, skipping weekends and the sheet's holidays now on its list. */
++     *  terms-th business day after its date (the terms in force on the
++     *  sheet's today, the day it is created), skipping weekends and the sheet's holidays now on its list. */
+     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
+             PeriodRepository periods, PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
+         LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
+-        int terms = sheet.termsFor(person.termsOn(date), grades.gradesOf(person).on(date), date);
++        LocalDate created = sheet.getToday();
++        int terms = sheet.termsFor(person.termsOn(created), grades.gradesOf(person).on(created), created);
+         LocalDate dueBy = holidays.dueBy(sheet.getId(), date, terms);
+         if (periods.isClosedOn(sheet.getId(), dueBy)) {
+             throw new InvalidClaimException("No claim can be added in a closed period.");
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index b26aef23..a4fb8012 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -10,7 +10,8 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
+ /** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
+  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
+  *  replacing the grade recorded for that date and keeping the others; a grade (or terms with no from-date) the same as
+- *  the one already in force is left unrecorded, so a grade or terms later recorded from an earlier date still reach past it. */
++ *  the one already in force is left unrecorded when no from-date is given, so a grade or terms later recorded from an
++ *  earlier date still reach past it; a grade given with a from-date is recorded from it. */
+ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
+             PersonAliasRepository aliases, TreeNames tree,
+@@ -54,9 +55,10 @@ public class ApplyPerson {
+             // saved by someone else between the load and this save
+             throw new PersonConflictException();
+         }
+-        // A grade left as it is in force on the from-date records nothing, so a grade later recorded from an earlier
+-        // date still reaches it.
+-        if (request.grade().equals(grades.gradesOf(person).on(from))
++        // A grade left as it is in force on the sheet's today, with no from-date given, records nothing, so a grade later
++        // recorded from an earlier date still reaches it. A grade given with a from-date is recorded from that date.
++        boolean fromGiven = request.gradeFrom() != null && !request.gradeFrom().isEmpty();
++        if (!fromGiven && request.grade().equals(grades.gradesOf(person).on(from))
+                 && grades.findByPersonIdAndFromDate(person.getId(), from).isEmpty()) {
+             return;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+index 36c110dc..6ba246a6 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/CheckQuickAddDate.java
+@@ -20,8 +20,8 @@ public class CheckQuickAddDate {
+         LocalDate date = sheet.entryDateInForce();
+         int terms = PersonAliasRepository.findByNameOrAlias(people.findListed(sheet.getId()),
+                         aliases, sheet.getId(), name.name())
+-                .map(p -> sheet.termsFor(p.termsOn(date), grades.gradesOf(p).on(date), date))
+-                .orElseGet(() -> sheet.termsFor(null, "A", date));
++                .map(p -> sheet.termsFor(p.termsOn(sheet.getToday()), grades.gradesOf(p).on(sheet.getToday()), sheet.getToday()))
++                .orElseGet(() -> sheet.termsFor(null, "A", sheet.getToday()));
+         if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
+             throw new InvalidClaimException("No claim can be added in a closed period.");
+         }
