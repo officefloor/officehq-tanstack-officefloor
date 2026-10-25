@@ -14,11 +14,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
 
     private final JdbcTemplate jdbc;
 
@@ -49,11 +49,15 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
     }
 
     public void update(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ?", claim.getAmount(),
                 Date.valueOf(claim.getDate()), claim.getNote(), claim.getId());
+    }
+
+    public void updateStatus(Claim claim) {
+        jdbc.update("UPDATE claim SET status = ? WHERE id = ?", claim.getStatus().name(), claim.getId());
     }
 }

@@ -8,5 +8,5 @@ export const ClaimCells = defineSlot<{
   sheetId: string;
   user: string;
   personId: number;
-  claim: { id: number; personId: number; amount: string; date: string; note: string };
+  claim: { id: number; personId: number; amount: string; date: string; note: string; status: 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID' };
 }>('claim.cells');

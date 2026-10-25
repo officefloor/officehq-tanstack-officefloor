@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { useClaims } from '../claims/useClaims';
+import { counts, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 import { dueCents, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
@@ -19,7 +19,7 @@ function useRateByGrade(sheetId: string): Map<string, bigint> {
   return new Map((rates.data ?? []).map((r) => [r.grade, toHundredths(r.rate)]));
 }
 
-/** A person's due-total in cents (their claimed times their grade's rate), or null when the grade has no rate. */
+/** A person's due-total in cents (their counted claims times their grade's rate), or null when the grade has no rate. */
 function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -32,7 +32,7 @@ function useDueTotals(sheetId: string): Map<number, bigint | null> {
       continue;
     }
     const claimed = (claims.data ?? [])
-      .filter((c) => c.personId === p.id)
+      .filter((c) => c.personId === p.id && counts(c))
       .reduce((n, c) => n + toHundredths(c.amount), 0n);
     totals.set(p.id, dueCents(claimed, rate));
   }

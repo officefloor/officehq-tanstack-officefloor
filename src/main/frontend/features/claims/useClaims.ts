@@ -2,7 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+
+/** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do. */
+export function counts(claim: { status: ClaimStatus }): boolean {
+  return claim.status === 'OPEN' || claim.status === 'SETTLED';
+}
 
 /** The key every feature reads the sheet's claims under. */
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
@@ -20,8 +27,8 @@ export function useEditingClaim() {
   return useSearchParam('editClaim', asNumber);
 }
 
-/** Amounts added up exactly, in cents, shown with two decimals. */
+/** The counted claims' amounts added up exactly, in cents, shown with two decimals. */
 export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter(counts).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
