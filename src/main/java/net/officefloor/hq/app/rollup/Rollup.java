@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
@@ -22,8 +23,8 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
- * bound it to, else its amount times the grade's rate in force on its date, rounded half to even; none without a
- * rate), n/a when their grade has no rate on the sheet's today and no counting claim keeps a settled or bound
+ * bound it to, else its amount times the grade's rate in force on its date, rounded half to even and at least the sheet's floor;
+ * none without a rate), n/a when their grade has no rate on the sheet's today and no counting claim keeps a settled or bound
  * figure. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
  * sheet's totals moved. A held person's OPEN claims count in none of these; their SETTLED claims still do.
  */
@@ -36,10 +37,12 @@ public class Rollup {
     private final ClaimRepository claims;
     private final RateRepository rates;
     private final SheetRepository sheets;
+    private final SettingRepository settings;
     private final Audit audit;
 
     public Rollup(PersonRepository people, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            Audit audit) {
+            SettingRepository settings, Audit audit) {
+        this.settings = settings;
         this.people = people;
         this.claims = claims;
         this.rates = rates;
@@ -51,6 +54,7 @@ public class Rollup {
         LocalDate today = sheets.today(sheetId);
         List<Rate> sheetRates = rates.list(sheetId);
         List<Claim> sheetClaims = claims.list(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         BigDecimal dueTotal = ZERO;
@@ -64,7 +68,7 @@ public class Rollup {
                 }
                 claimed = claimed.add(c.getAmount().setScale(2));
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
-                BigDecimal figure = figure(c, p.getGrade(), sheetRates);
+                BigDecimal figure = figure(c, p.getGrade(), sheetRates, floor);
                 if (figure != null) {
                     due = due.add(figure);
                 }
@@ -85,6 +89,7 @@ public class Rollup {
      */
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         List<Rate> sheetRates = rates.list(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         Map<Long, Person> byId = new LinkedHashMap<>();
         for (Person p : people.list(sheetId)) {
             byId.put(p.getId(), p);
@@ -95,7 +100,7 @@ public class Rollup {
             if (p == null || !counts(c, p.isHeld()) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
                 continue;
             }
-            BigDecimal figure = figure(c, p.getGrade(), sheetRates);
+            BigDecimal figure = figure(c, p.getGrade(), sheetRates, floor);
             if (figure != null) {
                 total = total.add(figure);
             }
@@ -131,7 +136,8 @@ public class Rollup {
         return figure == null ? "n/a" : figure.toPlainString();
     }
 
-    private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates) {
+    /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor. */
+    private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, BigDecimal floor) {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue().setScale(2);
         }
@@ -140,7 +146,7 @@ public class Rollup {
         }
         BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
         return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN).max(floor);
     }
 
     /** The grade's rate in force on the date: the latest from-date on or before it, none counting as the earliest. */

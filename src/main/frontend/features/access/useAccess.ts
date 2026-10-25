@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { toHundredths } from '../rates/useRates';
 
 /** A role assigned to a user name: clerk (any name without one) or steward. */
 export type Role = { user: string; role: string };
@@ -18,10 +19,19 @@ export function useRoles(sheetId: string) {
   });
 }
 
+/** The floor a sheet starts with, until it is set. */
+export const FLOOR_DEFAULT = '1.00';
+
 /** The sheet's settings, by key. */
 export function useSettings(sheetId: string) {
   return useQuery({
     queryKey: settingsKey(sheetId),
     queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
   });
+}
+
+/** The sheet's floor in cents: the least a claim's live due may be (1.00 until it is set). */
+export function useFloorCents(sheetId: string): bigint {
+  const value = useSettings(sheetId).data?.find((s) => s.key === 'floor')?.value ?? FLOOR_DEFAULT;
+  return toHundredths(value);
 }

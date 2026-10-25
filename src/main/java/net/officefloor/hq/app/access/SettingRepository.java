@@ -19,10 +19,14 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's settings, by key. */
+    /** The sheet's settings, by key; the floor shows its starting value until it is set. */
     public List<Setting> list(String sheetId) {
-        return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
-                + " ORDER BY setting_key", ROW, sheetId);
+        List<Setting> found = new java.util.ArrayList<>(jdbc.query("SELECT sheet_id, setting_key, setting_value"
+                + " FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key", ROW, sheetId));
+        if (found.stream().noneMatch(s -> Setting.FLOOR.equals(s.key()))) {
+            found.add(new Setting(sheetId, Setting.FLOOR, Setting.FLOOR_DEFAULT));
+        }
+        return found;
     }
 
     /** The setting's value; null when blank. */
@@ -35,6 +39,12 @@ public class SettingRepository {
     public BigDecimal clerkLimit(String sheetId) {
         String value = find(sheetId, Setting.CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet's floor: the least a claim's live due may be (1.00 until it is set). */
+    public BigDecimal floor(String sheetId) {
+        String value = find(sheetId, Setting.FLOOR);
+        return new BigDecimal(value == null ? Setting.FLOOR_DEFAULT : value).setScale(2);
     }
 
     /** Set a setting's value (null: blank), replacing the one there before. */

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
@@ -17,14 +18,15 @@ import net.officefloor.plugin.variable.Val;
  * Takes the person's statement on the sheet's today: records their due-total, binds each of their counting claims
  * to the figure it has now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
  * figure its last statement bound it to, else its amount times its person's grade's rate in force on the claim's
- * date (rounded half to even; none without a rate). The due-total is the counting claims' figures added up; n/a
+ * date (rounded half to even, and at least the sheet's floor; none without a rate). The due-total is the counting claims' figures added up; n/a
  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure.
  */
 public class TakeStatement {
     public void take(@Val Person person, ClaimRepository claims, RateRepository rates, SheetRepository sheets,
-            StatementRepository statements, Out<Statement> taken) {
+            SettingRepository settings, StatementRepository statements, Out<Statement> taken) {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> mine = claims.listOf(sheetId, person.getId());
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
@@ -36,7 +38,7 @@ public class TakeStatement {
             }
             counted++;
             kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
-            BigDecimal figure = figure(c, person, rates);
+            BigDecimal figure = figure(c, person, rates, floor);
             if (figure != null) {
                 sum = sum.add(figure);
             }
@@ -48,7 +50,7 @@ public class TakeStatement {
         taken.set(new Statement(dueTotal, counted));
     }
 
-    private static BigDecimal figure(Claim claim, Person person, RateRepository rates) {
+    private static BigDecimal figure(Claim claim, Person person, RateRepository rates, BigDecimal floor) {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue();
         }
@@ -57,6 +59,6 @@ public class TakeStatement {
         }
         BigDecimal rate = rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
         return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN).max(floor);
     }
 }

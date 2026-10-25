@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
  * Moves the claim to the asked status, refusing a change its current status does not allow,
  * refusing to let the user who opened it settle it, and refusing a clerk a settle whose due is above the sheet's
  * clerk limit (a due of n/a is within any limit; a steward settles anything). Opening records who opened it; a voided claim keeps its number. Settling
- * fixes the claim's due at its person's grade's rate in force on the claim's date — or, while a statement binds it, at
+ * fixes the claim's due at its person's grade's rate in force on the claim's date (at least the sheet's floor) — or, while a statement binds it, at
  * the figure it was bound to; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
@@ -31,7 +31,7 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
             throw new BadRequestException("The user who opened a claim cannot settle it");
         }
-        BigDecimal due = status == ClaimStatus.SETTLED ? dueNow(claim, people, rates) : null;
+        BigDecimal due = status == ClaimStatus.SETTLED ? dueNow(claim, people, rates, settings) : null;
         if (status == ClaimStatus.SETTLED && due != null
                 && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
@@ -58,14 +58,16 @@ public class ApplyClaimStatus {
         audited.set(new ClaimNumber(claim.getNumber()));
     }
 
-    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even; null when there is no rate. */
-    private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
+    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even and at least the sheet's floor; null when there is no rate. */
+    private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
+            SettingRepository settings) {
         if (claim.isStated()) {
             return claim.getStatedDue();
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
         return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN)
+                        .max(settings.floor(claim.getSheetId()));
     }
 }

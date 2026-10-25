@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
-import { rolesKey, settingsKey, useRoles, useSettings, type Role, type Setting } from './useAccess';
+import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, type Role, type Setting } from './useAccess';
 
 const ROLES = ['clerk', 'steward'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
@@ -101,23 +101,39 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
-// The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit).
-// The value in force shows beside it.
+// The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
+// floor, the least a claim's live due may be (1.00 until it is set). The value in force shows beside each. Saving
+// sends only the settings whose field was touched since the last save.
+const SETTINGS = [
+  { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true,
+    invalid: 'A clerk limit is an amount with up to two decimals, or blank for no limit' },
+  { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false,
+    invalid: 'A floor is an amount with up to two decimals' },
+] as const;
+
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);
-  const [limit, setLimit] = useState('');
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const [user] = useUser();
   const queryClient = useQueryClient();
-  const current = (settings.data ?? []).find((s) => s.key === 'clerk-limit')?.value ?? '';
+  const current = (key: string) => (settings.data ?? []).find((s) => s.key === key)?.value ?? '';
+  const touch = (key: string) => setTouched((t) => (t.has(key) ? t : new Set(t).add(key)));
   const save = useMutation({
-    mutationFn: async (body: { key: string; value: string }) => {
-      const value = body.value.trim();
-      if (value !== '' && !AMOUNT.test(value)) {
-        throw new Error('A clerk limit is an amount with up to two decimals, or blank for no limit');
+    mutationFn: async (body: { keys: string[]; values: Record<string, string> }) => {
+      const changes = SETTINGS.filter((s) => body.keys.includes(s.key));
+      if (changes.length === 0) throw new Error('Change a setting first');
+      for (const s of changes) {
+        const value = (body.values[s.key] ?? '').trim();
+        if (value === '' ? !s.blank : !AMOUNT.test(value)) throw new Error(s.invalid);
       }
-      return putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, { key: body.key, value, by: user ?? '' });
+      for (const s of changes) {
+        await putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`,
+          { key: s.key, value: (body.values[s.key] ?? '').trim(), by: user ?? '' });
+      }
     },
     onSuccess: async () => {
+      setTouched(new Set());
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
     },
   });
@@ -129,25 +145,32 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
         data-testid="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ key: 'clerk-limit', value: limit });
+          submit({ keys: [...touched], values });
         }}
       >
-        <label>
-          Clerk limit{' '}
-          <input
-            data-testid="setting-clerk-limit"
-            inputMode="decimal"
-            placeholder="no limit"
-            value={limit}
-            onChange={(e) => {
-              setLimit(e.target.value);
-              save.reset();
-            }}
-          />
-        </label>{' '}
-        <span>
-          In force: <strong data-testid="setting-clerk-limit-current">{current}</strong>
-        </span>{' '}
+        {SETTINGS.map((s) => (
+          <span key={s.key}>
+            <label>
+              {s.label}{' '}
+              <input
+                data-testid={`setting-${s.key}`}
+                inputMode="decimal"
+                placeholder={s.placeholder}
+                value={values[s.key] ?? ''}
+                onFocus={() => touch(s.key)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setValues((v) => ({ ...v, [s.key]: value }));
+                  touch(s.key);
+                  save.reset();
+                }}
+              />
+            </label>{' '}
+            <span>
+              In force: <strong data-testid={`setting-${s.key}-current`}>{current(s.key)}</strong>
+            </span>{' '}
+          </span>
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

@@ -8,6 +8,7 @@ import { useHeld, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+import { useFloorCents } from '../access/useAccess';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -40,6 +41,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const held = useHeld(sheetId);
   const rates = useRates(sheetId);
+  const floor = useFloorCents(sheetId);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -73,7 +75,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
     let sum = 0n;
     for (const c of claims.data ?? []) {
       if (!counts(c, held) || c.date < p.from || c.date > p.to) continue;
-      sum += claimDueCents(rates.data ?? [], gradeOf.get(c.personId), c) ?? 0n;
+      sum += claimDueCents(rates.data ?? [], gradeOf.get(c.personId), c, floor) ?? 0n;
     }
     return sum;
   };
