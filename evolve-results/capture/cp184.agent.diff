@@ -1,0 +1,83 @@
+diff --git a/src/main/frontend/features/claims/claimed.slot.tsx b/src/main/frontend/features/claims/claimed.slot.tsx
+index 666b9cc8..6f6e98d9 100644
+--- a/src/main/frontend/features/claims/claimed.slot.tsx
++++ b/src/main/frontend/features/claims/claimed.slot.tsx
+@@ -4,7 +4,7 @@ import type { Person } from '../people/people';
+ import { holdsOf, sumOf, useClaims } from './claims';
+ import { useColumnShown } from '../people/columns';
+ 
+-// A person's claimed: the sum of their OPEN, PENDING and SETTLED claims' amounts (not corrections, nor unbound OPEN ones dated within a hold of theirs).
++// A person's claimed: the sum of their OPEN, PENDING and SETTLED claims' amounts (not corrections, nor unbound OPEN ones once their retirement date is reached; a hold does not take a claim out).
+ function ClaimedHeader() {
+   if (!useColumnShown('claimed')) return null;
+   return <th>Claimed</th>;
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 3a6ae40a..8b4e125d 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -152,10 +152,19 @@ export function useClaims() {
+ /** An amount ("12.50") in whole cents, so sums are exact. */
+ const cents = (amount: string) => Math.round(Number(amount) * 100);
+ 
++/** Whether a claim counts toward claimed: as `countsLive`, except a hold (the claim's or its person's) does not take
++ *  it out; only its person's retirement date being reached does. */
++const countsClaimed = (c: Claim, holds: Holds, today: string | undefined) => {
++  const p = holds.get(c.personId);
++  const retired = !!p && p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today;
++  return counts(c, today) && !(isOpen(c) && !isBound(c) && retired);
++};
++
+ /** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; corrections (claims that
+- *  correct another) and unbound OPEN claims dated within a hold of their person are left out. */
++ *  correct another) and unbound OPEN claims of a person whose retirement date is reached are left out. A hold does
++ *  not take a claim out of it. */
+ export function sumOf(claims: Claim[], held: Holds, today: string | undefined): string {
+-  return (claims.filter((c) => c.corrects === null && countsLive(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
++  return (claims.filter((c) => c.corrects === null && countsClaimed(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
+ }
+ 
+ /** A claim's due-by (YYYY-MM-DD), fixed when it was created. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index dd50def8..d7edccb3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -134,6 +134,13 @@ public class ClaimFigures {
+         return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
+     }
+ 
++    /** Whether a claim counts toward claimed: as {@link #countsLive}, except a hold (the claim's or its person's)
++     *  does not take it out; only its person's retirement date being reached does (null person: not retired). */
++    public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
++        return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound()
++                && person != null && person.retiredBy(today));
++    }
++
+     /** Whether a claim counts toward a period's live totals: as {@link #countsLive}, taking the status it had at the
+      *  end of the period's last day (null: it had not been added by then, so it does not count); a hold takes out
+      *  only a claim that is still OPEN or PENDING and unbound now. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index a17a1811..9d4f29bf 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -23,9 +23,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a), and each
+  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
+  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
+- * A person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is
+- * reached, count in none of them, unless a statement binds them. The sheet's alert threshold (null: off) is kept with
+- * them, as it stands now.
++ * A person's OPEN and PENDING claims dated within a hold of theirs, and held claims, still count in claimed but in
++ * no due or overdue figure; all of them, once their retirement date is reached, count in none of them; unless a
++ * statement binds them. The sheet's alert threshold (null: off) is kept with them, as it stands now.
+  */
+ public class Rollup {
+ 
+@@ -64,7 +64,7 @@ public class Rollup {
+             for (Person person : persons.findListed(id)) {
+                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
+                 BigDecimal claimed = mine.stream()
+-                        .filter(c -> c.getCorrects() == null && ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
++                        .filter(c -> c.getCorrects() == null && ClaimFigures.countsClaimed(c, person, sheet.get().getToday())).map(Claim::getAmount)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+                 ClaimFigures figures = new ClaimFigures(sheetRates,
+                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
