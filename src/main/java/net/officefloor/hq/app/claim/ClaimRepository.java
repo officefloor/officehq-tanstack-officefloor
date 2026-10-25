@@ -126,6 +126,19 @@ public class ClaimRepository {
                 Date.valueOf(claim.getDeferredUntil()), claim.getId(), ClaimStatus.OPEN.name()) == 1;
     }
 
+    /**
+     * Re-date the claim to {@code date}, keeping its due-by and any statement figure. Whether it was still in its status
+     * at its old date: another user may have changed it.
+     */
+    public boolean redate(Claim claim, LocalDate date) {
+        boolean redated = jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND status = ? AND claim_date = ?",
+                Date.valueOf(date), claim.getId(), claim.getStatus().name(), Date.valueOf(claim.getDate())) == 1;
+        if (redated) {
+            claim.setDate(date);
+        }
+        return redated;
+    }
+
     /** Raise the claim's proofs count by one. Whether it was still in its status: another user may have moved it. */
     public boolean addProof(Claim claim) {
         boolean added = jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND status = ?",

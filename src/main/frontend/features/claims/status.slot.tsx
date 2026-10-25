@@ -28,6 +28,9 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
 // An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
 // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
+// A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor in or into a closed
+// period): its due-by and any statement figure stay, its period follows the new date, and when numbering by period it
+// takes the next number of its new period when the period changes.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -35,6 +38,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [newDate, setNewDate] = useState('');
   const people = usePeople(sheetId);
   const change = useMutation({
     mutationFn: (to: Change) =>
@@ -77,6 +81,15 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         { amount: amount.trim(), by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // A steward's re-date of an OPEN or PENDING claim: its due-by and any statement figure stay; its period follows.
+  const redate = useMutation({
+    mutationFn: (date: string) => {
+      if (date.trim() === '') throw new Error("Enter the claim's new date");
+      return postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/redate`,
+        { date: date.trim(), by: user ?? '' });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
@@ -84,10 +97,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     change.mutate(to);
   };
-  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending;
-  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error;
+  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
+    || redate.isPending;
+  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error;
 
   return (
     <>
@@ -137,6 +152,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           split.reset();
+          redate.reset();
           reassign.mutate(moveTo);
         }}
       >
@@ -152,6 +168,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           split.reset();
+          redate.reset();
           resettle.mutate();
         }}
       >
@@ -178,6 +195,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resettle.reset();
           proof.reset();
           split.reset();
+          redate.reset();
           defer.mutate(deferUntil);
         }}
       >
@@ -194,6 +212,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resettle.reset();
           defer.reset();
           split.reset();
+          redate.reset();
           proof.mutate();
         }}
       >
@@ -219,10 +238,36 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resettle.reset();
           defer.reset();
           proof.reset();
+          redate.reset();
           split.mutate(splitAmount);
         }}
       >
         Split
+      </button>{' '}
+      <input
+        type="date"
+        data-testid="claim-date-new"
+        value={newDate}
+        onChange={(e) => {
+          setNewDate(e.target.value);
+          redate.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-redate"
+        disabled={busy}
+        onClick={() => {
+          change.reset();
+          reassign.reset();
+          resettle.reset();
+          defer.reset();
+          proof.reset();
+          split.reset();
+          redate.mutate(newDate);
+        }}
+      >
+        Re-date
       </button>{' '}
       {error && (
         <span data-testid="claim-error" role="alert">
