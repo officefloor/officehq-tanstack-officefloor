@@ -69,15 +69,22 @@ public class Rollup {
             List<Person> listed = persons.findListed(id);
             Map<Long, BigDecimal> held = new LinkedHashMap<>();
             Map<Long, BigDecimal> cuts = PoolCuts.totalsByPerson(sheet.get(), asOf);
+            Map<Long, PersonGrades> gradesById = new LinkedHashMap<>();
+            listed.forEach(p -> gradesById.put(p.getId(),
+                    new PersonGrades(p.getGrade(), dated.getOrDefault(p.getId(), List.of()))));
             for (Person owner : listed) {
-                ClaimFigures ownerFigures = new ClaimFigures(sheetRates,
-                        new PersonGrades(owner.getGrade(), dated.getOrDefault(owner.getId(), List.of())), sheet.get());
+                ClaimFigures ownerFigures = new ClaimFigures(sheetRates, gradesById.get(owner.getId()), sheet.get())
+                        .withHolders(gradesById::get);
                 all.stream().filter(c -> owner.getId().equals(c.getPersonId()) && c.getShares() != null
                         && ClaimFigures.countsLive(c, owner, sheet.get().getToday())).forEach(c -> {
                             BigDecimal claimDue = ownerFigures.due(c);
                             if (claimDue != null) {
-                                ClaimShares.of(c).forEach(s -> held.merge(s.personId(),
-                                        ClaimShares.part(claimDue, s.share()), BigDecimal::add));
+                                ClaimShares.of(c).forEach(s -> {
+                                    BigDecimal part = ownerFigures.part(c, claimDue, s);
+                                    if (part != null) {
+                                        held.merge(s.personId(), part, BigDecimal::add);
+                                    }
+                                });
                             }
                         });
             }
@@ -86,8 +93,8 @@ public class Rollup {
                 BigDecimal claimed = mine.stream()
                         .filter(c -> c.getCorrects() == null && ClaimFigures.countsClaimed(c, person, sheet.get().getToday())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
-                ClaimFigures figures = new ClaimFigures(sheetRates,
-                        new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
+                ClaimFigures figures = new ClaimFigures(sheetRates, gradesById.get(person.getId()), sheet.get())
+                        .withHolders(gradesById::get);
                 String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()),
                         cuts.get(person.getId()));
                 BigDecimal overdue = mine.stream()

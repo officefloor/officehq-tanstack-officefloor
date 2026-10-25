@@ -4,7 +4,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
 import { useSettings, type Settings } from '../roles/roles';
-import { chargedOf, formatCents, hundredths, rateOn, sharePart, sumDue, trimmedSum, useRates, type Rate } from './rates';
+import { chargedOf, formatCents, holderPart, hundredths, rateOn, roundsHalfUp, sumDue, trimmedSum, useRates, type Rate } from './rates';
 import { useColumnShown } from '../people/columns';
 import { cutTotalOf, usePools, type Pool } from '../pools/pools';
 
@@ -16,9 +16,11 @@ import { cutTotalOf, usePools, type Pool } from '../pools/pools';
 // on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
 // the sheet's cap less their cut total (their cuts across every pool; not below 0.00): above it, it shows that and
 // their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
-// A claim shared with other people gives each holder their part of its due (its due times their share divided by
-// 100, rounded half to even): it counts in their due-total (theirs is just their parts when they would otherwise
-// have none, n/a), and its own person's counts its due less the holders' parts — before the cap.
+// A claim shared with other people gives each holder their part of it (its amount times their share divided by 100,
+// times the rate of the grade they had on its date in force then divided by 100, rounded like the claim; 0.00 when
+// that grade has no rate; a settled claim's frozen part: its frozen due times their share divided by 100, rounded
+// half to even): it counts in their due-total (theirs is just their parts when they would otherwise have none, n/a,
+// and they hold a part at a rate), and its own person's counts its due less the holders' parts — before the cap.
 export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
   return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).due;
@@ -47,10 +49,16 @@ function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined, 
     if (!owner || !countsLive(c, holdsOf([owner]), today)) continue;
     const due = chargedOf(c, rates, gradeOn(owner, c.date), settings, today);
     if (due === 'n/a') continue;
+    const halfUp = roundsHalfUp(c, settings, today);
+    const partOf = (s: { personId: number; share: string }) => {
+      const holder = s.personId === person.id ? person : (people ?? []).find((p) => p.id === s.personId);
+      return holder ? holderPart(c, s.share, gradeOn(holder, c.date), rates, halfUp) : null;
+    };
     if (mineToGive) {
-      for (const s of c.shares) given += sharePart(due, s.share);
+      for (const s of c.shares) given += partOf(s) ?? 0n;
     } else if (share) {
-      held = (held ?? 0n) + sharePart(due, share.share);
+      const part = partOf(share);
+      if (part !== null) held = (held ?? 0n) + part;
     }
   }
   if (sum === 'n/a') return held === null ? sum : formatCents(held);

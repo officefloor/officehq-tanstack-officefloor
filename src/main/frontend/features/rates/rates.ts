@@ -164,7 +164,25 @@ export function trimmedSum(dues: string[]): string {
   return formatCents(kept.reduce((n, d) => n + d, 0n));
 }
 
-/** A holder's part of a due, in hundredths: the due times their share divided by 100, rounded half to even. */
+/** A holder's part of a claim, in hundredths: a settled claim's frozen part ({@link sharePart} of its frozen due);
+ *  else its amount times their share divided by 100, times the rate in force on its date (of those that apply to it)
+ *  of the grade the holder had on its date divided by 100, rounded like the claim; 0 when that grade has no rate
+ *  then (null: no rate). */
+export function holderPart(c: Claim, share: string, holderGrade: string, rates: Rate[] | undefined, halfUp: boolean): bigint | null {
+  if (c.due !== null) return sharePart(c.due, share);
+  const pct = rateOn(ratesForClaim(rates, c.id), holderGrade, c.date);
+  if (pct === undefined) return null;
+  const n = hundredths(c.amount) * hundredths(share) * hundredths(pct);
+  const neg = n < 0n;
+  const abs = neg ? -n : n;
+  let q = abs / 100_000_000n;
+  const r = abs % 100_000_000n;
+  if (r * 2n > 100_000_000n || (r * 2n === 100_000_000n && (halfUp || q % 2n === 1n))) q += 1n;
+  return neg ? -q : q;
+}
+
+/** A holder's frozen part of a settled claim's due, in hundredths: the due times their share divided by 100, rounded
+ *  half to even. */
 export function sharePart(due: string, share: string): bigint {
   const n = hundredths(due) * hundredths(share);
   const neg = n < 0n;

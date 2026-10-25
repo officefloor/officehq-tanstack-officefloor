@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.rate.Rate;
@@ -41,6 +42,8 @@ public class ClaimFigures {
 
     private final BigDecimal cap;
 
+    private Function<Long, PersonGrades> holders = id -> null;
+
     /** @param rates the sheet's rates.
      *  @param grades the person's grades over time.
      *  @param sheet the sheet: its floor on a claim's date (a live due is at least it), and its late percent on each
@@ -52,6 +55,37 @@ public class ClaimFigures {
         this.today = sheet.getToday();
         this.policyDate = sheet.policyDateInForce();
         this.cap = sheet.getCap();
+    }
+
+    /** Gives the grades over time of a holder of a share, by their person id (null: not known — no rate applies
+     *  to them), for the holders' parts; returns these figures. */
+    public ClaimFigures withHolders(Function<Long, PersonGrades> holders) {
+        this.holders = holders;
+        return this;
+    }
+
+    /** A holder's part of a claim whose due is given: a settled claim's frozen part, its frozen due times their share
+     *  divided by 100, rounded half to even; else its amount times their share divided by 100, times the rate in force
+     *  on its date of the grade the holder had on its date divided by 100, rounded like the claim; null when that
+     *  grade has no rate then (the part counts as 0.00). */
+    public BigDecimal part(Claim claim, BigDecimal due, ClaimShares.Share share) {
+        if (claim.getDue() != null) {
+            return ClaimShares.part(due, share.share());
+        }
+        PersonGrades holder = holders.apply(share.personId());
+        if (holder == null) {
+            return null;
+        }
+        return rateOn(holder.on(claim.getDate()), claim)
+                .map(pct -> claim.getAmount().multiply(share.share()).multiply(pct).movePointLeft(4)
+                        .setScale(2, rounding(claim)))
+                .orElse(null);
+    }
+
+    /** The holders' parts of a claim whose due is given, added up (0.00 with none). */
+    public BigDecimal parts(Claim claim, BigDecimal due) {
+        return ClaimShares.of(claim).stream().map(s -> part(claim, due, s)).filter(p -> p != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 
     /** How the claim's live figures round: by the sheet's rounding mode in force on the date it rounds by, when one
@@ -237,11 +271,11 @@ public class ClaimFigures {
                 .orElse(null);
     }
 
-    /** The claim's due less its holders' parts (each its due times their share divided by 100, rounded half to
-     *  even): what its own person's due-total counts of it; null when it has none (n/a). */
+    /** The claim's due less its holders' parts ({@link #part}): what its own person's due-total counts of it; null
+     *  when it has none (n/a). */
     public BigDecimal ownDue(Claim claim) {
         BigDecimal due = due(claim);
-        return due == null ? null : due.subtract(ClaimShares.parts(claim, due));
+        return due == null ? null : due.subtract(parts(claim, due));
     }
 
     /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade

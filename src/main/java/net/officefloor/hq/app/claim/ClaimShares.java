@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** The people a claim is shared with, as its shares column holds them (<person id>:<share>, comma separated, in the
- *  order added), and each holder's part of its due. */
+ *  order added), and each holder's frozen part of a settled claim's due. */
 public final class ClaimShares {
 
     /** One holder's share of a claim: the person and their percent (two decimals). */
@@ -42,13 +42,9 @@ public final class ClaimShares {
         return shares.stream().map(Share::share).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 
-    /** A holder's part of a due: the due times their share divided by 100, rounded half to even. */
+    /** A holder's frozen part of a settled claim's due: the due times their share divided by 100, rounded half to
+     *  even (a live part is worked out by {@link ClaimFigures#part}). */
     public static BigDecimal part(BigDecimal due, BigDecimal share) {
         return due.multiply(share).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
-    }
-
-    /** The holders' parts of a due added up (0.00 with no holders). */
-    public static BigDecimal parts(Claim claim, BigDecimal due) {
-        return of(claim).stream().map(s -> part(due, s.share())).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 }

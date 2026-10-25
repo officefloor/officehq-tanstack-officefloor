@@ -6,8 +6,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigures;
@@ -56,7 +58,7 @@ public class TakeStatement {
         int counted = 0;
         if (asOf == null) {
             ClaimFigures figures = new ClaimFigures(rates.findInChain(sheet.getId()),
-                    grades.gradesOf(person), sheet);
+                    grades.gradesOf(person), sheet).withHolders(holders(sheet, people, grades));
             dueTotal = figures.dueTotal(mine, sheet.getToday(), person,
                     heldBy(person, sheet, claims, rates, grades, people));
             for (Claim claim : mine) {
@@ -73,8 +75,13 @@ public class TakeStatement {
             Sheet then = settingLogs.sheetAsOf(sheet, asOf);
             Person personThen = person.asOf(asOf);
             PersonGrades gradesThen = grades.gradesOf(person).asOf(asOf);
+            Function<Long, PersonGrades> holders = holders(sheet, people, grades);
             ClaimFigures figures = new ClaimFigures(rates.chainOf(sheet.getId()).stream()
-                    .flatMap(id -> rateLogs.ratesAsOf(id, asOf).stream()).toList(), gradesThen, then);
+                    .flatMap(id -> rateLogs.ratesAsOf(id, asOf).stream()).toList(), gradesThen, then)
+                    .withHolders(id -> {
+                        PersonGrades holder = holders.apply(id);
+                        return holder == null ? null : holder.asOf(asOf);
+                    });
             Map<Long, BigDecimal> boundThen = bindings.boundAsOf(person.getId(), asOf);
             Map<Long, List<ClaimLog>> logged = logs.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
                     .collect(Collectors.groupingBy(ClaimLog::getClaimId));
@@ -104,12 +111,13 @@ public class TakeStatement {
                 new Statement(sheet.getId(), person.getId(), dueTotal, sheet.getToday(), asOf, counted)));
     }
 
-    /** The person's parts of the counted claims of others shared with them, each at its live due as its own person's
-     *  figures give it (as the rollup counts them); null when they hold no share of a counted claim. */
+    /** The person's parts of the counted claims of others shared with them, each as its own person's figures give it
+     *  (as the rollup counts them); null when they hold no part at a rate of a counted claim. */
     private static BigDecimal heldBy(Person person, Sheet sheet, ClaimRepository claims, RateRepository rates,
             PersonGradeRepository grades, PersonRepository people) {
         BigDecimal held = null;
         var sheetRates = rates.findInChain(sheet.getId());
+        Function<Long, PersonGrades> holders = holders(sheet, people, grades);
         Map<Long, List<Claim>> shared = claims.findBySheetIdOrderByIdDesc(sheet.getId()).stream()
                 .filter(c -> c.getShares() != null && ClaimShares.of(c).stream().anyMatch(sh -> person.getId().equals(sh.personId())))
                 .collect(Collectors.groupingBy(Claim::getPersonId));
@@ -118,7 +126,8 @@ public class TakeStatement {
             if (owned.isEmpty()) {
                 continue;
             }
-            ClaimFigures ownerFigures = new ClaimFigures(sheetRates, grades.gradesOf(owner), sheet);
+            ClaimFigures ownerFigures = new ClaimFigures(sheetRates, grades.gradesOf(owner), sheet)
+                    .withHolders(holders);
             for (Claim c : owned) {
                 BigDecimal claimDue = ClaimFigures.countsLive(c, owner, sheet.getToday()) ? ownerFigures.due(c) : null;
                 if (claimDue == null) {
@@ -126,13 +135,22 @@ public class TakeStatement {
                 }
                 for (var sh : ClaimShares.of(c)) {
                     if (person.getId().equals(sh.personId())) {
-                        BigDecimal part = ClaimShares.part(claimDue, sh.share());
-                        held = held == null ? part : held.add(part);
+                        BigDecimal part = ownerFigures.part(c, claimDue, sh);
+                        if (part != null) {
+                            held = held == null ? part : held.add(part);
+                        }
                     }
                 }
             }
         }
         return held;
+    }
+
+    /** The grades over time of each person on the sheet, by person id (null: not on it), for the holders' parts. */
+    private static Function<Long, PersonGrades> holders(Sheet sheet, PersonRepository people, PersonGradeRepository grades) {
+        Map<Long, PersonGrades> byId = new HashMap<>();
+        people.findListed(sheet.getId()).forEach(p -> byId.put(p.getId(), grades.gradesOf(p)));
+        return byId::get;
     }
 
     /** The date the statement is taken as of: null when none is given; refuses one that is not a calendar date, one
