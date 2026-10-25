@@ -20,7 +20,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string; proofThreshold: string;
   dated: Record<string, { from: string | null; value: string | null }[]>;
-  permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string;
+  permOpen: string; permSettle: string; permVoid: string; permReassign: string; permClose: string; permReopen: string; permToday: string;
   graceDays: string; noteThreshold: string; entryDate: string;
   graceA: string; graceB: string; graceC: string;
   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string;

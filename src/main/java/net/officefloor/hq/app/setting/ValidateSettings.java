@@ -61,6 +61,7 @@ public class ValidateSettings {
             roles(changes, "reassign", request.permReassign());
             roles(changes, "close", request.permClose());
             roles(changes, "reopen", request.permReopen());
+            roles(changes, "today", request.permToday());
             graceDays(changes, request.graceDays());
             amount(changes, Sheet.NOTE_THRESHOLD, request.noteThreshold(), null, request.noteThresholdFrom(),
                     "The note threshold must be an amount, 0.00 or more, with up to two decimals, or blank.");

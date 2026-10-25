@@ -311,10 +311,14 @@ public class Sheet {
     }
 
     /** Whether a role may take an action: by the roles of the action's permission matrix entry, else by the
-     *  standing rule — open, settle, void and close by clerk and steward; reassign and reopen by steward. */
+     *  standing rule — open, settle, void and close by clerk and steward; reassign and reopen by steward; today by
+     *  anyone but a viewer. */
     public boolean allows(String action, String role) {
         String roles = permOf(action);
         if (roles.isEmpty()) {
+            if ("today".equals(action)) {
+                return !"viewer".equals(role);
+            }
             return "steward".equals(role) || !("reassign".equals(action) || "reopen".equals(action));
         }
         return List.of(roles.split(",")).contains(role);
