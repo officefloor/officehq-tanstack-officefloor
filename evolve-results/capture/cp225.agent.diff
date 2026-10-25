@@ -1,0 +1,253 @@
+diff --git a/src/main/frontend/features/grades/grades.slot.tsx b/src/main/frontend/features/grades/grades.slot.tsx
+index 393fe4ff..d2fee591 100644
+--- a/src/main/frontend/features/grades/grades.slot.tsx
++++ b/src/main/frontend/features/grades/grades.slot.tsx
+@@ -1,14 +1,17 @@
+-import { useState } from 'react';
++import { useEffect, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+-import { GRADES } from '../people/people';
++import { GRADES, peopleQueryKey } from '../people/people';
++import { claimsQueryKey } from '../claims/claims';
+ import { gradesPath, gradesQueryKey, useGrades, type Grade } from './grades';
+ 
+ // The grades, each showing whether it is retired, and the select and button that retire one. A grade already
+ // retired is refused by the server and shows the error, which goes as soon as the select changes.
++// Below them, two selects and a button merge a grade into another (a steward only): the server gives everyone on the
++// merged grade the other from the sheet's today, and the count of people changed shows once done (gone while it runs, and once a sheet is loaded).
+ function Grades() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -22,6 +25,20 @@ function Grades() {
+     },
+   });
+   const submit = useSubmitOnce(retire);
++  const [from, setFrom] = useState<string>(GRADES[0]);
++  const [into, setInto] = useState<string>(GRADES[1]);
++  const merge = useMutation({
++    mutationFn: (body: { from: string; into: string }) =>
++      postJson<{ merged: number }>(`${gradesPath(sheet ?? '')}/merge`, body, user),
++    onSettled: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') });
++      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') });
++    },
++  });
++  const submitMerge = useSubmitOnce(merge);
++  // A merge's count and error belong to the sheet it was made on: loading a sheet clears them.
++  const resetMerge = merge.reset;
++  useEffect(() => resetMerge(), [sheet, resetMerge]);
+ 
+   if (!user || !sheet) return null;
+   return (
+@@ -35,15 +52,36 @@ function Grades() {
+         ))}
+       </ul>
+       <select data-testid="grade-retire-select" value={grade}
+-        onChange={(e) => { setGrade(e.target.value); retire.reset(); }}>
++        onChange={(e) => { setGrade(e.target.value); retire.reset(); merge.reset(); }}>
+         {GRADES.map((g) => (
+           <option key={g} value={g}>{g}</option>
+         ))}
+       </select>{' '}
+-      <button type="button" data-testid="grade-retire" disabled={retire.isPending} onClick={() => submit({ grade })}>
++      <button type="button" data-testid="grade-retire" disabled={retire.isPending} onClick={() => { merge.reset(); submit({ grade }); }}>
+         Retire grade
+       </button>
++      <div>
++        Merge{' '}
++        <select data-testid="grade-merge-from" value={from}
++          onChange={(e) => { setFrom(e.target.value); merge.reset(); retire.reset(); }}>
++          {GRADES.map((g) => (
++            <option key={g} value={g}>{g}</option>
++          ))}
++        </select>{' '}into{' '}
++        <select data-testid="grade-merge-into" value={into}
++          onChange={(e) => { setInto(e.target.value); merge.reset(); retire.reset(); }}>
++          {GRADES.map((g) => (
++            <option key={g} value={g}>{g}</option>
++          ))}
++        </select>{' '}
++        <button type="button" data-testid="grade-merge" disabled={merge.isPending}
++          onClick={() => { retire.reset(); submitMerge({ from, into }); }}>
++          Merge grade
++        </button>
++        {merge.isSuccess && <>{' '}Changed <span data-testid="grade-merged">{merge.data.merged}</span></>}
++      </div>
+       {retire.isError && <span data-testid="grade-error">The grade could not be retired.</span>}
++      {merge.isError && <span data-testid="grade-error">The grade could not be merged.</span>}
+     </section>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/grade/ApplyGradeMerge.java b/src/main/java/net/officefloor/hq/app/grade/ApplyGradeMerge.java
+new file mode 100644
+index 00000000..2dd04acb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/ApplyGradeMerge.java
+@@ -0,0 +1,64 @@
++package net.officefloor.hq.app.grade;
++
++import jakarta.persistence.EntityManager;
++import jakarta.persistence.LockModeType;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonGrade;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.PersonRules;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Merges a grade into another: only a steward may, and not into a retired grade. Records GRADE_MERGED, then gives
++ *  every person (in list order) whose grade in force on the sheet's today is the merged grade the other from the
++ *  sheet's today, each exactly as the person form would save it, with its PERSON_EDITED and rollup lines. */
++public class ApplyGradeMerge {
++    public void apply(@Val GradeMergeRequest request, @Val Sheet sheet,
++            @RequestHeader(name = "X-User", required = false) String userHeader, RoleRepository roles,
++            RetiredGradeRepository retired, SheetRepository sheets, PersonRepository people, ClaimRepository claims,
++            RateRepository rates, PersonGradeRepository grades, AsOf asOf, EntityManager entityManager, Audit audit,
++            Out<GradeMerged> mergedOut) throws InvalidGradeException {
++        String user = AuditUser.decode(userHeader);
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), user))) {
++            throw new InvalidGradeException("Only a steward can merge a grade.");
++        }
++        if (retired.existsBySheetIdAndGrade(sheet.getId(), request.into())) {
++            throw new InvalidGradeException("The grade " + request.into() + " is retired.");
++        }
++        audit.record("GRADE_MERGED sheet=" + sheet.getId() + " by=" + user
++                + " from=" + request.from() + " into=" + request.into());
++        int merged = 0;
++        for (Person person : people.findListed(sheet.getId())) {
++            if (!request.from().equals(grades.gradesOf(person).on(sheet.getToday()))) {
++                continue;
++            }
++            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
++            // Every save raises the version, as the person form's does.
++            entityManager.lock(person, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
++            people.saveAndFlush(person);
++            PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), sheet.getToday())
++                    .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.into(), sheet.getToday()));
++            dated.setGrade(request.into());
++            dated.setMadeOn(sheet.getToday());
++            grades.saveAndFlush(dated);
++            audit.record(PersonRules.editedLine(person, grades.gradesOf(person).on(sheet.getToday()),
++                    person.termsOn(sheet.getToday()), user));
++            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf)
++                    .changesSince(before, sheet.getId(), user).forEach(audit::record);
++            merged++;
++        }
++        mergedOut.set(new GradeMerged(merged));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeMergeRequest.java b/src/main/java/net/officefloor/hq/app/grade/GradeMergeRequest.java
+new file mode 100644
+index 00000000..cf6b151e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeMergeRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.grade;
++
++/** The grade to merge and the grade to merge it into, as submitted. */
++public record GradeMergeRequest(String from, String into) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeMerged.java b/src/main/java/net/officefloor/hq/app/grade/GradeMerged.java
+new file mode 100644
+index 00000000..533df409
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeMerged.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.grade;
++
++/** The outcome of a grade merge: how many people were given the other grade. */
++public record GradeMerged(int merged) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/RespondWithGradeMerged.java b/src/main/java/net/officefloor/hq/app/grade/RespondWithGradeMerged.java
+new file mode 100644
+index 00000000..42278c4c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/RespondWithGradeMerged.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** How many people the grade merge gave the other grade. */
++public class RespondWithGradeMerged {
++    public void respond(@Val GradeMerged merged, ObjectResponse<GradeMerged> response) {
++        response.send(merged);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMerge.java b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMerge.java
+new file mode 100644
+index 00000000..6112d0df
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/ValidateGradeMerge.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the grades to merge from the body, trimmed; refuses one other than A, B or C, and the same grade twice. */
++public class ValidateGradeMerge {
++    public void validate(@RequestBody GradeMergeRequest request, Out<GradeMergeRequest> body) throws InvalidGradeException {
++        String from = request == null || request.from() == null ? "" : request.from().trim();
++        String into = request == null || request.into() == null ? "" : request.into().trim();
++        if (!RetiredGrades.GRADES.contains(from) || !RetiredGrades.GRADES.contains(into)) {
++            throw new InvalidGradeException("The grades must be A, B or C.");
++        }
++        if (from.equals(into)) {
++            throw new InvalidGradeException("A grade cannot be merged into itself.");
++        }
++        body.set(new GradeMergeRequest(from, into));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+new file mode 100644
+index 00000000..1315ccf3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -0,0 +1,29 @@
++# POST /api/sheets/{sheetId}/grades/merge — merge a grade into another (a steward only). Body: { "from": "A|B|C", "into": "A|B|C" }.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: validate
++validate:
++  class: net.officefloor.hq.app.grade.ValidateGradeMerge
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.grade.ApplyGradeMerge
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.grade.RespondWithGradeMerged
++  govern: [ transaction ]
