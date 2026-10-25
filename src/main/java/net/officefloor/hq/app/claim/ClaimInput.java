@@ -6,15 +6,15 @@ import java.time.LocalDate;
 /**
  * A validated claim's fields; a null date means the sheet's today. {@code corrects} is the number of the claim a
  * correction (a negative amount) corrects; null when none was named. {@code ref} is the external reference, surrounding
- * spaces removed; null when none was given.
+ * spaces removed; null when none was given. {@code tags} are its tags, sorted and joined by commas; null when none.
  */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref, String tags) {
 
     public ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {
-        this(amount, date, note, corrects, null);
+        this(amount, date, note, corrects, null, null);
     }
 
     public ClaimInput(BigDecimal amount, LocalDate date, String note) {
-        this(amount, date, note, null, null);
+        this(amount, date, note, null, null, null);
     }
 }

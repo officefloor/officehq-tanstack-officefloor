@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { counts, useClaims } from '../claims/useClaims';
+import { counts, useClaimTags, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
@@ -340,6 +340,45 @@ function SplitTotal({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+// For every tag ever used on the sheet, its due-total: the due of the counted claims carrying it added up (n/a as 0); a claim
+// with two tags counts in both.
+function TagTotals({ sheetId }: { sheetId: string; user: string }) {
+  const tags = useClaimTags(sheetId);
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const held = useHeld(sheetId);
+  const floor = useFloorCents(sheetId);
+  const late = useLate(sheetId);
+  const sums = new Map<string, bigint>();
+  for (const c of claims.data ?? []) {
+    if (c.tags.length === 0 || !counts(c, held)) continue;
+    const due = claimDueCents(rates.data ?? [], gradeOn(people.data?.find((p) => p.id === c.personId), c.date), c, floor, late) ?? 0n;
+    for (const t of c.tags) sums.set(t, (sums.get(t) ?? 0n) + due);
+  }
+  return (
+    <section data-testid="tag-rollup">
+      <h2>Tags</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tag</th>
+            <th>Due total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(tags.data ?? []).map((t) => (
+            <tr key={t}>
+              <td>{t}</td>
+              <td data-testid={`tag-${t}-due-total`}>{showHundredths(sums.get(t) ?? 0n)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 export const contributions = [
   SheetBody.fill({ order: 5, Component: RatesPanel }),
   PersonHeads.fill({ order: 20, Component: DueHead }),
@@ -351,4 +390,5 @@ export const contributions = [
   ClaimCells.fill({ order: 10, Component: ClaimDue }),
   SheetBody.fill({ order: 25, Component: DueTotal }),
   SheetBody.fill({ order: 25.5, Component: SplitTotal }),
+  SheetBody.fill({ order: 25.7, Component: TagTotals }),
 ];

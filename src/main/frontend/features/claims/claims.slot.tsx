@@ -11,7 +11,7 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
-type ClaimBody = { amount: string; date: string; note: string; corrects: string; ref: string };
+type ClaimBody = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 
 // A person's claim form: adds a claim, or — with one of their claims' editor open — saves its
 // changes. It is re-mounted for each claim opened, so it starts filled with that claim's values.
@@ -22,6 +22,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
   const [note, setNote] = useState(editing?.note ?? '');
   const [corrects, setCorrects] = useState(editing?.corrects ?? '');
   const [ref, setRef] = useState(editing?.ref ?? '');
+  const [tags, setTags] = useState(editing?.tags.join(', ') ?? '');
   const [user] = useUser();
   const queryClient = useQueryClient();
   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
@@ -46,6 +47,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
         setNote('');
         setCorrects('');
         setRef('');
+        setTags('');
       }
     },
   });
@@ -62,7 +64,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ amount, date, note, corrects, ref });
+        submit({ amount, date, note, corrects, ref, tags });
       }}
     >
       <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={amount} onChange={field(setAmount)} />{' '}
@@ -70,6 +72,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={field(setNote)} />{' '}
       <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={field(setCorrects)} />{' '}
       <input data-testid="claim-form-ref" placeholder="Reference" value={ref} onChange={field(setRef)} />{' '}
+      <input data-testid="claim-form-tags" placeholder="Tags, comma separated" value={tags} onChange={field(setTags)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
@@ -113,6 +116,7 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
+              <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
               <ClaimCells.Slot sheetId={sheetId} user={user} personId={personId} claim={c} />
             </li>
           ))}

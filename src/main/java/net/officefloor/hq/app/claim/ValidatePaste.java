@@ -45,7 +45,7 @@ public class ValidatePaste {
                     note = note.substring(0, hash);
                 }
                 ClaimInput input = ValidateClaim.parse(new ClaimRequest(fields[1],
-                        fields.length > 2 ? fields[2] : "", note, null, ref, by.name()));
+                        fields.length > 2 ? fields[2] : "", note, null, ref, null, by.name()));
                 if (input.ref() != null && !refs.add(input.ref().toLowerCase(Locale.ROOT))) {
                     throw RefuseUsedRef.used(input.ref());
                 }

@@ -29,6 +29,7 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private String ref;
+    private String tags;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -122,6 +123,15 @@ public class Claim {
 
     public void setRef(String ref) {
         this.ref = ref;
+    }
+
+    /** The claim's tags, sorted and joined by commas; null when it has none. */
+    public String getTags() {
+        return tags;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
     }
 
     /** Keep {@code amount} of the claim, the rest split off: it loses any figure a statement bound it to. */

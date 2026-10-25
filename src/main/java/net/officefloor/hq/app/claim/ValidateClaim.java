@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 /**
  * A claim's fields: an amount (required; a number with up to two decimals, 0.00 or more, or below 0.00
  * for a correction), a date (blank for the sheet's today), a note (may be empty) and the number of the
- * claim a correction corrects (blank for none) and an external reference (blank for none). Publishes them parsed, with the user making the change.
+ * claim a correction corrects (blank for none) and an external reference (blank for none) and tags
+ * (comma separated: each trimmed and lower-cased, repeats and blanks dropped, sorted; blank for none). Publishes them parsed, with the user making the change.
  */
 public class ValidateClaim {
 
@@ -43,6 +44,10 @@ public class ValidateClaim {
         if (ref.length() > 200) {
             throw new BadRequestException("A reference is at most 200 characters");
         }
+        String tags = tags(request == null ? null : request.tags());
+        if (tags != null && tags.length() > 1000) {
+            throw new BadRequestException("Tags are at most 1000 characters");
+        }
         String correctsNumber = null;
         if (!corrects.isEmpty()) {
             if (!corrects.matches("\\d{1,9}|.{1,200}-\\d{1,9}")) {
@@ -50,6 +55,21 @@ public class ValidateClaim {
             }
             correctsNumber = corrects.matches("\\d+") ? String.valueOf(Integer.parseInt(corrects)) : corrects;
         }
-        return new ClaimInput(amount, parsed, note, correctsNumber, ref.isEmpty() ? null : ref);
+        return new ClaimInput(amount, parsed, note, correctsNumber, ref.isEmpty() ? null : ref, tags);
+    }
+
+    /** The tags as typed, normalised: sorted and joined by commas; null when there are none. */
+    static String tags(String typed) {
+        if (typed == null) {
+            return null;
+        }
+        java.util.SortedSet<String> tags = new java.util.TreeSet<>();
+        for (String tag : typed.split(",")) {
+            String t = tag.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!t.isEmpty()) {
+                tags.add(t);
+            }
+        }
+        return tags.isEmpty() ? null : String.join(",", tags);
     }
 }

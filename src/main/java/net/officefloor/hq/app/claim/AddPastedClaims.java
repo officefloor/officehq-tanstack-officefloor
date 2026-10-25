@@ -57,7 +57,7 @@ public class AddPastedClaims {
             ClaimInput input = pasted.lines().get(i).input();
             LocalDate date = input.date() != null ? input.date() : today;
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
-                    input.corrects(), input.ref(), BuildClaim.terms(person, date, settings));
+                    input.corrects(), input.ref(), input.tags(), BuildClaim.terms(person, date, settings));
             if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
                 claims.markLate(claim);
             }

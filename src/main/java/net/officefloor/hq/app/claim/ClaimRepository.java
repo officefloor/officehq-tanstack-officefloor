@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -38,6 +38,7 @@ public class ClaimRepository {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setRef(rs.getString("ref"));
+        claim.setTags(rs.getString("tags"));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -106,17 +107,17 @@ public class ClaimRepository {
     /** Add a draft claim without a reference. */
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             int terms) {
-        return insert(sheetId, personId, amount, date, note, corrects, null, terms);
+        return insert(sheetId, personId, amount, date, note, corrects, null, null, terms);
     }
 
-    /** Add a draft claim, its due-by counting {@code terms} business days from its date for good. */
+    /** Add a draft claim, its due-by counting {@code terms} business days from its date for good, with its reference and tags (null: none). */
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            String ref, int terms) {
+            String ref, String tags, int terms) {
         long listed = nextListed(sheetId);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -128,12 +129,15 @@ public class ClaimRepository {
             ps.setDate(8, Date.valueOf(date));
             ps.setInt(9, terms);
             ps.setString(10, ref);
+            ps.setString(11, tags);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
         claim.setDueFrom(date);
         claim.setTerms(terms);
         claim.setRef(ref);
+        claim.setTags(tags);
+        used(sheetId, tags);
         due(List.of(claim));
         return claim;
     }
@@ -146,7 +150,7 @@ public class ClaimRepository {
 
     /**
      * Split {@code amount} off the OPEN claim: it keeps the rest, unbound from any statement figure, and a new OPEN claim
-     * with the amount, its date and note, opened by {@code openedBy}, due by {@code terms} business days from its date and split from its number is
+     * with the amount, its date, note and tags, opened by {@code openedBy}, due by {@code terms} business days from its date and split from its number is
      * listed as its person's newest. Null when the claim was no longer OPEN at its amount: another user changed it.
      */
     public Claim split(Claim claim, BigDecimal amount, String openedBy, int terms) {
@@ -156,7 +160,8 @@ public class ClaimRepository {
             return null;
         }
         claim.keep(rest);
-        Claim into = insert(claim.getSheetId(), claim.getPersonId(), amount, claim.getDate(), claim.getNote(), null, terms);
+        Claim into = insert(claim.getSheetId(), claim.getPersonId(), amount, claim.getDate(), claim.getNote(), null, null,
+                claim.getTags(), terms);
         into.setStatus(ClaimStatus.OPEN);
         into.setOpenedBy(openedBy);
         into.setSplitFrom(claim.getNumber());
@@ -166,8 +171,24 @@ public class ClaimRepository {
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ? WHERE id = ?", claim.getAmount(),
-                Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getId());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ? WHERE id = ?", claim.getAmount(),
+                Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getId());
+        used(claim.getSheetId(), claim.getTags());
+    }
+
+    /** Note the tags (joined by commas; null: none) as used on the sheet, for good. */
+    private void used(String sheetId, String tags) {
+        if (tags == null) {
+            return;
+        }
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
+    }
+
+    /** Every tag ever used on the sheet's claims, sorted. */
+    public List<String> tagsUsed(String sheetId) {
+        return jdbc.queryForList("SELECT tag FROM claim_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
     }
 
     /** Defer the claim until its deferred-until date. Whether it was still OPEN: another user may have moved it. */
