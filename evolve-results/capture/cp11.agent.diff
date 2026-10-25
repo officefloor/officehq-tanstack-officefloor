@@ -1,0 +1,452 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index dc8b5511..65ad3974 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -6,20 +6,29 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { counts, useClaims } from '../claims/useClaims';
+ import { usePeople } from '../people/people.slot';
++import { useSheetToday } from '../today/today.slot';
+ import { useUser } from '../session/useSession';
+-import { dueCents, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
++import { dueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+ const RATE = /^\d{1,3}(\.\d{1,2})?$/;
+ const NA = 'n/a';
+ 
+-/** The rate (in hundredths of a percent) for each grade that has one. */
++/** The rate (in hundredths of a percent) in force on the sheet's today for each grade that has one. */
+ function useRateByGrade(sheetId: string): Map<string, bigint> {
+   const rates = useRates(sheetId);
+-  return new Map((rates.data ?? []).map((r) => [r.grade, toHundredths(r.rate)]));
++  const today = useSheetToday(sheetId).data?.today;
++  const byGrade = new Map<string, bigint>();
++  if (today === undefined) return byGrade;
++  for (const g of GRADES) {
++    const r = rateOn(rates.data ?? [], g, today);
++    if (r) byGrade.set(g, toHundredths(r.rate));
++  }
++  return byGrade;
+ }
+ 
+-/** A person's due-total in cents (their counted claims times their grade's rate), or null when the grade has no rate. */
++/** A person's due-total in cents (their counted claims times their grade's rate in force on the sheet's today), or
++ *  null when the grade has no rate then. */
+ function useDueTotals(sheetId: string): Map<number, bigint | null> {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+@@ -39,28 +48,32 @@ function useDueTotals(sheetId: string): Map<number, bigint | null> {
+   return totals;
+ }
+ 
+-// The rate form: sets a grade's rate. Each grade's current rate is listed under it.
++// The rate form: sets a grade's rate from a date (blank: from the beginning of time), replacing one
++// already set for that grade and date. Every rate is listed under it, with each grade's rate in
++// force on the sheet's today.
+ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
+   const rates = useRates(sheetId);
+   const [grade, setGrade] = useState<string>('A');
+   const [pct, setPct] = useState('');
++  const [from, setFrom] = useState('');
++  const today = useSheetToday(sheetId).data?.today;
+   const [user] = useUser();
+   const queryClient = useQueryClient();
+   const save = useMutation({
+-    mutationFn: async (body: { grade: string; rate: string }) => {
++    mutationFn: async (body: { grade: string; rate: string; from: string }) => {
+       if (body.rate.trim() === '') throw new Error('Enter a rate');
+       if (!RATE.test(body.rate.trim()) || Number(body.rate) > 100) {
+         throw new Error('A rate is a percent, 0.00 to 100.00, with up to two decimals');
+       }
+       // `by` is the signed-in user the change is recorded against.
+-      return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, by: user ?? '' });
++      return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, from: body.from.trim(), by: user ?? '' });
+     },
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+       setPct('');
++      setFrom('');
+     },
+   });
+-  const byGrade = new Map((rates.data ?? []).map((r) => [r.grade, r]));
+ 
+   return (
+     <section data-testid="rates-panel">
+@@ -69,7 +82,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
+         data-testid="rate-form"
+         onSubmit={(e) => {
+           e.preventDefault();
+-          save.mutate({ grade, rate: pct });
++          save.mutate({ grade, rate: pct, from });
+         }}
+       >
+         <label>
+@@ -102,6 +115,18 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
+             }}
+           />
+         </label>{' '}
++        <label>
++          From{' '}
++          <input
++            type="date"
++            data-testid="rate-form-from"
++            value={from}
++            onChange={(e) => {
++              setFrom(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
+         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
+           Set rate
+         </button>
+@@ -116,27 +141,43 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
+           {rates.error.message}
+         </p>
+       )}
+-      <table data-testid="rate-list">
++      <table data-testid="rate-current-list">
+         <thead>
+           <tr>
+             <th>Grade</th>
+-            <th>Rate %</th>
++            <th>Rate % today</th>
+           </tr>
+         </thead>
+         <tbody>
+           {GRADES.map((g) => {
+-            const r = byGrade.get(g);
++            const r = today === undefined ? undefined : rateOn(rates.data ?? [], g, today);
+             return (
+-              <tr key={g} data-testid={r ? `rate-row-${g}-start` : undefined}>
++              <tr key={g}>
+                 <td>{g}</td>
+-                <td data-testid={`rate-current-${g}`}>
+-                  {r ? <span data-testid="rate-pct">{showHundredths(toHundredths(r.rate))}</span> : NA}
+-                </td>
++                <td data-testid={`rate-current-${g}`}>{r ? showHundredths(toHundredths(r.rate)) : NA}</td>
+               </tr>
+             );
+           })}
+         </tbody>
+       </table>
++      <table data-testid="rate-list">
++        <thead>
++          <tr>
++            <th>Grade</th>
++            <th>From</th>
++            <th>Rate %</th>
++          </tr>
++        </thead>
++        <tbody>
++          {(rates.data ?? []).map((r) => (
++            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
++              <td>{r.grade}</td>
++              <td data-testid="rate-from">{r.from ?? ''}</td>
++              <td data-testid="rate-pct">{showHundredths(toHundredths(r.rate))}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
+     </section>
+   );
+ }
+@@ -151,14 +192,15 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
+   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
+ }
+ 
+-// A claim's due: fixed when it was settled; otherwise its amount times its person's grade's rate,
+-// n/a when the grade has no rate.
++// A claim's due: fixed when it was settled; otherwise its amount times its person's grade's rate in
++// force on the claim's date, n/a when no rate of the grade applies then.
+ function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
+-  claim: { amount: string; settledDue: string | null } }) {
++  claim: { amount: string; date: string; settledDue: string | null } }) {
+   const people = usePeople(sheetId);
+-  const rates = useRateByGrade(sheetId);
++  const rates = useRates(sheetId);
+   const grade = people.data?.find((p) => p.id === personId)?.grade;
+-  const rate = grade === undefined ? undefined : rates.get(grade);
++  const found = grade === undefined ? undefined : rateOn(rates.data ?? [], grade, claim.date);
++  const rate = found === undefined ? undefined : toHundredths(found.rate);
+   if (claim.settledDue != null) {
+     return <span data-testid="claim-due">{showHundredths(toHundredths(claim.settledDue))}</span>;
+   }
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index aa359e21..2f85617c 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -1,12 +1,13 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-export type Rate = { grade: string; rate: string };
++/** A grade's rate, in force from its from-date (yyyy-mm-dd); null applies from the beginning of time. */
++export type Rate = { grade: string; rate: string; from: string | null };
+ 
+ /** The key every feature reads the sheet's rates under. */
+ export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
+ 
+-/** The sheet's rate for each grade that has one. */
++/** The sheet's rates: each grade may have several, with different from-dates. */
+ export function useRates(sheetId: string) {
+   return useQuery({
+     queryKey: ratesKey(sheetId),
+@@ -14,6 +15,20 @@ export function useRates(sheetId: string) {
+   });
+ }
+ 
++/**
++ * The grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or
++ * before it, a rate without a from-date counting as the earliest. Undefined when none applies.
++ */
++export function rateOn(rates: readonly Rate[], grade: string, date: string): Rate | undefined {
++  let found: Rate | undefined;
++  for (const r of rates) {
++    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
++    // ISO dates compare as text; no from-date ('') sorts before every date.
++    if (found === undefined || (r.from ?? '') > (found.from ?? '')) found = r;
++  }
++  return found;
++}
++
+ /** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n), exactly. */
+ export function toHundredths(text: string): bigint {
+   const [whole, frac = ''] = text.trim().split('.');
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 5cee35be..7bff3557 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Moves the claim to the asked status, refusing a change its current status does not allow. Settling
+- * fixes the claim's due at its person's grade's rate now; without a rate its due stays live.
++ * fixes the claim's due at its person's grade's rate in force on the claim's date; without a rate its due stays live.
+  */
+ public class ApplyClaimStatus {
+     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
+@@ -39,10 +39,10 @@ public class ApplyClaimStatus {
+         audited.set(new ClaimNumber(status == ClaimStatus.VOID ? had : claim.getNumber()));
+     }
+ 
+-    /** The claim's amount times its person's grade's rate, rounded half up; null when there is no rate. */
++    /** The claim's amount times its person's grade's rate on the claim's date, rounded half up; null when there is no rate. */
+     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade());
++        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
+         return rate == null ? null
+                 : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java b/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
+index 6c5f47e4..26e5e1e5 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
+@@ -6,6 +6,6 @@ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyRate {
+     public void apply(@Val SheetResponse sheet, @Val RateInput input, RateRepository repository, Out<Rate> rate) {
+-        rate.set(repository.set(sheet.id(), input.grade(), input.rate()));
++        rate.set(repository.set(sheet.id(), input.grade(), input.rate(), input.from()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index 5acc9ca9..d368f137 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -1,7 +1,8 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ 
+-/** A grade's rate on a sheet: a percent with two decimals. */
+-public record Rate(String sheetId, String grade, BigDecimal rate) {
++/** A grade's rate on a sheet: a percent with two decimals, in force from a date (null: from the beginning of time). */
++public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateInput.java b/src/main/java/net/officefloor/hq/app/rate/RateInput.java
+index c52e4d8c..a5bfa403 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateInput.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateInput.java
+@@ -1,7 +1,8 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ 
+-/** A validated rate: the grade, and the percent scaled to two decimals. */
+-public record RateInput(String grade, BigDecimal rate) {
++/** A validated rate: the grade, the percent scaled to two decimals, and its from-date (null when none). */
++public record RateInput(String grade, BigDecimal rate, LocalDate from) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index f2f7a3f5..6e418b46 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -1,17 +1,25 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
++import java.sql.Date;
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The rate for each grade on each sheet; a grade without one has no rate. */
++/**
++ * The rates for each grade on each sheet, each in force from its from-date (null: from the beginning
++ * of time). A grade without one in force on a date has no rate on that date.
++ */
+ @Repository
+ public class RateRepository {
+ 
+-    private static final RowMapper<Rate> ROW = (rs, n) -> new Rate(rs.getString("sheet_id"), rs.getString("grade"),
+-            rs.getBigDecimal("rate"));
++    private static final RowMapper<Rate> ROW = (rs, n) -> {
++        Date from = rs.getDate("from_date");
++        return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
++                from == null ? null : from.toLocalDate());
++    };
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -19,21 +27,29 @@ public class RateRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's rates, by grade. */
++    /** The sheet's rates, by grade, then by from-date (none first). */
+     public List<Rate> list(String sheetId) {
+-        return jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? ORDER BY grade", ROW, sheetId);
++        return jdbc.query("SELECT sheet_id, grade, rate, from_date FROM rate WHERE sheet_id = ?"
++                + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+     }
+ 
+-    /** The grade's rate on the sheet, or null when it has none. */
+-    public BigDecimal find(String sheetId, String grade) {
+-        return jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? AND grade = ?", ROW, sheetId, grade)
+-                .stream().findFirst().map(Rate::rate).orElse(null);
++    /**
++     * The grade's rate in force on the date: the one with the latest from-date on or before it, a rate
++     * without a from-date counting as the earliest. Null when none applies.
++     */
++    public BigDecimal find(String sheetId, String grade, LocalDate on) {
++        return jdbc.query("SELECT sheet_id, grade, rate, from_date FROM rate WHERE sheet_id = ? AND grade = ?"
++                + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", ROW,
++                sheetId, grade, Date.valueOf(on)).stream().findFirst().map(Rate::rate).orElse(null);
+     }
+ 
+-    /** Set (or replace) a grade's rate. */
+-    public Rate set(String sheetId, String grade, BigDecimal rate) {
+-        jdbc.update("MERGE INTO rate (sheet_id, grade, rate) KEY (sheet_id, grade) VALUES (?, ?, ?)", sheetId, grade,
+-                rate);
+-        return new Rate(sheetId, grade, rate);
++    /** Set a grade's rate from a date (null: from the beginning of time), replacing one already there. */
++    public Rate set(String sheetId, String grade, BigDecimal rate, LocalDate from) {
++        Date fromDate = from == null ? null : Date.valueOf(from);
++        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
++                sheetId, grade, fromDate);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date) VALUES (?, ?, ?, ?)", sheetId, grade, rate,
++                fromDate);
++        return new Rate(sheetId, grade, rate, from);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+index e3595b72..ddf02e84 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.rate;
+ 
+-/** A grade's rate (a percent), and the signed-in user (`by`) making the change. */
+-public record RateRequest(String grade, String rate, String by) {
++/** A grade's rate (a percent), its optional from-date, and the signed-in user (`by`) making the change. */
++public record RateRequest(String grade, String rate, String from, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index 5ac0bc3d..0f045ac4 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,7 +1,8 @@
+ package net.officefloor.hq.app.rate;
+ 
+-public record RateResponse(String grade, String rate) {
++public record RateResponse(String grade, String rate, String from) {
+     public static RateResponse from(Rate rate) {
+-        return new RateResponse(rate.grade(), rate.rate().toPlainString());
++        return new RateResponse(rate.grade(), rate.rate().toPlainString(),
++                rate.from() == null ? null : rate.from().toString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java b/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java
+index 5011d491..516b5429 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RecordRateSet.java
+@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
+ public class RecordRateSet {
+     public void record(@Val Rate rate, @Val ChangedBy by, Audit audit) {
+         audit.record("RATE_SET sheet=" + rate.sheetId() + " by=" + by.name() + " grade=" + rate.grade() + " rate="
+-                + rate.rate().toPlainString());
++                + rate.rate().toPlainString() + (rate.from() == null ? "" : " from=" + rate.from()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 9b0a3be4..2a9a2156 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import java.util.Set;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.BadRequestException;
+@@ -8,7 +10,10 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A rate's fields: a grade (A, B or C) and a percent with up to two decimals, 0.00 to 100.00. */
++/**
++ * A rate's fields: a grade (A, B or C), a percent with up to two decimals, 0.00 to 100.00, and an
++ * optional from-date (yyyy-mm-dd; blank for none).
++ */
+ public class ValidateRate {
+ 
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+@@ -33,7 +38,16 @@ public class ValidateRate {
+         if (value.compareTo(BigDecimal.valueOf(100)) > 0) {
+             throw new BadRequestException("A rate is a percent, 0.00 to 100.00, with up to two decimals");
+         }
+-        rate.set(new RateInput(grade, value));
++        String fromText = request.from() == null ? "" : request.from().trim();
++        LocalDate from = null;
++        if (!fromText.isEmpty()) {
++            try {
++                from = LocalDate.parse(fromText);
++            } catch (DateTimeParseException e) {
++                throw new BadRequestException("Enter a from-date as yyyy-mm-dd, or leave it blank");
++            }
++        }
++        rate.set(new RateInput(grade, value, from));
+         changedBy.set(by);
+     }
+ }
+diff --git a/src/main/resources/db/migration/V10__rate_from.sql b/src/main/resources/db/migration/V10__rate_from.sql
+new file mode 100644
+index 00000000..79deefc4
+--- /dev/null
++++ b/src/main/resources/db/migration/V10__rate_from.sql
+@@ -0,0 +1,6 @@
++-- A rate can carry a from-date: a grade may have several rates, and a claim uses the one whose
++-- from-date is the latest on or before the claim's date. A rate without one (null) applies from
++-- the beginning of time. A grade has at most one rate per from-date (null included); setting it
++-- again replaces it.
++ALTER TABLE rate ADD COLUMN from_date DATE;
++ALTER TABLE rate DROP PRIMARY KEY;
