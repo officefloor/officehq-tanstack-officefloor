@@ -1,0 +1,458 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 2db5d7ab..864c281d 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -3,7 +3,9 @@
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const res = await fetch(path, init);
+   if (!res.ok) {
+-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
++    // A refusal carries {"error": "<why>"}; show that, else the status line.
++    const body = (await res.json().catch(() => null)) as { error?: string } | null;
++    throw new Error(body?.error ?? `${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+@@ -19,3 +21,11 @@ export function postJson<T>(path: string, body: unknown): Promise<T> {
+     body: JSON.stringify(body),
+   });
+ }
++
++export function putJson<T>(path: string, body?: unknown): Promise<T> {
++  return send<T>(path, {
++    method: 'PUT',
++    headers: { 'Content-Type': 'application/json' },
++    body: body === undefined ? undefined : JSON.stringify(body),
++  });
++}
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 00000000..7d2cf01a
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,44 @@
++import { useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useUser } from './useSession';
++
++// Sign in by typing a name; there is no password.
++export function SignIn() {
++  const [, setUser] = useUser();
++  const [name, setName] = useState('');
++  const signIn = useMutation({
++    mutationFn: (n: string) => postJson<{ name: string }>('/api/signin', { name: n }),
++    onSuccess: (u) => setUser(u.name),
++  });
++
++  return (
++    <form
++      data-testid="signin-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        signIn.mutate(name);
++      }}
++    >
++      <label>
++        Name{' '}
++        <input
++          data-testid="signin-name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            signIn.reset();
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="signin-submit" disabled={signIn.isPending}>
++        Sign in
++      </button>
++      {signIn.isError && (
++        <p data-testid="signin-error" role="alert">
++          {signIn.error.message}
++        </p>
++      )}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/UserBar.tsx b/src/main/frontend/features/session/UserBar.tsx
+new file mode 100644
+index 00000000..ba5aa900
+--- /dev/null
++++ b/src/main/frontend/features/session/UserBar.tsx
+@@ -0,0 +1,14 @@
++import { useUser } from './useSession';
++
++// Who is signed in, and a way to sign out.
++export function UserBar() {
++  const [user, setUser] = useUser();
++  return (
++    <div data-testid="user-bar">
++      Signed in as <strong data-testid="current-user">{user}</strong>{' '}
++      <button type="button" data-testid="signout" onClick={() => setUser(undefined)}>
++        Sign out
++      </button>
++    </div>
++  );
++}
+diff --git a/src/main/frontend/features/session/useSession.ts b/src/main/frontend/features/session/useSession.ts
+new file mode 100644
+index 00000000..347105a9
+--- /dev/null
++++ b/src/main/frontend/features/session/useSession.ts
+@@ -0,0 +1,11 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The signed-in user and the active sheet live in the URL (search params `user` and `sheet`), so
++// each browser tab is its own session and every feature reads them directly.
++export function useUser() {
++  return useSearchParam('user', asString);
++}
++
++export function useSheetId() {
++  return useSearchParam('sheet', asString);
++}
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+new file mode 100644
+index 00000000..94c15972
+--- /dev/null
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -0,0 +1,56 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSheetId } from '../session/useSession';
++
++// Choose a sheet by typing its id and loading it. Loading drops everything cached for that sheet,
++// so the screen re-reads it from the store (an id never used before starts empty).
++export function SheetPicker() {
++  const [sheetId, setSheetId] = useSheetId();
++  const [input, setInput] = useState('');
++  const queryClient = useQueryClient();
++  const load = useMutation({
++    mutationFn: async (id: string) => {
++      if (id.trim() === '') throw new Error('Enter a sheet id');
++      return putJson<{ id: string }>(`/api/sheets/${encodeURIComponent(id.trim())}`);
++    },
++    onSuccess: (sheet) => {
++      queryClient.removeQueries({ queryKey: ['sheet', sheet.id] });
++      setSheetId(sheet.id);
++    },
++  });
++
++  return (
++    <div data-testid="sheet-bar">
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          load.mutate(input);
++        }}
++      >
++        <label>
++          Sheet{' '}
++          <input
++            data-testid="sheet-id-input"
++            value={input}
++            onChange={(e) => {
++              setInput(e.target.value);
++              load.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="sheet-load" disabled={load.isPending}>
++          Load
++        </button>
++      </form>
++      <p>
++        Active sheet: <strong data-testid="sheet-current-id">{sheetId}</strong>
++      </p>
++      {load.isError && (
++        <p data-testid="sheet-load-error" role="alert">
++          {load.error.message}
++        </p>
++      )}
++    </div>
++  );
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb03126..949c28c3 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,31 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { SignIn } from '../features/session/SignIn';
++import { UserBar } from '../features/session/UserBar';
++import { useSheetId, useUser } from '../features/session/useSession';
++import { SheetPicker } from '../features/sheet/SheetPicker';
++import { SheetBody } from '../slots/defs/sheetBody';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The one screen. Sign in first; then choose a sheet; then the sheet's features (the sheet.body
++// slot) work on that sheet. A page is a file under routes/ — `createFileRoute('<its url>')`.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  const [user] = useUser();
++  const [sheetId] = useSheetId();
++  if (!user) {
++    return <SignIn />;
++  }
++  return (
++    <>
++      <UserBar />
++      <SheetPicker />
++      {sheetId ? (
++        <SheetBody.Slot key={sheetId} sheetId={sheetId} user={user} />
++      ) : (
++        <p data-testid="home-empty">Load a sheet to begin.</p>
++      )}
++    </>
++  );
+ }
+diff --git a/src/main/frontend/slots/defs/sheetBody.ts b/src/main/frontend/slots/defs/sheetBody.ts
+new file mode 100644
+index 00000000..e8c37c03
+--- /dev/null
++++ b/src/main/frontend/slots/defs/sheetBody.ts
+@@ -0,0 +1,7 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The body of the screen once a user is signed in and a sheet is loaded. Every per-sheet feature
++ * fills it; its context is the active sheet id and the signed-in user.
++ */
++export const SheetBody = defineSlot<{ sheetId: string; user: string }>('sheet.body');
+diff --git a/src/main/java/net/officefloor/hq/app/BadRequestException.java b/src/main/java/net/officefloor/hq/app/BadRequestException.java
+new file mode 100644
+index 00000000..81387aba
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/BadRequestException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app;
++
++/** A request the app refuses; answered 400 with the message (see HandleBadRequest). */
++public class BadRequestException extends Exception {
++    public BadRequestException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/HandleBadRequest.java b/src/main/java/net/officefloor/hq/app/HandleBadRequest.java
+new file mode 100644
+index 00000000..8a836a97
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/HandleBadRequest.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app;
++
++import java.util.Map;
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleBadRequest {
++    public void handle(@Parameter BadRequestException ex,
++            ObjectResponse<ResponseEntity<Map<String, String>>> response) {
++        response.send(new ResponseEntity<>(Map.of("error", ex.getMessage()), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/RespondWithUser.java b/src/main/java/net/officefloor/hq/app/session/RespondWithUser.java
+new file mode 100644
+index 00000000..7679bae0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/RespondWithUser.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.session;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithUser {
++    public void respond(@Val UserResponse user, ObjectResponse<UserResponse> response) {
++        response.send(user);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/SignInRequest.java b/src/main/java/net/officefloor/hq/app/session/SignInRequest.java
+new file mode 100644
+index 00000000..c8bb76c5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/SignInRequest.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.session;
++
++public record SignInRequest(String name) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/UserResponse.java b/src/main/java/net/officefloor/hq/app/session/UserResponse.java
+new file mode 100644
+index 00000000..99fc59e8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/UserResponse.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.session;
++
++public record UserResponse(String name) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/session/ValidateSignIn.java b/src/main/java/net/officefloor/hq/app/session/ValidateSignIn.java
+new file mode 100644
+index 00000000..ffd9ec00
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/ValidateSignIn.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.session;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateSignIn {
++    public void validate(@RequestBody SignInRequest request, Out<UserResponse> user)
++            throws BadRequestException {
++        String name = request == null || request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) {
++            throw new BadRequestException("Enter a name to sign in");
++        }
++        user.set(new UserResponse(name));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/EnsureSheet.java b/src/main/java/net/officefloor/hq/app/sheet/EnsureSheet.java
+new file mode 100644
+index 00000000..d2c64921
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/EnsureSheet.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++
++public class EnsureSheet {
++    public void ensure(@Val SheetResponse sheet, SheetRepository repository) {
++        repository.ensure(sheet.id());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 00000000..a410439d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSheet {
++    public void respond(@Val SheetResponse sheet, ObjectResponse<SheetResponse> response) {
++        response.send(sheet);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+new file mode 100644
+index 00000000..914c32fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The sheets: a row per id ever loaded. */
++@Repository
++public class SheetRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SheetRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Create the sheet if its id was never used; an existing sheet is left as it is. */
++    public void ensure(String id) {
++        jdbc.update("MERGE INTO sheet (id) KEY (id) VALUES (?)", id);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+new file mode 100644
+index 00000000..158c563b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.sheet;
++
++public record SheetResponse(String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetId.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetId.java
+new file mode 100644
+index 00000000..09acd451
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetId.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class ValidateSheetId {
++    public void validate(@PathVariable("sheetId") String sheetId, Out<SheetResponse> sheet)
++            throws BadRequestException {
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (id.isEmpty() || id.length() > 200) {
++            throw new BadRequestException("Enter a sheet id");
++        }
++        sheet.set(new SheetResponse(id));
++    }
++}
+diff --git a/src/main/resources/db/migration/V1__sheet.sql b/src/main/resources/db/migration/V1__sheet.sql
+new file mode 100644
+index 00000000..01c1bf76
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__sheet.sql
+@@ -0,0 +1,6 @@
++-- A sheet: everything else in the app is kept per sheet. A row is created the first time its id
++-- is loaded, so a sheet that was never loaded before starts empty.
++CREATE TABLE sheet (
++    id         VARCHAR(200) PRIMARY KEY,
++    created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.BadRequestException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.BadRequestException.yml
+new file mode 100644
+index 00000000..5eea0c0c
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.BadRequestException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.HandleBadRequest
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
+new file mode 100644
+index 00000000..5aa2472f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.PUT.yml
+@@ -0,0 +1,11 @@
++# Load a sheet by id: an id never used before starts an empty sheet.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: ensure
++ensure:
++  class: net.officefloor.hq.app.sheet.EnsureSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/signin.POST.yml b/src/main/resources/officefloor/rest/api/signin.POST.yml
+new file mode 100644
+index 00000000..b0bbf9b5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/signin.POST.yml
+@@ -0,0 +1,6 @@
++# Sign in by name (no password): the trimmed name is the user every later change is recorded by.
++validate:
++  class: net.officefloor.hq.app.session.ValidateSignIn
++  next: respond
++respond:
++  class: net.officefloor.hq.app.session.RespondWithUser
