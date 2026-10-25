@@ -11,12 +11,13 @@ import { plansQueryKey, usePlans, type Plan } from './plans';
 // A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
 // claims it has made so far, its next five dates after the sheet's today and whether it is paused — and the form
 // that adds another. A bad amount, interval or day, both an interval and a day, or an end before the start, is
-// refused.
+// refused. A plan may name one of the sheet's descendants: its claims are then generated there, for the person of the
+// same name; a sheet that is not a descendant is refused.
 function PlansHeader() {
   return <th>Plans</th>;
 }
 
-const blank = { amount: '', start: '', every: '', day: '', end: '' };
+const blank = { amount: '', start: '', every: '', day: '', end: '', sheet: '' };
 
 // One plan, with its pause and resume buttons: pausing on the sheet's today skips its dates from then until it is
 // resumed. Pausing a paused plan, or resuming a running one, is refused. Its amount is an entry with a save button:
@@ -67,7 +68,8 @@ function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
       ) : (
         <>every <span data-testid="plan-every">{p.every}</span> days</>
       )}{' '}
-      to <span data-testid="plan-end">{p.end}</span>;
+      to <span data-testid="plan-end">{p.end}</span>
+      {p.sheet != null && <> on sheet <span data-testid="plan-sheet">{p.sheet}</span></>};
       made <span data-testid="plan-generated">{p.generated}</span>;
       next <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>;
       paused <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
@@ -123,6 +125,7 @@ function PersonPlans({ person }: { person: Person }) {
       <input data-testid="plan-form-every" placeholder="Every N days" {...field('every')} />
       <input data-testid="plan-form-day" placeholder="Or day of month 1-31" {...field('day')} />
       <input data-testid="plan-form-end" placeholder="End YYYY-MM-DD" {...field('end')} />
+      <input data-testid="plan-form-sheet" placeholder="On descendant sheet (optional)" {...field('sheet')} />
       <button
         type="button"
         data-testid="plan-form-submit"
@@ -134,7 +137,8 @@ function PersonPlans({ person }: { person: Person }) {
       {add.isError && rowAction.isLatest && (
         <span data-testid="plan-error">
           A plan needs an amount, 0.00 or more with up to two decimals, a start and an end date, the end not before the
-          start, and either every N days, a whole number of at least 1, or a day of the month from 1 to 31.
+          start, and either every N days, a whole number of at least 1, or a day of the month from 1 to 31; a sheet it names
+          must be one of this sheet's descendants.
         </span>
       )}
     </td>

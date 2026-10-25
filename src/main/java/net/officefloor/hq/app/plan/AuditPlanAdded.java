@@ -6,7 +6,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Records the plan, once it is added. */
+/** Records the plan, once it is added, with the sheet its claims are generated on at the end when it names one. */
 public class AuditPlanAdded {
     public void audit(@Val Plan plan, @Val Person person,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
@@ -14,6 +14,7 @@ public class AuditPlanAdded {
                 + " name=" + person.getName() + " amount=" + plan.getAmount().setScale(2).toPlainString()
                 + " start=" + plan.getStart()
                 + (plan.getDay() != null ? " day=" + plan.getDay() : " every=" + plan.getEvery())
-                + " end=" + plan.getEnd());
+                + " end=" + plan.getEnd()
+                + (plan.getTargetSheetId() == null ? "" : " sheet=" + plan.getTargetSheetId()));
     }
 }

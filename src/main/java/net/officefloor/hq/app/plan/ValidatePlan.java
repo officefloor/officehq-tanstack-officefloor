@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Reads the plan form from the body, trimmed: an amount of 0.00 or more with up to two decimals, a start and an end
  *  date, the end not before the start, and either every N days, a whole number of at least 1, or a day of the month,
- *  a whole number from 1 to 31 — not both. */
+ *  a whole number from 1 to 31 — not both — and a sheet id (blank for none). */
 public class ValidatePlan {
 
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
@@ -23,6 +23,7 @@ public class ValidatePlan {
         String amount = trim(request == null ? null : request.amount());
         String every = trim(request == null ? null : request.every());
         String day = trim(request == null ? null : request.day());
+        String sheet = trim(request == null ? null : request.sheet());
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidPlanException("The amount must be 0.00 or more with up to two decimals.");
         }
@@ -47,7 +48,8 @@ public class ValidatePlan {
         if (end.isBefore(start)) {
             throw new InvalidPlanException("The end must not be before the start.");
         }
-        body.set(new PlanInput(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end));
+        body.set(new PlanInput(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end,
+                sheet.isEmpty() ? null : sheet));
     }
 
     private static String trim(String field) {

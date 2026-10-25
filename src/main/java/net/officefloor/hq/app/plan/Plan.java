@@ -14,7 +14,8 @@ import java.util.List;
 import java.util.function.Predicate;
 
 /** A person's plan: an amount, a start date, either every N days (at least 1) or monthly on a day of the month (1 to
- *  31), and an end date (not before the start). */
+ *  31), an end date (not before the start), and the descendant sheet its claims are generated on (null for its own
+ *  sheet). */
 @Entity
 @Table(name = "plan")
 public class Plan {
@@ -44,11 +45,14 @@ public class Plan {
     @Column(name = "end_date", nullable = false)
     private LocalDate end;
 
+    @Column(name = "target_sheet_id")
+    private String targetSheetId;
+
     protected Plan() {
     }
 
     public Plan(String sheetId, Long personId, BigDecimal amount, LocalDate start, Integer every, Integer day,
-            LocalDate end) {
+            LocalDate end, String targetSheetId) {
         this.sheetId = sheetId;
         this.personId = personId;
         this.amount = amount;
@@ -56,6 +60,7 @@ public class Plan {
         this.every = every;
         this.day = day;
         this.end = end;
+        this.targetSheetId = targetSheetId;
     }
 
     /** The plan's dates, up to its end and the given day: the start then every N days, or for a monthly plan its day
@@ -124,5 +129,9 @@ public class Plan {
 
     public LocalDate getEnd() {
         return end;
+    }
+
+    public String getTargetSheetId() {
+        return targetSheetId;
     }
 }

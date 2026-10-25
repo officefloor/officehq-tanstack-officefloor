@@ -8,6 +8,6 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyPlan {
     public void apply(@Val PlanInput input, @Val Person person, PlanRepository plans, Out<Plan> planOut) {
         planOut.set(plans.saveAndFlush(new Plan(person.getSheetId(), person.getId(), input.amount(), input.start(),
-                input.every(), input.day(), input.end())));
+                input.every(), input.day(), input.end(), input.sheet())));
     }
 }

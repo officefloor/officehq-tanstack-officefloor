@@ -20,6 +20,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -30,13 +31,16 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * pause (on or after the day the plan was paused and before the day it was resumed), dated that day with an
  * empty note, by the claim form's rules: a date the form refuses is skipped, and tried again next time. Each claim is
  * recorded and logged as the claim form records and logs it. A viewer, who changes nothing, makes no claim and gets a
- * count of 0.
+ * count of 0. A plan naming a descendant sheet makes its claims there instead, for the person of the same name on that
+ * sheet (none when there is no such person, or the sheet is gone), by that sheet's rules and recorded in its audit; its
+ * dates still run up to this sheet's today.
  */
 public class GeneratePlans {
     public void generate(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made, PlanPauseRepository pauses,
             PersonRepository people,
             ClaimRepository claims, PeriodRepository periods, PersonGradeRepository grades, RateRepository rates,
             ClaimLogRepository log, HolidayRepository holidays, RoleRepository roles,
+            SheetRepository sheets,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<GeneratedPlans> madeOut) {
         String by = AuditUser.decode(user);
@@ -47,6 +51,14 @@ public class GeneratePlans {
         }
         for (Plan plan : plans.findBySheetIdOrderByIdAsc(sheet.getId())) {
             Person person = people.findByIdAndSheetId(plan.getPersonId(), sheet.getId()).orElse(null);
+            Sheet on = sheet;
+            if (person != null && plan.getTargetSheetId() != null) {
+                on = sheets.findById(plan.getTargetSheetId()).orElse(null);
+                String name = person.getName();
+                person = on == null ? null
+                        : people.findBySheetIdAndNameIgnoreCase(on.getId(), name).stream()
+                                .filter(p -> p.getName().equals(name)).findFirst().orElse(null);
+            }
             if (person == null) {
                 continue;
             }
@@ -58,7 +70,7 @@ public class GeneratePlans {
                 }
                 Claim claim;
                 try {
-                    claim = ClaimRules.make(new ClaimInput(plan.getAmount(), date, "", null, null, null), sheet,
+                    claim = ClaimRules.make(new ClaimInput(plan.getAmount(), date, "", null, null, null), on,
                             person, claims, periods, grades, holidays);
                 } catch (InvalidClaimException e) {
                     continue;
@@ -66,7 +78,7 @@ public class GeneratePlans {
                 claim = claims.saveAndFlush(claim);
                 made.saveAndFlush(new PlanClaim(plan.getId(), date, claim.getId()));
                 ClaimRules.auditAdded(claim, person.getName(), by, audit);
-                ClaimRules.log(claim, sheet, log, people, rates, grades, by);
+                ClaimRules.log(claim, on, log, people, rates, grades, by);
                 count++;
             }
         }

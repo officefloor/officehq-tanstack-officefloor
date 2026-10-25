@@ -211,7 +211,9 @@ public class ApplyTransfer {
             theirs.forEach(c -> here.addDepartedTags(c.getTagsUsed()));
             sheets.save(here);
         }
-        // Plans go with them, each keeping the claims it made (now their copies), its pauses and its amount changes.
+        // Plans go with them, each keeping the claims it made (now their copies), its pauses and its amount changes,
+        // and the sheet it generates on while that is still a descendant of the sheet they arrive on.
+        java.util.Set<String> below = sheets.descendantsOf(to);
         Map<Long, Long> copyIds = new HashMap<>();
         copies.forEach((claim, copy) -> copyIds.put(claim.getId(), copy.getId()));
         for (net.officefloor.hq.app.plan.Plan plan : plans.findBySheetIdOrderByIdAsc(sheetId)) {
@@ -219,7 +221,8 @@ public class ApplyTransfer {
                 continue;
             }
             net.officefloor.hq.app.plan.Plan moved = plans.saveAndFlush(new net.officefloor.hq.app.plan.Plan(to,
-                    arrivedId, plan.getAmount(), plan.getStart(), plan.getEvery(), plan.getDay(), plan.getEnd()));
+                    arrivedId, plan.getAmount(), plan.getStart(), plan.getEvery(), plan.getDay(), plan.getEnd(),
+                    below.contains(plan.getTargetSheetId()) ? plan.getTargetSheetId() : null));
             List<net.officefloor.hq.app.plan.PlanClaim> made = planClaims.findByPlanId(plan.getId());
             for (net.officefloor.hq.app.plan.PlanClaim m : made) {
                 Long copyId = copyIds.get(m.getClaimId());
