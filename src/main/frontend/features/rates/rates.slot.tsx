@@ -8,7 +8,7 @@ import { counts, useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
-import { dueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
+import { claimDueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 const GRADES = ['A', 'B', 'C'] as const;
@@ -26,17 +26,6 @@ function useRateByGrade(sheetId: string): Map<string, bigint> {
     if (r) byGrade.set(g, toHundredths(r.rate));
   }
   return byGrade;
-}
-
-/** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
- *  otherwise its amount times its person's grade's rate
- *  in force on the claim's date, rounded half to even. Null when there is no figure (no rate of the grade then). */
-function claimDueCents(rates: readonly Rate[], grade: string | undefined,
-  claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null }): bigint | null {
-  if (claim.settledDue != null) return toHundredths(claim.settledDue);
-  if (claim.stated) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
-  const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
-  return found === undefined ? null : dueCents(toHundredths(claim.amount), toHundredths(found.rate));
 }
 
 /** A person's due-total in cents: their counted claims' already-rounded figures added up (0 with none). Null when

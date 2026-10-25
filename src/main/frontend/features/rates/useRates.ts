@@ -55,3 +55,14 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint): bigint {
   if (rest > 5000n || (rest === 5000n && whole % 2n === 1n)) return whole + 1n;
   return whole;
 }
+
+/** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
+ *  otherwise its amount times its person's grade's rate
+ *  in force on the claim's date, rounded half to even. Null when there is no figure (no rate of the grade then). */
+export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
+  claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null }): bigint | null {
+  if (claim.settledDue != null) return toHundredths(claim.settledDue);
+  if (claim.stated) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
+  const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
+  return found === undefined ? null : dueCents(toHundredths(claim.amount), toHundredths(found.rate));
+}
