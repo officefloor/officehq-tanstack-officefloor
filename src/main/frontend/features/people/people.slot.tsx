@@ -10,15 +10,22 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
- *  is retired from; set at all, they count as retired. `held`: whether they are on hold, when their OPEN and PENDING claims
- *  count in no live total. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
+ *  is retired from; set at all, they count as retired. `held`: whether they have any hold; `holds`: their holds, in the order
+ *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
  *  the beginning of time). */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
+  holds: HoldSpan[];
   patrons: string[] };
 
 export type GradeFrom = { grade: string; from: string | null };
+
+/** A hold from its from-date to its to-date (yyyy-mm-dd, both inclusive; null: open at that end). */
+export type HoldSpan = { from: string | null; to: string | null };
+
+/** Each person's holds, by person id. */
+export type Holds = ReadonlyMap<number, HoldSpan[]>;
 
 /** The person's grade in force on a date (yyyy-mm-dd): the one with the latest from-date on or before it, none
  *  counting as the earliest. Undefined without a person. */
@@ -44,10 +51,10 @@ export function usePeople(sheetId: string) {
   });
 }
 
-/** The ids of the people on hold: their OPEN claims count in no live total. */
-export function useHeld(sheetId: string): ReadonlySet<number> {
+/** Each person's holds: their OPEN claims dated within one, unless a statement binds them, count in no live total. */
+export function useHeld(sheetId: string): Holds {
   const people = usePeople(sheetId);
-  return useMemo(() => new Set((people.data ?? []).filter((p) => p.held).map((p) => p.id)), [people.data]);
+  return useMemo(() => new Map((people.data ?? []).map((p) => [p.id, p.holds ?? []])), [people.data]);
 }
 
 /** Which person's editor is open (search param `editPerson`); none means the form adds. */

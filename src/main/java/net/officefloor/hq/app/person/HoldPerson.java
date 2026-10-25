@@ -1,16 +1,26 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Puts the person on hold or takes them off it; refuses when they are in that state already. */
+/** Adds a hold to the person, from its from-date (blank: the sheet's today) to its to-date; refuses one ending before it starts. */
 public class HoldPerson {
-    public void hold(@Val HoldInput input, @Val Person person, PersonRepository repository)
-            throws BadRequestException {
-        if (person.isHeld() == input.held() || !repository.hold(person.getId(), input.held())) {
-            throw new BadRequestException(input.held() ? "That person is already on hold; reload the sheet"
-                    : "That person is not on hold; reload the sheet");
+    public void hold(@Val HoldInput input, @Val Person person, PersonRepository repository, SheetRepository sheets,
+            Out<HoldSpan> added) throws BadRequestException {
+        LocalDate from = input.from() != null ? input.from() : sheets.today(person.getSheetId());
+        if (input.to() != null && input.to().isBefore(from)) {
+            throw new BadRequestException("A hold's to-date cannot be before its from-date");
         }
-        person.setHeld(input.held());
+        HoldSpan hold = new HoldSpan(from, input.to());
+        repository.addHold(person.getId(), hold);
+        List<HoldSpan> holds = new ArrayList<>(person.getHolds());
+        holds.add(hold);
+        person.setHolds(holds);
+        added.set(hold);
     }
 }

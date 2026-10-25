@@ -3,9 +3,9 @@ package net.officefloor.hq.app.person;
 import java.util.List;
 
 /** A person, with the grade in force on the sheet's today and every grade they were given (each from its from-date), their statement count and their last statement's due-total ("n/a" when it had none) and date
- *  (both null before their first statement), the date they are retired from (null: not retired), whether they are on hold, and their patrons' names, sorted. */
+ *  (both null before their first statement), the date they are retired from (null: not retired), whether they have any hold and their holds (in the order added), and their patrons' names, sorted. */
 public record PersonResponse(long id, String name, String grade, List<GradeResponse> grades, long version, int statementCount, String statedTotal,
-        String statementDate, String retiredFrom, boolean held,
+        String statementDate, String retiredFrom, boolean held, List<HoldResponse> holds,
         List<String> patrons) {
     public static PersonResponse from(Person person) {
         Statements s = person.getStatements();
@@ -14,6 +14,7 @@ public record PersonResponse(long id, String name, String grade, List<GradeRespo
                 s.count() == 0 ? null : s.lastDueTotal() == null ? "n/a" : s.lastDueTotal().toPlainString(),
                 s.lastDate() == null ? null : s.lastDate().toString(),
                 person.getRetiredFrom() == null ? null : person.getRetiredFrom().toString(), person.isHeld(),
+                person.getHolds().stream().map(HoldResponse::from).toList(),
                 person.getPatrons());
     }
 }

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import type { Holds } from '../people/people.slot';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
@@ -21,10 +22,13 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The claim's status log, oldest first: `<STATUS> by <user> on <date> due=<due>`. */
   log: string[] };
 
-/** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and a held
- *  person's (`held`: the ids of the people on hold) OPEN and PENDING claims do not. */
-export function counts(claim: { status: ClaimStatus; personId: number }, held: ReadonlySet<number>): boolean {
-  if (claim.status === 'OPEN' || claim.status === 'PENDING') return !held.has(claim.personId);
+/** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
+ *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it. */
+export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean }, held: Holds): boolean {
+  if (claim.status === 'OPEN' || claim.status === 'PENDING') {
+    return claim.stated || !(held.get(claim.personId) ?? []).some((h) =>
+      (h.from === null || h.from <= claim.date) && (h.to === null || claim.date <= h.to));
+  }
   return claim.status === 'SETTLED';
 }
 
@@ -45,7 +49,7 @@ export function useEditingClaim() {
 }
 
 /** The counted claims' amounts added up exactly, in cents, shown with two decimals. */
-export function sumAmounts(claims: Claim[], held: ReadonlySet<number>): string {
+export function sumAmounts(claims: Claim[], held: Holds): string {
   const cents = claims.filter((c) => counts(c, held)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

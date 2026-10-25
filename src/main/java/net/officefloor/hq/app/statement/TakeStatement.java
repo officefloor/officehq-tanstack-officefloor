@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.Statements;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -34,8 +35,8 @@ public class TakeStatement {
         boolean kept = false;
         int counted = 0;
         for (Claim c : mine) {
-            // A held person's OPEN and PENDING claims do not count; their SETTLED ones still do.
-            if (!c.getStatus().counts() || (person.isHeld() && c.getStatus().isOpen())) {
+            // OPEN and PENDING claims dated within a hold do not count, unless the last statement bound them.
+            if (!c.getStatus().counts() || Rollup.held(c, person)) {
                 claims.bind(c.getId(), false, null);
                 continue;
             }

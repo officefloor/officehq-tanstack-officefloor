@@ -25,7 +25,8 @@ import org.springframework.stereotype.Service;
  * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor;
  * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
  * figure or one at another grade. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
- * sheet's totals moved. A held person's OPEN and PENDING claims count in none of these; their SETTLED claims still do.
+ * sheet's totals moved. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
+ * binds them; their other claims still do.
  */
 @Service
 public class Rollup {
@@ -63,7 +64,7 @@ public class Rollup {
             BigDecimal due = ZERO;
             boolean kept = false;
             for (Claim c : sheetClaims) {
-                if (c.getPersonId() != p.getId() || !counts(c, p.isHeld())) {
+                if (c.getPersonId() != p.getId() || !counts(c, p)) {
                     continue;
                 }
                 claimed = claimed.add(c.getAmount().setScale(2));
@@ -101,7 +102,7 @@ public class Rollup {
         BigDecimal total = ZERO;
         for (Claim c : claims.list(sheetId)) {
             Person p = byId.get(c.getPersonId());
-            if (p == null || !counts(c, p.isHeld()) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
+            if (p == null || !counts(c, p) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
                 continue;
             }
             BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, floor, late));
@@ -142,9 +143,15 @@ public class Rollup {
         lines.forEach(audit::record);
     }
 
-    /** Whether the claim counts in the live totals: a held person's OPEN and PENDING claims do not; their SETTLED ones do. */
-    private static boolean counts(Claim claim, boolean held) {
-        return claim.getStatus().counts() && !(held && claim.getStatus().isOpen());
+    /** Whether the claim counts in the live totals: its person's OPEN and PENDING claims dated within a hold do not,
+     *  unless a statement binds them; their other ones do. */
+    private static boolean counts(Claim claim, Person person) {
+        return claim.getStatus().counts() && !held(claim, person);
+    }
+
+    /** Whether a hold leaves the claim out: it is OPEN or PENDING, unbound, and dated within one of its person's holds. */
+    public static boolean held(Claim claim, Person person) {
+        return claim.getStatus().isOpen() && !claim.isBound() && person.heldOn(claim.getDate());
     }
 
     private static String show(BigDecimal figure) {

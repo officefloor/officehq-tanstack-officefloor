@@ -14,7 +14,7 @@ public class Person {
     private long version;
     private Statements statements = Statements.NONE;
     private LocalDate retiredFrom;
-    private boolean held;
+    private List<HoldSpan> holds = List.of();
     private List<String> patrons = List.of();
 
     public Person(long id, String sheetId, String name, String grade, long version) {
@@ -103,13 +103,24 @@ public class Person {
         return retiredFrom != null;
     }
 
-    /** Whether the person is on hold: their OPEN and PENDING claims then count in no live total. */
+    /** Whether the person has any hold. */
     public boolean isHeld() {
-        return held;
+        return !holds.isEmpty();
     }
 
-    public void setHeld(boolean held) {
-        this.held = held;
+    /** The person's holds, in the order they were added. */
+    public List<HoldSpan> getHolds() {
+        return holds;
+    }
+
+    public void setHolds(List<HoldSpan> holds) {
+        this.holds = holds;
+    }
+
+    /** Whether a hold covers the date: the person's OPEN and PENDING claims dated then, unless a statement binds them,
+     *  count in no live total. */
+    public boolean heldOn(LocalDate on) {
+        return holds.stream().anyMatch(h -> h.covers(on));
     }
 
     /** The names of the person's patrons, sorted. */

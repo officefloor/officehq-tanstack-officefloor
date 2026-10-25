@@ -1,5 +1,5 @@
 package net.officefloor.hq.app.person;
 
-/** Whether to put the person on hold (true) or take them off it (false), and the signed-in user (`by`) doing it. */
-public record HoldRequest(Boolean held, String by) {
+/** A hold to add: its from-date (blank: the sheet's today), its to-date (blank: open-ended), and the signed-in user (`by`) adding it. */
+public record HoldRequest(String from, String to, String by) {
 }

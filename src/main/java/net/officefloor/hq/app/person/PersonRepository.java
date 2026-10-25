@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.held,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -30,7 +30,6 @@ public class PersonRepository {
         person.setStatements(new Statements(rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
                 rs.getObject("statement_date", LocalDate.class)));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
-        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -121,9 +120,11 @@ public class PersonRepository {
                 java.sql.Date.valueOf(from), id) == 1;
     }
 
-    /** Put the person on hold, or take them off it; false (nothing written) when they were in that state already. */
-    public boolean hold(long id, boolean held) {
-        return jdbc.update("UPDATE person SET held = ? WHERE id = ? AND held = ?", held, id, !held) == 1;
+    /** Add a hold to the person. */
+    public void addHold(long personId, HoldSpan hold) {
+        jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) VALUES (?, ?, ?)", personId,
+                hold.from() == null ? null : java.sql.Date.valueOf(hold.from()),
+                hold.to() == null ? null : java.sql.Date.valueOf(hold.to()));
     }
 
     /** Name the patron as the person's patron; false (nothing written) when they are one already. */
@@ -137,7 +138,7 @@ public class PersonRepository {
         }
     }
 
-    /** Sets each person's patrons' names, sorted, and their grades. */
+    /** Sets each person's patrons' names, sorted, their grades and their holds. */
     private List<Person> withPatrons(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return people;
@@ -150,6 +151,16 @@ public class PersonRepository {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
         for (Person person : people) {
             person.setGrades(grades.getOrDefault(person.getId(), List.of()));
+        }
+        Map<Long, List<HoldSpan>> holds = jdbc.query(
+                "SELECT h.person_id, h.from_date, h.to_date FROM person_hold h JOIN person q ON q.id = h.person_id"
+                        + " WHERE q.sheet_id = ? ORDER BY h.id",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), new HoldSpan(rs.getObject("from_date", LocalDate.class),
+                        rs.getObject("to_date", LocalDate.class))), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setHolds(holds.getOrDefault(person.getId(), List.of()));
         }
         Map<Long, List<String>> patrons = jdbc.query(
                 "SELECT pp.person_id, q.name FROM person_patron pp JOIN person q ON q.id = pp.patron_id"
