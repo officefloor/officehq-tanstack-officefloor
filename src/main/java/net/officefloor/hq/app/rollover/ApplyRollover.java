@@ -37,12 +37,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * twelve periods exactly as the fiscal year generator does (PERIOD_ADDED each), adds each person's open figure to
  * their opening balance for the new year's first period (OPENING_SET each with a figure other than zero, in list
  * order) and records
- * ROLLOVER fy=FY&lt;old year&gt; periods=&lt;made&gt;.
+ * ROLLOVER fy=FY&lt;old year&gt; periods=&lt;made&gt;. Keeps what it did as the sheet's last rollover (replacing any
+ * earlier one), so the steward who made it can undo it on the same sheet-today. Rolling over again the year the last
+ * rollover (not undone) was of carries no opening balance a second time.
  */
 public class ApplyRollover {
     public void apply(@Val RolloverRequest request, @Val Sheet sheet, PeriodRepository periods, ClaimRepository claims,
             PersonRepository people, RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log,
-            @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RolledOver> rolledOut)
+            LastRolloverRepository lastRollovers, @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RolledOver> rolledOut)
             throws InvalidRolloverException {
         String by = AuditUser.decode(user);
         int year = Integer.parseInt(request.year());
@@ -82,6 +84,7 @@ public class ApplyRollover {
         YearMonth newFirst = oldFirst.plusMonths(12);
         GeneratedPeriods made = MonthlyPeriods.generate(sheet, newFirst, newFirst.plusMonths(11), periods);
         List<String> records = new ArrayList<>();
+        List<LastRollover.Opening> openings = new ArrayList<>();
         for (Period period : made.periods()) {
             records.add("PERIOD_ADDED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
                     + " from=" + period.getFromDate() + " to=" + period.getToDate());
@@ -90,18 +93,27 @@ public class ApplyRollover {
         Period first = periods.findBySheetIdOrderByFromDateAscIdAsc(sheet.getId()).stream()
                 .filter(p -> !p.getFromDate().isBefore(newStart) && p.getFromDate().isBefore(newEnd))
                 .findFirst().orElse(null);
-        if (first != null) {
+        LastRollover earlier = lastRollovers.findById(sheet.getId()).orElse(null);
+        boolean carried = earlier != null && earlier.getFiscalYear().equals(request.year());
+        if (first != null && !carried) {
             for (Person person : listed) {
                 BigDecimal amount = open.get(person.getId()).setScale(2);
                 if (amount.signum() == 0) {
                     continue;
                 }
                 first.addOpening(person.getId(), amount);
+                openings.add(new LastRollover.Opening(first.getId(), person.getId(), amount));
                 records.add("OPENING_SET sheet=" + sheet.getId() + " by=" + by + " name=" + person.getName()
                         + " period=" + first.getName() + " amount=" + amount.toPlainString());
             }
             periods.saveAndFlush(first);
         }
+        if (earlier != null) {
+            lastRollovers.delete(earlier);
+            lastRollovers.flush();
+        }
+        lastRollovers.saveAndFlush(new LastRollover(sheet.getId(), by, sheet.getToday(), request.year(),
+                made.periods().stream().map(Period::getId).toList(), openings));
         records.add("ROLLOVER sheet=" + sheet.getId() + " by=" + by + " fy=FY" + request.year()
                 + " periods=" + made.periods().size());
         records.forEach(audit::record);

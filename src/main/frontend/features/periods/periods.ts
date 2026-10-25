@@ -37,6 +37,9 @@ export const periodsGenerateQuartersPath = (sheetId: string) => `/api/sheets/${e
 /** Rolls a fiscal year over: generates the next one's periods and carries each person's open figure into its first. */
 export const rolloverPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rollover`;
 
+/** Undoes the sheet's last rollover: removes the periods it generated and takes back the opening balances it set. */
+export const rolloverUndoPath = (sheetId: string) => `${rolloverPath(sheetId)}/undo`;
+
 /** Pastes opening balances: lines of name,period,amount. */
 export const openingsImportPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/import-openings`;
 
