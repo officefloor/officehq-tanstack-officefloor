@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { poolsPath, poolsQueryKey, usePools, type Pool } from './pools';
 
-// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced, and their cut at the end of each period ended by the sheet's today), total share and whether it is balanced, and the entry that adds a pool.
+// The sheet's pools, each with its members (with their cut of the pot when the pool is balanced, and their cut for each period ended by the sheet's today, or closed or soft-closed: the cut fixed on closing), total share and whether it is balanced, and the entry that adds a pool.
 // A blank name, or one already a pool's or a crew's, is refused by the server and shows the error beside the entry, which goes
 // as soon as the entry changes.
 function Pools() {

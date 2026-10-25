@@ -6,7 +6,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Reopens a closed or soft-closed period, so its due-total is live again. Only a role the sheet's permission matrix allows to
+/** Reopens a closed or soft-closed period, so its due-total and each pool member's cut for it are live again. Only a role the sheet's permission matrix allows to
  *  reopen may (a steward, by the standing rule); refuses a period
  *  that is not closed, or that is locked. */
 public class ReopenPeriod {

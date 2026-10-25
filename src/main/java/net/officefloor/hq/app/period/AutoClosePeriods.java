@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.history.HistoryRecorder;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -21,7 +22,7 @@ public class AutoClosePeriods {
     public void close(@Val Sheet sheet, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
             RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, RoleRepository roles,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
-            HistoryRecorder history) {
+            HistoryRecorder history, AsOf asOf) {
         Integer grace = sheet.getGraceDays();
         if (grace == null) {
             return;
@@ -32,7 +33,7 @@ public class AutoClosePeriods {
                 .sorted(Comparator.comparing(Period::getToDate).thenComparing(Period::getId))
                 .toList();
         for (Period period : due) {
-            ClosePeriod.fix(period, repository, sheet, claims, people, rates, grades, log);
+            ClosePeriod.fix(period, repository, sheet, claims, people, rates, grades, log, asOf);
             history.recordOn(period, period.getToDate());
             repository.saveAndFlush(period);
             audit.record("PERIOD_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()

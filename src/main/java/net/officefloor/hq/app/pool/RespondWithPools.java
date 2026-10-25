@@ -37,8 +37,10 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
  *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
  *  sheet is left out (as are the pools, members and crews not then made). Each crew is also a pool, listed after them
- *  (see crewPool). Each member also has, for each period whose to-date is on or before the sheet's today (by
- *  from-date), its cut as the sheet stood at the end of that period, that day its today: "" when it had none. */
+ *  (see crewPool). Each member also has, for each period whose to-date is on or before the sheet's today or that is
+ *  closed or soft-closed (by from-date), its cut for that period: for a closed or soft-closed one, the cut fixed when
+ *  it was closed (see PoolCuts); otherwise as the sheet stood at the end of that period, that day its today: "" when
+ *  it had none. */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
@@ -48,17 +50,16 @@ public class RespondWithPools {
         LocalDate date = AsOf.dateOf(asOfParam);
         Sheet sheet = asOf.sheet(current, date);
         List<PoolResponse> shown = poolsAsOf(current, date, asOf);
-        // Each period ended by the sheet's today: every member's cut as the sheet stood at the end of it.
+        // Each closed (or soft-closed) period: every member's cut fixed on closing. Each other period ended by the
+        // sheet's today: every member's cut as the sheet stood at the end of it.
         List<Period> ended = asOf.periods(current.getId(), date).stream()
-                .filter(p -> sheet.getToday() != null && p.getToDate() != null && !p.getToDate().isAfter(sheet.getToday()))
+                .filter(p -> p.isClosed() || p.isSoftClosed() || (sheet.getToday() != null && p.getToDate() != null
+                        && !p.getToDate().isAfter(sheet.getToday())))
                 .toList();
         Map<String, Map<String, String>> cutsThen = new HashMap<>();
         for (Period period : ended) {
-            Map<String, String> then = new HashMap<>();
-            for (PoolResponse pool : poolsAsOf(current, period.getToDate(), asOf)) {
-                pool.members().forEach(m -> then.put(memberKey(pool, m), m.cut()));
-            }
-            cutsThen.put(period.getName(), then);
+            cutsThen.put(period.getName(), period.isClosed() || period.isSoftClosed()
+                    ? period.getPoolCuts() : cutsOf(poolsAsOf(current, period.getToDate(), asOf)));
         }
         List<PoolResponse> out = new ArrayList<>();
         for (PoolResponse pool : shown) {
@@ -76,13 +77,22 @@ public class RespondWithPools {
         response.send(out);
     }
 
+    /** Each pool member's cut in the pools, by the member of the pool it is ("" for none). */
+    static Map<String, String> cutsOf(List<PoolResponse> pools) {
+        Map<String, String> cuts = new HashMap<>();
+        for (PoolResponse pool : pools) {
+            pool.members().forEach(m -> cuts.put(memberKey(pool, m), m.cut()));
+        }
+        return cuts;
+    }
+
     /** The member of the pool it is: the pool's id with the person, or the member pool. */
     private static String memberKey(PoolResponse pool, PoolResponse.Member m) {
         return pool.id() + (m.poolId() != null ? ":pool:" + m.poolId() : ":person:" + m.personId());
     }
 
     /** The sheet's pools, then its crews, as they stood at the end of the date (now, when none). */
-    private static List<PoolResponse> poolsAsOf(Sheet current, LocalDate date, AsOf asOf) {
+    static List<PoolResponse> poolsAsOf(Sheet current, LocalDate date, AsOf asOf) {
         Sheet sheet = asOf.sheet(current, date);
         Map<Long, Person> byId = asOf.people(current.getId(), date).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));

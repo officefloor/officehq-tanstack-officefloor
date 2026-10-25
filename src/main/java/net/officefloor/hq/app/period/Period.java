@@ -73,6 +73,14 @@ public class Period {
     @Column(name = "carried", precision = 19, scale = 2)
     private Map<Long, BigDecimal> personCarried = new HashMap<>();
 
+    /** Each pool member's cut fixed when the period was closed (or soft-closed), by the member of the pool it is ("" for
+     *  none); empty while it is open. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "period_pool_cut", joinColumns = @JoinColumn(name = "period_id"))
+    @MapKeyColumn(name = "member_key")
+    @Column(name = "cut", nullable = false)
+    private Map<String, String> poolCuts = new HashMap<>();
+
     /** Each person's opening balance for the period, by person id, added to their carried figure for it; kept while closed
      *  and reopened, though a closed period's fixed carried figures do not change. */
     @ElementCollection(fetch = FetchType.EAGER)
@@ -148,6 +156,16 @@ public class Period {
         return personCarried;
     }
 
+    public Map<String, String> getPoolCuts() {
+        return poolCuts;
+    }
+
+    /** Fixes each pool member's cut for the period as it is now (on closing or soft-closing). */
+    public void fixPoolCuts(Map<String, String> poolCuts) {
+        this.poolCuts.clear();
+        this.poolCuts.putAll(poolCuts);
+    }
+
     public Map<Long, BigDecimal> getPersonOpening() {
         return personOpening;
     }
@@ -184,13 +202,14 @@ public class Period {
         this.closedTotal = personTotals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 
-    /** Reopens the period, so its due-total and each person's figures for it are live again. */
+    /** Reopens the period, so its due-total, each person's figures and each pool member's cut for it are live again. */
     public void reopen() {
         this.closed = false;
         this.softClosed = false;
         this.closedTotal = null;
         this.personTotals.clear();
         this.personCarried.clear();
+        this.poolCuts.clear();
     }
 
     /** Whether a date falls in this period (inclusive). */

@@ -10,6 +10,8 @@ import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.history.AsOf;
+import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrade;
@@ -23,13 +25,13 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** Closes the period, fixing each person's due-total for it as it is now — the dues (with any late charge, as shown now) of the claims whose due-by falls in it that counted by the status they had at the end of its last day (not a person's
+/** Closes the period, fixing each person's due-total for it as it is now (and each pool member's cut for it as it is now) — the dues (with any late charge, as shown now) of the claims whose due-by falls in it that counted by the status they had at the end of its last day (not a person's
  *  unbound OPEN ones dated within a hold of theirs), added up, skipping n/a, 0.00 for one with none — and its own, their sum. Each person's carried figure for it is fixed as it is now too. A soft-closed period can be closed, fixing them afresh. Refuses a period already closed, and a close by a role the sheet's permission matrix does not
  *  allow to (by the standing rule, clerk and steward may). */
 public class ClosePeriod {
     public void close(@Val Period period, PeriodRepository repository, ClaimRepository claims, PersonRepository people,
             RateRepository rates, SheetRepository sheets, PersonGradeRepository grades, ClaimLogRepository log,
-            RoleRepository roles, @RequestHeader(name = "X-User", required = false) String user) throws InvalidPeriodException {
+            RoleRepository roles, AsOf asOf, @RequestHeader(name = "X-User", required = false) String user) throws InvalidPeriodException {
         Sheet sheet = sheets.findById(period.getSheetId()).orElseGet(() -> new Sheet(period.getSheetId()));
         String role = roles.roleOf(period.getSheetId(), AuditUser.decode(user));
         if (!sheet.allows("close", role)) {
@@ -38,15 +40,17 @@ public class ClosePeriod {
         if (period.isClosed()) {
             throw new InvalidPeriodException("The period is already closed.");
         }
-        fix(period, repository, sheet, claims, people, rates, grades, log);
+        fix(period, repository, sheet, claims, people, rates, grades, log, asOf);
         repository.saveAndFlush(period);
     }
 
-    /** Closes the period on the sheet, fixing each person's due-total and carried figure for it as they are now (see above). */
+    /** Closes the period on the sheet, fixing each person's due-total and carried figure for it, and each pool
+     *  member's cut, as they are now (see above). */
     static void fix(Period period, PeriodRepository repository, Sheet sheet, ClaimRepository claims, PersonRepository people,
-            RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log) {
+            RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log, AsOf asOf) {
         period.close(totals(period, sheet, claims, people, rates, grades, log),
                 carried(period, repository, sheet, claims, people, rates, grades, log));
+        period.fixPoolCuts(PoolCuts.live(sheet, asOf));
     }
 
     /** Each person's carried figure for the period as it is now, by person id: the dues (with any late charge, as shown
