@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 
 export type Person = { id: number; name: string; grade: string };
 
@@ -106,7 +107,7 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
 }
 
 // The people on the sheet, in the order they were added, and the form that adds or edits them.
-function PeoplePanel({ sheetId }: { sheetId: string; user: string }) {
+function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => p.id === editingId);
@@ -125,6 +126,7 @@ function PeoplePanel({ sheetId }: { sheetId: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <PersonHeads.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
         </thead>
@@ -133,6 +135,7 @@ function PeoplePanel({ sheetId }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <PersonCells.Slot sheetId={sheetId} user={user} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                   Edit
