@@ -99,6 +99,8 @@ public class ValidateSettings {
             wholeNumber(changes, Sheet.SCORE_MID, request.scoreMid(), "The mid score threshold must be a whole number, or blank.");
             wholeNumber(changes, Sheet.SCORE_HIGH, request.scoreHigh(), "The high score threshold must be a whole number, or blank.");
             onOrBlank(changes, Sheet.SCORE_LOG, request.scoreLog(), "The score log must be on, or blank.");
+            undatedDays(changes, Sheet.MAX_OPEN, request.maxOpen(),
+                    "The maximum of open claims must be a whole number, 0 or more, or blank.");
         }
         body.set(new SettingsInput(changes));
     }

@@ -33,6 +33,9 @@ public class Sheet {
     /** The key of the escalation gap: undated, a whole number of days (null: off). */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** The key of the maximum of open claims per person: undated, a whole number (null: none). */
+    public static final String MAX_OPEN = "max-open";
+
     /** The key of the review SLA: undated, a whole number of days (null: none). */
     public static final String REVIEW_SLA = "review-sla";
     public static final String SCORE_MID = "score-mid";
@@ -328,6 +331,13 @@ public class Sheet {
     public Integer getEscalateAfter() {
         String days = valueOn(ESCALATE_AFTER, today);
         return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** The maximum of open claims per person: opening a claim is refused when its person already has this many
+     *  OPEN or PENDING claims. Not dated; null when none. */
+    public Integer getMaxOpen() {
+        String max = valueOn(MAX_OPEN, today);
+        return max == null ? null : Integer.valueOf(max);
     }
 
     /** The review SLA: a REVIEW claim whose review day plus this many days is before the sheet's today is late.

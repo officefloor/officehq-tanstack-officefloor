@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
 import { ratesQueryKey } from '../rates/rates';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | PermKey;
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'maxOpen' | PermKey;
 
 /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
  *  Not dated. */
@@ -119,6 +119,7 @@ function SheetSettings() {
     scoreMid: settings.data?.scoreMid ?? '',
     scoreHigh: settings.data?.scoreHigh ?? '',
     scoreLog: settings.data?.scoreLog ?? '',
+    maxOpen: settings.data?.maxOpen ?? '',
     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
@@ -227,6 +228,10 @@ function SheetSettings() {
       <p>
         Score log (on or blank: off):{' '}
         <span data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</span>
+      </p>
+      <p>
+        Maximum open claims per person (blank: none):{' '}
+        <span data-testid="setting-max-open-current">{settings.data?.maxOpen ?? ''}</span>
       </p>
       <p>
         Proof kinds (blank: none):{' '}
@@ -463,6 +468,15 @@ function SheetSettings() {
           onChange={edit('scoreLog')}
           onInput={edit('scoreLog')}
           onFocus={touch('scoreLog')}
+        />
+        <input
+          data-testid="setting-max-open"
+          placeholder="Maximum open claims per person (blank: none)"
+          inputMode="numeric"
+          value={valueOf('maxOpen')}
+          onChange={edit('maxOpen')}
+          onInput={edit('maxOpen')}
+          onFocus={touch('maxOpen')}
         />
         <input
           data-testid="setting-proof-kinds"

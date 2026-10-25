@@ -168,6 +168,16 @@ public class ApplyClaimStatus {
                             + " open claims in period " + capped.getName() + ".");
                 }
             }
+            Integer maxOpen = sheet.getMaxOpen();
+            if ("open".equals(action) && maxOpen != null) {
+                long open = repository.findBySheetIdAndPersonIdOrderByIdDesc(claim.getSheetId(), claim.getPersonId()).stream()
+                        .filter(c -> !c.getId().equals(claim.getId()))
+                        .filter(c -> c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING)
+                        .count();
+                if (open >= maxOpen) {
+                    throw new ClaimStatusException("The person already has " + maxOpen + " open claims.");
+                }
+            }
             BigDecimal reviewThreshold = sheet.reviewThresholdOn(claim.getDate());
             if ("open".equals(action) && reviewThreshold != null && due != null && due.compareTo(reviewThreshold) > 0) {
                 claim.setStatus(ClaimStatus.REVIEW);
