@@ -113,6 +113,12 @@ public class Person {
         return retiredFrom != null;
     }
 
+    /** Whether the person's retirement date is reached on the date: from then their OPEN and PENDING claims, unless a
+     *  statement binds them, count in no live total, as a hold's would. */
+    public boolean retiredOn(LocalDate on) {
+        return retiredFrom != null && !on.isBefore(retiredFrom);
+    }
+
     /** Whether the person has any hold. */
     public boolean isHeld() {
         return !holds.isEmpty();

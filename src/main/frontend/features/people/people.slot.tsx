@@ -7,6 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/useClaims';
+import { useSheetToday } from '../today/today.slot';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
@@ -52,10 +53,14 @@ export function usePeople(sheetId: string) {
   });
 }
 
-/** Each person's holds: their OPEN claims dated within one, unless a statement binds them, count in no live total. */
+/** Each person's holds: their OPEN claims dated within one, unless a statement binds them, count in no live total.
+ *  From the day a person's retirement date is reached (the sheet's today on or after it), it holds all their dates. */
 export function useHeld(sheetId: string): Holds {
   const people = usePeople(sheetId);
-  return useMemo(() => new Map((people.data ?? []).map((p) => [p.id, p.holds ?? []])), [people.data]);
+  const today = useSheetToday(sheetId).data?.today;
+  return useMemo(() => new Map((people.data ?? []).map((p) => [p.id,
+    p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today
+      ? [...(p.holds ?? []), { from: null, to: null }] : p.holds ?? []])), [people.data, today]);
 }
 
 /** Which person's editor is open (search param `editPerson`); none means the form adds. */

@@ -30,7 +30,8 @@ import org.springframework.stereotype.Service;
  * those of their claims that are OPEN or PENDING and past their due-by on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
  * then a TOTALS line when any of the sheet's three totals moved. The sheet's due-total and overdue-total leave out the
  * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
- * binds them; their other claims still do.
+ * binds them; their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
+ * after it), do none of a retired person's OPEN and PENDING claims, unless a statement binds them.
  */
 @Service
 public class Rollup {
@@ -186,19 +187,22 @@ public class Rollup {
     /** Whether the claim counts in the live totals: its person's OPEN and PENDING claims dated within a hold do not,
      *  unless a statement binds them, nor does a claim deferred past the sheet's today; their other ones do. */
     private static boolean counts(Claim claim, Person person, LocalDate today) {
-        return claim.getStatus().counts() && !held(claim, person) && !claim.isDeferredOn(today);
+        return claim.getStatus().counts() && !held(claim, person, today) && !claim.isDeferredOn(today);
     }
 
     /** Whether the claim counts as it would in the live totals were its status {@code then}. */
     private static boolean countsAs(Claim claim, ClaimStatus then, Person person, LocalDate today) {
         // Held as the live totals hold it: by its status now, not the one it had then.
-        boolean held = claim.getStatus().isOpen() && !claim.isStated() && person.heldOn(claim.getDate());
+        boolean held = claim.getStatus().isOpen() && !claim.isStated()
+                && (person.heldOn(claim.getDate()) || person.retiredOn(today));
         return then.counts() && !held && !claim.isDeferredOn(today);
     }
 
-    /** Whether a hold leaves the claim out: it is OPEN or PENDING, unbound, and dated within one of its person's holds. */
-    public static boolean held(Claim claim, Person person) {
-        return claim.getStatus().isOpen() && !claim.isBound() && person.heldOn(claim.getDate());
+    /** Whether a hold leaves the claim out: it is OPEN or PENDING, unbound, and dated within one of its person's holds
+     *  or its person's retirement date is reached on the sheet's today. */
+    public static boolean held(Claim claim, Person person, LocalDate today) {
+        return claim.getStatus().isOpen() && !claim.isBound()
+                && (person.heldOn(claim.getDate()) || person.retiredOn(today));
     }
 
     /** Whether the claim is overdue as of the sheet's today: OPEN or PENDING, and its due-by before today. */

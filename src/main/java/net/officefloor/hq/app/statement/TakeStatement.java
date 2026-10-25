@@ -34,9 +34,9 @@ public class TakeStatement {
         boolean kept = false;
         int counted = 0;
         for (Claim c : mine) {
-            // OPEN and PENDING claims dated within a hold do not count, unless the last statement bound them; a claim
+            // OPEN and PENDING claims dated within a hold, or once the retirement date is reached, do not count, unless the last statement bound them; a claim
             // deferred past today does not count and is left unbound.
-            if (!c.getStatus().counts() || Rollup.held(c, person) || c.isDeferredOn(today)) {
+            if (!c.getStatus().counts() || Rollup.held(c, person, today) || c.isDeferredOn(today)) {
                 claims.bind(c.getId(), false, null);
                 continue;
             }
