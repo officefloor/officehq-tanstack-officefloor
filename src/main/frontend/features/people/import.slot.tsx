@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { peopleQueryKey } from './people';
 
-// The people import box: each line is name,grade,terms,contact (the terms and the contact may be blank or absent)
+// The people import box: each line is name,grade,terms,contact (a blank grade is the sheet's default grade; the terms and the contact may be blank or absent)
 // and adds a person, in order, as the person form would — or, when the name is a person's name or alias on the sheet,
 // updates that person as the person form's edit would (the grade from the sheet's today, the terms and the contact
 // when given). The server checks every line by the person form's rules first — a name (ignoring case) or a contact
@@ -54,7 +54,7 @@ function ImportPeople() {
       )}
       {importPeople.isError && (
         <span data-testid="import-error">
-          Nothing was imported: every line needs a name and a grade of A, B or C; terms must be a whole number of
+          Nothing was imported: every line needs a name and a grade of A, B or C (or blank: the default grade); terms must be a whole number of
           days; no name may be in use on the sheet's tree, nor a contact on the sheet, and no name, person or
           contact may repeat in the paste.
         </span>

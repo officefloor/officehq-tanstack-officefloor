@@ -39,6 +39,9 @@ public class Sheet {
     /** The key of the proof kinds: undated, a comma separated list of kinds (null: none). */
     public static final String PROOF_KINDS = "proof-kinds";
 
+    /** The key of the default grade: undated, A, B or C (null: A). */
+    public static final String DEFAULT_GRADE = "default-grade";
+
     /** The key of the pot: undated, an amount with two decimals (null: none). */
     public static final String POT = "pot";
 
@@ -317,6 +320,13 @@ public class Sheet {
     public List<String> getProofKinds() {
         String kinds = valueOn(PROOF_KINDS, today);
         return kinds == null || kinds.isBlank() ? List.of() : List.of(kinds.split(","));
+    }
+
+    /** The default grade: a person added by the quick-add bar, or by an import line with a blank grade, gets it.
+     *  Not dated; A when none is set. */
+    public String getDefaultGrade() {
+        String grade = valueOn(DEFAULT_GRADE, today);
+        return grade == null || grade.isBlank() ? "A" : grade;
     }
 
     /** The pot: shared out among the members of each balanced pool by their shares. Not dated; null when none. */

@@ -20,6 +20,11 @@ public record PersonRequest(String name, String grade, Long version, String grad
         return new PersonRequest(name, grade, version, gradeFrom, terms, contact, tags, termsFrom);
     }
 
+    /** This form with the grade given. */
+    public PersonRequest withGrade(String grade) {
+        return new PersonRequest(name, grade, version, gradeFrom, terms, contact, tags, termsFrom);
+    }
+
     /** The terms as a number of days; null when blank. */
     public Integer termsDays() {
         return terms == null || terms.isEmpty() ? null : Integer.valueOf(terms);

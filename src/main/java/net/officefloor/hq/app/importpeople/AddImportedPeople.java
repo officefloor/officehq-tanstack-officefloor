@@ -28,7 +28,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
- * Checks every line by the person form's rules before any is stored, so a refused line imports nothing. A line whose
+ * A line with a blank grade takes the sheet's default grade. Checks every line by the person form's rules before any is stored, so a refused line imports nothing. A line whose
  * name is a person's name or alias on the sheet, ignoring case, updates that person as the person form's edit would:
  * their grade is recorded from the sheet's today, and their terms and contact are set when the line gives them. Any
  * other line adds a person. The lines are then applied in order, each recorded as the person form records it
@@ -49,8 +49,9 @@ public class AddImportedPeople {
         List<Planned> planned = new ArrayList<>();
         Set<Long> updating = new HashSet<>();
         int at = 0;
-        for (PersonRequest line : lines.people()) {
+        for (PersonRequest given : lines.people()) {
             at++;
+            PersonRequest line = given.grade().isEmpty() ? given.withGrade(sheet.getDefaultGrade()) : given;
             try {
                 Optional<Person> match = PersonAliasRepository.findByNameOrAlias(onSheet, aliases, sheet.getId(),
                         line.name());

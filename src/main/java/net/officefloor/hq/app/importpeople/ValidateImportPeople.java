@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * Reads the import box from the body: each non-blank line is name,grade,terms,contact — the terms and the contact
+ * Reads the import box from the body: each non-blank line is name,grade,terms,contact — a blank grade is the sheet's default grade; the terms and the contact
  * may be blank or absent. Checks every line exactly as the person form would, refusing the whole import when any
  * line fails, a name (ignoring case) or a contact repeats one of an earlier line, or there is no line.
  */
@@ -35,8 +35,13 @@ public class ValidateImportPeople {
             }
             PersonRequest person;
             try {
-                person = PersonRules.check(fields[0], fields[1], null, null, fields.length > 2 ? fields[2] : null,
-                        fields.length > 3 ? fields[3] : null, null);
+                boolean blankGrade = fields[1].trim().isEmpty();
+                person = PersonRules.check(fields[0], blankGrade ? "A" : fields[1], null, null,
+                        fields.length > 2 ? fields[2] : null, fields.length > 3 ? fields[3] : null, null);
+                if (blankGrade) {
+                    // Left blank: the sheet's default grade, known once the sheet is loaded.
+                    person = person.withGrade("");
+                }
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + at + ": " + e.getMessage());
             }

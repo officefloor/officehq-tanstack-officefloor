@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
- * Finds the person on the sheet going by the name or an alias, ignoring case; when there is none, adds them with grade A (refused when the name is in use on another sheet of the sheet's tree) and records
+ * Finds the person on the sheet going by the name or an alias, ignoring case; when there is none, adds them with the sheet's default grade (refused when the name is in use on another sheet of the sheet's tree) and records
  * it as the person form would (the person, then how the figures moved), noting the figures afterwards so the
  * claim's own rollup counts only what the claim moved.
  */
@@ -37,7 +37,7 @@ public class FindOrAddPerson {
         if (tree.usedAround(sheet.getId(), name.name())) {
             throw new InvalidClaimException("The name " + name.name() + " is already in use on a sheet of this sheet's tree.");
         }
-        Person added = new Person(sheet.getId(), name.name(), "A");
+        Person added = new Person(sheet.getId(), name.name(), sheet.getDefaultGrade());
         added.setAddedOn(sheet.getToday());
         Person person = people.saveAndFlush(added);
         String by = AuditUser.decode(user);
