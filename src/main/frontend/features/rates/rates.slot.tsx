@@ -52,6 +52,25 @@ export function useExcesses(sheetId: string): Map<number, bigint> {
  *  their grade has no rate on the sheet's today, unless a counted settled or stated claim keeps a figure, or a claim has
  *  one at a grade other than today's or dated on or before today (from its own date): then the figures there are, added up. */
 function useUncappedDueTotals(sheetId: string): Map<number, bigint | null> {
+  const parts = useDueParts(sheetId);
+  const totals = new Map<number, bigint | null>();
+  for (const [id, part] of parts) totals.set(id, part.total);
+  return totals;
+}
+
+type Split = { settled: bigint; open: bigint };
+
+/** A person's settled-total and open-total in cents: the figures of their counted SETTLED claims (corrections included), and of
+ *  their counted OPEN and PENDING ones, each added up (n/a as 0). Together they make the uncapped due-total. */
+export function useSplitTotals(sheetId: string): Map<number, Split> {
+  const parts = useDueParts(sheetId);
+  const splits = new Map<number, Split>();
+  for (const [id, part] of parts) splits.set(id, { settled: part.settled, open: part.open });
+  return splits;
+}
+
+/** The pieces of each person's uncapped due-total: the total itself (null when n/a) and its settled and open parts. */
+function useDueParts(sheetId: string): Map<number, Split & { total: bigint | null }> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -60,10 +79,11 @@ function useUncappedDueTotals(sheetId: string): Map<number, bigint | null> {
   const held = useHeld(sheetId);
   const floor = useFloorCents(sheetId);
   const late = useLate(sheetId);
-  const totals = new Map<number, bigint | null>();
+  const parts = new Map<number, Split & { total: bigint | null }>();
   for (const p of people.data ?? []) {
     const counted = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
-    let sum = 0n;
+    let settled = 0n;
+    let open = 0n;
     let kept = false;
     for (const c of counted) {
       const grade = gradeOn(p, c.date);
@@ -71,11 +91,12 @@ function useUncappedDueTotals(sheetId: string): Map<number, bigint | null> {
       // A figure dated on or before today stands even if its rate has ended since.
       kept ||= c.settledDue != null || (isBound(c) && c.statedDue != null)
         || (due != null && (grade !== p.grade || (todayDate !== undefined && c.date <= todayDate)));
-      sum += due ?? 0n;
+      if (c.status === 'SETTLED') settled += due ?? 0n;
+      else open += due ?? 0n;
     }
-    totals.set(p.id, today.has(p.grade) || kept ? sum : null);
+    parts.set(p.id, { settled, open, total: today.has(p.grade) || kept ? settled + open : null });
   }
-  return totals;
+  return parts;
 }
 
 // The rate form: sets a grade's rate from a date (blank: from the beginning of time) through a to-date
@@ -241,6 +262,26 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
 }
 
+function SplitHeads() {
+  return (
+    <>
+      <th>Settled total</th>
+      <th>Open total</th>
+    </>
+  );
+}
+
+// A person's settled-total and open-total: their counted SETTLED claims' due, and their counted OPEN and PENDING claims' due, added up.
+function SplitCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const split = useSplitTotals(sheetId).get(personId) ?? { settled: 0n, open: 0n };
+  return (
+    <>
+      <td data-testid="person-settled-total">{showHundredths(split.settled)}</td>
+      <td data-testid="person-open-total">{showHundredths(split.open)}</td>
+    </>
+  );
+}
+
 function ExcessHead() {
   return <th>Excess</th>;
 }
@@ -284,12 +325,30 @@ function DueTotal({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+// The sheet's settled-total and open-total: everyone's added up, untrimmed.
+function SplitTotal({ sheetId }: { sheetId: string; user: string }) {
+  const splits = [...useSplitTotals(sheetId).values()];
+  const settled = splits.reduce((n, s) => n + s.settled, 0n);
+  const open = splits.reduce((n, s) => n + s.open, 0n);
+  return (
+    <section data-testid="split-rollup">
+      <p>
+        Settled total: <strong data-testid="rollup-settled-total">{showHundredths(settled)}</strong>{' '}
+        Open total: <strong data-testid="rollup-open-total">{showHundredths(open)}</strong>
+      </p>
+    </section>
+  );
+}
+
 export const contributions = [
   SheetBody.fill({ order: 5, Component: RatesPanel }),
   PersonHeads.fill({ order: 20, Component: DueHead }),
   PersonCells.fill({ order: 20, Component: DueTotalCell }),
+  PersonHeads.fill({ order: 20.5, Component: SplitHeads }),
+  PersonCells.fill({ order: 20.5, Component: SplitCells }),
   PersonHeads.fill({ order: 21, Component: ExcessHead }),
   PersonCells.fill({ order: 21, Component: ExcessCell }),
   ClaimCells.fill({ order: 10, Component: ClaimDue }),
   SheetBody.fill({ order: 25, Component: DueTotal }),
+  SheetBody.fill({ order: 25.5, Component: SplitTotal }),
 ];
