@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 /** Merges a grade into another: only a steward may, and not into a retired grade. Records GRADE_MERGED, then gives
  *  every person (in list order) whose grade in force on the sheet's today is the merged grade the other from the
- *  sheet's today, each exactly as the person form would save it, with its PERSON_EDITED and rollup lines. */
+ *  sheet's today, each exactly as the person form would save it, with its PERSON_EDITED and rollup lines; then every
+ *  grade of theirs on the merged grade, whatever its date (their first grade too), becomes the other. */
 public class ApplyGradeMerge {
     public void apply(@Val GradeMergeRequest request, @Val Sheet sheet,
             @RequestHeader(name = "X-User", required = false) String userHeader, RoleRepository roles,
@@ -61,6 +62,17 @@ public class ApplyGradeMerge {
                     person.termsOn(sheet.getToday()), user));
             Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf)
                     .changesSince(before, sheet.getId(), user).forEach(audit::record);
+            // Retroactive: every grade of theirs on the merged grade, whatever its date, becomes the other.
+            if (request.from().equals(person.getGrade())) {
+                person.setGrade(request.into());
+                people.saveAndFlush(person);
+            }
+            for (PersonGrade earlier : grades.findByPersonIdOrderByFromDateAsc(person.getId())) {
+                if (request.from().equals(earlier.getGrade())) {
+                    earlier.setGrade(request.into());
+                    grades.saveAndFlush(earlier);
+                }
+            }
             merged++;
         }
         mergedOut.set(new GradeMerged(merged));
