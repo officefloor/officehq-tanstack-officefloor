@@ -3,6 +3,7 @@ package net.officefloor.hq.app.claim;
 import java.time.LocalDate;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.access.SettingRepository;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -15,9 +16,9 @@ import net.officefloor.plugin.variable.Val;
 public class RefuseClosedNewDate {
 
     public void check(@Val Person person, @Val ClaimInput input, SheetRepository sheets,
-            SettingRepository settings, PeriodRepository periods) throws BadRequestException {
+            SettingRepository settings, PeriodRepository periods, HolidayRepository holidays) throws BadRequestException {
         LocalDate date = input.date() != null ? input.date()
                 : settings.entryDate(person.getSheetId(), sheets.today(person.getSheetId()));
-        RefuseClosedDate.refuse(person.getSheetId(), BuildClaim.dueBy(person, date, settings), periods);
+        RefuseClosedDate.refuse(person.getSheetId(), BuildClaim.dueBy(person, date, settings, holidays), periods);
     }
 }

@@ -6,6 +6,7 @@ import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.access.SettingRepository;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -27,7 +28,7 @@ public class AddPastedClaims {
 
     public void add(@Val SheetResponse sheet, @Val PasteLines pasted, @Val ChangedBy by, PersonRepository people,
             ClaimRepository claims, SheetRepository sheets, PeriodRepository periods, SettingRepository settings,
-            Rollup rollup, Audit audit, ClaimLog log, Out<PasteResponse> response) throws BadRequestException {
+            HolidayRepository holidays, Rollup rollup, Audit audit, ClaimLog log, Out<PasteResponse> response) throws BadRequestException {
         LocalDate today = settings.entryDate(sheet.id(), sheets.today(sheet.id()));
         List<Person> persons = new ArrayList<>();
         int n = 0;
@@ -41,7 +42,7 @@ public class AddPastedClaims {
             LocalDate date = input.date() != null ? input.date() : today;
             try {
                 RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), claims);
-                RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings), periods);
+                RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
                 RefuseRetiredDate.refuse(person, date);
             } catch (BadRequestException e) {
                 throw new BadRequestException("Line " + n + ": " + e.getMessage());
@@ -54,7 +55,7 @@ public class AddPastedClaims {
             Person person = persons.get(i);
             ClaimInput input = pasted.lines().get(i).input();
             LocalDate date = input.date() != null ? input.date() : today;
-            LocalDate dueBy = BuildClaim.dueBy(person, date, settings);
+            LocalDate dueBy = BuildClaim.dueBy(person, date, settings, holidays);
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
                     input.corrects(), dueBy);
             if (periods.softClosedOn(sheet.id(), dueBy)) {

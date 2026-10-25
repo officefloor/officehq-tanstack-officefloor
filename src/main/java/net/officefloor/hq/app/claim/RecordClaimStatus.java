@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 
 public class RecordClaimStatus {
     public void record(@Val Claim claim, @Val ClaimNumber number, @Val ChangedBy by, @Val ClaimReview review,
-            PersonRepository people, WatchRepository watches, Audit audit, ClaimLog log) {
+            PersonRepository people, WatchRepository watches, ClaimLogRepository logged, Audit audit, ClaimLog log) {
         String event = switch (claim.getStatus()) {
             case OPEN -> review.asked() ? "CLAIM_REJECTED" : "CLAIM_OPENED";
             case PENDING -> "CLAIM_PENDING";
@@ -24,6 +24,10 @@ public class RecordClaimStatus {
         }
         if (claim.getStatus() == ClaimStatus.VOID && claim.getSettledDue() != null) {
             line += " reversed=" + claim.getSettledDue().setScale(2).toPlainString();
+        } else if (claim.getStatus() == ClaimStatus.VOID
+                && logged.lastOn(claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED) != null) {
+            // A voided SETTLED claim settled without a figure (its due was n/a) reverses none.
+            line += " reversed=n/a";
         }
         if (claim.getStatus() == ClaimStatus.OPEN && review.asked()) {
             line += " reason=" + review.reason();

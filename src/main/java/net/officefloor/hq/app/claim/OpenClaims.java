@@ -48,7 +48,7 @@ public class OpenClaims {
                     ClaimNumber[] number = new ClaimNumber[1];
                     Out<ClaimNumber> audited = value -> number[0] = value;
                     apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, logs, by, ClaimReview.NONE, audited);
-                    record.record(claim, number[0], by, ClaimReview.NONE, people, watches, audit, log);
+                    record.record(claim, number[0], by, ClaimReview.NONE, people, watches, logs, audit, log);
                     rollup.record(sheet.id(), before, by);
                     opened++;
                 } catch (BadRequestException refused) {
