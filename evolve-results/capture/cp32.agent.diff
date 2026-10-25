@@ -1,0 +1,520 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index ea3bf63d..77f4780f 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -9,6 +9,7 @@ import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_D
+ const ROLES = ['clerk', 'steward'];
+ const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
+ const DAYS = /^\d{1,5}$/;
++const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ 
+ // The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
+ // assigned roles are listed under it. The server decides who may settle what.
+@@ -105,7 +106,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+ // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
+ // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
+ // due by (14 until they are set), and the late percent, what an overdue claim's due gains of its figure for every
+-// full 30 days it is overdue (0.00 until it is set). The value in force shows beside each. Saving
++// full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
++// claim's live figures round half up and from which they round half to even. The value in force shows beside each. Saving
+ // sends only the settings whose field was touched since the last save.
+ const SETTINGS = [
+   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
+@@ -116,6 +118,8 @@ const SETTINGS = [
+     invalid: 'Terms are a whole number of days' },
+   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A late percent is a number with up to two decimals' },
++  { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
++    invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today' },
+ ] as const;
+ 
+ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+diff --git a/src/main/frontend/features/access/useAccess.ts b/src/main/frontend/features/access/useAccess.ts
+index 82856a53..b92b2eb5 100644
+--- a/src/main/frontend/features/access/useAccess.ts
++++ b/src/main/frontend/features/access/useAccess.ts
+@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { toHundredths, type Late } from '../rates/useRates';
+ import { useSheetToday } from '../today/today.slot';
++import { useClaims } from '../claims/useClaims';
+ 
+ /** A role assigned to a user name: clerk (any name without one) or steward. */
+ export type Role = { user: string; role: string };
+@@ -49,11 +50,18 @@ export function useTermsDays(sheetId: string): number {
+ /** The late percent a sheet starts with, until it is set. */
+ export const LATE_PCT_DEFAULT = '0.00';
+ 
+-/** The sheet's late charge as of its today: its terms and its late percent (0.00 until it is set). Undefined
++/** The sheet's late charge as of its today: its terms and its late percent (0.00 until it is set); with its
++ *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
+  *  until the sheet's today is known. */
+ export function useLate(sheetId: string): Late | undefined {
+-  const pct = useSettings(sheetId).data?.find((s) => s.key === 'late-pct')?.value ?? LATE_PCT_DEFAULT;
++  const settings = useSettings(sheetId).data;
++  const pct = settings?.find((s) => s.key === 'late-pct')?.value ?? LATE_PCT_DEFAULT;
++  const policy = settings?.find((s) => s.key === 'policy-date')?.value ?? '';
+   const termsDays = useTermsDays(sheetId);
+   const today = useSheetToday(sheetId).data?.today;
+-  return today === undefined ? undefined : { today, termsDays, pctHundredths: toHundredths(pct) };
++  const claims = useClaims(sheetId).data;
++  const dateOfNumber = new Map<number, string>();
++  for (const c of claims ?? []) if (c.number != null) dateOfNumber.set(c.number, c.date);
++  return today === undefined ? undefined
++    : { today, termsDays, pctHundredths: toHundredths(pct), policyDate: policy === '' ? today : policy, dateOfNumber };
+ }
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 3915a9bd..607a3de3 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -205,7 +205,8 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
+ // A claim's due: fixed when it was settled; the bound figure while a statement binds it; otherwise its amount times the rate in force on the claim's
+ // date of its person's grade on that date (at least the sheet's floor); with its late charge on top while it is overdue; n/a when no rate of the grade applies then.
+ function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
+-  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null } }) {
++  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
++    corrects?: number | null } }) {
+   const people = usePeople(sheetId);
+   const rates = useRates(sheetId);
+   const floor = useFloorCents(sheetId);
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index c7a4aeae..29f7ee9b 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -29,9 +29,11 @@ export function rateOn(rates: readonly Rate[], grade: string, date: string): Rat
+   return found;
+ }
+ 
+-/** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n), exactly. */
++/** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n, "-1.03" -> -103n), exactly. */
+ export function toHundredths(text: string): bigint {
+-  const [whole, frac = ''] = text.trim().split('.');
++  const trimmed = text.trim();
++  if (trimmed.startsWith('-')) return -toHundredths(trimmed.slice(1));
++  const [whole, frac = ''] = trimmed.split('.');
+   return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+ }
+ 
+@@ -44,21 +46,33 @@ export function showHundredths(n: bigint): string {
+ 
+ /**
+  * Due, in cents, on an amount (in cents) at a rate (a percent, in hundredths): amount times rate
+- * divided by 100, rounded half to even to two decimals (1.025 -> 1.02, 1.035 -> 1.04). Rates are never
+- * negative; a correction's negative amount rounds the same way as its size (-1.025 -> -1.02).
++ * divided by 100, rounded to two decimals half to even (1.025 -> 1.02, 1.035 -> 1.04), or half up when
++ * `halfUp` (1.025 -> 1.03). Rates are never negative; a correction's negative amount rounds the same way as
++ * its size (-1.025 -> -1.02, half up -1.03).
+  */
+-export function dueCents(amountCents: bigint, rateHundredths: bigint): bigint {
+-  if (amountCents < 0n) return -dueCents(-amountCents, rateHundredths);
++export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = false): bigint {
++  if (amountCents < 0n) return -dueCents(-amountCents, rateHundredths, halfUp);
+   // cents * (rate/100 %) / 100 = cents * rateHundredths / 10000
+   const exact = amountCents * rateHundredths;
+   const whole = exact / 10000n;
+   const rest = exact % 10000n;
+-  if (rest > 5000n || (rest === 5000n && whole % 2n === 1n)) return whole + 1n;
++  if (rest > 5000n || (rest === 5000n && (halfUp || whole % 2n === 1n))) return whole + 1n;
+   return whole;
+ }
+ 
+-/** The late charge's terms as of the sheet's today: its terms in days and its late percent (in hundredths). */
+-export type Late = { today: string; termsDays: number; pctHundredths: bigint };
++/** The late charge's terms as of the sheet's today: its terms in days and its late percent (in hundredths); and
++ *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
++ *  live figures round. */
++export type Late = { today: string; termsDays: number; pctHundredths: bigint; policyDate: string;
++  dateOfNumber: ReadonlyMap<number, string> };
++
++/** Whether the claim's live figures round half up: it (or, for a correction, the claim it corrects) is dated before
++ *  the sheet's policy date; on or after it they round half to even. Half to even until the sheet's today is known. */
++export function roundsHalfUp(late: Late | undefined, claim: { date: string; corrects?: number | null }): boolean {
++  if (late === undefined) return false;
++  const on = (claim.corrects != null ? late.dateOfNumber.get(claim.corrects) : undefined) ?? claim.date;
++  return on < late.policyDate;
++}
+ 
+ /** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
+ export function addDays(date: string, days: number): string {
+@@ -79,35 +93,37 @@ export function isCorrection(claim: { amount: string }): boolean {
+ 
+ /** A claim's late charge in cents on its figure: for an OPEN claim past its due-by (its date plus the terms), the
+  *  late percent of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
+-export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string }, figureCents: bigint): bigint {
++export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; corrects?: number | null },
++  figureCents: bigint): bigint {
+   if (late === undefined || claim.status !== 'OPEN' || isCorrection(claim)) return 0n;
+   const overdue = daysBetween(addDays(claim.date, late.termsDays), late.today);
+   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
+-  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths);
++  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths, roundsHalfUp(late, claim));
+ }
+ 
+ /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
+  *  otherwise its amount times its person's grade's rate
+- *  in force on the claim's date, rounded half to even, and at least the sheet's floor (in cents) unless it is a correction. Null when there is
++ *  in force on the claim's date, rounded half to even (half up when `halfUp`), and at least the sheet's floor (in cents) unless it is a correction. Null when there is
+  *  no figure (no rate of the grade then). */
+ export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
+   claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null },
+-  floorCents: bigint): bigint | null {
++  floorCents: bigint, halfUp = false): bigint | null {
+   if (claim.settledDue != null) return toHundredths(claim.settledDue);
+   if (claim.stated) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
+   const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
+   if (found === undefined) return null;
+   const correction = isCorrection(claim);
+   const amount = toHundredths(correction ? claim.amount.trim().slice(1) : claim.amount);
+-  const due = dueCents(correction ? -amount : amount, toHundredths(found.rate));
++  const due = dueCents(correction ? -amount : amount, toHundredths(found.rate), halfUp);
+   return correction || due >= floorCents ? due : floorCents;
+ }
+ 
+ /** A claim's due in cents: its figure (claimFigureCents) with its late charge on top while it is overdue. The
+  *  charge is never bound by a statement; a settled claim's due already has it frozen in. Null without a figure. */
+ export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
+-  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null },
++  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
++    corrects?: number | null },
+   floorCents: bigint, late: Late | undefined): bigint | null {
+-  const figure = claimFigureCents(rates, grade, claim, floorCents);
++  const figure = claimFigureCents(rates, grade, claim, floorCents, roundsHalfUp(late, claim));
+   return figure == null ? null : figure + lateCents(late, claim, figure);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/LateCharge.java b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+index 02a4b5d5..3f9977bd 100644
+--- a/src/main/java/net/officefloor/hq/app/access/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+@@ -9,10 +9,19 @@ import net.officefloor.hq.app.claim.ClaimStatus;
+ 
+ /**
+  * The late charge as of the sheet's today: an OPEN claim past its due-by (its date plus the terms) gains the late
+- * percent of its figure for every full 30 days it is overdue, rounded half to even to two decimals. A correction
++ * percent of its figure for every full 30 days it is overdue, rounded to two decimals as the claim rounds (see
++ * {@link #rounding}). A correction
+  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
+  */
+-public record LateCharge(LocalDate today, int terms, BigDecimal pct) {
++public record LateCharge(LocalDate today, int terms, BigDecimal pct, LocalDate policyDate) {
++
++    /**
++     * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after
++     * it. A correction rounds by the date of the claim it corrects.
++     */
++    public RoundingMode rounding(Claim claim) {
++        return claim.getRoundOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
++    }
+ 
+     /** The claim's late charge on its figure (zero when it is not overdue, or has no figure). */
+     public BigDecimal on(Claim claim, BigDecimal figure) {
+@@ -26,7 +35,7 @@ public record LateCharge(LocalDate today, int terms, BigDecimal pct) {
+             return none;
+         }
+         return figure.multiply(pct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
+-                .setScale(2, RoundingMode.HALF_EVEN);
++                .setScale(2, rounding(claim));
+     }
+ 
+     /** The figure with the claim's late charge added on top; null without a figure. */
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 38ed3892..e4936464 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -23,4 +23,7 @@ public record Setting(String sheetId, String key, String value) {
+ 
+     /** The late percent a sheet starts with, until it is set. */
+     public static final String LATE_PCT_DEFAULT = "0.00";
++
++    /** The date before which a claim's live figures round half up, and from which half to even; blank means the sheet's today. */
++    public static final String POLICY_DATE = "policy-date";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+index 74e22d00..108d4568 100644
+--- a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -65,9 +65,15 @@ public class SettingRepository {
+         return new BigDecimal(value == null ? Setting.LATE_PCT_DEFAULT : value).setScale(2);
+     }
+ 
+-    /** The sheet's late-charge terms as of its today. */
++    /** The sheet's policy date: the one set, else its today. */
++    public java.time.LocalDate policyDate(String sheetId, java.time.LocalDate today) {
++        String value = find(sheetId, Setting.POLICY_DATE);
++        return value == null ? today : java.time.LocalDate.parse(value);
++    }
++
++    /** The sheet's late-charge terms as of its today, with its policy date for rounding. */
+     public LateCharge lateCharge(String sheetId, java.time.LocalDate today) {
+-        return new LateCharge(today, terms(sheetId), latePct(sheetId));
++        return new LateCharge(today, terms(sheetId), latePct(sheetId), policyDate(sheetId, today));
+     }
+ 
+     /** Set a setting's value (null: blank), replacing the one there before. */
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index 86924492..51e112ca 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key and its value. The terms are a whole number of days. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. */
++/** A setting's fields: a known key and its value. The terms are a whole number of days. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -42,6 +42,19 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.POLICY_DATE.equals(key)) {
++            String date = null;
++            if (!text.isEmpty()) {
++                try {
++                    date = java.time.LocalDate.parse(text).toString();
++                } catch (java.time.format.DateTimeParseException e) {
++                    throw new BadRequestException("A policy date is a date (yyyy-mm-dd), or blank for the sheet's today");
++                }
++            }
++            setting.set(new SettingInput(key, date));
++            changedBy.set(by);
++            return;
++        }
+         if (!Setting.CLERK_LIMIT.equals(key)) {
+             throw new BadRequestException("No such setting: " + key);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 7e10bd6a..1f0c0bf8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.LateCharge;
+ import net.officefloor.hq.app.access.Role;
+ import net.officefloor.hq.app.access.RoleRepository;
+ import net.officefloor.hq.app.access.SettingRepository;
+@@ -31,8 +32,8 @@ public class ApplyClaimStatus {
+         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+             throw new BadRequestException("The user who opened a claim cannot settle it");
+         }
+-        BigDecimal due = status == ClaimStatus.SETTLED ? settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()))
+-                .due(claim, dueNow(claim, people, rates, settings)) : null;
++        LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
++        BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;
+         if (status == ClaimStatus.SETTLED && due != null
+                 && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
+             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+@@ -59,14 +60,14 @@ public class ApplyClaimStatus {
+         audited.set(new ClaimNumber(claim.getNumber()));
+     }
+ 
+-    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even and at least the sheet's floor (a correction has none); null when there is no rate. */
++    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date and at least the sheet's floor (a correction has none); null when there is no rate. */
+     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
+-            SettingRepository settings) {
++            SettingRepository settings, LateCharge late) {
+         if (claim.isStated()) {
+             return claim.getStatedDue();
+         }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+-        return claim.figureAt(rate, settings.floor(claim.getSheetId()));
++        return claim.figureAt(rate, settings.floor(claim.getSheetId()), late.rounding(claim));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index f6e7cda2..0250a1ae 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -19,6 +19,7 @@ public class Claim {
+     private boolean stated;
+     private BigDecimal statedDue;
+     private Integer corrects;
++    private LocalDate roundOn;
+ 
+     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
+@@ -36,6 +37,16 @@ public class Claim {
+         this.stated = stated;
+         this.statedDue = statedDue;
+         this.corrects = corrects;
++        this.roundOn = date;
++    }
++
++    /** The date the claim's live figures round by: its own, or for a correction the date of the claim it corrects. */
++    public LocalDate getRoundOn() {
++        return roundOn;
++    }
++
++    public void setRoundOn(LocalDate roundOn) {
++        this.roundOn = roundOn;
+     }
+ 
+     public long getId() {
+@@ -63,6 +74,9 @@ public class Claim {
+     }
+ 
+     public void setDate(LocalDate date) {
++        if (corrects == null) {
++            this.roundOn = date;
++        }
+         this.date = date;
+     }
+ 
+@@ -134,14 +148,14 @@ public class Claim {
+     }
+ 
+     /**
+-     * The claim's live figure at the rate: its amount times the rate, rounded half to even to two decimals and at
+-     * least the floor — a correction has no floor. Null without a rate.
++     * The claim's live figure at the rate: its amount times the rate, rounded to two decimals by the rounding given and
++     * at least the floor — a correction has no floor. Null without a rate.
+      */
+-    public BigDecimal figureAt(BigDecimal rate, BigDecimal floor) {
++    public BigDecimal figureAt(BigDecimal rate, BigDecimal floor, java.math.RoundingMode rounding) {
+         if (rate == null) {
+             return null;
+         }
+-        BigDecimal figure = amount.multiply(rate).movePointLeft(2).setScale(2, java.math.RoundingMode.HALF_EVEN);
++        BigDecimal figure = amount.multiply(rate).movePointLeft(2).setScale(2, rounding);
+         return isCorrection() ? figure : figure.max(floor);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 1a655fab..52e6a141 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -14,14 +14,24 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects";
++    // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects,"
++            + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
++            + " AND o.claim_number = claim.corrects) AS corrected_date";
+ 
+-    private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+-            rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
+-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+-            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+-            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+-            rs.getObject("corrects", Integer.class));
++    private static final RowMapper<Claim> ROW = (rs, n) -> {
++        Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
++                rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
++                rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
++                rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
++                rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
++                rs.getObject("corrects", Integer.class));
++        LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
++        if (corrected != null) {
++            claim.setRoundOn(corrected);
++        }
++        return claim;
++    };
+ 
+     private final JdbcTemplate jdbc;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 5d0bd120..524db952 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
+ /**
+  * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
+  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
+- * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half to even and at least the sheet's floor;
++ * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor;
+  * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
+  * figure or one at another grade. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
+  * sheet's totals moved. A held person's OPEN claims count in none of these; their SETTLED claims still do.
+@@ -70,7 +70,7 @@ public class Rollup {
+                 claimed = claimed.add(c.getAmount().setScale(2));
+                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
+                 String grade = p.gradeOn(c.getDate());
+-                BigDecimal figure = late.due(c, figure(c, grade, sheetRates, floor));
++                BigDecimal figure = late.due(c, figure(c, grade, sheetRates, floor, late));
+                 // A figure at a grade other than today's does not hang on today's grade having a rate.
+                 kept |= figure != null && !grade.equals(p.getGrade());
+                 if (figure != null) {
+@@ -105,7 +105,7 @@ public class Rollup {
+             if (p == null || !counts(c, p.isHeld()) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
+                 continue;
+             }
+-            BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, floor));
++            BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, floor, late));
+             if (figure != null) {
+                 total = total.add(figure);
+             }
+@@ -142,7 +142,7 @@ public class Rollup {
+     }
+ 
+     /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor, unless it is a correction. */
+-    private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, BigDecimal floor) {
++    private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, BigDecimal floor, LateCharge late) {
+         if (claim.getSettledDue() != null) {
+             return claim.getSettledDue().setScale(2);
+         }
+@@ -150,7 +150,7 @@ public class Rollup {
+             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
+         }
+         BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
+-        return claim.figureAt(rate, floor);
++        return claim.figureAt(rate, floor, late.rounding(claim));
+     }
+ 
+     /** The grade's rate in force on the date: the latest from-date on or before it, none counting as the earliest. */
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 243df5ba..092c2151 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
+  * Takes the person's statement on the sheet's today: records their due-total, binds each of their counting claims
+  * to the figure it has now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
+  * figure its last statement bound it to, else its amount times the rate in force on the claim's date of its
+- * person's grade in force on that date (rounded half to even, and at least the sheet's floor; none without a rate). The due-total is the counting claims' figures
++ * person's grade in force on that date (rounded as the claim rounds by the sheet's policy date, and at least the sheet's floor; none without a rate). The due-total is the counting claims' figures
+  * added up, each with its late charge on top while it is overdue (the charge is never bound); n/a
+  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure.
+  */
+@@ -42,7 +42,7 @@ public class TakeStatement {
+             }
+             counted++;
+             kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
+-            BigDecimal figure = figure(c, person, rates, floor);
++            BigDecimal figure = figure(c, person, rates, floor, late);
+             // A figure at a grade other than today's does not hang on today's grade having a rate.
+             kept |= figure != null && !person.gradeOn(c.getDate()).equals(person.getGrade());
+             if (figure != null) {
+@@ -56,7 +56,7 @@ public class TakeStatement {
+         taken.set(new Statement(dueTotal, counted));
+     }
+ 
+-    private static BigDecimal figure(Claim claim, Person person, RateRepository rates, BigDecimal floor) {
++    private static BigDecimal figure(Claim claim, Person person, RateRepository rates, BigDecimal floor, LateCharge late) {
+         if (claim.getSettledDue() != null) {
+             return claim.getSettledDue();
+         }
+@@ -64,6 +64,6 @@ public class TakeStatement {
+             return claim.getStatedDue();
+         }
+         BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+-        return claim.figureAt(rate, floor);
++        return claim.figureAt(rate, floor, late.rounding(claim));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index 46748c87..f5f23103 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,5 +1,5 @@
+-# Change a sheet setting (the clerk limit, the floor, the terms or the late percent). Validate the body before touching the store, so a refusal
+-# writes nothing. The floor, the terms and the late percent move dues, so the figures it moved are recorded after the change.
++# Change a sheet setting (the clerk limit, the floor, the terms, the late percent or the policy date). Validate the body before touching the store, so a refusal
++# writes nothing. The floor, the terms, the late percent and the policy date move dues, so the figures it moved are recorded after the change.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
+   next: setting
