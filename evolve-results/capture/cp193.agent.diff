@@ -1,0 +1,109 @@
+diff --git a/src/main/frontend/features/claims/aged.slot.tsx b/src/main/frontend/features/claims/aged.slot.tsx
+index abd03164..99958531 100644
+--- a/src/main/frontend/features/claims/aged.slot.tsx
++++ b/src/main/frontend/features/claims/aged.slot.tsx
+@@ -1,6 +1,7 @@
++import { HomeMain } from '../../slots/defs/homeMain';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+-import { useSheetToday } from '../session/session';
+-import { gradeOn, type Person } from '../people/people';
++import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { gradeOn, usePeople, type Person } from '../people/people';
+ import { useSettings, type Settings } from '../roles/roles';
+ import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
+ import { countsLive, holdsOf, isOpen, useClaims, type Claim } from './claims';
+@@ -48,7 +49,28 @@ function PersonAged({ person }: { person: Person }) {
+   );
+ }
+ 
++// The sheet's aged dues: every person's age buckets added up (not trimmed).
++function SheetAged() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople();
++  const claims = useClaims();
++  const rates = useRates();
++  const today = useSheetToday();
++  const settings = useSettings();
++  if (!user || !sheet) return null;
++  const aged = (people.data ?? []).map((p) => agedOf(p, claims.data ?? [], rates.data, today, settings.data));
++  return (
++    <p>
++      Due by age: 0–30 days <strong data-testid="rollup-aged-0-30">{sumDue(aged.map((a) => a.upTo30))}</strong>,
++      31–60 days <strong data-testid="rollup-aged-31-60">{sumDue(aged.map((a) => a.upTo60))}</strong>,
++      61+ days <strong data-testid="rollup-aged-61">{sumDue(aged.map((a) => a.over60))}</strong>
++    </p>
++  );
++}
++
+ export const contributions = [
++  HomeMain.fill({ order: 30.6, Component: SheetAged }),
+   PeopleColumns.fill({ order: 16.2, Component: AgedHeader }),
+   PersonCells.fill({ order: 16.2, Component: PersonAged }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index f601163b..00502459 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -9,8 +9,9 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
+ 
+ /** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
+  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
+- *  replacing the grade recorded for that date and keeping the others, even when it is the same as the one in force;
+- *  terms with no from-date the same as those already in force are left unrecorded, so terms later recorded from an
++ *  replacing the grade recorded for that date and keeping the others, even when it is the same as the one in force
++ *  (a grade with no from-date the same as the one in force on the sheet's today is left unrecorded, so a grade later
++ *  recorded from an earlier date still reaches past it); terms with no from-date the same as those already in force are left unrecorded, so terms later recorded from an
+  *  earlier date still reach past them. */
+ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
+@@ -34,8 +35,9 @@ public class ApplyPerson {
+                 request.contactOrNull(), person.getId())) {
+             throw new InvalidPersonException("The contact is already in use on this sheet.");
+         }
+-        LocalDate from = request.gradeFrom() == null || request.gradeFrom().isEmpty() ? sheet.getToday()
+-                : LocalDate.parse(request.gradeFrom());
++        boolean undated = request.gradeFrom() == null || request.gradeFrom().isEmpty();
++        LocalDate from = undated ? sheet.getToday() : LocalDate.parse(request.gradeFrom());
++        boolean gradeKept = undated && request.grade().equals(grades.gradesOf(person).on(sheet.getToday()));
+         person.setName(request.name());
+         if (request.termsFromDate() == null) {
+             // Terms left as they are in force on the sheet's today change nothing (their dated history is kept).
+@@ -56,7 +58,11 @@ public class ApplyPerson {
+             throw new PersonConflictException();
+         }
+         // The grade is recorded from the from-date (the sheet's today when none is given), even one the same as the grade in
+-        // force on that date, so a grade later recorded from an earlier date does not reach past it.
++        // force on that date, so a grade later recorded from an earlier date does not reach past it; a grade with no
++        // from-date left as it is in force on the sheet's today changes nothing.
++        if (gradeKept) {
++            return;
++        }
+         PersonGrade dated = grades.findByPersonIdAndFromDate(person.getId(), from)
+                 .orElseGet(() -> new PersonGrade(person.getSheetId(), person.getId(), request.grade(), from));
+         dated.setGrade(request.grade());
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 6006455e..d5d83214 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -10,8 +10,8 @@ import net.officefloor.hq.app.statement.Statement;
+  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
+  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days in force on the sheet's today (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
+  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
+- *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, by
+- *  the date each was taken as of (in the order they stand on the same date), and their flag's reason while it is in
++ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, in
++ *  the order they stand (oldest first), and their flag's reason while it is in
+  *  force on the sheet's today (null: none in force). */
+ public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
+         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
+@@ -71,8 +71,7 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
+                 net.officefloor.hq.app.claim.Tags.list(person.getTags()),
+                 person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
+                         .toList(),
+-                statements.stream().sorted(java.util.Comparator.comparing(Statement::getTakenOn))
+-                        .map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList(),
++                statements.stream().map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList(),
+                 person.flaggedOn(today) ? person.getFlagReason() : null);
+     }
+ }
