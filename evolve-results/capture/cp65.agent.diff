@@ -1,0 +1,166 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 6c925d54..7ceb27c9 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -20,6 +20,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
+ // OPEN or PENDING claim to another person (listed then as that person's newest claim). A change its status does not
+ // allow, a settle or approve by the user who opened the claim, or an approve or reject by a non-steward, is refused by the
+ // server, and the refusal shows on the claim until its next action (only the last action's error shows). A clerk's settle above the clerk limit leaves it PENDING.
++// A steward may void a SETTLED claim within 7 days of its settlement (not in a closed period): its frozen due still shows but
++// counts in no total.
+ // An OPEN claim can be deferred to a date after the sheet's today (not in a closed period): until then it counts in no
+ // total, is not overdue and cannot be settled; whether it is deferred, and until when, shows on the claim.
+ // A claim not SETTLED or VOID takes a proof, raising its proofs count by one; one whose due is above the proof threshold
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6b8e8946..1c515aab 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -23,14 +23,15 @@ import net.officefloor.plugin.variable.Val;
+  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
+  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
+  * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
+- * returns it to OPEN, bound again by its last statement if that bound it. Opening records who opened it; a voided claim keeps its number. Settling
++ * returns it to OPEN, bound again by its last statement if that bound it. A steward may void a SETTLED claim within
++ * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. Opening records who opened it; a voided claim keeps its number. Settling
+  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
+  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
+  */
+ public class ApplyClaimStatus {
+     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+-            PeriodRepository periods, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
++            PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
+         ClaimStatus from = claim.getStatus();
+         String role = roles.roleOf(claim.getSheetId(), by.name());
+         boolean steward = Role.STEWARD.equals(role);
+@@ -52,6 +53,17 @@ public class ApplyClaimStatus {
+             if (!settings.allows(claim.getSheetId(), action, role)) {
+                 throw new BadRequestException("A " + role + " may not " + action + " a claim on this sheet");
+             }
++            if (status == ClaimStatus.VOID && from == ClaimStatus.SETTLED) {
++                if (!steward) {
++                    throw new BadRequestException("Only a steward voids a SETTLED claim");
++                }
++                java.time.LocalDate settledOn = log.lastOn(claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED);
++                java.time.LocalDate today = sheets.today(claim.getSheetId());
++                if (settledOn == null || today.isAfter(settledOn.plusDays(ClaimStatus.VOID_SETTLED_DAYS))) {
++                    throw new BadRequestException("A SETTLED claim is voided only within "
++                            + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement");
++                }
++            }
+             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+                 throw new BadRequestException("The user who opened a claim cannot settle it");
+             }
+@@ -80,6 +92,7 @@ public class ApplyClaimStatus {
+             claim.setOpenedBy(by.name());
+         }
+         if (to == ClaimStatus.SETTLED) {
++            // A voided SETTLED claim keeps its frozen figure (shown, and reversed in its audit) but counts in no total.
+             claim.setSettledDue(due);
+         }
+         if (!repository.updateStatus(claim, from)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+index f2cdfc1c..97cae588 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+@@ -25,6 +25,14 @@ public class ClaimLogRepository {
+                 claim.getSheetId(), claim.getId(), claim.getStatus().name(), by, java.sql.Date.valueOf(on), due);
+     }
+ 
++    /** The date of the claim's last log line in the status, or null when it never had it. */
++    public LocalDate lastOn(String sheetId, long claimId, ClaimStatus status) {
++        List<LocalDate> on = jdbc.query("SELECT logged_on FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ?"
++                + " ORDER BY id DESC LIMIT 1", (rs, i) -> rs.getObject("logged_on", LocalDate.class),
++                sheetId, claimId, status.name());
++        return on.isEmpty() ? null : on.get(0);
++    }
++
+     /**
+      * Each claim's status at the end of the day, by claim id, as its log records it: its last line (in log order)
+      * logged on or before the day. A claim with no such line (added after it) is absent.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 517826da..896db134 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -3,16 +3,21 @@ package net.officefloor.hq.app.claim;
+ /**
+  * A claim's status: DRAFT → OPEN → SETTLED, and a DRAFT, OPEN or PENDING claim may become VOID. A clerk's settle above
+  * the clerk limit leaves an OPEN claim PENDING; a steward's review then approves it (SETTLED) or rejects it (OPEN).
++ * A steward may also void a SETTLED claim within {@link #VOID_SETTLED_DAYS} days of its settlement.
+  */
+ public enum ClaimStatus {
+     DRAFT, OPEN, PENDING, SETTLED, VOID;
+ 
+-    /** Whether a claim in this status may move to {@code next} by an open, settle or void (not a review). */
++    /** How many days after its settlement (by the sheet's today) a steward may still void a SETTLED claim. */
++    public static final int VOID_SETTLED_DAYS = 7;
++
++    /** Whether a claim in this status may move to {@code next} by an open, settle or void (not a review); a
++     * SETTLED claim's void is further bound to a steward and its settlement window. */
+     public boolean canBecome(ClaimStatus next) {
+         return switch (next) {
+             case OPEN -> this == DRAFT;
+             case SETTLED, PENDING -> this == OPEN;
+-            case VOID -> this == DRAFT || this == OPEN || this == PENDING;
++            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
+             case DRAFT -> false;
+         };
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index 83d2791f..0091bfb5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -25,7 +25,7 @@ import net.officefloor.plugin.variable.Val;
+ public class OpenClaims {
+     public void open(@Val SheetResponse sheet, @Val BulkOpenIds selected, @Val ChangedBy by, ClaimRepository claims,
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
+-            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
++            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log, ClaimLogRepository logs,
+             WatchRepository watches, Out<BulkOpenResponse> result) {
+         int opened = 0;
+         if (roles.isViewer(sheet.id(), by.name()) || sheets.isArchived(sheet.id())) {
+@@ -47,7 +47,7 @@ public class OpenClaims {
+                     RollupSnapshot before = rollup.snapshot(sheet.id());
+                     ClaimNumber[] number = new ClaimNumber[1];
+                     Out<ClaimNumber> audited = value -> number[0] = value;
+-                    apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, by, ClaimReview.NONE, audited);
++                    apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, logs, by, ClaimReview.NONE, audited);
+                     record.record(claim, number[0], by, ClaimReview.NONE, people, watches, audit, log);
+                     rollup.record(sheet.id(), before, by);
+                     opened++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
+index b66378b9..934bda10 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
+@@ -22,6 +22,9 @@ public class RecordClaimStatus {
+         if (claim.getStatus() == ClaimStatus.SETTLED) {
+             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+         }
++        if (claim.getStatus() == ClaimStatus.VOID && claim.getSettledDue() != null) {
++            line += " reversed=" + claim.getSettledDue().setScale(2).toPlainString();
++        }
+         if (claim.getStatus() == ClaimStatus.OPEN && review.asked()) {
+             line += " reason=" + review.reason();
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index 9766c85f..a6d19bc8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -26,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
+ public class SettleClaims {
+     public void settle(@Val SheetResponse sheet, @Val BulkSettleIds selected, @Val ChangedBy by, ClaimRepository claims,
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
+-            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log, WatchRepository watches,
++            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log, ClaimLogRepository logs, WatchRepository watches,
+             Out<BulkSettleResponse> result) {
+         int settled = 0;
+         if (roles.isViewer(sheet.id(), by.name()) || sheets.isArchived(sheet.id())) {
+@@ -48,7 +48,7 @@ public class SettleClaims {
+                     RollupSnapshot before = rollup.snapshot(sheet.id());
+                     ClaimNumber[] number = new ClaimNumber[1];
+                     Out<ClaimNumber> audited = value -> number[0] = value;
+-                    apply.apply(ClaimStatus.SETTLED, claim, claims, people, rates, roles, settings, sheets, periods, by, ClaimReview.NONE, audited);
++                    apply.apply(ClaimStatus.SETTLED, claim, claims, people, rates, roles, settings, sheets, periods, logs, by, ClaimReview.NONE, audited);
+                     record.record(claim, number[0], by, ClaimReview.NONE, people, watches, audit, log);
+                     rollup.record(sheet.id(), before, by);
+                     settled++;
