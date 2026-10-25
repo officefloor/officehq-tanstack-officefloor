@@ -151,12 +151,17 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
 }
 
-// A claim's due: its amount times its person's grade's rate; n/a when the grade has no rate.
-function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number; claim: { amount: string } }) {
+// A claim's due: fixed when it was settled; otherwise its amount times its person's grade's rate,
+// n/a when the grade has no rate.
+function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
+  claim: { amount: string; settledDue: string | null } }) {
   const people = usePeople(sheetId);
   const rates = useRateByGrade(sheetId);
   const grade = people.data?.find((p) => p.id === personId)?.grade;
   const rate = grade === undefined ? undefined : rates.get(grade);
+  if (claim.settledDue != null) {
+    return <span data-testid="claim-due">{showHundredths(toHundredths(claim.settledDue))}</span>;
+  }
   return (
     <span data-testid="claim-due">{rate === undefined ? NA : showHundredths(dueCents(toHundredths(claim.amount), rate))}</span>
   );

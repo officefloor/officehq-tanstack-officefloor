@@ -15,6 +15,10 @@ public class RecordClaimStatus {
             case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
         };
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        audit.record(ClaimAudit.line(event, claim, by, person == null ? "" : person.getName(), number.value()));
+        String line = ClaimAudit.line(event, claim, by, person == null ? "" : person.getName(), number.value());
+        if (claim.getStatus() == ClaimStatus.SETTLED) {
+            line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+        }
+        audit.record(line);
     }
 }

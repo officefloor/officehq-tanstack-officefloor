@@ -24,6 +24,12 @@ public class RateRepository {
         return jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? ORDER BY grade", ROW, sheetId);
     }
 
+    /** The grade's rate on the sheet, or null when it has none. */
+    public BigDecimal find(String sheetId, String grade) {
+        return jdbc.query("SELECT sheet_id, grade, rate FROM rate WHERE sheet_id = ? AND grade = ?", ROW, sheetId, grade)
+                .stream().findFirst().map(Rate::rate).orElse(null);
+    }
+
     /** Set (or replace) a grade's rate. */
     public Rate set(String sheetId, String grade, BigDecimal rate) {
         jdbc.update("MERGE INTO rate (sheet_id, grade, rate) KEY (sheet_id, grade) VALUES (?, ?, ?)", sheetId, grade,
