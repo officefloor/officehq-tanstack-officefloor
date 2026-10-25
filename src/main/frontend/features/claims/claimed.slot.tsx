@@ -4,7 +4,7 @@ import type { Person } from '../people/people';
 import { holdsOf, sumOf, useClaims } from './claims';
 import { useColumnShown } from '../people/columns';
 
-// A person's claimed: the sum of their OPEN, PENDING and SETTLED claims' amounts (not corrections, nor unbound OPEN ones dated within a hold of theirs).
+// A person's claimed: the sum of their OPEN, PENDING and SETTLED claims' amounts (not corrections, nor unbound OPEN ones once their retirement date is reached; a hold does not take a claim out).
 function ClaimedHeader() {
   if (!useColumnShown('claimed')) return null;
   return <th>Claimed</th>;

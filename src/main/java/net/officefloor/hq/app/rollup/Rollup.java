@@ -23,9 +23,9 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * order they were added, and the sheet's claimed-total and due-total (everyone's added up, skipping n/a), and each
  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
- * A person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is
- * reached, count in none of them, unless a statement binds them. The sheet's alert threshold (null: off) is kept with
- * them, as it stands now.
+ * A person's OPEN and PENDING claims dated within a hold of theirs, and held claims, still count in claimed but in
+ * no due or overdue figure; all of them, once their retirement date is reached, count in none of them; unless a
+ * statement binds them. The sheet's alert threshold (null: off) is kept with them, as it stands now.
  */
 public class Rollup {
 
@@ -64,7 +64,7 @@ public class Rollup {
             for (Person person : persons.findListed(id)) {
                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
                 BigDecimal claimed = mine.stream()
-                        .filter(c -> c.getCorrects() == null && ClaimFigures.countsLive(c, person, sheet.get().getToday())).map(Claim::getAmount)
+                        .filter(c -> c.getCorrects() == null && ClaimFigures.countsClaimed(c, person, sheet.get().getToday())).map(Claim::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 ClaimFigures figures = new ClaimFigures(sheetRates,
                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());

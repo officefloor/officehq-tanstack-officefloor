@@ -152,10 +152,19 @@ export function useClaims() {
 /** An amount ("12.50") in whole cents, so sums are exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
+/** Whether a claim counts toward claimed: as `countsLive`, except a hold (the claim's or its person's) does not take
+ *  it out; only its person's retirement date being reached does. */
+const countsClaimed = (c: Claim, holds: Holds, today: string | undefined) => {
+  const p = holds.get(c.personId);
+  const retired = !!p && p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today;
+  return counts(c, today) && !(isOpen(c) && !isBound(c) && retired);
+};
+
 /** A sum of the counted (OPEN, PENDING and SETTLED) claims' amounts, with two decimals; corrections (claims that
- *  correct another) and unbound OPEN claims dated within a hold of their person are left out. */
+ *  correct another) and unbound OPEN claims of a person whose retirement date is reached are left out. A hold does
+ *  not take a claim out of it. */
 export function sumOf(claims: Claim[], held: Holds, today: string | undefined): string {
-  return (claims.filter((c) => c.corrects === null && countsLive(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
+  return (claims.filter((c) => c.corrects === null && countsClaimed(c, held, today)).reduce((n, c) => n + cents(c.amount), 0) / 100).toFixed(2);
 }
 
 /** A claim's due-by (YYYY-MM-DD), fixed when it was created. */

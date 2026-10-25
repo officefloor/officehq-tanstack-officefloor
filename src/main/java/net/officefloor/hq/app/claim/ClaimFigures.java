@@ -134,6 +134,13 @@ public class ClaimFigures {
         return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
     }
 
+    /** Whether a claim counts toward claimed: as {@link #countsLive}, except a hold (the claim's or its person's)
+     *  does not take it out; only its person's retirement date being reached does (null person: not retired). */
+    public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
+        return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound()
+                && person != null && person.retiredBy(today));
+    }
+
     /** Whether a claim counts toward a period's live totals: as {@link #countsLive}, taking the status it had at the
      *  end of the period's last day (null: it had not been added by then, so it does not count); a hold takes out
      *  only a claim that is still OPEN or PENDING and unbound now. */
