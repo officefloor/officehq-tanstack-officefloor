@@ -1,0 +1,91 @@
+diff --git a/src/main/frontend/features/active/active.slot.tsx b/src/main/frontend/features/active/active.slot.tsx
+new file mode 100644
+index 00000000..d7352d19
+--- /dev/null
++++ b/src/main/frontend/features/active/active.slot.tsx
+@@ -0,0 +1,32 @@
++import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
++import { counts, useClaims } from '../claims/useClaims';
++import { useHeld } from '../people/people.slot';
++import { addDays } from '../rates/useRates';
++import { useSheetToday } from '../today/today.slot';
++
++/** Whether a person is active: they have an OPEN or PENDING claim that counts, dated within the 30 days up to and
++ *  including the sheet's today. */
++export function useIsActive(sheetId: string): (personId: number) => boolean {
++  const today = useSheetToday(sheetId).data?.today;
++  const claims = useClaims(sheetId);
++  const held = useHeld(sheetId);
++  const from = today === undefined ? undefined : addDays(today, -29);
++  return (personId) => today !== undefined && from !== undefined && (claims.data ?? []).some((c) =>
++    c.personId === personId && (c.status === 'OPEN' || c.status === 'PENDING') && counts(c, held)
++    && from <= c.date && c.date <= today);
++}
++
++function ActiveHead() {
++  return <th>Active</th>;
++}
++
++// Whether the person is active: an OPEN or PENDING counting claim dated within the last 30 days.
++function ActiveCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
++  const isActive = useIsActive(sheetId);
++  return <td data-testid="person-active">{isActive(personId) ? 'yes' : 'no'}</td>;
++}
++
++export const contributions = [
++  PersonHeads.fill({ order: 27, Component: ActiveHead }),
++  PersonCells.fill({ order: 27, Component: ActiveCell }),
++];
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 832912dd..e702472e 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -2,6 +2,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/useClaims';
+ import { usePeople } from '../people/people.slot';
+ import { showPeriodDueTotal, usePeriodDueTotal, usePeriods } from '../periods/periods.slot';
++import { useIsActive } from '../active/active.slot';
+ import { useDueTotals } from '../rates/rates.slot';
+ import { showHundredths } from '../rates/useRates';
+ 
+@@ -10,15 +11,16 @@ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const
+ 
+ // The summary panel, built from the same figures as the lists so it always agrees with them. Per grade: the people
+ // on it today, retired people left out, and their due-totals added up (skipping those that are n/a). Per period:
+-// its due-total as its row shows it. Per status: the claims on the sheet with that status.
++// its due-total as its row shows it. Per grade too: how many of its people are active. Per status: the claims on the sheet with that status.
+ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
+   const people = usePeople(sheetId);
+   const totals = useDueTotals(sheetId);
+   const periods = usePeriods(sheetId);
+   const periodDueTotal = usePeriodDueTotal(sheetId);
+   const claims = useClaims(sheetId);
++  const isActive = useIsActive(sheetId);
+ 
+-  const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
++  const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
+   return (
+     <section data-testid="summary-panel">
+       <h2>Summary</h2>
+@@ -28,11 +30,12 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
+             <th>Grade</th>
+             <th>People</th>
+             <th>Due total</th>
++            <th>Active</th>
+           </tr>
+         </thead>
+         <tbody>
+           {GRADES.map((g) => {
+-            const on = active.filter((p) => p.grade === g);
++            const on = current.filter((p) => p.grade === g);
+             let sum = 0n;
+             for (const p of on) sum += totals.get(p.id) ?? 0n;
+             return (
+@@ -40,6 +43,7 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>{showHundredths(sum)}</td>
++                <td data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(p.id)).length}</td>
+               </tr>
+             );
+           })}
