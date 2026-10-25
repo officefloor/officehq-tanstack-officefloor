@@ -113,6 +113,13 @@ public class Person {
     @Column(name = "arrived_on")
     private LocalDate arrivedOn;
 
+    /** A steward's flag: its reason (null: not flagged) and the date it is in force until, inclusive. */
+    @Column(name = "flag_reason")
+    private String flagReason;
+
+    @Column(name = "flag_until")
+    private LocalDate flagUntil;
+
     protected Person() {
     }
 
@@ -282,6 +289,8 @@ public class Person {
         then.contact = contact;
         then.tags = tags;
         then.addedOn = addedOn;
+        then.flagReason = flagReason;
+        then.flagUntil = flagUntil;
         if (retiredMadeOn == null || !retiredMadeOn.isAfter(date)) {
             then.retiredFrom = retiredFrom;
             then.retiredMadeOn = retiredMadeOn;
@@ -350,5 +359,24 @@ public class Person {
     public boolean retiredOn(LocalDate date) {
         return (retiredFrom != null && date.isAfter(retiredFrom))
                 || retirements.stream().anyMatch(r -> r.refuses(date));
+    }
+
+    /** Flags them with the reason until the date, inclusive, replacing any flag they had. */
+    public void flag(String reason, LocalDate until) {
+        this.flagReason = reason;
+        this.flagUntil = until;
+    }
+
+    public String getFlagReason() {
+        return flagReason;
+    }
+
+    public LocalDate getFlagUntil() {
+        return flagUntil;
+    }
+
+    /** Whether their flag is in force on the day: they have one and the day is on or before its until-date. */
+    public boolean flaggedOn(LocalDate today) {
+        return flagReason != null && flagUntil != null && today != null && !today.isAfter(flagUntil);
     }
 }

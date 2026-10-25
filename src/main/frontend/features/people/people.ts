@@ -33,6 +33,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // and their due-total on it (n/a with none).
 // `statements`: their statements still standing (a cancelled one is gone), by the date each was taken as of,
 // oldest first (those a merge or transfer brought over among them): that date and the due-total it recorded.
+// `flag`: the reason a steward flagged them with, while the sheet's today is on or before the flag's until-date
+// (null: no flag in force); only a steward may open their claims then.
 // `patronIds`: the other people on the sheet they have named as patrons, in the order they were named.
 export type Person = {
   id: number;
@@ -56,6 +58,7 @@ export type Person = {
   tags: string[];
   snapshots: Snapshot[];
   statements: StatementLine[];
+  flag: string | null;
 };
 
 /** A statement still standing: the date it was taken as of (YYYY-MM-DD) and the due-total it recorded. */

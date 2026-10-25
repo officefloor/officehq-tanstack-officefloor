@@ -66,6 +66,10 @@ public class ApplyClaimStatus {
         if (("open".equals(action) || "settle".equals(action) || "void".equals(action)) && !sheet.allows(action, role)) {
             throw new ClerkLimitException("A " + role + " cannot " + action + " a claim.");
         }
+        if ("open".equals(action) && !Role.STEWARD.equals(role) && people.findById(claim.getPersonId())
+                .map(p -> p.flaggedOn(sheet.getToday())).orElse(false)) {
+            throw new ClerkLimitException("Only a steward can open a claim of a flagged person.");
+        }
         if ("review".equals(action) && claim.getStatus().after(action) != null && !Role.STEWARD.equals(role)) {
             throw new ClerkLimitException("Only a steward can review a claim.");
         }
