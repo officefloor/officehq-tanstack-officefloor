@@ -35,6 +35,8 @@ public class Sheet {
 
     /** The key of the review SLA: undated, a whole number of days (null: none). */
     public static final String REVIEW_SLA = "review-sla";
+    public static final String SCORE_MID = "score-mid";
+    public static final String SCORE_HIGH = "score-high";
 
     /** The key of the proof kinds: undated, a comma separated list of kinds (null: none). */
     public static final String PROOF_KINDS = "proof-kinds";
@@ -330,6 +332,12 @@ public class Sheet {
     public Integer getReviewSla() {
         String days = valueOn(REVIEW_SLA, today);
         return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** A score threshold (score-mid or score-high): a whole number, possibly negative. Not dated; null when blank. */
+    public Integer getScoreThreshold(String key) {
+        String value = valueOn(key, today);
+        return value == null ? null : Integer.valueOf(value);
     }
 
     /** The proof kinds: while set, a claim whose due is above its proof threshold needs at least one proof of each

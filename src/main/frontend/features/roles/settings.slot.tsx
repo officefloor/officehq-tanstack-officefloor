@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
 import { ratesQueryKey } from '../rates/rates';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | PermKey;
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | PermKey;
 
 /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
  *  Not dated. */
@@ -59,7 +59,7 @@ type Drafts = Partial<Record<Key, string>>;
 // claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
 // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the proof kinds (a comma separated list of receipt and photo: while set, a claim whose due is above its proof threshold needs at least one proof of each to be settled or approved; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), the default grade (a person added by the quick-add bar, or by an import line with a blank grade, gets it; changing it changes no one; blank: A; not dated), each grade's clerk limit (on the sheet's today, it applies to a claim of its person's grade then in place of the sheet's; blank: none, the sheet's applies), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the proof kinds (a comma separated list of receipt and photo: while set, a claim whose due is above its proof threshold needs at least one proof of each to be settled or approved; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), the default grade (a person added by the quick-add bar, or by an import line with a blank grade, gets it; changing it changes no one; blank: A; not dated), each grade's clerk limit (on the sheet's today, it applies to a claim of its person's grade then in place of the sheet's; blank: none, the sheet's applies), the score thresholds, mid and high (whole numbers: while both are set, each person shows a band; blank: none; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
 // limit in force for it; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
 // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
 // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
@@ -116,6 +116,8 @@ function SheetSettings() {
     clerkLimitA: settings.data?.clerkLimitA ?? '',
     clerkLimitB: settings.data?.clerkLimitB ?? '',
     clerkLimitC: settings.data?.clerkLimitC ?? '',
+    scoreMid: settings.data?.scoreMid ?? '',
+    scoreHigh: settings.data?.scoreHigh ?? '',
     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
@@ -212,6 +214,14 @@ function SheetSettings() {
       <p>
         Review SLA days (blank: none):{' '}
         <span data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</span>
+      </p>
+      <p>
+        Mid score threshold (blank: none):{' '}
+        <span data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</span>
+      </p>
+      <p>
+        High score threshold (blank: none):{' '}
+        <span data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</span>
       </p>
       <p>
         Proof kinds (blank: none):{' '}
@@ -424,6 +434,22 @@ function SheetSettings() {
           onChange={edit('reviewSla')}
           onInput={edit('reviewSla')}
           onFocus={touch('reviewSla')}
+        />
+        <input
+          data-testid="setting-score-mid"
+          placeholder="Mid score threshold (blank: none)"
+          value={valueOf('scoreMid')}
+          onChange={edit('scoreMid')}
+          onInput={edit('scoreMid')}
+          onFocus={touch('scoreMid')}
+        />
+        <input
+          data-testid="setting-score-high"
+          placeholder="High score threshold (blank: none)"
+          value={valueOf('scoreHigh')}
+          onChange={edit('scoreHigh')}
+          onInput={edit('scoreHigh')}
+          onFocus={touch('scoreHigh')}
         />
         <input
           data-testid="setting-proof-kinds"

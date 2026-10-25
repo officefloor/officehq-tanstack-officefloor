@@ -22,8 +22,23 @@ export function scoreOf(settledTotal: string, overdueCount: number): string {
   return `${negative && q !== 0n ? '-' : ''}${q}`;
 }
 
+// A person's band by the score thresholds: HIGH at or above the high one, MID at or above the mid one, else LOW;
+// "" while either is blank.
+export function bandOf(score: string, mid: string, high: string): string {
+  if (mid === '' || high === '') return '';
+  const n = BigInt(score);
+  if (n >= BigInt(high)) return 'HIGH';
+  if (n >= BigInt(mid)) return 'MID';
+  return 'LOW';
+}
+
 function ScoreHeader() {
-  return <th>Score</th>;
+  return (
+    <>
+      <th>Score</th>
+      <th>Band</th>
+    </>
+  );
 }
 
 function PersonScore({ person }: { person: Person }) {
@@ -34,7 +49,13 @@ function PersonScore({ person }: { person: Person }) {
   const all = claims.data ?? [];
   const { settled } = splitOf(person, all, rates.data, today, settings.data);
   const { count } = overdueOf(person, all, rates.data, today, settings.data);
-  return <td data-testid="person-score">{scoreOf(settled, count)}</td>;
+  const score = scoreOf(settled, count);
+  return (
+    <>
+      <td data-testid="person-score">{score}</td>
+      <td data-testid="person-band">{bandOf(score, settings.data?.scoreMid ?? '', settings.data?.scoreHigh ?? '')}</td>
+    </>
+  );
 }
 
 export const contributions = [
