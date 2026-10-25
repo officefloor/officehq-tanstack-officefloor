@@ -12,11 +12,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewMember;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.person.Patron;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonAlias;
 import net.officefloor.hq.app.person.PersonGrade;
+import net.officefloor.hq.app.pool.Pool;
+import net.officefloor.hq.app.pool.PoolMember;
 import net.officefloor.hq.app.role.Delegation;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.statement.Statement;
@@ -37,10 +41,13 @@ import tools.jackson.databind.json.JsonMapper;
 public class History {
 
     /** The kind each kept entity is recorded under. */
-    private static final Map<Class<?>, String> KINDS = Map.of(Claim.class, "claim", Person.class, "person",
-            PersonGrade.class, "person-grade", Period.class, "period", Patron.class, "patron", Watch.class, "watch",
-            Role.class, "role", Delegation.class, "delegation", Statement.class, "statement", PersonAlias.class,
-            "person-alias");
+    private static final Map<Class<?>, String> KINDS = Map.ofEntries(Map.entry(Claim.class, "claim"),
+            Map.entry(Person.class, "person"), Map.entry(PersonGrade.class, "person-grade"),
+            Map.entry(Period.class, "period"), Map.entry(Patron.class, "patron"), Map.entry(Watch.class, "watch"),
+            Map.entry(Role.class, "role"), Map.entry(Delegation.class, "delegation"),
+            Map.entry(Statement.class, "statement"), Map.entry(PersonAlias.class, "person-alias"),
+            Map.entry(Pool.class, "pool"), Map.entry(PoolMember.class, "pool-member"), Map.entry(Crew.class, "crew"),
+            Map.entry(CrewMember.class, "crew-member"));
 
     /** An entity's state as its fields hold it: every field, no getter. */
     private final JsonMapper json = JsonMapper.builder()

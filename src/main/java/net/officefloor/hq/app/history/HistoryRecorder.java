@@ -142,11 +142,14 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
             for (Map.Entry<Object, Boolean> e : done.entrySet()) {
                 Object entity = e.getKey();
                 JsonNode state = history.stateOf(entity);
-                if (state.get("id") == null || state.get("id").isNull() || state.get("sheetId") == null) {
+                if (state.get("id") == null || state.get("id").isNull()) {
                     continue;
                 }
                 long id = state.get("id").asLong();
-                String sheetId = state.get("sheetId").asString();
+                String sheetId = sheetOf(connection, state);
+                if (sheetId == null) {
+                    continue;
+                }
                 java.sql.Date today = todays.computeIfAbsent(sheetId, k -> todayOf(connection, k));
                 java.time.LocalDate on = recordedOn.remove(entity);
                 if (today == null) {
@@ -172,6 +175,33 @@ public class HistoryRecorder implements PostInsertEventListener, PostUpdateEvent
                 insert.addBatch();
             }
             insert.executeBatch();
+        }
+    }
+
+    /** The sheet the state is of: its own, or (a pool's or a crew's member, which holds none) its pool's or crew's. */
+    private static String sheetOf(Connection connection, JsonNode state) throws SQLException {
+        if (state.get("sheetId") != null && !state.get("sheetId").isNull()) {
+            return state.get("sheetId").asString();
+        }
+        String sql;
+        JsonNode owner;
+        if (state.get("poolId") != null) {
+            sql = "SELECT sheet_id FROM pool WHERE id = ?";
+            owner = state.get("poolId");
+        } else if (state.get("crewId") != null) {
+            sql = "SELECT sheet_id FROM crew WHERE id = ?";
+            owner = state.get("crewId");
+        } else {
+            return null;
+        }
+        if (owner.isNull()) {
+            return null;
+        }
+        try (PreparedStatement select = connection.prepareStatement(sql)) {
+            select.setLong(1, owner.asLong());
+            try (ResultSet rs = select.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
         }
     }
 

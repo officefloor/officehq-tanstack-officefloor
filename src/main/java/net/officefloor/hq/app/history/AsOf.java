@@ -10,6 +10,10 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLog;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.crew.Crew;
+import net.officefloor.hq.app.crew.CrewMember;
+import net.officefloor.hq.app.crew.CrewMemberRepository;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Patron;
@@ -20,6 +24,10 @@ import net.officefloor.hq.app.person.PersonAliasRepository;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.Pool;
+import net.officefloor.hq.app.pool.PoolMember;
+import net.officefloor.hq.app.pool.PoolMemberRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateLogRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -59,11 +67,17 @@ public class AsOf {
     private final RoleRepository roles;
     private final DelegationRepository delegations;
     private final WatchRepository watches;
+    private final PoolRepository pools;
+    private final PoolMemberRepository poolMembers;
+    private final CrewRepository crews;
+    private final CrewMemberRepository crewMembers;
 
     public AsOf(History history, SettingLogRepository settingLogs, RateLogRepository rateLogs, RateRepository rates,
             PersonRepository people, PersonGradeRepository grades, PatronRepository patrons,
             PersonAliasRepository aliases, StatementRepository statements, ClaimRepository claims, ClaimLogRepository claimLogs,
-            PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches) {
+            PeriodRepository periods, RoleRepository roles, DelegationRepository delegations, WatchRepository watches,
+            PoolRepository pools, PoolMemberRepository poolMembers, CrewRepository crews,
+            CrewMemberRepository crewMembers) {
         this.history = history;
         this.settingLogs = settingLogs;
         this.rateLogs = rateLogs;
@@ -79,6 +93,10 @@ public class AsOf {
         this.roles = roles;
         this.delegations = delegations;
         this.watches = watches;
+        this.pools = pools;
+        this.poolMembers = poolMembers;
+        this.crews = crews;
+        this.crewMembers = crewMembers;
     }
 
     /** The as-of date a read asks for: null when none is given; refuses one that is not a calendar date. */
@@ -203,6 +221,38 @@ public class AsOf {
         return date == null ? now
                 : sorted(history.asOf(sheetId, Watch.class, date, now, Watch::getId), Comparator.comparing(Watch::getId))
                         .stream().filter(w -> user.equals(w.getUserName())).toList();
+    }
+
+    /** The sheet's pools, in the order they were added. */
+    public List<Pool> pools(String sheetId, LocalDate date) {
+        List<Pool> now = pools.findBySheetIdOrderByIdAsc(sheetId);
+        return date == null ? now
+                : sorted(history.asOf(sheetId, Pool.class, date, now, Pool::getId), Comparator.comparing(Pool::getId));
+    }
+
+    /** The members of each of the sheet's pools, in the order they were added, by pool id. */
+    public Map<Long, List<PoolMember>> poolMembers(String sheetId, LocalDate date) {
+        List<PoolMember> now = pools.findBySheetIdOrderByIdAsc(sheetId).stream()
+                .flatMap(p -> poolMembers.findByPoolIdOrderByIdAsc(p.getId()).stream()).toList();
+        List<PoolMember> then = date == null ? now : history.asOf(sheetId, PoolMember.class, date, now, PoolMember::getId);
+        return sorted(then, Comparator.comparing(PoolMember::getId)).stream()
+                .collect(Collectors.groupingBy(PoolMember::getPoolId));
+    }
+
+    /** The sheet's crews, in the order they were added. */
+    public List<Crew> crews(String sheetId, LocalDate date) {
+        List<Crew> now = crews.findBySheetIdOrderByIdAsc(sheetId);
+        return date == null ? now
+                : sorted(history.asOf(sheetId, Crew.class, date, now, Crew::getId), Comparator.comparing(Crew::getId));
+    }
+
+    /** The members of each of the sheet's crews, in the order they were added, by crew id. */
+    public Map<Long, List<CrewMember>> crewMembers(String sheetId, LocalDate date) {
+        List<CrewMember> now = crews.findBySheetIdOrderByIdAsc(sheetId).stream()
+                .flatMap(c -> crewMembers.findByCrewIdOrderByIdAsc(c.getId()).stream()).toList();
+        List<CrewMember> then = date == null ? now : history.asOf(sheetId, CrewMember.class, date, now, CrewMember::getId);
+        return sorted(then, Comparator.comparing(CrewMember::getId)).stream()
+                .collect(Collectors.groupingBy(CrewMember::getCrewId));
     }
 
     private static <T> List<T> sorted(List<T> list, Comparator<T> order) {

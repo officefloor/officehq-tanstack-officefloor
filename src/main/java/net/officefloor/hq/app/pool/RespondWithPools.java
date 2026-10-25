@@ -16,8 +16,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.crew.Crew;
 import net.officefloor.hq.app.crew.CrewMember;
-import net.officefloor.hq.app.crew.CrewMemberRepository;
-import net.officefloor.hq.app.crew.CrewRepository;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.sheet.InvalidTodayException;
@@ -37,24 +36,63 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  it to the last member with a share), so the cuts total exactly the pot. A member whose dates do not include the
  *  sheet's today is shown with its share but left out entirely: not in the total share, nor the balance, and no cut.
  *  As of a date (asOf), the sheet's pot and today are as they stood at the end of it, and a person not then on the
- *  sheet is left out. Each crew is also a pool, listed after them (see crewPool). */
+ *  sheet is left out (as are the pools, members and crews not then made). Each crew is also a pool, listed after them
+ *  (see crewPool). Each member also has, for each period whose to-date is on or before the sheet's today (by
+ *  from-date), its cut as the sheet stood at the end of that period, that day its today: "" when it had none. */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public void respond(@Val Sheet current, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
-            PoolRepository pools, PoolMemberRepository members, CrewRepository crews, CrewMemberRepository crewMembers,
             ObjectResponse<List<PoolResponse>> response)
             throws InvalidTodayException {
         LocalDate date = AsOf.dateOf(asOfParam);
         Sheet sheet = asOf.sheet(current, date);
+        List<PoolResponse> shown = poolsAsOf(current, date, asOf);
+        // Each period ended by the sheet's today: every member's cut as the sheet stood at the end of it.
+        List<Period> ended = asOf.periods(current.getId(), date).stream()
+                .filter(p -> sheet.getToday() != null && p.getToDate() != null && !p.getToDate().isAfter(sheet.getToday()))
+                .toList();
+        Map<String, Map<String, String>> cutsThen = new HashMap<>();
+        for (Period period : ended) {
+            Map<String, String> then = new HashMap<>();
+            for (PoolResponse pool : poolsAsOf(current, period.getToDate(), asOf)) {
+                pool.members().forEach(m -> then.put(memberKey(pool, m), m.cut()));
+            }
+            cutsThen.put(period.getName(), then);
+        }
+        List<PoolResponse> out = new ArrayList<>();
+        for (PoolResponse pool : shown) {
+            List<PoolResponse.Member> members = new ArrayList<>();
+            for (PoolResponse.Member m : pool.members()) {
+                List<PoolResponse.PeriodCut> periodCuts = new ArrayList<>();
+                for (Period period : ended) {
+                    periodCuts.add(new PoolResponse.PeriodCut(period.getName(),
+                            cutsThen.get(period.getName()).getOrDefault(memberKey(pool, m), "")));
+                }
+                members.add(m.withPeriodCuts(periodCuts));
+            }
+            out.add(new PoolResponse(pool.id(), pool.name(), pool.totalShare(), pool.balanced(), pool.crew(), members));
+        }
+        response.send(out);
+    }
+
+    /** The member of the pool it is: the pool's id with the person, or the member pool. */
+    private static String memberKey(PoolResponse pool, PoolResponse.Member m) {
+        return pool.id() + (m.poolId() != null ? ":pool:" + m.poolId() : ":person:" + m.personId());
+    }
+
+    /** The sheet's pools, then its crews, as they stood at the end of the date (now, when none). */
+    private static List<PoolResponse> poolsAsOf(Sheet current, LocalDate date, AsOf asOf) {
+        Sheet sheet = asOf.sheet(current, date);
         Map<Long, Person> byId = asOf.people(current.getId(), date).stream()
                 .collect(Collectors.toMap(Person::getId, Function.identity()));
-        List<Pool> sheetPools = pools.findBySheetIdOrderByIdAsc(sheet.getId());
+        List<Pool> sheetPools = asOf.pools(current.getId(), date);
         Map<Long, Pool> poolsById = sheetPools.stream().collect(Collectors.toMap(Pool::getId, Function.identity()));
+        Map<Long, List<PoolMember>> allMembers = asOf.poolMembers(current.getId(), date);
         Map<Long, List<PoolMember>> membersOf = new HashMap<>();
         Set<Long> inAPool = new HashSet<>();
         for (Pool pool : sheetPools) {
-            List<PoolMember> list = members.findByPoolIdOrderByIdAsc(pool.getId());
+            List<PoolMember> list = allMembers.getOrDefault(pool.getId(), List.of());
             membersOf.put(pool.getId(), list);
             list.forEach(m -> { if (m.getMemberPoolId() != null) inAPool.add(m.getMemberPoolId()); });
         }
@@ -129,10 +167,11 @@ public class RespondWithPools {
         }
         // Each crew is also a pool, after the sheet's pools: its lead then its members at equal shares, with the
         // sheet's pot, cut as any pool that is a member of none.
-        for (Crew crew : crews.findBySheetIdOrderByIdAsc(sheet.getId())) {
-            out.add(crewPool(crew, crewMembers.findByCrewIdOrderByIdAsc(crew.getId()), byId, sheet));
+        Map<Long, List<CrewMember>> crewMembersOf = asOf.crewMembers(current.getId(), date);
+        for (Crew crew : asOf.crews(current.getId(), date)) {
+            out.add(crewPool(crew, crewMembersOf.getOrDefault(crew.getId(), List.of()), byId, sheet));
         }
-        response.send(out);
+        return out;
     }
 
     /** The crew as a pool (its id the crew's, negated): the lead and the members, in the order they were added, each

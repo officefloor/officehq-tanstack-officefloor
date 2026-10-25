@@ -8,7 +8,20 @@ import java.util.List;
 public record PoolResponse(long id, String name, String totalShare, boolean balanced, boolean crew, List<Member> members) {
 
     /** A member: the person (or the member pool, the other null), its name, their share and their cut of the sheet's pot ("" when the pool is not
-     *  balanced or there is no pot). */
-    public record Member(Long personId, Long poolId, String name, String share, String cut) {
+     *  balanced or there is no pot), and, for each period ended by the sheet's today, their cut as it stood at the
+     *  end of it. */
+    public record Member(Long personId, Long poolId, String name, String share, String cut, List<PeriodCut> periodCuts) {
+
+        public Member(Long personId, Long poolId, String name, String share, String cut) {
+            this(personId, poolId, name, share, cut, List.of());
+        }
+
+        public Member withPeriodCuts(List<PeriodCut> periodCuts) {
+            return new Member(personId, poolId, name, share, cut, periodCuts);
+        }
+    }
+
+    /** A member's cut as it stood at the end of a period (its to-date the sheet's today): "" when there was none. */
+    public record PeriodCut(String period, String cut) {
     }
 }
