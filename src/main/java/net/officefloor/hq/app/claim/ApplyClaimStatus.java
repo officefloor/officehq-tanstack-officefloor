@@ -6,24 +6,32 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves the claim to the asked status, refusing a change its current status does not allow. Settling
+ * Moves the claim to the asked status, refusing a change its current status does not allow,
+ * and refusing to let the user who opened it settle it. Opening records who opened it. Settling
  * fixes the claim's due at its person's grade's rate in force on the claim's date; without a rate its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
-            PersonRepository people, RateRepository rates, Out<ClaimNumber> audited) throws BadRequestException {
+            PersonRepository people, RateRepository rates, @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         if (!from.canBecome(status)) {
             throw new BadRequestException("A " + from + " claim cannot become " + status);
+        }
+        if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+            throw new BadRequestException("The user who opened a claim cannot settle it");
         }
         Integer had = claim.getNumber();
         claim.setStatus(status);
         if (status == ClaimStatus.VOID) {
             claim.setNumber(null);
+        }
+        if (status == ClaimStatus.OPEN) {
+            claim.setOpenedBy(by.name());
         }
         if (status == ClaimStatus.SETTLED) {
             claim.setSettledDue(dueNow(claim, people, rates));

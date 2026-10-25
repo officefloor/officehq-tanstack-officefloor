@@ -15,9 +15,10 @@ public class Claim {
     private ClaimStatus status;
     private Integer number;
     private BigDecimal settledDue;
+    private String openedBy;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Integer number, BigDecimal settledDue) {
+            ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -27,6 +28,7 @@ public class Claim {
         this.status = status;
         this.number = number;
         this.settledDue = settledDue;
+        this.openedBy = openedBy;
     }
 
     public long getId() {
@@ -89,5 +91,14 @@ public class Claim {
 
     public void setSettledDue(BigDecimal settledDue) {
         this.settledDue = settledDue;
+    }
+
+    /** The signed-in user who opened the claim; null when it was never opened. */
+    public String getOpenedBy() {
+        return openedBy;
+    }
+
+    public void setOpenedBy(String openedBy) {
+        this.openedBy = openedBy;
     }
 }

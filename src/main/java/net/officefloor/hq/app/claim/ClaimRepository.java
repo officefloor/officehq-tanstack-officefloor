@@ -14,12 +14,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"));
+            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+            rs.getString("opened_by"));
 
     private final JdbcTemplate jdbc;
 
@@ -50,7 +51,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
     }
 
     public void update(Claim claim) {
@@ -59,12 +60,12 @@ public class ClaimRepository {
     }
 
     /**
-     * Move the claim from {@code from} to its status, number and settled due. Whether it was still {@code from}:
+     * Move the claim from {@code from} to its status, number, settled due and opener. Whether it was still {@code from}:
      * the row is locked by the first of two users changing it, so the other one finds it moved.
      */
     public boolean updateStatus(Claim claim, ClaimStatus from) {
-        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, settled_due = ? WHERE id = ? AND status = ?",
-                claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getId(), from.name()) == 1;
+        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ? AND status = ?",
+                claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getId(), from.name()) == 1;
     }
 
     /** Take the sheet's next claim number, in one statement so two users never get the same one. */

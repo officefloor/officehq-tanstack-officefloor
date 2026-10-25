@@ -11,7 +11,7 @@ const ACTIONS: Array<{ action: string; status: ClaimStatus; label: string }> = [
 ];
 
 // A claim's number and status, and the buttons that open, settle or void it. A change its status does not
-// allow is refused by the server, and the refusal shows on the claim until its next action.
+// allow, or a settle by the user who opened the claim, is refused by the server, and the refusal shows on the claim until its next action.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -25,6 +25,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     <>
       <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
+      <span data-testid="claim-opened-by">{claim.openedBy ?? ''}</span>{' '}
       {ACTIONS.map((a) => (
         <button
           key={a.action}
