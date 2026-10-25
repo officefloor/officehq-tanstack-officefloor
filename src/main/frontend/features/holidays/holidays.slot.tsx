@@ -21,8 +21,8 @@ export function useHolidays(sheetId: string) {
   });
 }
 
-// The holiday list: a date entry adds a holiday; a date already on the list is refused. A claim's due-by, fixed when
-// it is added, is moved past the holidays on the sheet then; a holiday added later leaves existing due-bys as they are.
+// The holiday list: a date entry adds a holiday; a date already on the list is refused. Every claim's due-by counts
+// business days past the holidays on the sheet now, so a holiday added moves the due-bys (and the figures) it falls in.
 function HolidaysPanel({ sheetId }: { sheetId: string; user: string }) {
   const holidays = useHolidays(sheetId);
   const [date, setDate] = useState('');
@@ -36,7 +36,8 @@ function HolidaysPanel({ sheetId }: { sheetId: string; user: string }) {
       return postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, { date: value.trim(), by: user ?? '' });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) });
+      // The due-bys, and so the overdue figures and periods of the claims, follow the holidays: re-read the sheet.
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
       setDate('');
     },
   });

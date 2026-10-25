@@ -351,7 +351,7 @@ function PersonPeriodCells({ sheetId, personId }: { sheetId: string; user: strin
   );
 }
 
-// The period a claim belongs to: the one whose dates contain its due-by (as fixed when it was added); blank when none does.
+// The period a claim belongs to: the one whose dates contain its due-by (the terms-th business day after its date, as the server works it out); blank when none does.
 function ClaimPeriod({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { dueBy: string } }) {
   const periods = usePeriods(sheetId);
   return <span data-testid="claim-period">{periodOn(periods.data ?? [], claim.dueBy)?.name ?? ''}</span>;

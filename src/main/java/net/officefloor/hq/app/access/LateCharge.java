@@ -7,7 +7,7 @@ import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.claim.Claim;
 
 /**
- * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (fixed when it was added) gains, for every
+ * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now) gains, for every
  * full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of its figure,
  * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.

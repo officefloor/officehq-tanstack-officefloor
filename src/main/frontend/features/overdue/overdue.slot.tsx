@@ -61,7 +61,7 @@ function OverdueCells({ sheetId, personId }: { sheetId: string; user: string; pe
   );
 }
 
-// A claim's due-by (fixed when it was added: its date plus its grade's terms then) and whether it is overdue (OPEN and due-by before the sheet's today).
+// A claim's due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now) and whether it is overdue (OPEN and due-by before the sheet's today).
 function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { status: string; dueBy: string; deferred?: boolean } }) {
   const isOverdue = useIsOverdue(sheetId);
   return (

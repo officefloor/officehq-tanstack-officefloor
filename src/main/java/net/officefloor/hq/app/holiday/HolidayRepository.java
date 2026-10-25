@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.holiday;
 
 import java.sql.Date;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -37,14 +38,28 @@ public class HolidayRepository {
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
     }
 
-    /** The date itself when it is not a holiday on the sheet, else the next day that is not. */
-    public LocalDate nextWorkingDay(String sheetId, LocalDate date) {
-        Set<LocalDate> holidays = new HashSet<>(jdbc.query(
-                "SELECT holiday_date FROM holiday WHERE sheet_id = ? AND holiday_date >= ?",
-                (rs, n) -> rs.getDate("holiday_date").toLocalDate(), sheetId, Date.valueOf(date)));
-        LocalDate day = date;
-        while (holidays.contains(day)) {
+    /** The sheet's holidays, as they stand now. */
+    public Set<LocalDate> set(String sheetId) {
+        return new HashSet<>(list(sheetId));
+    }
+
+    /** The due-by of a claim counting from {@code from} with {@code terms}, by the sheet's holidays as they stand now. */
+    public LocalDate dueBy(String sheetId, LocalDate from, int terms) {
+        return businessDay(from, terms, set(sheetId));
+    }
+
+    /**
+     * The {@code terms}-th business day after {@code from}: counting forward from the day after it, skipping every
+     * Saturday, Sunday and holiday. The date itself for no terms.
+     */
+    public static LocalDate businessDay(LocalDate from, int terms, Set<LocalDate> holidays) {
+        LocalDate day = from;
+        for (int counted = 0; counted < terms;) {
             day = day.plusDays(1);
+            if (day.getDayOfWeek() != DayOfWeek.SATURDAY && day.getDayOfWeek() != DayOfWeek.SUNDAY
+                    && !holidays.contains(day)) {
+                counted++;
+            }
         }
         return day;
     }

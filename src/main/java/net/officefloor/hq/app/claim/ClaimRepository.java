@@ -4,7 +4,11 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -15,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -26,7 +30,8 @@ public class ClaimRepository {
                 rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
                 rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"));
-        claim.setDueBy(rs.getObject("due_by", LocalDate.class));
+        claim.setDueFrom(rs.getObject("due_from", LocalDate.class));
+        claim.setTerms(rs.getInt("terms"));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
@@ -41,14 +46,27 @@ public class ClaimRepository {
 
     private final JdbcTemplate jdbc;
 
+    private final HolidayRepository holidays;
+
     public ClaimRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+        this.holidays = new HolidayRepository(jdbc);
+    }
+
+    /** Work out each claim's due-by from the date it counts from, its terms and its sheet's holidays as they stand now. */
+    private List<Claim> due(List<Claim> claims) {
+        Map<String, Set<LocalDate>> bySheet = new HashMap<>();
+        for (Claim claim : claims) {
+            Set<LocalDate> off = bySheet.computeIfAbsent(claim.getSheetId(), holidays::set);
+            claim.setDueBy(HolidayRepository.businessDay(claim.getDueFrom(), claim.getTerms(), off));
+        }
+        return claims;
     }
 
     /** The person's claims, newest first. */
     public List<Claim> listOf(String sheetId, long personId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC", ROW,
-                sheetId, personId);
+        return due(jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC", ROW,
+                sheetId, personId));
     }
 
     /** Bind the claim to a figure (null: n/a), or unbind it when not {@code stated}. */
@@ -64,7 +82,7 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC", ROW, sheetId);
+        return due(jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC", ROW, sheetId));
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet. */
@@ -74,18 +92,18 @@ public class ClaimRepository {
     }
 
     public Claim find(String sheetId, long id) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
+        return due(jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))
                 .stream().findFirst().orElse(null);
     }
 
-    /** Add a draft claim, due by {@code dueBy} for good. */
+    /** Add a draft claim, its due-by counting {@code terms} business days from its date for good. */
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            LocalDate dueBy) {
+            int terms) {
         long listed = nextListed(sheetId);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -94,11 +112,14 @@ public class ClaimRepository {
             ps.setString(5, note);
             ps.setString(6, corrects);
             ps.setLong(7, listed);
-            ps.setDate(8, Date.valueOf(dueBy));
+            ps.setDate(8, Date.valueOf(date));
+            ps.setInt(9, terms);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
-        claim.setDueBy(dueBy);
+        claim.setDueFrom(date);
+        claim.setTerms(terms);
+        due(List.of(claim));
         return claim;
     }
 
@@ -110,17 +131,17 @@ public class ClaimRepository {
 
     /**
      * Split {@code amount} off the OPEN claim: it keeps the rest, unbound from any statement figure, and a new OPEN claim
-     * with the amount, its date and note, opened by {@code openedBy}, due by {@code dueBy} and split from its number is
+     * with the amount, its date and note, opened by {@code openedBy}, due by {@code terms} business days from its date and split from its number is
      * listed as its person's newest. Null when the claim was no longer OPEN at its amount: another user changed it.
      */
-    public Claim split(Claim claim, BigDecimal amount, String openedBy, LocalDate dueBy) {
+    public Claim split(Claim claim, BigDecimal amount, String openedBy, int terms) {
         BigDecimal rest = claim.getAmount().subtract(amount);
         if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE id = ? AND status = ? AND amount = ?",
                 rest, claim.getId(), ClaimStatus.OPEN.name(), claim.getAmount()) != 1) {
             return null;
         }
         claim.keep(rest);
-        Claim into = insert(claim.getSheetId(), claim.getPersonId(), amount, claim.getDate(), claim.getNote(), null, dueBy);
+        Claim into = insert(claim.getSheetId(), claim.getPersonId(), amount, claim.getDate(), claim.getNote(), null, terms);
         into.setStatus(ClaimStatus.OPEN);
         into.setOpenedBy(openedBy);
         into.setSplitFrom(claim.getNumber());
@@ -155,7 +176,7 @@ public class ClaimRepository {
     }
 
     /**
-     * Re-date the claim to {@code date}, keeping its due-by and any statement figure. Whether it was still in its status
+     * Re-date the claim to {@code date}, its due-by still counting from the date it was added and any statement figure. Whether it was still in its status
      * at its old date: another user may have changed it.
      */
     public boolean redate(Claim claim, LocalDate date) {

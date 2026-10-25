@@ -104,7 +104,7 @@ export function isBound(claim: { stated: boolean; status?: string }): boolean {
   return claim.stated && claim.status !== 'PENDING';
 }
 
-/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), for every
+/** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now), for every
  *  full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of the figure,
  *  each rounded as the claim rounds (roundsHalfUp), the charges added up; otherwise (or for a correction,
  *  or a claim deferred past the sheet's today) 0. */

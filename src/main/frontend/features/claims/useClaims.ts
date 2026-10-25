@@ -17,7 +17,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   statedDue: string | null;
   /** The number of the SETTLED claim this correction (a negative amount) corrects; none for any other claim. */
   corrects: string | null;
-  /** The date the claim is due by: fixed when it was added (its date plus its grade's terms then), never moved. */
+  /** The date the claim is due by: the terms-th business day after its date when added (skipping Saturdays, Sundays and the sheet's holidays now), by the terms fixed then. */
   dueBy: string;
   /** The claim's status log, oldest first: `<STATUS> by <user> on <date> due=<due>`. */
   log: string[];

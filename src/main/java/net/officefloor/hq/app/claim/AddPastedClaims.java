@@ -55,10 +55,9 @@ public class AddPastedClaims {
             Person person = persons.get(i);
             ClaimInput input = pasted.lines().get(i).input();
             LocalDate date = input.date() != null ? input.date() : today;
-            LocalDate dueBy = BuildClaim.dueBy(person, date, settings, holidays);
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
-                    input.corrects(), dueBy);
-            if (periods.softClosedOn(sheet.id(), dueBy)) {
+                    input.corrects(), BuildClaim.terms(person, date, settings));
+            if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
                 claims.markLate(claim);
             }
             audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));

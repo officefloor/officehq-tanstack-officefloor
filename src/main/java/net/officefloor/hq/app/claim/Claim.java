@@ -20,6 +20,8 @@ public class Claim {
     private BigDecimal statedDue;
     private String corrects;
     private LocalDate roundOn;
+    private LocalDate dueFrom;
+    private int terms;
     private LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
@@ -46,7 +48,28 @@ public class Claim {
         this.roundOn = date;
     }
 
-    /** The date the claim is due by: fixed when it was added (its date then plus its grade's terms), never moved. */
+    /** The date the claim's due-by counts from: its date when it was added, kept when the date later changes. */
+    public LocalDate getDueFrom() {
+        return dueFrom;
+    }
+
+    public void setDueFrom(LocalDate dueFrom) {
+        this.dueFrom = dueFrom;
+    }
+
+    /** The terms the claim was fixed with when it was added: those in force on its date for its person, in business days. */
+    public int getTerms() {
+        return terms;
+    }
+
+    public void setTerms(int terms) {
+        this.terms = terms;
+    }
+
+    /**
+     * The date the claim is due by: the terms-th business day after its due-from date (skipping Saturdays, Sundays and
+     * the sheet's holidays as they stand now), worked out whenever the claim is read.
+     */
     public LocalDate getDueBy() {
         return dueBy;
     }
