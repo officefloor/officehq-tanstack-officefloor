@@ -1,0 +1,725 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 350ec5f1..d90e7f24 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -25,6 +25,31 @@ export function currentAsOf(): string {
+ 
+ const isSheetLoad = (path: string) => /^\/api\/sheets\/[^/?]+$/.test(path);
+ 
++// The preview: while the screen's `preview` search param holds a date (and no as-of date is set), every read of
++// a sheet's records asks for them with that date standing in for the sheet's today, and the screen works out its
++// figures on it (session.ts). The sheet itself (GET /api/sheets/<id>) is read as it is, so the sheet's today and
++// every default date of a change stay the real ones; changes are sent as usual and use the sheet's real today.
++export const PREVIEW_PARAM = 'preview';
++
++/** The date the screen previews the sheet's today as (YYYY-MM-DD), or '' while it shows the sheet's own today. */
++export function currentPreview(): string {
++  if (currentAsOf()) return '';
++  const raw = new URLSearchParams(window.location.search).get(PREVIEW_PARAM) ?? '';
++  try {
++    const parsed: unknown = JSON.parse(raw);
++    return typeof parsed === 'string' ? parsed : raw;
++  } catch {
++    return raw;
++  }
++}
++
++/** The date a figure is worked out on: the preview date while one is set, else the sheet's today. */
++export function figureToday(today: string): string;
++export function figureToday(today: string | undefined): string | undefined;
++export function figureToday(today: string | undefined): string | undefined {
++  return currentPreview() || today;
++}
++
+ async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
+   const asOf = live ? '' : currentAsOf();
+   if (asOf && init?.method && init.method !== 'GET' && !isSheetLoad(path)) {
+@@ -33,6 +58,10 @@ async function send<T>(path: string, init?: RequestInit, live = false): Promise<
+   if (asOf && !init?.method && path.startsWith('/api/sheets/')) {
+     path += `${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
+   }
++  const preview = live ? '' : currentPreview();
++  if (preview && !init?.method && path.startsWith('/api/sheets/') && !isSheetLoad(path)) {
++    path += `${path.includes('?') ? '&' : '?'}preview=${encodeURIComponent(preview)}`;
++  }
+   const res = await fetch(path, init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+diff --git a/src/main/frontend/features/claims/export.slot.tsx b/src/main/frontend/features/claims/export.slot.tsx
+index 474d885e..ec5d3c1d 100644
+--- a/src/main/frontend/features/claims/export.slot.tsx
++++ b/src/main/frontend/features/claims/export.slot.tsx
+@@ -1,4 +1,5 @@
+ import { useQueryClient } from '@tanstack/react-query';
++import { figureToday } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
+ import { gradeOn, peoplePath, peopleQueryKey, type Person } from '../people/people';
+@@ -26,7 +27,7 @@ function ExportClaims() {
+       readFresh<Period[]>(queryClient, periodsQueryKey(sheet), periodsPath(sheet)),
+       readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
+     ]);
+-    const today = info.today;
++    const today = figureToday(info.today);
+     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
+     for (const p of people) {
+       // The sheet's claims come newest first.
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index e0369d2c..8cb4ed99 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -3,7 +3,7 @@ import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-quer
+ import { getJson, HttpError, postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useRealToday, useSheetToday } from '../session/session';
+ import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/people';
+ import { chargedOf, useRates } from '../rates/rates';
+ import { periodOn, usePeriods } from '../periods/periods';
+@@ -228,7 +228,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     ]),
+   });
+   const submitMove = useSubmitOnce(move);
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [deferTo, setDeferTo] = useState('');
+   const defer = useMutation({
+     mutationFn: (until: string) =>
+@@ -914,7 +914,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
+ }) {
+   const [user] = useCurrentUser();
+   const [, setEditing] = useEditingClaim();
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [amount, setAmount] = useState(claim?.amount ?? '');
+   const [date, setDate] = useState(claim?.date ?? '');
+   const [note, setNote] = useState(claim?.note ?? '');
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 2c5650bb..8dfb344e 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -1,5 +1,5 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { currentAsOf, getJson, getJsonLive } from '../../api/http';
++import { currentAsOf, currentPreview, figureToday, getJson, getJsonLive } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser, useSheetToday, type SheetInfo } from '../session/session';
+ import { GRADES, gradeOn, nameKey, peoplePath, usePeople, type Person } from '../people/people';
+@@ -75,7 +75,7 @@ export async function figuresOf(id: string): Promise<Figures> {
+     getJson<Settings>(settingsPath(id)),
+     getJson<Pool[]>(poolsPath(id)),
+   ]);
+-  return figuresFrom(people, claims, rates, info.today, settings, pools);
++  return figuresFrom(people, claims, rates, figureToday(info.today), settings, pools);
+ }
+ 
+ /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
+@@ -101,7 +101,7 @@ function ConsolidatedFigures() {
+   const today = useSheetToday();
+   const asOf = currentAsOf();
+   const descendants = useQuery({
+-    queryKey: [...descendantsQueryKey(sheet ?? ''), asOf],
++    queryKey: [...descendantsQueryKey(sheet ?? ''), asOf, currentPreview()],
+     queryFn: () => descendantFigures(sheet ?? ''),
+     enabled: !!sheet,
+   });
+diff --git a/src/main/frontend/features/people/bulkretire.slot.tsx b/src/main/frontend/features/people/bulkretire.slot.tsx
+index 8c29a265..dd3d5ab9 100644
+--- a/src/main/frontend/features/people/bulkretire.slot.tsx
++++ b/src/main/frontend/features/people/bulkretire.slot.tsx
+@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+ import { getJson, putJson } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
+ import { claimsQueryKey } from '../claims/claims';
+ import { poolsQueryKey } from '../pools/pools';
+ import { peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
+@@ -14,7 +14,7 @@ import { peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Per
+ function BulkRetire() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [showRetired] = useShowRetired();
+   const { selected, clear } = useSelectedPeople();
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index cd792235..c1f2dcaa 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -1,5 +1,5 @@
+ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
++import { figureToday, getJson } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
+ import { claimsPath, claimsQueryKey, type Claim } from '../claims/claims';
+@@ -38,7 +38,7 @@ function ExportPeople() {
+       readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
+       readFresh<Pool[]>(queryClient, poolsQueryKey(sheet), poolsPath(sheet)),
+     ]);
+-    const today = info.today;
++    const today = figureToday(info.today);
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+     for (const p of people) {
+       lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people, pools)]);
+diff --git a/src/main/frontend/features/people/flag.slot.tsx b/src/main/frontend/features/people/flag.slot.tsx
+index 68db4d2e..ff4fff6c 100644
+--- a/src/main/frontend/features/people/flag.slot.tsx
++++ b/src/main/frontend/features/people/flag.slot.tsx
+@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
+ import { peoplePath, peopleQueryKey, type Person } from './people';
+ 
+ // A steward's flag on a person: the reason it shows while the sheet's today is on or before its until-date
+@@ -18,7 +18,7 @@ function FlagHeader() {
+ function PersonFlag({ person }: { person: Person }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [reason, setReason] = useState('');
+   const [until, setUntil] = useState('');
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/people/hold.slot.tsx b/src/main/frontend/features/people/hold.slot.tsx
+index 2ce59b2d..424f5527 100644
+--- a/src/main/frontend/features/people/hold.slot.tsx
++++ b/src/main/frontend/features/people/hold.slot.tsx
+@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
+ import { peoplePath, peopleQueryKey, type Person } from './people';
+ import { useColumnShown } from './columns';
+ 
+@@ -19,7 +19,7 @@ function PersonHold({ person }: { person: Person }) {
+   const shown = useColumnShown('hold');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/people/retire.slot.tsx b/src/main/frontend/features/people/retire.slot.tsx
+index 85a434f5..7be07395 100644
+--- a/src/main/frontend/features/people/retire.slot.tsx
++++ b/src/main/frontend/features/people/retire.slot.tsx
+@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
+ import { peoplePath, peopleQueryKey, type Person } from './people';
+ import { poolsQueryKey } from '../pools/pools';
+ import { useColumnShown } from './columns';
+@@ -20,7 +20,7 @@ function PersonRetired({ person }: { person: Person }) {
+   const shown = useColumnShown('retired');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [date, setDate] = useState('');
+   const queryClient = useQueryClient();
+   const retire = useMutation({
+diff --git a/src/main/frontend/features/session/preview.slot.tsx b/src/main/frontend/features/session/preview.slot.tsx
+new file mode 100644
+index 00000000..4e749705
+--- /dev/null
++++ b/src/main/frontend/features/session/preview.slot.tsx
+@@ -0,0 +1,46 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { AppSession } from '../../slots/defs/appSession';
++import { useCurrentSheet, useCurrentUser, usePreview } from './session';
++
++// The preview date of this screen (the `preview` search param; other users' screens are unaffected): while it is
++// set, every figure on the screen is worked out as if the sheet's today were that date, over the sheet's records as
++// they are now (api/http.ts, session.ts). Changes still go through on the sheet's real today, and nothing a change
++// of today does (snapshots, scores, auto-closing) happens. Setting or clearing it re-reads the sheet.
++const isDate = (raw: string) => /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(`${raw}T00:00:00Z`));
++
++function PreviewDate() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [preview, setPreview] = usePreview();
++  const [date, setDate] = useState('');
++  const queryClient = useQueryClient();
++
++  const change = async (next: string | undefined) => {
++    await setPreview(next);
++    await queryClient.resetQueries({ queryKey: ['sheet'] });
++  };
++
++  if (!user || !sheet) return null;
++  return (
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        if (isDate(date.trim())) void change(date.trim());
++      }}
++    >
++      <span>
++        Preview <strong data-testid="sheet-preview">{preview}</strong>
++      </span>
++      <input data-testid="preview-date" placeholder="YYYY-MM-DD" value={date} onChange={(e) => setDate(e.target.value)} />
++      <button type="submit" data-testid="preview-set">
++        Set preview
++      </button>
++      <button type="button" data-testid="preview-clear" onClick={() => void change(undefined)}>
++        Clear preview
++      </button>
++    </form>
++  );
++}
++
++export const contribution = AppSession.fill({ order: 26, Component: PreviewDate });
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 613a52c6..057f7254 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -1,5 +1,5 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
++import { ASOF_PARAM, getJson, PREVIEW_PARAM } from '../../api/http';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ 
+ // The signed-in name and the active sheet id live in the URL (search params `user` and `sheet`).
+@@ -29,5 +29,18 @@ export function useSheetInfo() {
+   });
+ }
+ 
+-/** The sheet's today (YYYY-MM-DD), or undefined until the sheet is loaded. */
+-export const useSheetToday = () => useSheetInfo().data?.today;
++/** The date this screen previews the sheet's today as (the `preview` search param; preview.slot.tsx), '' for none. */
++export const usePreview = () => useSearchParam(PREVIEW_PARAM, asString);
++
++/** The sheet's today (YYYY-MM-DD) as the screen's figures use it, or undefined until the sheet is loaded: the
++ *  preview date while one is set (only for this screen; an as-of view ignores it). A change, and the default date it
++ *  shows, uses the sheet's real today (useRealToday). */
++export const useSheetToday = () => {
++  const [preview] = usePreview();
++  const [asOf] = useSearchParam(ASOF_PARAM, asString);
++  const today = useSheetInfo().data?.today;
++  return (!asOf && preview) || today;
++};
++
++/** The sheet's real today (YYYY-MM-DD), whatever the screen previews, or undefined until the sheet is loaded. */
++export const useRealToday = () => useSheetInfo().data?.today;
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 016b2e07..14e443a0 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -1,10 +1,10 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { putJson } from '../../api/http';
++import { figureToday, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
++import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
+ import { claimsQueryKey } from '../claims/claims';
+ import { peoplePath, peopleQueryKey, type Person } from '../people/people';
+ import { useColumnShown } from '../people/columns';
+@@ -32,7 +32,7 @@ function PersonStatement({ person }: { person: Person }) {
+   const dateShown = useColumnShown('statement-date');
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+-  const today = useSheetToday();
++  const today = useRealToday();
+   const [asOf, setAsOf] = useState('');
+   const queryClient = useQueryClient();
+   const take = useMutation({
+@@ -73,7 +73,7 @@ function PersonStatement({ person }: { person: Person }) {
+     const lines = [['number', 'date', 'amount', 'figure', 'status']];
+     // The sheet's claims come newest first.
+     for (const c of claims.filter((x) => x.personId === p.id && x.stated).reverse()) {
+-      lines.push([c.number ?? '', c.date, c.amount, chargedOf(c, rates, gradeOn(p, c.date), settings, info.today), c.status]);
++      lines.push([c.number ?? '', c.date, c.amount, chargedOf(c, rates, gradeOn(p, c.date), settings, figureToday(info.today)), c.status]);
+     }
+     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadOrCreateSheetForRead.java b/src/main/java/net/officefloor/hq/app/sheet/LoadOrCreateSheetForRead.java
+new file mode 100644
+index 00000000..d22038ce
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadOrCreateSheetForRead.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Loads the sheet for a read, as {@link LoadOrCreateSheet}; with a preview date (preview), the sheet as the screen
++ *  previews it: its records as they are now, that date standing in for its today (see {@link Sheet#previewedOn}).
++ *  Only reads take a preview: a change always uses the sheet's real today. */
++public class LoadOrCreateSheetForRead {
++    public void load(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "preview", required = false) String preview, SheetRepository repository,
++            Out<Sheet> sheetOut) throws InvalidTodayException {
++        String id = sheetId.trim();
++        Sheet sheet = repository.findById(id).orElseGet(() -> repository.save(new Sheet(id)));
++        LocalDate date = AsOf.dateOf(preview);
++        sheetOut.set(date == null ? sheet : sheet.previewedOn(date));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 8c126a89..2b0992f2 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -481,4 +481,23 @@ public class Sheet {
+     public int getLastSettleBatch() {
+         return lastSettleBatch;
+     }
++
++    /** The sheet as a preview shows it: every setting as recorded now, with the date standing in for its today. A
++     *  detached copy, never saved; the sheet itself is untouched. */
++    public Sheet previewedOn(LocalDate date) {
++        Sheet view = new Sheet(id);
++        view.today = date;
++        for (SheetSetting s : settings) {
++            view.settings.add(new SheetSetting(view, s.getKey(), s.getFromDate(), s.getValue()));
++        }
++        view.policyDate = policyDate;
++        view.periodNumberingFrom = periodNumberingFrom;
++        view.entryDate = entryDate;
++        view.clonedFrom = clonedFrom;
++        view.archived = archived;
++        view.archivedOn = archivedOn;
++        view.lastSettleBatch = lastSettleBatch;
++        view.departedTags = departedTags;
++        return view;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 215e66b0..dbd7ff45 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -14,11 +14,13 @@ import net.officefloor.hq.app.claim.ClaimFigures;
+ import net.officefloor.hq.app.claim.ClaimLog;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimShares;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.person.InvalidPersonException;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonGrades;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateLogRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.sheet.SettingLogRepository;
+@@ -42,7 +44,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ public class TakeStatement {
+     public void take(@Val Sheet sheet, @Val Person person, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
+             StatementRepository statements, BindingLogRepository bindings, ClaimLogRepository logs,
+-            RateLogRepository rateLogs, SettingLogRepository settingLogs, EntityManager entityManager,
++            RateLogRepository rateLogs, SettingLogRepository settingLogs, PersonRepository people, EntityManager entityManager,
+             @RequestParam(name = "asOf", required = false) String asOfParam, Out<Statement> statementOut)
+             throws InvalidPersonException {
+         LocalDate asOf = parseAsOf(asOfParam, sheet, person);
+@@ -55,7 +57,8 @@ public class TakeStatement {
+         if (asOf == null) {
+             ClaimFigures figures = new ClaimFigures(rates.findInChain(sheet.getId()),
+                     grades.gradesOf(person), sheet);
+-            dueTotal = figures.dueTotal(mine, sheet.getToday(), person);
++            dueTotal = figures.dueTotal(mine, sheet.getToday(), person,
++                    heldBy(person, sheet, claims, rates, grades, people));
+             for (Claim claim : mine) {
+                 if (ClaimFigures.countsLive(claim, person, sheet.getToday())) {
+                     BigDecimal figure = figures.due(claim);
+@@ -101,6 +104,37 @@ public class TakeStatement {
+                 new Statement(sheet.getId(), person.getId(), dueTotal, sheet.getToday(), asOf, counted)));
+     }
+ 
++    /** The person's parts of the counted claims of others shared with them, each at its live due as its own person's
++     *  figures give it (as the rollup counts them); null when they hold no share of a counted claim. */
++    private static BigDecimal heldBy(Person person, Sheet sheet, ClaimRepository claims, RateRepository rates,
++            PersonGradeRepository grades, PersonRepository people) {
++        BigDecimal held = null;
++        var sheetRates = rates.findInChain(sheet.getId());
++        Map<Long, List<Claim>> shared = claims.findBySheetIdOrderByIdDesc(sheet.getId()).stream()
++                .filter(c -> c.getShares() != null && ClaimShares.of(c).stream().anyMatch(sh -> person.getId().equals(sh.personId())))
++                .collect(Collectors.groupingBy(Claim::getPersonId));
++        for (Person owner : people.findListed(sheet.getId())) {
++            List<Claim> owned = shared.getOrDefault(owner.getId(), List.of());
++            if (owned.isEmpty()) {
++                continue;
++            }
++            ClaimFigures ownerFigures = new ClaimFigures(sheetRates, grades.gradesOf(owner), sheet);
++            for (Claim c : owned) {
++                BigDecimal claimDue = ClaimFigures.countsLive(c, owner, sheet.getToday()) ? ownerFigures.due(c) : null;
++                if (claimDue == null) {
++                    continue;
++                }
++                for (var sh : ClaimShares.of(c)) {
++                    if (person.getId().equals(sh.personId())) {
++                        BigDecimal part = ClaimShares.part(claimDue, sh.share());
++                        held = held == null ? part : held.add(part);
++                    }
++                }
++            }
++        }
++        return held;
++    }
++
+     /** The date the statement is taken as of: null when none is given; refuses one that is not a calendar date, one
+      *  after the sheet's today, and one before the person was added. */
+     private static LocalDate parseAsOf(String asOfParam, Sheet sheet, Person person) throws InvalidPersonException {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml
+index c7cdde12..f5d77ce0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/children.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/children — the ids of the sheets naming it as their parent, by id.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
+index c04b78a7..28770bda 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/claims — every claim on the sheet, newest first.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+index 074d9bb7..e4700f62 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -1,7 +1,7 @@
+ # GET /api/sheets/{sheetId}/claims/{claimId}/timeline — the audit lines about the claim, newest first, as the file
+ # holds them. Reads the file; writes nothing.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: claim
+ claim:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml
+index df7e945c..54926949 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/crews.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/crews — the sheet's crews with their leads and members.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
+index 56794dcd..0f384257 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/delegations — the steward role delegations made on the sheet, oldest first.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml
+index 76df2926..b1135cd3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/grades — the grades A, B and C, each with whether it is retired on the sheet.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml
+index 259d97bc..968a86d4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/holidays — the sheet's holidays, by date.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml
+index 83a2a529..675f7047 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/notes — the sheet's notes, newest first; as of a date (asOf), those added by then.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+index 9b343aba..eb5ea90c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/people — the sheet's people in the order they were added.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
+index 87002ff7..ba32a61d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/periods — the sheet's periods, by from-date.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
+index 02865aff..6f91794f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/plans — the sheet's plans, in the order they were added, each with how many claims it has made.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+index 0efb44dc..b6398e23 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/pools — the sheet's pools with their members, totals and whether each is balanced.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml
+index 1eb010fd..8b022f25 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rate-preview.GET.yml
+@@ -3,7 +3,7 @@ validate:
+   class: net.officefloor.hq.app.rate.ValidateRatePreview
+   next: load
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+index 2a1cd526..ea2abcd0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/rates — the sheet's rate for each grade that has one.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+index 76fc105c..11aafae2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/roles — the user names given a role on the sheet (any other name is a clerk).
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+index 8d94b70a..d4d2f8b1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/settings — the sheet's settings: its clerk limit, floor and terms.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml
+index 6dacca29..763f9570 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/templates — the sheet's claim templates, by name.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml
+index 01b28d89..3f00fe44 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/tree — the ids of the other sheets of its tree (its ancestors and descendants), by id.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml
+index 3d0a5d1d..159519ac 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/void-reasons — the sheet's void reasons, in the order they were added.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watched.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watched.GET.yml
+index 58ca40a6..4aca3219 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watched.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/watched.GET.yml
+@@ -1,6 +1,6 @@
+ # GET /api/sheets/{sheetId}/watched?user=<name> — the ids of the people the user watches on the sheet.
+ load:
+-  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheetForRead
+   govern: [ transaction ]
+   next: respond
+ respond:
