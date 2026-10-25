@@ -6,6 +6,7 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
+import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
 
@@ -47,12 +48,13 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
     save.reset();
   };
 
+  const submit = useSubmitOnce(save);
   return (
     <form
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate({ amount, date, note });
+        submit({ amount, date, note });
       }}
     >
       <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={amount} onChange={field(setAmount)} />{' '}

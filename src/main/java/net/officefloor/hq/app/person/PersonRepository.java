@@ -12,7 +12,9 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+
+    static final String CHANGED = "Someone else has saved this person since you opened it; the form now shows their changes";
 
     static final String NAME_TAKEN = "That name is already in use on this sheet";
 
@@ -24,11 +26,11 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
                 .stream().findFirst().orElse(null);
     }
 
@@ -50,11 +52,18 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
     }
 
-    public void update(Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ?", person.getName(), person.getGrade(),
-                person.getId());
+    /** Saves the person if it is still at the version it was loaded at, moving it to the next
+     *  version; false (nothing written) when someone else saved it in the meantime. */
+    public boolean update(Person person) {
+        int n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND version = ?",
+                person.getName(), person.getGrade(), person.getId(), person.getVersion());
+        if (n == 0) {
+            return false;
+        }
+        person.setVersion(person.getVersion() + 1);
+        return true;
     }
 }

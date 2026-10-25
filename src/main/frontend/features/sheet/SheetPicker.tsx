@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useSheetId } from '../session/useSession';
+import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 // Choose a sheet by typing its id and loading it. Loading drops everything cached for that sheet,
 // so the screen re-reads it from the store (an id never used before starts empty).
@@ -20,12 +21,13 @@ export function SheetPicker() {
     },
   });
 
+  const submit = useSubmitOnce(load);
   return (
     <div data-testid="sheet-bar">
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          load.mutate(input);
+          submit(input);
         }}
       >
         <label>

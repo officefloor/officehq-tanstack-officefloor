@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useUser } from './useSession';
+import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 // Sign in by typing a name; there is no password.
 export function SignIn() {
@@ -12,12 +13,13 @@ export function SignIn() {
     onSuccess: (u) => setUser(u.name),
   });
 
+  const submit = useSubmitOnce(signIn);
   return (
     <form
       data-testid="signin-form"
       onSubmit={(e) => {
         e.preventDefault();
-        signIn.mutate(name);
+        submit(name);
       }}
     >
       <label>

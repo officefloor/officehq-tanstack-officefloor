@@ -1,11 +1,18 @@
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
+/** A refused request: the reason, and the HTTP status (409: someone else saved the record first). */
+export class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
     // A refusal carries {"error": "<why>"}; show that, else the status line.
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+    throw new HttpError(body?.error ?? `${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }

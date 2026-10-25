@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJson, postJson, putJson } from '../../api/http';
+import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useUser } from '../session/useSession';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
-export type Person = { id: number; name: string; grade: string };
+/** `version` counts the person's saves; an edit sends the one its form loaded. */
+export type Person = { id: number; name: string; grade: string; version: number };
 
 const GRADES = ['A', 'B', 'C'] as const;
 
@@ -26,11 +28,14 @@ export function useEditingPerson() {
 }
 
 // The person form: adds a person, or — with a person's editor open — saves their changes. It is
-// re-mounted for each person opened (see PeoplePanel), so it starts filled with their values.
+// re-mounted for each person opened (see PeoplePanel), so it starts filled with their values and
+// remembers the version it loaded. When someone else has saved the person since, the save is
+// refused: the form then shows the person's current values and version, so saving again works.
 function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person }) {
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  const [version, setVersion] = useState(editing?.version);
   const [user] = useUser();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
@@ -40,7 +45,7 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
       return editing
-        ? putJson<Person>(`${base}/${editing.id}`, sent)
+        ? putJson<Person>(`${base}/${editing.id}`, { ...sent, version })
         : postJson<Person>(base, sent);
     },
     onSuccess: async () => {
@@ -52,14 +57,26 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
         setGrade('A');
       }
     },
+    onError: async (error) => {
+      if (!editing || !(error instanceof HttpError) || error.status !== 409) return;
+      // Someone else saved this person: re-read the sheet's people and show their current values.
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === editing.id);
+      if (now) {
+        setName(now.name);
+        setGrade(now.grade);
+        setVersion(now.version);
+      }
+    },
   });
 
+  const submit = useSubmitOnce(save);
   return (
     <form
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate({ name, grade });
+        submit({ name, grade });
       }}
     >
       <label>

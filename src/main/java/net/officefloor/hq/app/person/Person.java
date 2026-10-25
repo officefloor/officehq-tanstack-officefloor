@@ -7,12 +7,14 @@ public class Person {
     private final String sheetId;
     private String name;
     private String grade;
+    private long version;
 
-    public Person(long id, String sheetId, String name, String grade) {
+    public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
         this.grade = grade;
+        this.version = version;
     }
 
     public long getId() {
@@ -37,5 +39,13 @@ public class Person {
 
     public void setGrade(String grade) {
         this.grade = grade;
+    }
+
+    public long getVersion() {
+        return version;
+    }
+
+    public void setVersion(long version) {
+        this.version = version;
     }
 }

@@ -25,7 +25,7 @@ public class ValidatePerson {
         if (!GRADES.contains(grade)) {
             throw new BadRequestException("Choose a grade: A, B or C");
         }
-        person.set(new PersonRequest(name, grade, by.name()));
+        person.set(new PersonRequest(name, grade, by.name(), request.version()));
         changedBy.set(by);
     }
 }

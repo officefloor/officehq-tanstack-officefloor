@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 type SheetToday = { id: string; today: string };
 
@@ -35,6 +36,7 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
     },
   });
 
+  const submit = useSubmitOnce(save);
   return (
     <section data-testid="sheet-today-panel">
       <p>
@@ -43,7 +45,7 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate(input);
+          submit(input);
         }}
       >
         <input

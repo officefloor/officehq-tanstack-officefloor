@@ -9,6 +9,7 @@ import { usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
 import { dueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
+import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 const GRADES = ['A', 'B', 'C'] as const;
 const RATE = /^\d{1,3}(\.\d{1,2})?$/;
@@ -85,6 +86,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
     },
   });
 
+  const submit = useSubmitOnce(save);
   return (
     <section data-testid="rates-panel">
       <h2>Rates</h2>
@@ -92,7 +94,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate({ grade, rate: pct, from });
+          submit({ grade, rate: pct, from });
         }}
       >
         <label>
