@@ -9,6 +9,7 @@ import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_D
 const ROLES = ['clerk', 'steward'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,5}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
 // assigned roles are listed under it. The server decides who may settle what.
@@ -105,7 +106,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
 // due by (14 until they are set), and the late percent, what an overdue claim's due gains of its figure for every
-// full 30 days it is overdue (0.00 until it is set). The value in force shows beside each. Saving
+// full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
+// claim's live figures round half up and from which they round half to even. The value in force shows beside each. Saving
 // sends only the settings whose field was touched since the last save.
 const SETTINGS = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
@@ -116,6 +118,8 @@ const SETTINGS = [
     invalid: 'Terms are a whole number of days' },
   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A late percent is a number with up to two decimals' },
+  { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
+    invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today' },
 ] as const;
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {

@@ -14,14 +14,24 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects";
+    // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects,"
+            + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
+            + " AND o.claim_number = claim.corrects) AS corrected_date";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
-            rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getObject("corrects", Integer.class));
+    private static final RowMapper<Claim> ROW = (rs, n) -> {
+        Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+                rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
+                rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+                rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+                rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+                rs.getObject("corrects", Integer.class));
+        LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
+        if (corrected != null) {
+            claim.setRoundOn(corrected);
+        }
+        return claim;
+    };
 
     private final JdbcTemplate jdbc;
 

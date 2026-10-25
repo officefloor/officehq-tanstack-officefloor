@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
 import net.officefloor.hq.app.access.SettingRepository;
@@ -31,8 +32,8 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
             throw new BadRequestException("The user who opened a claim cannot settle it");
         }
-        BigDecimal due = status == ClaimStatus.SETTLED ? settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()))
-                .due(claim, dueNow(claim, people, rates, settings)) : null;
+        LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
+        BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;
         if (status == ClaimStatus.SETTLED && due != null
                 && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
@@ -59,14 +60,14 @@ public class ApplyClaimStatus {
         audited.set(new ClaimNumber(claim.getNumber()));
     }
 
-    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even and at least the sheet's floor (a correction has none); null when there is no rate. */
+    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date and at least the sheet's floor (a correction has none); null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
-            SettingRepository settings) {
+            SettingRepository settings, LateCharge late) {
         if (claim.isStated()) {
             return claim.getStatedDue();
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        return claim.figureAt(rate, settings.floor(claim.getSheetId()));
+        return claim.figureAt(rate, settings.floor(claim.getSheetId()), late.rounding(claim));
     }
 }

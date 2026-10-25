@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { toHundredths, type Late } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
+import { useClaims } from '../claims/useClaims';
 
 /** A role assigned to a user name: clerk (any name without one) or steward. */
 export type Role = { user: string; role: string };
@@ -49,11 +50,18 @@ export function useTermsDays(sheetId: string): number {
 /** The late percent a sheet starts with, until it is set. */
 export const LATE_PCT_DEFAULT = '0.00';
 
-/** The sheet's late charge as of its today: its terms and its late percent (0.00 until it is set). Undefined
+/** The sheet's late charge as of its today: its terms and its late percent (0.00 until it is set); with its
+ *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
  *  until the sheet's today is known. */
 export function useLate(sheetId: string): Late | undefined {
-  const pct = useSettings(sheetId).data?.find((s) => s.key === 'late-pct')?.value ?? LATE_PCT_DEFAULT;
+  const settings = useSettings(sheetId).data;
+  const pct = settings?.find((s) => s.key === 'late-pct')?.value ?? LATE_PCT_DEFAULT;
+  const policy = settings?.find((s) => s.key === 'policy-date')?.value ?? '';
   const termsDays = useTermsDays(sheetId);
   const today = useSheetToday(sheetId).data?.today;
-  return today === undefined ? undefined : { today, termsDays, pctHundredths: toHundredths(pct) };
+  const claims = useClaims(sheetId).data;
+  const dateOfNumber = new Map<number, string>();
+  for (const c of claims ?? []) if (c.number != null) dateOfNumber.set(c.number, c.date);
+  return today === undefined ? undefined
+    : { today, termsDays, pctHundredths: toHundredths(pct), policyDate: policy === '' ? today : policy, dateOfNumber };
 }

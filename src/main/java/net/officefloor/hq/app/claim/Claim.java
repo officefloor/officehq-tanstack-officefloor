@@ -19,6 +19,7 @@ public class Claim {
     private boolean stated;
     private BigDecimal statedDue;
     private Integer corrects;
+    private LocalDate roundOn;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
@@ -36,6 +37,16 @@ public class Claim {
         this.stated = stated;
         this.statedDue = statedDue;
         this.corrects = corrects;
+        this.roundOn = date;
+    }
+
+    /** The date the claim's live figures round by: its own, or for a correction the date of the claim it corrects. */
+    public LocalDate getRoundOn() {
+        return roundOn;
+    }
+
+    public void setRoundOn(LocalDate roundOn) {
+        this.roundOn = roundOn;
     }
 
     public long getId() {
@@ -63,6 +74,9 @@ public class Claim {
     }
 
     public void setDate(LocalDate date) {
+        if (corrects == null) {
+            this.roundOn = date;
+        }
         this.date = date;
     }
 
@@ -134,14 +148,14 @@ public class Claim {
     }
 
     /**
-     * The claim's live figure at the rate: its amount times the rate, rounded half to even to two decimals and at
-     * least the floor — a correction has no floor. Null without a rate.
+     * The claim's live figure at the rate: its amount times the rate, rounded to two decimals by the rounding given and
+     * at least the floor — a correction has no floor. Null without a rate.
      */
-    public BigDecimal figureAt(BigDecimal rate, BigDecimal floor) {
+    public BigDecimal figureAt(BigDecimal rate, BigDecimal floor, java.math.RoundingMode rounding) {
         if (rate == null) {
             return null;
         }
-        BigDecimal figure = amount.multiply(rate).movePointLeft(2).setScale(2, java.math.RoundingMode.HALF_EVEN);
+        BigDecimal figure = amount.multiply(rate).movePointLeft(2).setScale(2, rounding);
         return isCorrection() ? figure : figure.max(floor);
     }
 }

@@ -23,4 +23,7 @@ public record Setting(String sheetId, String key, String value) {
 
     /** The late percent a sheet starts with, until it is set. */
     public static final String LATE_PCT_DEFAULT = "0.00";
+
+    /** The date before which a claim's live figures round half up, and from which half to even; blank means the sheet's today. */
+    public static final String POLICY_DATE = "policy-date";
 }

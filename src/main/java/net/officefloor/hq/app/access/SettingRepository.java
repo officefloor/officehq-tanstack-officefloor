@@ -65,9 +65,15 @@ public class SettingRepository {
         return new BigDecimal(value == null ? Setting.LATE_PCT_DEFAULT : value).setScale(2);
     }
 
-    /** The sheet's late-charge terms as of its today. */
+    /** The sheet's policy date: the one set, else its today. */
+    public java.time.LocalDate policyDate(String sheetId, java.time.LocalDate today) {
+        String value = find(sheetId, Setting.POLICY_DATE);
+        return value == null ? today : java.time.LocalDate.parse(value);
+    }
+
+    /** The sheet's late-charge terms as of its today, with its policy date for rounding. */
     public LateCharge lateCharge(String sheetId, java.time.LocalDate today) {
-        return new LateCharge(today, terms(sheetId), latePct(sheetId));
+        return new LateCharge(today, terms(sheetId), latePct(sheetId), policyDate(sheetId, today));
     }
 
     /** Set a setting's value (null: blank), replacing the one there before. */

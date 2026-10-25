@@ -29,9 +29,11 @@ export function rateOn(rates: readonly Rate[], grade: string, date: string): Rat
   return found;
 }
 
-/** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n), exactly. */
+/** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n, "-1.03" -> -103n), exactly. */
 export function toHundredths(text: string): bigint {
-  const [whole, frac = ''] = text.trim().split('.');
+  const trimmed = text.trim();
+  if (trimmed.startsWith('-')) return -toHundredths(trimmed.slice(1));
+  const [whole, frac = ''] = trimmed.split('.');
   return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
 }
 
@@ -44,21 +46,33 @@ export function showHundredths(n: bigint): string {
 
 /**
  * Due, in cents, on an amount (in cents) at a rate (a percent, in hundredths): amount times rate
- * divided by 100, rounded half to even to two decimals (1.025 -> 1.02, 1.035 -> 1.04). Rates are never
- * negative; a correction's negative amount rounds the same way as its size (-1.025 -> -1.02).
+ * divided by 100, rounded to two decimals half to even (1.025 -> 1.02, 1.035 -> 1.04), or half up when
+ * `halfUp` (1.025 -> 1.03). Rates are never negative; a correction's negative amount rounds the same way as
+ * its size (-1.025 -> -1.02, half up -1.03).
  */
-export function dueCents(amountCents: bigint, rateHundredths: bigint): bigint {
-  if (amountCents < 0n) return -dueCents(-amountCents, rateHundredths);
+export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = false): bigint {
+  if (amountCents < 0n) return -dueCents(-amountCents, rateHundredths, halfUp);
   // cents * (rate/100 %) / 100 = cents * rateHundredths / 10000
   const exact = amountCents * rateHundredths;
   const whole = exact / 10000n;
   const rest = exact % 10000n;
-  if (rest > 5000n || (rest === 5000n && whole % 2n === 1n)) return whole + 1n;
+  if (rest > 5000n || (rest === 5000n && (halfUp || whole % 2n === 1n))) return whole + 1n;
   return whole;
 }
 
-/** The late charge's terms as of the sheet's today: its terms in days and its late percent (in hundredths). */
-export type Late = { today: string; termsDays: number; pctHundredths: bigint };
+/** The late charge's terms as of the sheet's today: its terms in days and its late percent (in hundredths); and
+ *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
+ *  live figures round. */
+export type Late = { today: string; termsDays: number; pctHundredths: bigint; policyDate: string;
+  dateOfNumber: ReadonlyMap<number, string> };
+
+/** Whether the claim's live figures round half up: it (or, for a correction, the claim it corrects) is dated before
+ *  the sheet's policy date; on or after it they round half to even. Half to even until the sheet's today is known. */
+export function roundsHalfUp(late: Late | undefined, claim: { date: string; corrects?: number | null }): boolean {
+  if (late === undefined) return false;
+  const on = (claim.corrects != null ? late.dateOfNumber.get(claim.corrects) : undefined) ?? claim.date;
+  return on < late.policyDate;
+}
 
 /** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
 export function addDays(date: string, days: number): string {
@@ -79,35 +93,37 @@ export function isCorrection(claim: { amount: string }): boolean {
 
 /** A claim's late charge in cents on its figure: for an OPEN claim past its due-by (its date plus the terms), the
  *  late percent of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
-export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string }, figureCents: bigint): bigint {
+export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; corrects?: number | null },
+  figureCents: bigint): bigint {
   if (late === undefined || claim.status !== 'OPEN' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(addDays(claim.date, late.termsDays), late.today);
   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
-  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths);
+  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths, roundsHalfUp(late, claim));
 }
 
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
  *  otherwise its amount times its person's grade's rate
- *  in force on the claim's date, rounded half to even, and at least the sheet's floor (in cents) unless it is a correction. Null when there is
+ *  in force on the claim's date, rounded half to even (half up when `halfUp`), and at least the sheet's floor (in cents) unless it is a correction. Null when there is
  *  no figure (no rate of the grade then). */
 export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null },
-  floorCents: bigint): bigint | null {
+  floorCents: bigint, halfUp = false): bigint | null {
   if (claim.settledDue != null) return toHundredths(claim.settledDue);
   if (claim.stated) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
   const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
   if (found === undefined) return null;
   const correction = isCorrection(claim);
   const amount = toHundredths(correction ? claim.amount.trim().slice(1) : claim.amount);
-  const due = dueCents(correction ? -amount : amount, toHundredths(found.rate));
+  const due = dueCents(correction ? -amount : amount, toHundredths(found.rate), halfUp);
   return correction || due >= floorCents ? due : floorCents;
 }
 
 /** A claim's due in cents: its figure (claimFigureCents) with its late charge on top while it is overdue. The
  *  charge is never bound by a statement; a settled claim's due already has it frozen in. Null without a figure. */
 export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
-  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null },
+  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
+    corrects?: number | null },
   floorCents: bigint, late: Late | undefined): bigint | null {
-  const figure = claimFigureCents(rates, grade, claim, floorCents);
+  const figure = claimFigureCents(rates, grade, claim, floorCents, roundsHalfUp(late, claim));
   return figure == null ? null : figure + lateCents(late, claim, figure);
 }
