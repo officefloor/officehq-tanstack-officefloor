@@ -67,9 +67,9 @@ export type Claim = {
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** Whether a claim shows and totals the figure its person's last statement bound it to: it is bound and not PENDING
- *  (a PENDING claim shows its live figure, and is bound again if rejected). */
-export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
+/** Whether a claim shows and totals the figure its person's last statement bound it to: it is bound (a PENDING
+ *  claim like any other). */
+export const isBound = (c: Claim) => c.stated;
 
 /** Whether a claim is deferred on the sheet's today: it is OPEN and deferred until a date after it. Until then it
  *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */

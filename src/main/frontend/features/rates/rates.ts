@@ -78,7 +78,7 @@ export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: st
   return policy !== undefined && (c.roundsOn ?? c.date) < policy;
 }
 
-/** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to (not while PENDING),
+/** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
  *  else its rate figure at the rate on its date (of those that apply to it: a forward-only rate saved after it was added does not) of the grade (its person's grade on its date) ("n/a" when it has none),
  *  rounded by the sheet's policy; no floor (that comes last, in {@link chargedOf}). */
 export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, halfUp = false): string {

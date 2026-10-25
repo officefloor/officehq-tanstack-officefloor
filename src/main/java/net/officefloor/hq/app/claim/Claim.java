@@ -304,10 +304,10 @@ public class Claim {
         return statedDue;
     }
 
-    /** Whether the claim shows and totals the figure its person's last statement bound it to: it is bound and not
-     *  PENDING (a PENDING claim shows its live figure, and is bound again if rejected). */
+    /** Whether the claim shows and totals the figure its person's last statement bound it to: it is bound (a PENDING
+     *  claim like any other). */
     public boolean isBound() {
-        return stated && getStatus() != ClaimStatus.PENDING;
+        return stated;
     }
 
     /** Binds the claim to a figure (null: n/a), or unbinds it (live again). */

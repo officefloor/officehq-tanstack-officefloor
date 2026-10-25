@@ -15,7 +15,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 
 /**
  * The figures of one person's claims, as the screen works them out: a settled claim's frozen due, else the
- * figure its person's last statement bound it to (not while PENDING), else its live due (amount times the rate in force on its date of
+ * figure its person's last statement bound it to, else its live due (amount times the rate in force on its date of
  * the grade its person had on its date, rounded by the sheet's policy; none — n/a — when no rate applies then, or the one that would has ended by then). An
  * overdue claim's due adds, on top of its figure, the late charge: for each full 30 days it is overdue on the sheet's today, the
  * sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus
