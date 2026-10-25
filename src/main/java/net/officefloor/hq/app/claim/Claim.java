@@ -20,6 +20,7 @@ public class Claim {
     private BigDecimal statedDue;
     private String corrects;
     private LocalDate roundOn;
+    private LocalDate dueBy;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -38,6 +39,15 @@ public class Claim {
         this.statedDue = statedDue;
         this.corrects = corrects;
         this.roundOn = date;
+    }
+
+    /** The date the claim is due by: fixed when it was added (its date then plus its grade's terms), never moved. */
+    public LocalDate getDueBy() {
+        return dueBy;
+    }
+
+    public void setDueBy(LocalDate dueBy) {
+        this.dueBy = dueBy;
     }
 
     /** The date the claim's live figures round by: its own, or for a correction the date of the claim it corrects. */

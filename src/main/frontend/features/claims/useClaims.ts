@@ -15,7 +15,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   stated: boolean;
   statedDue: string | null;
   /** The number of the SETTLED claim this correction (a negative amount) corrects; none for any other claim. */
-  corrects: string | null };
+  corrects: string | null;
+  /** The date the claim is due by: fixed when it was added (its date plus its grade's terms then), never moved. */
+  dueBy: string };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and a held
  *  person's (`held`: the ids of the people on hold) OPEN and PENDING claims do not. */

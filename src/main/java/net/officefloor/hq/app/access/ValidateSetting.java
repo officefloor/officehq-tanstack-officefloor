@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** A setting's fields: a known key and its value. The terms are a whole number of days. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. */
+/** A setting's fields: a known key and its value. The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. */
 public class ValidateSetting {
 
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -23,6 +23,14 @@ public class ValidateSetting {
                 throw new BadRequestException("Terms are a whole number of days");
             }
             setting.set(new SettingInput(key, String.valueOf(Integer.parseInt(text))));
+            changedBy.set(by);
+            return;
+        }
+        if (key.startsWith(Setting.TERMS_OF_GRADE) && Setting.GRADES.contains(key.substring(Setting.TERMS_OF_GRADE.length()))) {
+            if (!text.isEmpty() && !DAYS.matcher(text).matches()) {
+                throw new BadRequestException("A grade's terms are a whole number of days, or blank for the sheet's terms");
+            }
+            setting.set(new SettingInput(key, text.isEmpty() ? null : String.valueOf(Integer.parseInt(text))));
             changedBy.set(by);
             return;
         }

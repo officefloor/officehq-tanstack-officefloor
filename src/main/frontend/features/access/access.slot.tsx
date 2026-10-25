@@ -105,25 +105,31 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 
 // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
-// due by (14 until they are set), and the late percent, what an overdue claim's due gains of its figure for every
+// due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and the late percent, what an overdue claim's due gains of its figure for every
 // full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period. The value in force shows beside each. Saving
 // sends only the settings whose field was touched since the last save.
-const SETTINGS = [
+type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
+  inputMode: 'decimal' | 'numeric' | 'text'; invalid: string };
+
+const SETTINGS: readonly SettingField[] = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A clerk limit is an amount with up to two decimals, or blank for no limit' },
   { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A floor is an amount with up to two decimals' },
   { key: 'terms', label: 'Terms (days)', placeholder: TERMS_DEFAULT, blank: false, valid: DAYS, inputMode: 'numeric',
     invalid: 'Terms are a whole number of days' },
+  ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `terms-${grade}`, label: `Terms for grade ${grade} (days)`,
+    placeholder: 'sheet\'s terms', blank: true, valid: DAYS, inputMode: 'numeric',
+    invalid: 'A grade\'s terms are a whole number of days, or blank for the sheet\'s terms' })),
   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A late percent is a number with up to two decimals' },
   { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
     invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today' },
   { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',
     invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off' },
-] as const;
+];
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);

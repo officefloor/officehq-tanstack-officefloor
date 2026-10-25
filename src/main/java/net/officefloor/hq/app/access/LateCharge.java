@@ -7,12 +7,12 @@ import java.time.temporal.ChronoUnit;
 import net.officefloor.hq.app.claim.Claim;
 
 /**
- * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (its date plus the terms) gains the late
+ * The late charge as of the sheet's today: an OPEN (or PENDING) claim past its due-by (fixed when it was added) gains the late
  * percent of its figure for every full 30 days it is overdue, rounded to two decimals as the claim rounds (see
  * {@link #rounding}). A correction
  * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
  */
-public record LateCharge(LocalDate today, int terms, BigDecimal pct, LocalDate policyDate) {
+public record LateCharge(LocalDate today, BigDecimal pct, LocalDate policyDate) {
 
     /**
      * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after
@@ -28,7 +28,7 @@ public record LateCharge(LocalDate today, int terms, BigDecimal pct, LocalDate p
         if (figure == null || !claim.getStatus().isOpen() || claim.isCorrection()) {
             return none;
         }
-        long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today);
+        long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) {
             return none;

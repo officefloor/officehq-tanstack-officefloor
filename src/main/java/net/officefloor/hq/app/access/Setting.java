@@ -18,6 +18,12 @@ public record Setting(String sheetId, String key, String value) {
     /** The terms a sheet starts with, until they are set. */
     public static final String TERMS_DEFAULT = "14";
 
+    /** A grade's own terms (the key is this plus the grade, terms-A); blank means the sheet's terms. */
+    public static final String TERMS_OF_GRADE = "terms-";
+
+    /** The grades that may have their own terms. */
+    public static final java.util.Set<String> GRADES = java.util.Set.of("A", "B", "C");
+
     /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue; two decimals. */
     public static final String LATE_PCT = "late-pct";
 

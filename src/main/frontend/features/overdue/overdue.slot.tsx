@@ -1,23 +1,16 @@
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { useFloorCents, useLate, useTermsDays } from '../access/useAccess';
+import { useFloorCents, useLate } from '../access/useAccess';
 import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
-import { addDays, claimDueCents, isOpen, showHundredths, useRates } from '../rates/useRates';
+import { claimDueCents, isOpen, showHundredths, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 
-/** A claim's due-by: its date plus the sheet's terms in force. */
-function useDueBy(sheetId: string): (claim: { date: string }) => string {
-  const terms = useTermsDays(sheetId);
-  return (claim) => addDays(claim.date, terms);
-}
-
 /** Whether a claim is overdue: OPEN or PENDING, and its due-by before the sheet's today. */
-function useIsOverdue(sheetId: string): (claim: { status: string; date: string }) => boolean {
-  const dueBy = useDueBy(sheetId);
+function useIsOverdue(sheetId: string): (claim: { status: string; dueBy: string }) => boolean {
   const today = useSheetToday(sheetId).data?.today;
-  return (claim) => today !== undefined && isOpen(claim) && dueBy(claim) < today;
+  return (claim) => today !== undefined && isOpen(claim) && claim.dueBy < today;
 }
 
 type Overdue = { count: number; cents: bigint };
@@ -67,13 +60,12 @@ function OverdueCells({ sheetId, personId }: { sheetId: string; user: string; pe
   );
 }
 
-// A claim's due-by (its date plus the sheet's terms) and whether it is overdue (OPEN and due-by before the sheet's today).
-function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { date: string; status: string } }) {
-  const dueBy = useDueBy(sheetId);
+// A claim's due-by (fixed when it was added: its date plus its grade's terms then) and whether it is overdue (OPEN and due-by before the sheet's today).
+function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { status: string; dueBy: string } }) {
   const isOverdue = useIsOverdue(sheetId);
   return (
     <>
-      Due by <span data-testid="claim-due-by">{dueBy(claim)}</span>{' '}
+      Due by <span data-testid="claim-due-by">{claim.dueBy}</span>{' '}
       Overdue <span data-testid="claim-overdue">{isOverdue(claim) ? 'yes' : 'no'}</span>{' '}
     </>
   );

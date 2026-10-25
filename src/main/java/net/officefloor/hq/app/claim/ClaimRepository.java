@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -26,6 +26,7 @@ public class ClaimRepository {
                 rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
                 rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"));
+        claim.setDueBy(rs.getObject("due_by", LocalDate.class));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -66,12 +67,14 @@ public class ClaimRepository {
                 .stream().findFirst().orElse(null);
     }
 
-    public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+    /** Add a draft claim, due by {@code dueBy} for good. */
+    public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy) {
         long listed = nextListed(sheetId);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -80,9 +83,12 @@ public class ClaimRepository {
             ps.setString(5, note);
             ps.setString(6, corrects);
             ps.setLong(7, listed);
+            ps.setDate(8, Date.valueOf(dueBy));
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
+        Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
+        claim.setDueBy(dueBy);
+        return claim;
     }
 
     public void update(Claim claim) {

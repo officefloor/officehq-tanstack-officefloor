@@ -59,6 +59,12 @@ public class SettingRepository {
         return Integer.parseInt(value == null ? Setting.TERMS_DEFAULT : value);
     }
 
+    /** The terms of the grade: its own (setting terms-<grade>), else the sheet's. */
+    public int terms(String sheetId, String grade) {
+        String value = grade == null ? null : find(sheetId, Setting.TERMS_OF_GRADE + grade);
+        return value == null ? terms(sheetId) : Integer.parseInt(value);
+    }
+
     /** The sheet's late percent (0.00 until it is set). */
     public BigDecimal latePct(String sheetId) {
         String value = find(sheetId, Setting.LATE_PCT);
@@ -77,9 +83,9 @@ public class SettingRepository {
         return value == null ? null : java.time.LocalDate.parse(value);
     }
 
-    /** The sheet's late-charge terms as of its today, with its policy date for rounding. */
+    /** The sheet's late charge as of its today, with its policy date for rounding. */
     public LateCharge lateCharge(String sheetId, java.time.LocalDate today) {
-        return new LateCharge(today, terms(sheetId), latePct(sheetId), policyDate(sheetId, today));
+        return new LateCharge(today, latePct(sheetId), policyDate(sheetId, today));
     }
 
     /** Set a setting's value (null: blank), replacing the one there before. */
