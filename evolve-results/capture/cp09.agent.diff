@@ -1,0 +1,251 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index ff1cc66f..be987330 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -10,7 +10,7 @@ const ACTIONS: Array<{ action: string; status: ClaimStatus; label: string }> = [
+   { action: 'void', status: 'VOID', label: 'Void' },
+ ];
+ 
+-// A claim's status, and the buttons that open, settle or void it. A change its status does not
++// A claim's number and status, and the buttons that open, settle or void it. A change its status does not
+ // allow is refused by the server, and the refusal shows on the claim until its next action.
+ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
+   const [user] = useUser();
+@@ -23,6 +23,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+ 
+   return (
+     <>
++      <span data-testid="claim-number">{claim.number ?? ''}</span>{' '}
+       <span data-testid="claim-status">{claim.status}</span>{' '}
+       {ACTIONS.map((a) => (
+         <button
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index b66965d2..789acfaf 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -4,7 +4,9 @@ import { asNumber, useSearchParam } from '../../url/useSearchParam';
+ 
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
++export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
++  /** Given when the claim is opened; none for a draft or a void claim. */
++  number: number | null };
+ 
+ /** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do. */
+ export function counts(claim: { status: ClaimStatus }): boolean {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 63ba6f59..ac92f98e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -1,16 +1,30 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Moves the claim to the asked status, refusing a change its current status does not allow. */
+ public class ApplyClaimStatus {
+-    public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository)
+-            throws BadRequestException {
+-        if (!claim.getStatus().canBecome(status)) {
+-            throw new BadRequestException("A " + claim.getStatus() + " claim cannot become " + status);
++    public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
++            Out<ClaimNumber> audited) throws BadRequestException {
++        ClaimStatus from = claim.getStatus();
++        if (!from.canBecome(status)) {
++            throw new BadRequestException("A " + from + " claim cannot become " + status);
+         }
++        Integer had = claim.getNumber();
+         claim.setStatus(status);
+-        repository.updateStatus(claim);
++        if (status == ClaimStatus.VOID) {
++            claim.setNumber(null);
++        }
++        if (!repository.updateStatus(claim, from)) {
++            throw new BadRequestException("The claim was changed by someone else; reload the sheet");
++        }
++        if (status == ClaimStatus.OPEN) {
++            // Numbered only once the claim is surely moving, so a refused open uses up no number.
++            claim.setNumber(repository.nextNumber(claim.getSheetId()));
++            repository.updateStatus(claim, status);
++        }
++        audited.set(new ClaimNumber(status == ClaimStatus.VOID ? had : claim.getNumber()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 2eb3a8d4..0881c01d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -13,9 +13,10 @@ public class Claim {
+     private LocalDate date;
+     private String note;
+     private ClaimStatus status;
++    private Integer number;
+ 
+     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+-            ClaimStatus status) {
++            ClaimStatus status, Integer number) {
+         this.id = id;
+         this.sheetId = sheetId;
+         this.personId = personId;
+@@ -23,6 +24,7 @@ public class Claim {
+         this.date = date;
+         this.note = note;
+         this.status = status;
++        this.number = number;
+     }
+ 
+     public long getId() {
+@@ -68,4 +70,13 @@ public class Claim {
+     public void setStatus(ClaimStatus status) {
+         this.status = status;
+     }
++
++    /** The number given when the claim was opened; null for a draft or a void claim. */
++    public Integer getNumber() {
++        return number;
++    }
++
++    public void setNumber(Integer number) {
++        this.number = number;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+index eacedef9..a460acfd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+@@ -2,14 +2,22 @@ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.session.ChangedBy;
+ 
+-/** A claim's audit record: the event, sheet, user, then person, amount (two decimals) and date. */
++/**
++ * A claim's audit record: the event, sheet, user, then person, amount (two decimals) and date, and
++ * the claim's number when it has one.
++ */
+ final class ClaimAudit {
+ 
+     private ClaimAudit() {
+     }
+ 
+     static String line(String event, Claim claim, ChangedBy by, String personName) {
++        return line(event, claim, by, personName, claim.getNumber());
++    }
++
++    static String line(String event, Claim claim, ChangedBy by, String personName, Integer number) {
+         return event + " sheet=" + claim.getSheetId() + " by=" + by.name() + " person=" + personName + " amount="
+-                + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate();
++                + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate()
++                + (number == null ? "" : " number=" + number);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+new file mode 100644
+index 00000000..3c0be2c1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The number the claim carries in this change's audit record; null when it has none. */
++public record ClaimNumber(Integer value) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 719bbe50..83beba68 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -14,11 +14,12 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status";
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number";
+ 
+     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
+-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
++            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
++            rs.getObject("claim_number", Integer.class));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -49,7 +50,7 @@ public class ClaimRepository {
+             ps.setString(5, note);
+             return ps;
+         }, keys);
+-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
++        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null);
+     }
+ 
+     public void update(Claim claim) {
+@@ -57,7 +58,18 @@ public class ClaimRepository {
+                 Date.valueOf(claim.getDate()), claim.getNote(), claim.getId());
+     }
+ 
+-    public void updateStatus(Claim claim) {
+-        jdbc.update("UPDATE claim SET status = ? WHERE id = ?", claim.getStatus().name(), claim.getId());
++    /**
++     * Move the claim from {@code from} to its status and number. Whether it was still {@code from}:
++     * the row is locked by the first of two users changing it, so the other one finds it moved.
++     */
++    public boolean updateStatus(Claim claim, ClaimStatus from) {
++        return jdbc.update("UPDATE claim SET status = ?, claim_number = ? WHERE id = ? AND status = ?",
++                claim.getStatus().name(), claim.getNumber(), claim.getId(), from.name()) == 1;
++    }
++
++    /** Take the sheet's next claim number, in one statement so two users never get the same one. */
++    public int nextNumber(String sheetId) {
++        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
++                + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, sheetId);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 0eb267fa..af9e0154 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -1,8 +1,10 @@
+ package net.officefloor.hq.app.claim;
+ 
+-public record ClaimResponse(long id, long personId, String amount, String date, String note, String status) {
++public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
++        Integer number) {
+     public static ClaimResponse from(Claim claim) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
+-                claim.getDate().toString(), claim.getNote(), claim.getStatus().name());
++                claim.getDate().toString(), claim.getNote(), claim.getStatus().name(),
++                claim.getNumber());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
+index 9e0010df..b8dee797 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class RecordClaimStatus {
+-    public void record(@Val Claim claim, @Val ChangedBy by, PersonRepository people, Audit audit) {
++    public void record(@Val Claim claim, @Val ClaimNumber number, @Val ChangedBy by, PersonRepository people, Audit audit) {
+         String event = switch (claim.getStatus()) {
+             case OPEN -> "CLAIM_OPENED";
+             case SETTLED -> "CLAIM_SETTLED";
+@@ -15,6 +15,6 @@ public class RecordClaimStatus {
+             case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
+         };
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        audit.record(ClaimAudit.line(event, claim, by, person == null ? "" : person.getName()));
++        audit.record(ClaimAudit.line(event, claim, by, person == null ? "" : person.getName(), number.value()));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V8__claim_number.sql b/src/main/resources/db/migration/V8__claim_number.sql
+new file mode 100644
+index 00000000..83a8dd96
+--- /dev/null
++++ b/src/main/resources/db/migration/V8__claim_number.sql
+@@ -0,0 +1,4 @@
++-- A claim's number: given when it is opened, the sheet's next one (1, 2, ...), never reused.
++-- A draft has none, and voiding a claim clears it. The sheet keeps the last number it gave.
++ALTER TABLE sheet ADD COLUMN last_claim_number INT NOT NULL DEFAULT 0;
++ALTER TABLE claim ADD COLUMN claim_number INT;
