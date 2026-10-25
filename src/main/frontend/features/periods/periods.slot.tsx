@@ -2,6 +2,7 @@ import { useState, type ChangeEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
+import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
@@ -13,8 +14,12 @@ import { useFloorCents, useLate } from '../access/useAccess';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
- *  closed, and the due-total fixed when it was closed (null while open). */
-export type Period = { id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
+ *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
+ *  then, by person id (empty while open; a person added later has none). */
+export type Period = {
+  id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
+  personTotals: Record<string, string>;
+};
 
 /** The key every feature reads the sheet's periods under. */
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -32,8 +37,9 @@ export function periodOn(periods: readonly Period[], date: string): Period | und
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-/** A period's live due-total in cents: the due figures of the counted claims whose date falls in it, added up. */
-export function usePeriodDueTotal(sheetId: string): (p: Period) => bigint {
+/** A person's live due-total for a period in cents: the due figures of their counted claims whose date falls in it,
+ *  added up. With no person given, every person's together: the period's own due-total. */
+export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: number) => bigint {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const held = useHeld(sheetId);
@@ -41,9 +47,10 @@ export function usePeriodDueTotal(sheetId: string): (p: Period) => bigint {
   const floor = useFloorCents(sheetId);
   const late = useLate(sheetId);
   const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
-  return (p: Period): bigint => {
+  return (p: Period, personId?: number): bigint => {
     let sum = 0n;
     for (const c of claims.data ?? []) {
+      if (personId !== undefined && c.personId !== personId) continue;
       if (!counts(c, held) || c.date < p.from || c.date > p.to) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
@@ -54,6 +61,12 @@ export function usePeriodDueTotal(sheetId: string): (p: Period) => bigint {
 /** A period's due-total as shown: the one fixed when it was closed; while open, the live figure. */
 export function showPeriodDueTotal(p: Period, live: bigint): string {
   return p.closed && p.closedTotal != null ? p.closedTotal : showHundredths(live);
+}
+
+/** A person's due-total for a period as shown: the one fixed when it was closed (0.00 for a person added since);
+ *  while open, the live figure. */
+export function showPersonPeriodDueTotal(p: Period, personId: number, live: bigint): string {
+  return p.closed ? (p.personTotals?.[String(personId)] ?? '0.00') : showHundredths(live);
 }
 
 // The period form: adds a period with a name unique on the sheet and a from and to date, not
@@ -207,6 +220,32 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
   );
 }
 
+// One column per period on the people table: the person's due-total for it.
+function PersonPeriodHeads({ sheetId }: { sheetId: string; user: string }) {
+  const periods = usePeriods(sheetId);
+  return (
+    <>
+      {(periods.data ?? []).map((p) => (
+        <th key={p.id}>{p.name} due</th>
+      ))}
+    </>
+  );
+}
+
+function PersonPeriodCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const periods = usePeriods(sheetId);
+  const dueTotal = usePeriodDueTotal(sheetId);
+  return (
+    <>
+      {(periods.data ?? []).map((p) => (
+        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
+          {showPersonPeriodDueTotal(p, personId, dueTotal(p, personId))}
+        </td>
+      ))}
+    </>
+  );
+}
+
 // The period a claim belongs to: the one whose dates contain its date; blank when none does.
 function ClaimPeriod({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { date: string } }) {
   const periods = usePeriods(sheetId);
@@ -216,4 +255,6 @@ function ClaimPeriod({ sheetId, claim }: { sheetId: string; user: string; person
 export const contributions = [
   SheetBody.fill({ order: 7, Component: PeriodsPanel }),
   ClaimCells.fill({ order: 30, Component: ClaimPeriod }),
+  PersonHeads.fill({ order: 26, Component: PersonPeriodHeads }),
+  PersonCells.fill({ order: 26, Component: PersonPeriodCells }),
 ];

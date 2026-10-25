@@ -102,14 +102,23 @@ public class Rollup {
      * figure (with its late charge) added up, a claim without one adding nothing.
      */
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
+        return dueBetweenByPerson(sheetId, from, to).values().stream().reduce(ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Each person's due-total for the dates from..to (inclusive), by person id, every person on the sheet included
+     * (0.00 when none of their counting claims falls there): their counting claims' figures (with late charge) added up.
+     */
+    public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         List<Rate> sheetRates = rates.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
         LateCharge late = settings.lateCharge(sheetId, sheets.today(sheetId));
         Map<Long, Person> byId = new LinkedHashMap<>();
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person p : people.list(sheetId)) {
             byId.put(p.getId(), p);
+            totals.put(p.getId(), ZERO);
         }
-        BigDecimal total = ZERO;
         for (Claim c : claims.list(sheetId)) {
             Person p = byId.get(c.getPersonId());
             if (p == null || !counts(c, p) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
@@ -117,10 +126,10 @@ public class Rollup {
             }
             BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, floor, late));
             if (figure != null) {
-                total = total.add(figure);
+                totals.merge(p.getId(), figure, BigDecimal::add);
             }
         }
-        return total;
+        return totals;
     }
 
     /** The claim's due as the screen shows it now: its figure with its late charge on top; null (n/a) without one. */
