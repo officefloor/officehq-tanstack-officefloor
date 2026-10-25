@@ -80,4 +80,9 @@ public class PeriodRepository {
         return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE id = ? AND NOT closed", total,
                 id) == 1;
     }
+
+    /** Reopen the period, its due-total live again. Whether it was still closed: of two users reopening it, one wins. */
+    public boolean reopen(long id) {
+        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE id = ? AND closed", id) == 1;
+    }
 }

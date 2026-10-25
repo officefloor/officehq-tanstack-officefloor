@@ -135,7 +135,9 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
 }
 
 // A period's row. A closed period shows the due-total fixed when it was closed; an open one, the live
-// figure. Closing is refused with the row's error when someone else closed it first.
+// figure. Closing is refused with the row's error when someone else closed it first. Reopening (a
+// steward only) makes the due-total live again; anyone else, or a period not closed, is refused with
+// the row's error. Each action clears the error the other left.
 function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: Period; dueTotal: bigint }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -144,7 +146,14 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/close`, { by: user ?? '' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
-  const submit = useSubmitOnce(close);
+  const reopen = useMutation({
+    mutationFn: () => postJson<Period>(
+      `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/reopen`, { by: user ?? '' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
+  const submitClose = useSubmitOnce(close);
+  const submitReopen = useSubmitOnce(reopen);
+  const error = close.error ?? reopen.error;
   return (
     <tr data-testid={`period-row-${p.name}`}>
       <td data-testid="period-name">{p.name}</td>
@@ -156,13 +165,32 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
       <td>
         {!p.closed && (
-          <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => submit(undefined)}>
+          <button
+            type="button"
+            data-testid="period-close"
+            disabled={close.isPending}
+            onClick={() => {
+              reopen.reset();
+              submitClose(undefined);
+            }}
+          >
             Close
           </button>
-        )}
-        {close.isError && (
+        )}{' '}
+        <button
+          type="button"
+          data-testid="period-reopen"
+          disabled={reopen.isPending}
+          onClick={() => {
+            close.reset();
+            submitReopen(undefined);
+          }}
+        >
+          Reopen
+        </button>
+        {error && (
           <p data-testid="period-error" role="alert">
-            {close.error.message}
+            {error.message}
           </p>
         )}
       </td>
