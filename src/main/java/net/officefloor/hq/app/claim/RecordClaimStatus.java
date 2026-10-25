@@ -3,12 +3,13 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Val;
 
 public class RecordClaimStatus {
     public void record(@Val Claim claim, @Val ClaimNumber number, @Val ChangedBy by, @Val ClaimReview review,
-            PersonRepository people, Audit audit, ClaimLog log) {
+            PersonRepository people, WatchRepository watches, Audit audit, ClaimLog log) {
         String event = switch (claim.getStatus()) {
             case OPEN -> review.asked() ? "CLAIM_REJECTED" : "CLAIM_OPENED";
             case PENDING -> "CLAIM_PENDING";
@@ -25,6 +26,9 @@ public class RecordClaimStatus {
             line += " reason=" + review.reason();
         }
         audit.record(line);
+        if (claim.getStatus() == ClaimStatus.SETTLED) {
+            ClaimNotify.watchers(claim, person, number.value(), by, watches, audit);
+        }
         log.record(claim, by);
     }
 }

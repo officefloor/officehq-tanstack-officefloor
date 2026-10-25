@@ -7,6 +7,7 @@ import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupSnapshot;
@@ -25,7 +26,7 @@ public class OpenClaims {
     public void open(@Val SheetResponse sheet, @Val BulkOpenIds selected, @Val ChangedBy by, ClaimRepository claims,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
             SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
-            Out<BulkOpenResponse> result) {
+            WatchRepository watches, Out<BulkOpenResponse> result) {
         int opened = 0;
         if (roles.isViewer(sheet.id(), by.name())) {
             // A viewer's press goes through with nothing done: every selected claim is refused.
@@ -46,7 +47,7 @@ public class OpenClaims {
                     ClaimNumber[] number = new ClaimNumber[1];
                     Out<ClaimNumber> audited = value -> number[0] = value;
                     apply.apply(ClaimStatus.OPEN, claim, claims, people, rates, roles, settings, sheets, periods, by, ClaimReview.NONE, audited);
-                    record.record(claim, number[0], by, ClaimReview.NONE, people, audit, log);
+                    record.record(claim, number[0], by, ClaimReview.NONE, people, watches, audit, log);
                     rollup.record(sheet.id(), before, by);
                     opened++;
                 } catch (BadRequestException refused) {

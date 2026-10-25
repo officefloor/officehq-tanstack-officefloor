@@ -7,6 +7,7 @@ import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupSnapshot;
@@ -25,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
 public class SettleClaims {
     public void settle(@Val SheetResponse sheet, @Val BulkSettleIds selected, @Val ChangedBy by, ClaimRepository claims,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
-            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
+            SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log, WatchRepository watches,
             Out<BulkSettleResponse> result) {
         int settled = 0;
         if (roles.isViewer(sheet.id(), by.name())) {
@@ -47,7 +48,7 @@ public class SettleClaims {
                     ClaimNumber[] number = new ClaimNumber[1];
                     Out<ClaimNumber> audited = value -> number[0] = value;
                     apply.apply(ClaimStatus.SETTLED, claim, claims, people, rates, roles, settings, sheets, periods, by, ClaimReview.NONE, audited);
-                    record.record(claim, number[0], by, ClaimReview.NONE, people, audit, log);
+                    record.record(claim, number[0], by, ClaimReview.NONE, people, watches, audit, log);
                     rollup.record(sheet.id(), before, by);
                     settled++;
                 } catch (BadRequestException refused) {
