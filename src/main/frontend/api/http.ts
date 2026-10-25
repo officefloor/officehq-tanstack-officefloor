@@ -3,7 +3,9 @@
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+    // A refusal carries {"error": "<why>"}; show that, else the status line.
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `${init?.method ?? 'GET'} ${path} -> ${res.status}`);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -17,5 +19,13 @@ export function postJson<T>(path: string, body: unknown): Promise<T> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  });
+}
+
+export function putJson<T>(path: string, body?: unknown): Promise<T> {
+  return send<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
