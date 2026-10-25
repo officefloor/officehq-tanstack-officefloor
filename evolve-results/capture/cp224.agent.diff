@@ -1,0 +1,996 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index a527beeb..2c5650bb 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -9,6 +9,7 @@ import { settingsPath, useSettings, type Settings } from '../roles/roles';
+ import { overdueOf } from '../claims/overdue.slot';
+ import { personDue } from '../rates/due.slot';
+ import { STATUSES } from '../summary/summary.slot';
++import { poolsPath, usePools, type Pool } from '../pools/pools';
+ 
+ // The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
+ // parent, and so on down), the number of people — each person once across the tree: people whose names or aliases
+@@ -33,15 +34,15 @@ export type Figures = {
+ 
+ /** A sheet's figures, from its people, claims, rates, today and settings. */
+ export function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined): Figures {
++  settings: Settings | undefined, pools: Pool[] | undefined): Figures {
+   const current = people.filter((p) => p.retiredFrom === null);
+   return {
+     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
+-    dues: people.map((p) => personDue(p, claims, rates, today, settings, people)),
++    dues: people.map((p) => personDue(p, claims, rates, today, settings, people, pools)),
+     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
+     overdueCount: people.reduce((n, p) => n + overdueOf(p, claims, rates, today, settings).count, 0),
+     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
+-      .map((p) => personDue(p, claims, rates, today, settings, people)))])),
++      .map((p) => personDue(p, claims, rates, today, settings, people, pools)))])),
+     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+   };
+ }
+@@ -66,14 +67,15 @@ export const descendantsQueryKey = (sheetId: string) => ['sheet', sheetId, 'desc
+ 
+ /** A sheet's figures, read from the store as the screen shows it (as of its date, if any). */
+ export async function figuresOf(id: string): Promise<Figures> {
+-  const [info, people, claims, rates, settings] = await Promise.all([
++  const [info, people, claims, rates, settings, pools] = await Promise.all([
+     getJson<SheetInfo>(sheetPath(id)),
+     getJson<Person[]>(peoplePath(id)),
+     getJson<Claim[]>(claimsPath(id)),
+     getJson<Rate[]>(ratesPath(id)),
+     getJson<Settings>(settingsPath(id)),
++    getJson<Pool[]>(poolsPath(id)),
+   ]);
+-  return figuresFrom(people, claims, rates, info.today, settings);
++  return figuresFrom(people, claims, rates, info.today, settings, pools);
+ }
+ 
+ /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
+@@ -95,6 +97,7 @@ function ConsolidatedFigures() {
+   const claims = useClaims();
+   const rates = useRates();
+   const settings = useSettings();
++  const pools = usePools();
+   const today = useSheetToday();
+   const asOf = currentAsOf();
+   const descendants = useQuery({
+@@ -103,7 +106,7 @@ function ConsolidatedFigures() {
+     enabled: !!sheet,
+   });
+   if (!user || !sheet) return null;
+-  const own = figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data);
++  const own = figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data, pools.data);
+   const all = [own, ...(descendants.data ?? [])];
+   return (
+     <section data-testid="consolidated">
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index d729cc52..7d7338e8 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -9,7 +9,7 @@ import { useClaims } from '../claims/claims';
+ import { useSettings } from '../roles/roles';
+ import { sumDue, useRates } from '../rates/rates';
+ import { personDue } from '../rates/due.slot';
+-import { poolsQueryKey } from '../pools/pools';
++import { poolsQueryKey, usePools, type Pool } from '../pools/pools';
+ import { crewsPath, crewsQueryKey, useCrews, type Crew } from './crews';
+ import type { Person } from '../people/people';
+ import type { Claim } from '../claims/claims';
+@@ -18,9 +18,9 @@ import type { Settings } from '../roles/roles';
+ 
+ /** A crew's due-total: its lead's and its members' due-totals added up, n/a skipped. */
+ export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined): string {
++  settings: Settings | undefined, pools: Pool[] | undefined): string {
+   const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
+-  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings, people)));
++  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings, people, pools)));
+ }
+ 
+ // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.
+@@ -101,6 +101,7 @@ function CrewRow({ crew }: { crew: Crew }) {
+   const rates = useRates();
+   const today = useSheetToday();
+   const settings = useSettings();
++  const pools = usePools();
+   const [personId, setPersonId] = useState('');
+   const queryClient = useQueryClient();
+   const add = useMutation({
+@@ -125,7 +126,7 @@ function CrewRow({ crew }: { crew: Crew }) {
+           ))}
+         </ul>
+       </td>
+-      <td data-testid="crew-due-total">{crewDue(crew, people.data ?? [], claims.data ?? [], rates.data, today, settings.data)}</td>
++      <td data-testid="crew-due-total">{crewDue(crew, people.data ?? [], claims.data ?? [], rates.data, today, settings.data, pools.data)}</td>
+       <td>
+         <select
+           data-testid="crew-member-select"
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index 55bc348a..c447a1b5 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -12,12 +12,13 @@ import { STATUSES } from '../summary/summary.slot';
+ import { useCrews } from '../crews/crews';
+ import { crewDue } from '../crews/crews.slot';
+ import { useWatched } from '../people/watch.slot';
++import { usePools, type Pool } from '../pools/pools';
+ 
+ /** A sheet's due-total and overdue-total, as the rollup figures them, from what the store holds for it. */
+ export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined): { due: string; overdue: string } {
++  settings: Settings | undefined, pools: Pool[] | undefined): { due: string; overdue: string } {
+   return {
+-    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings, people))),
++    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings, people, pools))),
+     overdue: trimmedSum(people.map((p) => overdueOf(p, claims, rates, today, settings).total)),
+   };
+ }
+@@ -43,24 +44,25 @@ function HeaderCounters() {
+   const rates = useRates();
+   const crews = useCrews();
+   const settings = useSettings();
++  const pools = usePools();
+   const watched = useWatched();
+   const today = useSheetToday();
+   const allPeople = people.data ?? [];
+   const allClaims = claims.data ?? [];
+-  const { due, overdue } = sheetTotals(allPeople, allClaims, rates.data, today, settings.data);
++  const { due, overdue } = sheetTotals(allPeople, allClaims, rates.data, today, settings.data, pools.data);
+   const [user] = useCurrentUser();
+   const me = personNamed(allPeople, user);
+   const mine = me
+-    ? { due: personDue(me, allClaims, rates.data, today, settings.data, allPeople),
+-        overdue: sheetTotals([me], allClaims, rates.data, today, settings.data).overdue }
++    ? { due: personDue(me, allClaims, rates.data, today, settings.data, allPeople, pools.data),
++        overdue: sheetTotals([me], allClaims, rates.data, today, settings.data, pools.data).overdue }
+     : { due: '', overdue: '' };
+   const led = me ? (crews.data ?? []).filter((c) => c.lead?.id === me.id) : [];
+   const myCrewDue = led.length > 0
+-    ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))
++    ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data, pools.data)))
+     : '';
+   const watchedIds = watched.data ?? [];
+   const watchedDue = sumDue(allPeople.filter((p) => watchedIds.includes(p.id))
+-    .map((p) => personDue(p, allClaims, rates.data, today, settings.data, allPeople)));
++    .map((p) => personDue(p, allClaims, rates.data, today, settings.data, allPeople, pools.data)));
+   const myReviews = allClaims.filter((c) => c.status === 'REVIEW' && !!user && c.reviewAssigned === user).length;
+   return (
+     <section data-testid="header-counters">
+diff --git a/src/main/frontend/features/header/dashboard.slot.tsx b/src/main/frontend/features/header/dashboard.slot.tsx
+index e7903c93..baaac3dc 100644
+--- a/src/main/frontend/features/header/dashboard.slot.tsx
++++ b/src/main/frontend/features/header/dashboard.slot.tsx
+@@ -7,6 +7,7 @@ import { useClaims } from '../claims/claims';
+ import { descendantFigures, descendantsQueryKey, figuresFrom } from '../consolidated/consolidated.slot';
+ import { useRates } from '../rates/rates';
+ import { useDelegations, useRoles, useSettings, type Delegation, type Role } from '../roles/roles';
++import { usePools } from '../pools/pools';
+ 
+ /** The role a user name acts in on the sheet, as the server finds it: steward while the sheet's today is inside a
+  *  delegation to it, else its own role (clerk when none is set). */
+@@ -27,6 +28,7 @@ function StewardDashboard() {
+   const claims = useClaims();
+   const rates = useRates();
+   const settings = useSettings();
++  const pools = usePools();
+   const roles = useRoles();
+   const delegations = useDelegations();
+   const today = useSheetToday();
+@@ -38,7 +40,7 @@ function StewardDashboard() {
+   });
+   const steward = roles.data !== undefined && delegations.data !== undefined
+     && roleOf(roles.data, delegations.data, user, today) === 'steward';
+-  const all = [figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data),
++  const all = [figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data, pools.data),
+     ...(descendants.data ?? [])];
+   const pending = steward ? String(all.reduce((n, f) => n + f.statuses.PENDING, 0)) : '';
+   const review = steward ? String(all.reduce((n, f) => n + f.statuses.REVIEW, 0)) : '';
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index 47a49957..cd792235 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -7,6 +7,7 @@ import { settingsPath, settingsQueryKey, type Settings } from '../roles/roles';
+ import { ratesPath, ratesQueryKey, type Rate } from '../rates/rates';
+ import { personDue } from '../rates/due.slot';
+ import { gradeOn, peoplePath, peopleQueryKey, type Person } from './people';
++import { poolsPath, poolsQueryKey, type Pool } from '../pools/pools';
+ 
+ // The export button: downloads every person on the sheet (retired people included, in list order) as CSV —
+ // name, grade in force on the sheet's today, retired-from date (blank when not retired) and due-total as shown.
+@@ -29,17 +30,18 @@ function ExportPeople() {
+   const queryClient = useQueryClient();
+   if (!user || !sheet) return null;
+   const download = async () => {
+-    const [info, people, claims, rates, settings] = await Promise.all([
++    const [info, people, claims, rates, settings, pools] = await Promise.all([
+       readFresh<SheetInfo>(queryClient, sheetQueryKey(sheet), sheetInfoPath(sheet)),
+       readFresh<Person[]>(queryClient, peopleQueryKey(sheet), peoplePath(sheet)),
+       readFresh<Claim[]>(queryClient, claimsQueryKey(sheet), claimsPath(sheet)),
+       readFresh<Rate[]>(queryClient, ratesQueryKey(sheet), ratesPath(sheet)),
+       readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
++      readFresh<Pool[]>(queryClient, poolsQueryKey(sheet), poolsPath(sheet)),
+     ]);
+     const today = info.today;
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+     for (const p of people) {
+-      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people)]);
++      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people, pools)]);
+     }
+     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 73658d2d..e5ef802f 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -10,6 +10,7 @@ import { useDelegations, useRoles, useSettings, type Delegation, type Role } fro
+ import { useCrews, type Crew } from '../crews/crews';
+ import { roleOf } from '../header/dashboard.slot';
+ import { personNamed } from '../header/counters.slot';
++import { usePools } from '../pools/pools';
+ import {
+   gradeOn, keepQuickAddedFor, nameKey, shownName, useQuickAdded, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
+   type Person,
+@@ -50,6 +51,7 @@ function PeopleList() {
+   const claims = useClaims();
+   const rates = useRates();
+   const settings = useSettings();
++  const pools = usePools();
+   const roles = useRoles();
+   const delegations = useDelegations();
+   const crews = useCrews();
+@@ -61,7 +63,7 @@ function PeopleList() {
+   const visible = visibleTo(people.data ?? [], roles.data, delegations.data, crews.data, user, today);
+   const listed = (people.data ?? []).filter((p) => (visible(p) || quickAdded.includes(p.id)) && (showRetired || p.retiredFrom === null));
+   const due = (p: Person) => {
+-    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data);
++    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data);
+     return d === 'n/a' ? null : Number(d);
+   };
+   const shown = sort === 'name' ? sortedBy(listed, (p) => nameKey(p.name))
+diff --git a/src/main/frontend/features/people/search.slot.tsx b/src/main/frontend/features/people/search.slot.tsx
+index d88c4b26..ec394dd8 100644
+--- a/src/main/frontend/features/people/search.slot.tsx
++++ b/src/main/frontend/features/people/search.slot.tsx
+@@ -9,6 +9,7 @@ import { personDue } from '../rates/due.slot';
+ import { ratesPath, type Rate } from '../rates/rates';
+ import { settingsPath, type Settings } from '../roles/roles';
+ import { peoplePath, shownName, type Person } from './people';
++import { poolsPath, type Pool } from '../pools/pools';
+ 
+ // The tree search: over the sheet and every other sheet of its tree (its ancestors and descendants), every person —
+ // retired ones too — whose name or an alias contains the typed text, case ignored (blank: everyone), one line each:
+@@ -20,17 +21,18 @@ const treePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)
+ 
+ /** The lines for one sheet's matching people, in list order. */
+ async function linesOf(sheetId: string, text: string): Promise<string[]> {
+-  const [info, people, claims, rates, settings] = await Promise.all([
++  const [info, people, claims, rates, settings, pools] = await Promise.all([
+     getJsonLive<SheetInfo>(`/api/sheets/${encodeURIComponent(sheetId)}`),
+     getJsonLive<Person[]>(peoplePath(sheetId)),
+     getJsonLive<Claim[]>(claimsPath(sheetId)),
+     getJsonLive<Rate[]>(ratesPath(sheetId)),
+     getJsonLive<Settings>(settingsPath(sheetId)),
++    getJsonLive<Pool[]>(poolsPath(sheetId)),
+   ]);
+   const key = text.toLowerCase();
+   return people
+     .filter((p) => [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(key)))
+-    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings, people)}`);
++    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings, people, pools)}`);
+ }
+ 
+ async function searchTree(sheetId: string, text: string): Promise<string[]> {
+diff --git a/src/main/frontend/features/people/snapshotcompare.slot.tsx b/src/main/frontend/features/people/snapshotcompare.slot.tsx
+index a6c16b0a..78d00399 100644
+--- a/src/main/frontend/features/people/snapshotcompare.slot.tsx
++++ b/src/main/frontend/features/people/snapshotcompare.slot.tsx
+@@ -9,6 +9,7 @@ import { personDue } from '../rates/due.slot';
+ import { ratesPath, type Rate } from '../rates/rates';
+ import { settingsPath, type Settings } from '../roles/roles';
+ import { peoplePath, type Person } from './people';
++import { poolsPath, type Pool } from '../pools/pools';
+ 
+ // The snapshot comparison: one line per person, in list order — `<name> <then> <now>`: `then` their due-total in
+ // the SNAPSHOT written when the sheet's today was changed away from the from-date (blank: the sheet's today), `now`
+@@ -22,18 +23,19 @@ function snapshotOn(person: Person, date: string): string {
+ }
+ 
+ async function compareSnapshots(sheetId: string, from: string, to: string): Promise<string[]> {
+-  const [info, people, claims, rates, settings] = await Promise.all([
++  const [info, people, claims, rates, settings, pools] = await Promise.all([
+     getJsonLive<SheetInfo>(`/api/sheets/${encodeURIComponent(sheetId)}`),
+     getJsonLive<Person[]>(peoplePath(sheetId)),
+     getJsonLive<Claim[]>(claimsPath(sheetId)),
+     getJsonLive<Rate[]>(ratesPath(sheetId)),
+     getJsonLive<Settings>(settingsPath(sheetId)),
++    getJsonLive<Pool[]>(poolsPath(sheetId)),
+   ]);
+   const fromDate = from.trim() === '' ? info.today : from.trim();
+   return people.map((p) => {
+     const then = snapshotOn(p, fromDate);
+-    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings, people) : snapshotOn(p, to.trim());
+-    return [p.name, then, now].filter((s) => s !== '').join(' ');
++    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings, people, pools) : snapshotOn(p, to.trim());
++    return [p.name, then, now].join(' ').trim();
+   });
+ }
+ 
+diff --git a/src/main/frontend/features/pools/cuttotal.slot.tsx b/src/main/frontend/features/pools/cuttotal.slot.tsx
+index 53a12b6b..6bc91d81 100644
+--- a/src/main/frontend/features/pools/cuttotal.slot.tsx
++++ b/src/main/frontend/features/pools/cuttotal.slot.tsx
+@@ -2,17 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import type { Person } from '../people/people';
+-import { usePools, type Pool } from './pools';
+-
+-/** The cuts of the given person (every person when null) across every pool they are a member of, added up; a pool
+- *  that shows no cuts adds nothing. Summed in whole cents, so the total is exact. */
+-function cutTotalOf(pools: Pool[], personId: number | null): string {
+-  const cents = pools
+-    .flatMap((p) => p.members)
+-    .filter((m) => m.personId != null && (personId == null || m.personId === personId) && m.cut !== '')
+-    .reduce((n, m) => n + Math.round(Number(m.cut) * 100), 0);
+-  return (cents / 100).toFixed(2);
+-}
++import { cutTotalOf, usePools } from './pools';
+ 
+ // A person's cut total: their cuts across every pool they are a member of, added up.
+ function CutTotalHeader() {
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 783521d4..ee01b4ef 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -34,3 +34,13 @@ export function usePools() {
+     enabled: !!sheet,
+   });
+ }
++
++/** The cuts of the given person (every person when null) across every pool they are a member of, added up; a pool
++ *  that shows no cuts adds nothing. Summed in whole cents, so the total is exact. */
++export function cutTotalOf(pools: Pool[], personId: number | null): string {
++  const cents = pools
++    .flatMap((p) => p.members)
++    .filter((m) => m.personId != null && (personId == null || m.personId === personId) && m.cut !== '')
++    .reduce((n, m) => n + Math.round(Number(m.cut) * 100), 0);
++  return (cents / 100).toFixed(2);
++}
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 864c7017..deceb3e4 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -6,6 +6,7 @@ import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/c
+ import { useSettings, type Settings } from '../roles/roles';
+ import { chargedOf, formatCents, hundredths, rateOn, sharePart, sumDue, trimmedSum, useRates, type Rate } from './rates';
+ import { useColumnShown } from '../people/columns';
++import { cutTotalOf, usePools, type Pool } from '../pools/pools';
+ 
+ // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
+ // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
+@@ -13,19 +14,21 @@ import { useColumnShown } from '../people/columns';
+ // When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
+ // a figure — settled, bound, or live at another grade they had on its date, or live
+ // on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
+-// the sheet's cap: above it, it shows the cap and their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
++// the sheet's cap less their cut total (their cuts across every pool; not below 0.00): above it, it shows that and
++// their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
+ // A claim shared with other people gives each holder their part of its due (its due times their share divided by
+ // 100, rounded half to even): it counts in their due-total (theirs is just their parts when they would otherwise
+ // have none, n/a), and its own person's counts its due less the holders' parts — before the cap.
+ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined, people: Person[] | undefined): string {
+-  return capped(withShares(person, claims, rates, today, settings, people), settings).due;
++  settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
++  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).due;
+ }
+ 
+-/** A person's excess: how much the sum of their figures is above the sheet's cap; 0.00 when it is not (or n/a). */
++/** A person's excess: how much the sum of their figures plus their cut total is above the sheet's cap; 0.00 when
++ *  it is not (or n/a). */
+ export function personExcess(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined, people: Person[] | undefined): string {
+-  return capped(withShares(person, claims, rates, today, settings, people), settings).excess;
++  settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
++  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).excess;
+ }
+ 
+ /** The sum of a person's figures with the shares: their own claims' holders' parts taken off, and their parts of
+@@ -54,11 +57,15 @@ function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined,
+   return formatCents(hundredths(sum) - given + (held ?? 0n));
+ }
+ 
+-/** A sum of figures held to the sheet's cap ("" for none), and how much it was above it; n/a is not capped. */
+-function capped(sum: string, settings: Settings | undefined): { due: string; excess: string } {
++/** A sum of figures held to the sheet's cap ("" for none) less the cut total (not below 0.00), and how much it was
++ *  above that; n/a is not capped. */
++function capped(sum: string, settings: Settings | undefined, cut: string): { due: string; excess: string } {
+   const cap = settings?.cap ?? '';
+-  if (sum === 'n/a' || cap === '' || Number(sum) <= Number(cap)) return { due: sum, excess: '0.00' };
+-  return { due: sumDue([cap]), excess: subtract(sum, cap) };
++  if (sum === 'n/a' || cap === '') return { due: sum, excess: '0.00' };
++  const diff = subtract(cap, cut);
++  const limit = diff.startsWith('-') ? '0.00' : diff;
++  if (Number(sum) <= Number(limit)) return { due: sum, excess: '0.00' };
++  return { due: limit, excess: subtract(sum, limit) };
+ }
+ 
+ /** The difference of two two-decimal amounts, exactly. */
+@@ -92,8 +99,9 @@ function PersonDue({ person }: { person: Person }) {
+   const rates = useRates();
+   const today = useSheetToday();
+   const settings = useSettings();
++  const pools = usePools();
+   if (!shown) return null;
+-  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data, people.data)}</td>;
++  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data)}</td>;
+ }
+ 
+ function ExcessHeader() {
+@@ -108,8 +116,9 @@ function PersonExcess({ person }: { person: Person }) {
+   const rates = useRates();
+   const today = useSheetToday();
+   const settings = useSettings();
++  const pools = usePools();
+   if (!shown) return null;
+-  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data, people.data)}</td>;
++  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data)}</td>;
+ }
+ 
+ function DueTotal() {
+@@ -120,8 +129,9 @@ function DueTotal() {
+   const rates = useRates();
+   const today = useSheetToday();
+   const settings = useSettings();
++  const pools = usePools();
+   if (!user || !sheet) return null;
+-  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data)));
++  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data)));
+   return (
+     <p>
+       Due in total <strong data-testid="rollup-due-total">{total}</strong>
+diff --git a/src/main/frontend/features/summary/classic.slot.tsx b/src/main/frontend/features/summary/classic.slot.tsx
+index 18197508..3ca1041b 100644
+--- a/src/main/frontend/features/summary/classic.slot.tsx
++++ b/src/main/frontend/features/summary/classic.slot.tsx
+@@ -6,6 +6,7 @@ import { personDue } from '../rates/due.slot';
+ import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
+ import { useSettings, type Settings } from '../roles/roles';
+ import { periodOn, usePeriods, type Period } from '../periods/periods';
++import { usePools } from '../pools/pools';
+ 
+ /** A period's classic due-total: the dues (with any late charge, as shown now) of the claims whose due-by falls in it
+  *  that count by the status they have now (OPEN, PENDING, SETTLED; not a person's unbound OPEN ones dated within a hold
+@@ -30,11 +31,12 @@ function ClassicSummary() {
+   const rates = useRates();
+   const periods = usePeriods();
+   const settings = useSettings();
++  const pools = usePools();
+   const today = useSheetToday();
+   if (!user || !sheet) return null;
+   const allClaims = claims.data ?? [];
+   const sortedPeriods = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+-  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)));
++  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data, pools.data)));
+   return (
+     <section data-testid="classic-summary">
+       <h2>Classic summary</h2>
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 0ca249ec..10e5b8e5 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -8,6 +8,7 @@ import { useSettings } from '../roles/roles';
+ import { periodDue, usePeriods } from '../periods/periods';
+ import { isActive } from '../claims/active.slot';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
++import { usePools } from '../pools/pools';
+ 
+ /** The statuses the summary counts claims by. */
+ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
+@@ -24,6 +25,7 @@ function Summary() {
+   const rates = useRates();
+   const periods = usePeriods();
+   const settings = useSettings();
++  const pools = usePools();
+   const today = useSheetToday();
+   const voidReasons = useVoidReasons();
+   if (!user || !sheet) return null;
+@@ -51,7 +53,7 @@ function Summary() {
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>
+-                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)))}
++                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data, pools.data)))}
+                 </td>
+                 <td data-testid={`summary-grade-${g}-active`}>
+                   {onGrade.filter((p) => isActive(p, allClaims, today)).length}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+index 52e23e23..6ed6457b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import jakarta.persistence.EntityManager;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -21,10 +22,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ public class ApplyPartSettle {
+     public PartSettle apply(@Parameter Split split, @Val Sheet sheet, ClaimRepository repository,
+             EntityManager entityManager, SheetRepository sheets, PersonRepository people, RateRepository rates,
+-            PersonGradeRepository grades, PeriodRepository periods, RoleRepository roles, ClaimLogRepository log,
++            PersonGradeRepository grades, AsOf asOf, PeriodRepository periods, RoleRepository roles, ClaimLogRepository log,
+             VoidReasonRepository voidReasons, @RequestHeader(name = "X-User", required = false) String userHeader)
+             throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+-        Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades);
++        Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades, asOf);
+         Claim made = split.made();
+         String splitNumber = made.getNumber();
+         String number = ApplyClaimStatus.run("settle", made, repository, entityManager, people, rates, grades, periods,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
+index 04c8b689..4bf90927 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import java.util.Objects;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  *  figures the settle moved. */
+ public class AuditPartSettle {
+     public void audit(@Parameter PartSettle part, @Val Claim claim, @Val Rollup before, SheetRepository sheets,
+-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
++            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
+             WatchRepository watches, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
+         String by = AuditUser.decode(user);
+@@ -40,7 +41,7 @@ public class AuditPartSettle {
+         } else {
+             audit.record(line);
+         }
+-        Rollup now = Rollup.of(claim.getSheetId(), sheets, people, claims, rates, grades);
++        Rollup now = Rollup.of(claim.getSheetId(), sheets, people, claims, rates, grades, asOf);
+         now.changesSince(part.between(), claim.getSheetId(), by).forEach(audit::record);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index d377a629..12ea223a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -261,14 +261,24 @@ public class ClaimFigures {
+      *  others shared with them (null: they hold no share of a counted claim) added before the cap: their own claims
+      *  count less the holders' parts, and when they would have none (n/a) their parts are their due-total. */
+     public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held) {
++        return dueTotal(claims, today, person, held, null);
++    }
++
++    /** The person's live due-total, as {@link #dueTotal(List, LocalDate, Person, BigDecimal)}, with the cap covering
++     *  it plus their cut total (null: none): it is held to the cap less their cut total, not below 0.00. */
++    public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held, BigDecimal cut) {
+         String sum = uncappedDueTotal(claims, today, person);
+         if (held != null) {
+             sum = ("n/a".equals(sum) ? held : new BigDecimal(sum).add(held)).setScale(2).toPlainString();
+         }
+-        if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
++        if (cap == null || "n/a".equals(sum)) {
++            return sum;
++        }
++        BigDecimal limit = cut == null ? cap : cap.subtract(cut).max(BigDecimal.ZERO);
++        if (new BigDecimal(sum).compareTo(limit) <= 0) {
+             return sum;
+         }
+-        return cap.setScale(2).toPlainString();
++        return limit.setScale(2).toPlainString();
+     }
+ 
+     /** The person's live due-total before the cap: the sum of their figures. */
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
+index d0cbd8b8..27bb31ed 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/AddImportedPeople.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.importpeople;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import jakarta.persistence.EntityManager;
+ import jakarta.persistence.LockModeType;
+ import java.util.ArrayList;
+@@ -44,7 +45,7 @@ public class AddImportedPeople {
+ 
+     public void add(@Val ImportedLines lines, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
+             TreeNames tree, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
+-            PersonGradeRepository grades, RetiredGradeRepository retired, EntityManager entityManager,
++            PersonGradeRepository grades, AsOf asOf, RetiredGradeRepository retired, EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+             Out<ImportedPeople> addedOut) throws InvalidPersonException {
+         List<Person> onSheet = people.findListed(sheet.getId());
+@@ -72,7 +73,7 @@ public class AddImportedPeople {
+         int added = 0;
+         int updated = 0;
+         for (Planned line : planned) {
+-            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
++            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
+             if (line.update() == null) {
+                 Person saved = people.saveAndFlush(line.person());
+                 audit.record(PersonRules.addedLine(saved, by));
+@@ -98,7 +99,7 @@ public class AddImportedPeople {
+                 audit.record(PersonRules.editedLine(person, grades.gradesOf(person).on(sheet.getToday()), by));
+                 updated++;
+             }
+-            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades).changesSince(before, sheet.getId(), by)
++            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf).changesSince(before, sheet.getId(), by)
+                     .forEach(audit::record);
+         }
+         addedOut.set(new ImportedPeople(added, updated));
+diff --git a/src/main/java/net/officefloor/hq/app/importrates/SetImportedRates.java b/src/main/java/net/officefloor/hq/app/importrates/SetImportedRates.java
+index 864f2013..91b8fda2 100644
+--- a/src/main/java/net/officefloor/hq/app/importrates/SetImportedRates.java
++++ b/src/main/java/net/officefloor/hq/app/importrates/SetImportedRates.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.importrates;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+@@ -24,14 +25,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  */
+ public class SetImportedRates {
+     public void set(@Val ImportedRates lines, @Val Sheet sheet, RateRepository rates, RateLogRepository log,
+-            RateVersionRepository versions, SheetRepository sheets, PersonRepository people, ClaimRepository claims, PersonGradeRepository grades,
++            RateVersionRepository versions, SheetRepository sheets, PersonRepository people, ClaimRepository claims, PersonGradeRepository grades, AsOf asOf,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RatesSet> setOut) {
+         AuditRateSet auditRate = new AuditRateSet();
+         String by = AuditUser.decode(user);
+         for (RateInput line : lines.rates()) {
+-            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
++            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
+             auditRate.audit(RateRules.set(line, sheet, rates, log, versions), user, audit);
+-            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades).changesSince(before, sheet.getId(), by)
++            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf).changesSince(before, sheet.getId(), by)
+                     .forEach(audit::record);
+         }
+         setOut.set(new RatesSet(lines.rates().size()));
+diff --git a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+index 3aaee5f1..d1f2a6f8 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/AddPastedClaims.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.paste;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import jakarta.persistence.EntityManager;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+@@ -50,7 +51,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  */
+ public class AddPastedClaims {
+     public void add(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
+-            ClaimRepository claims, PeriodRepository periods, PersonGradeRepository grades, RateRepository rates,
++            ClaimRepository claims, PeriodRepository periods, PersonGradeRepository grades, AsOf asOf, RateRepository rates,
+             ClaimLogRepository log, HolidayRepository holidays, ClaimLineRepository claimLines, SheetRepository sheets,
+             RoleRepository roles, VoidReasonRepository voidReasons, EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+@@ -61,7 +62,7 @@ public class AddPastedClaims {
+         Set<String> refs = new HashSet<>();
+         Set<Long> matched = new HashSet<>();
+         List<String> records = new ArrayList<>();
+-        Rollup rollup = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
++        Rollup rollup = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
+         int at = 0;
+         for (PastedLine line : pasted.lines()) {
+             at++;
+@@ -133,7 +134,7 @@ public class AddPastedClaims {
+             }
+             records.add(ClaimAudit.line(claim.getStatus().event(), claim, person.getName(), by));
+             ClaimRules.log(claim, sheet, log, people, rates, grades, by);
+-            Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
++            Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
+             records.addAll(now.changesSince(rollup, sheet.getId(), by));
+             rollup = now;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index e33e2bf3..316cc252 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import jakarta.persistence.EntityManager;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+@@ -59,7 +60,7 @@ public class ApplyTransfer {
+             ClaimLogRepository logs, ClaimCommentRepository comments, ClaimLineRepository claimLines,
+             PersonAliasRepository aliases,
+             PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
+-            WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
++            WatchRepository watches, PersonGradeRepository grades, AsOf asOf, RoleRepository roles, SheetRepository sheets,
+             RateRepository rates, PeriodRepository periods, CrewRepository crews, CrewMemberRepository crewMembers,
+             net.officefloor.hq.app.plan.PlanRepository plans, net.officefloor.hq.app.plan.PlanClaimRepository planClaims,
+             net.officefloor.hq.app.plan.PlanPauseRepository planPauses,
+@@ -105,7 +106,7 @@ public class ApplyTransfer {
+             throw new InvalidPersonException("The contact is already in use on the other sheet.");
+         }
+ 
+-        Rollup toBefore = Rollup.of(to, sheets, people, claims, rates, grades);
++        Rollup toBefore = Rollup.of(to, sheets, people, claims, rates, grades, asOf);
+         if (target == null) {
+             target = sheets.saveAndFlush(new Sheet(to));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
+index dc1e4bce..405e017c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferred.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+@@ -13,20 +14,20 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  *  merge, when they were merged into someone there), then its rollup lines. */
+ public class AuditPersonTransferred {
+     public void audit(@Val PersonTransferred transferred, @Val Rollup before, SheetRepository sheets,
+-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
++            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Audit audit) {
+         String user = AuditUser.decode(userHeader);
+         String from = transferred.fromSheet();
+         String to = transferred.toSheet();
+         audit.record("PERSON_TRANSFERRED sheet=" + from + " by=" + user + " name=" + transferred.name() + " to=" + to);
+-        Rollup.of(from, sheets, people, claims, rates, grades).changesSince(before, from, user)
++        Rollup.of(from, sheets, people, claims, rates, grades, asOf).changesSince(before, from, user)
+                 .forEach(audit::record);
+         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user + " name=" + transferred.name() + " from=" + from);
+         if (transferred.mergedInto() != null) {
+             audit.record("PERSON_MERGED sheet=" + to + " by=" + user + " from=" + transferred.name() + " into="
+                     + transferred.mergedInto());
+         }
+-        Rollup.of(to, sheets, people, claims, rates, grades).changesSince(transferred.toBefore(), to, user)
++        Rollup.of(to, sheets, people, claims, rates, grades, asOf).changesSince(transferred.toBefore(), to, user)
+                 .forEach(audit::record);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditTransferUndone.java b/src/main/java/net/officefloor/hq/app/person/AuditTransferUndone.java
+index 85c908c3..df437894 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AuditTransferUndone.java
++++ b/src/main/java/net/officefloor/hq/app/person/AuditTransferUndone.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+@@ -12,13 +13,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ /** Records, after the transfer back's own lines, that the transfer was undone on this sheet, then its rollup lines. */
+ public class AuditTransferUndone {
+     public void audit(@Val PersonTransferred transferred, @Val Rollup before, SheetRepository sheets,
+-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
++            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Audit audit) {
+         String user = AuditUser.decode(userHeader);
+         String here = transferred.fromSheet();
+         audit.record("PERSON_TRANSFER_UNDONE sheet=" + here + " by=" + user + " name=" + transferred.name() + " to="
+                 + transferred.toSheet());
+-        Rollup.of(here, sheets, people, claims, rates, grades).changesSince(before, here, user)
++        Rollup.of(here, sheets, people, claims, rates, grades, asOf).changesSince(before, here, user)
+                 .forEach(audit::record);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java b/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
+index ec161c9f..c9b222cb 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolCuts.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.pool;
+ 
++import java.math.BigDecimal;
++import java.util.HashMap;
+ import java.util.Map;
+ import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.sheet.Sheet;
+@@ -15,4 +17,15 @@ public final class PoolCuts {
+     public static Map<String, String> live(Sheet current, AsOf asOf) {
+         return RespondWithPools.cutsOf(RespondWithPools.poolsAsOf(current, null, asOf));
+     }
++
++    /** Each person's cut total as the sheet stands now: their cuts across every pool they are a member of, added up
++     *  (a member with no cut adds nothing), by person id; a person in no pool is absent. */
++    public static Map<Long, BigDecimal> totalsByPerson(Sheet current, AsOf asOf) {
++        Map<Long, BigDecimal> totals = new HashMap<>();
++        for (PoolResponse pool : RespondWithPools.poolsAsOf(current, null, asOf)) {
++            pool.members().stream().filter(m -> m.personId() != null && !m.cut().isEmpty())
++                    .forEach(m -> totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add));
++        }
++        return totals;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
+index daaf1648..a38352d3 100644
+--- a/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quickadd/FindOrAddPerson.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.quickadd;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import java.util.Optional;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  */
+ public class FindOrAddPerson {
+     public void find(@Val QuickAddName name, @Val Sheet sheet, @Val Rollup before, PersonRepository people, PersonAliasRepository aliases,
+-            SheetRepository sheets, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
++            SheetRepository sheets, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit, TreeNames tree, RetiredGradeRepository retired, Out<Person> personOut,
+             Out<Rollup> rollupOut) throws InvalidClaimException {
+         Optional<Person> found = PersonAliasRepository.findByNameOrAlias(
+@@ -46,7 +47,7 @@ public class FindOrAddPerson {
+         String by = AuditUser.decode(user);
+         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by + " name=" + person.getName()
+                 + " grade=" + person.getGrade());
+-        Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
++        Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
+         now.changesSince(before, sheet.getId(), by).forEach(audit::record);
+         personOut.set(person);
+         rollupOut.set(now);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java b/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
+index ab7aef31..dbbd0780 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.rollup;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+@@ -15,9 +16,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  *  when they moved. */
+ public class AuditRollup {
+     public void audit(@PathVariable("sheetId") String sheetId, @Val Rollup before, SheetRepository sheets,
+-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
++            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
+-        Rollup now = Rollup.of(sheetId, sheets, people, claims, rates, grades);
++        Rollup now = Rollup.of(sheetId, sheets, people, claims, rates, grades, asOf);
+         now.changesSince(before, sheetId, AuditUser.decode(user)).forEach(audit::record);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index ef29e6c3..6fa7661f 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -12,11 +12,13 @@ import net.officefloor.hq.app.claim.ClaimFigures;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimShares;
+ import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGrade;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonGrades;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolCuts;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -27,7 +29,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
+  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
+  * A hold (a person's or a claim's) takes no claim out of any figure; a person's OPEN and PENDING claims, once their
+- * retirement date is reached, count in none of them, unless a statement binds them. The sheet's alert threshold (null: off) is kept with them, as it stands now.
++ * retirement date is reached, count in none of them, unless a statement binds them. The cap covers a person's due-total
++ * plus their cut total (their cuts across every pool): their due-total is held to the cap less it, not below 0.00. The sheet's alert threshold (null: off) is kept with them, as it stands now.
+  */
+ public class Rollup {
+ 
+@@ -52,7 +55,7 @@ public class Rollup {
+ 
+     /** Works out the sheet's figures now; a sheet not yet stored has none. */
+     public static Rollup of(String sheetId, SheetRepository sheets, PersonRepository persons,
+-            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades) {
++            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf) {
+         String id = sheetId.trim();
+         Optional<Sheet> sheet = sheets.findById(id);
+         Map<Long, Figures> people = new LinkedHashMap<>();
+@@ -65,6 +68,7 @@ public class Rollup {
+             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
+             List<Person> listed = persons.findListed(id);
+             Map<Long, BigDecimal> held = new LinkedHashMap<>();
++            Map<Long, BigDecimal> cuts = PoolCuts.totalsByPerson(sheet.get(), asOf);
+             for (Person owner : listed) {
+                 ClaimFigures ownerFigures = new ClaimFigures(sheetRates,
+                         new PersonGrades(owner.getGrade(), dated.getOrDefault(owner.getId(), List.of())), sheet.get());
+@@ -84,7 +88,8 @@ public class Rollup {
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+                 ClaimFigures figures = new ClaimFigures(sheetRates,
+                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
+-                String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()));
++                String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()),
++                        cuts.get(person.getId()));
+                 BigDecimal overdue = mine.stream()
+                         .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c))
+                         .map(figures::due).filter(d -> d != null)
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java b/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
+index b9552592..3c15e998 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/TakeRollup.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.rollup;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ /** Notes the sheet's figures before the change, so the audit can tell afterwards which of them moved. */
+ public class TakeRollup {
+     public void take(@PathVariable("sheetId") String sheetId, SheetRepository sheets, PersonRepository people,
+-            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, Out<Rollup> before) {
+-        before.set(Rollup.of(sheetId, sheets, people, claims, rates, grades));
++            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf, Out<Rollup> before) {
++        before.set(Rollup.of(sheetId, sheets, people, claims, rates, grades, asOf));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java
+index f7fbc212..378dab4e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.sheet;
+ 
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+@@ -14,13 +15,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  *  lines for every person and its totals. */
+ public class AuditSheetCloned {
+     public void audit(@Val SheetCloned cloned, SheetRepository sheets, PersonRepository people, ClaimRepository claims,
+-            RateRepository rates, PersonGradeRepository grades,
++            RateRepository rates, PersonGradeRepository grades, AsOf asOf,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Audit audit) {
+         String user = AuditUser.decode(userHeader);
+         String from = cloned.fromSheet();
+         String to = cloned.toSheet();
+         audit.record("SHEET_CLONE_MADE sheet=" + from + " by=" + user + " to=" + to);
+         audit.record("SHEET_CLONED sheet=" + to + " by=" + user + " from=" + from);
+-        Rollup.of(to, sheets, people, claims, rates, grades).lines(to, user).forEach(audit::record);
++        Rollup.of(to, sheets, people, claims, rates, grades, asOf).lines(to, user).forEach(audit::record);
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/{poolId}/members.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/{poolId}/members.POST.yml
+index aefa511c..a23e8ee8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/{poolId}/members.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools/{poolId}/members.POST.yml
+@@ -8,6 +8,10 @@ archived:
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.pool.ValidatePoolMember
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -24,6 +28,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.pool.AuditPoolMemberAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.pool.RespondWithPools
