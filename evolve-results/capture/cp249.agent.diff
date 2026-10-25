@@ -1,0 +1,130 @@
+diff --git a/src/main/frontend/features/roles/policy.slot.tsx b/src/main/frontend/features/roles/policy.slot.tsx
+new file mode 100644
+index 00000000..708bcb1c
+--- /dev/null
++++ b/src/main/frontend/features/roles/policy.slot.tsx
+@@ -0,0 +1,35 @@
++import { useState } from 'react';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { useClaims } from '../claims/claims';
++import { policyVersionOn, useSettings } from './roles';
++
++// The policy versions, shown once the button is pressed: one line per version, oldest first,
++// <version> <from-date or start> <key>=<value> <count of claims (DELETED ones left out) whose policy version it is>.
++function PolicyVersions() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const settings = useSettings();
++  const claims = useClaims();
++  const [shown, setShown] = useState(false);
++  if (!user || !sheet) return null;
++  const counted = (claims.data ?? []).filter((c) => c.status !== 'DELETED');
++  const lines = (settings.data?.policyLog ?? []).map((v, i) => {
++    const count = counted.filter((c) => policyVersionOn(settings.data, c.date) === i + 1).length;
++    return `${i + 1} ${v.from ?? 'start'} ${v.key}=${v.value ?? ''} ${count}`;
++  });
++  return (
++    <section data-testid="policy">
++      <button type="button" data-testid="policy-show" onClick={() => setShown(true)}>
++        Show policy versions
++      </button>
++      {shown && (
++        <ul>
++          {lines.map((l) => <li key={l} data-testid="policy-line">{l}</li>)}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 34.7, Component: PolicyVersions });
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 01626e7a..f47cad43 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -30,7 +30,9 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   scoreMid: string; scoreHigh: string; scoreLog: string; maxOpen: string; pendingSla: string;
+   /** The policy versions (each change to the rounding mode, floor, cap, terms, late percent or clerk limit), in the
+    *  order made, numbered from 1: each one's from-date (null: none — it counts always). */
+-  policyVersions: (string | null)[] };
++  policyVersions: (string | null)[];
++  /** The same policy versions, each with the setting it changed and the value set (null: blank). */
++  policyLog: { from: string | null; key: string; value: string | null }[] };
+ 
+ /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
+  *  before it, else `start` (the sheet's starting value). */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index a34b44b3..b038ae25 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -4,7 +4,6 @@ import java.time.LocalDate;
+ import java.util.List;
+ import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.sheet.InvalidTodayException;
+-import net.officefloor.hq.app.sheet.SettingLog;
+ import net.officefloor.hq.app.sheet.SettingLogRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+@@ -17,11 +16,11 @@ public class RespondWithSettings {
+     public void respond(@Val Sheet sheet, @RequestParam(name = "asOf", required = false) String asOfParam, AsOf asOf,
+             SettingLogRepository settingLogs, ObjectResponse<SettingsResponse> response) throws InvalidTodayException {
+         LocalDate date = AsOf.dateOf(asOfParam);
+-        List<String> versions = settingLogs.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
++        List<SettingsResponse.PolicyVersion> versions = settingLogs.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+                 .filter(set -> Sheet.POLICY_KEYS.contains(set.getKey()))
+                 .filter(set -> date == null || !set.getMadeOn().isAfter(date))
+-                .map(SettingLog::getFromDate)
+-                .map(from -> from == null ? null : from.toString())
++                .map(set -> new SettingsResponse.PolicyVersion(
++                        set.getFromDate() == null ? null : set.getFromDate().toString(), set.getKey(), set.getValue()))
+                 .toList();
+         response.send(SettingsResponse.from(asOf.sheet(sheet, date), versions));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 8785f056..a0a311b3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetSetting;
+  *  blank: the sheet's today), and the period numbering from (YYYY-MM-DD; "" when off), and the own terms in days of grades A, B and C
+  *  ("" when the grade uses the sheet's terms), and the cap with two decimals ("" when there is none), and the proof threshold with two decimals ("" when there is none); and the values recorded
+  *  for each dated setting, by key (floor, late-pct, terms, terms-A/B/C, clerk-limit, cap), by from-date; and the permission matrix
+- *  entry of each of open, settle, void, reassign, close, reopen and today (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated); and the review SLA in days ("" when none; not dated); and the proof kinds (comma separated; "" when none; not dated); and the default grade ("" when blank, meaning A; not dated); and the clerk limits of grades A, B and C in force ("" when none); and the maximum of open claims per person ("" when none; not dated); and the pending SLA in days ("" when none; not dated); and the policy versions, in the order made (each change to the rounding mode, floor, cap, terms, late percent or clerk limit), each by its from-date (null: none — it counts always). */
++ *  entry of each of open, settle, void, reassign, close, reopen and today (its comma separated roles; "" when blank: the standing rule); and the grace days ("" when off); and the note threshold with two decimals ("" when there is none); and the entry date (YYYY-MM-DD; "" when off); and the grace days of grades A, B and C in force ("" when none); and the proof thresholds of grades A, B and C in force ("" when none); and the pot with two decimals ("" when there is none; not dated); and the parent sheet's id ("" when none; not dated); and the fiscal year start month (1 to 12; not dated); and the alert threshold with two decimals ("" when off; not dated); and the rounding mode in force (half-up or half-even; "" when none); and the review threshold with two decimals ("" when there is none); and the escalation gap in days ("" when off; not dated); and the review SLA in days ("" when none; not dated); and the proof kinds (comma separated; "" when none; not dated); and the default grade ("" when blank, meaning A; not dated); and the clerk limits of grades A, B and C in force ("" when none); and the maximum of open claims per person ("" when none; not dated); and the pending SLA in days ("" when none; not dated); and the policy versions, in the order made (each change to the rounding mode, floor, cap, terms, late percent or clerk limit), each by its from-date (null: none — it counts always); and the same policy versions with the setting each changed and its value. */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap, String proofThreshold,
+         Map<String, List<Dated>> dated, String permOpen, String permSettle, String permVoid, String permReassign,
+@@ -22,7 +22,11 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+         String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla, String permToday,
+-        List<String> policyVersions) {
++        List<String> policyVersions, List<PolicyVersion> policyLog) {
++
++    /** A policy version as made: its from-date (null: none), the setting it changed and the value set (null: blank). */
++    public record PolicyVersion(String from, String key, String value) {
++    }
+ 
+     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
+     public record Dated(String from, String value) {
+@@ -32,8 +36,9 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         return from(sheet, List.of());
+     }
+ 
+-    /** @param policyVersions the from-dates of the sheet's policy versions, in the order made (null: none). */
+-    public static SettingsResponse from(Sheet sheet, List<String> policyVersions) {
++    /** @param policyLog the sheet's policy versions, in the order made. */
++    public static SettingsResponse from(Sheet sheet, List<PolicyVersion> policyLog) {
++        List<String> policyVersions = policyLog.stream().map(PolicyVersion::from).toList();
+         Map<String, List<Dated>> dated = new LinkedHashMap<>();
+         for (SheetSetting s : sheet.getSettings()) {
+             dated.computeIfAbsent(s.getKey(), k -> new ArrayList<>())
+@@ -69,7 +74,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 sheet.isScoreLog() ? "on" : "",
+                 sheet.getMaxOpen() == null ? "" : String.valueOf(sheet.getMaxOpen()),
+                 sheet.getPendingSla() == null ? "" : String.valueOf(sheet.getPendingSla()),
+-                sheet.permOf("today"), policyVersions);
++                sheet.permOf("today"), policyVersions, policyLog);
+     }
+ 
+     /** A score threshold (score-mid or score-high); "" when blank. */
