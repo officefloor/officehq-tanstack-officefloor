@@ -114,8 +114,8 @@ export function lateFrom(late: Late | undefined, grade: string | undefined, clai
 
 /** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (the terms-th business day after its date, by the terms fixed when it was added and the sheet's holidays now)
  *  plus its grade's grace (see lateFrom), for every
- *  full 30 days it is overdue, the late percent in force on that boundary date (that date plus 30, 60, 90 ... days) of the figure,
- *  each rounded as the claim rounds (roundsHalfUp), the charges added up; otherwise (or for a correction,
+ *  full 30 days it is overdue, the late percent in force on that boundary date (that date plus 30, 60, 90 ... days) of the figure
+ *  plus the charges of the boundaries before it (compounding), each rounded as the claim rounds (roundsHalfUp), the charges added up; otherwise (or for a correction,
  *  or a claim deferred past the sheet's today) 0. */
 export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; dueBy: string; corrects?: string | null;
   deferred?: boolean }, figureCents: bigint, grade?: string): bigint {
@@ -126,7 +126,7 @@ export function lateCents(late: Late | undefined, claim: { amount: string; date:
   let charge = 0n;
   for (let n = 1n; n <= periods; n++) {
     const pct = late.pctOn(addDays(from, Number(n) * 30));
-    if (pct !== 0n) charge += dueCents(figureCents, pct, roundsHalfUp(late, claim));
+    if (pct !== 0n) charge += dueCents(figureCents + charge, pct, roundsHalfUp(late, claim));
   }
   return charge;
 }
