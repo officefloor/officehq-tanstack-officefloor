@@ -2,6 +2,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/useClaims';
 import { usePeople } from '../people/people.slot';
 import { showPeriodDueTotal, usePeriodDueTotal, usePeriods } from '../periods/periods.slot';
+import { useIsActive } from '../active/active.slot';
 import { useDueTotals } from '../rates/rates.slot';
 import { showHundredths } from '../rates/useRates';
 
@@ -10,15 +11,16 @@ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const
 
 // The summary panel, built from the same figures as the lists so it always agrees with them. Per grade: the people
 // on it today, retired people left out, and their due-totals added up (skipping those that are n/a). Per period:
-// its due-total as its row shows it. Per status: the claims on the sheet with that status.
+// its due-total as its row shows it. Per grade too: how many of its people are active. Per status: the claims on the sheet with that status.
 function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const totals = useDueTotals(sheetId);
   const periods = usePeriods(sheetId);
   const periodDueTotal = usePeriodDueTotal(sheetId);
   const claims = useClaims(sheetId);
+  const isActive = useIsActive(sheetId);
 
-  const active = (people.data ?? []).filter((p) => p.retiredFrom === null);
+  const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
   return (
     <section data-testid="summary-panel">
       <h2>Summary</h2>
@@ -28,11 +30,12 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
             <th>Grade</th>
             <th>People</th>
             <th>Due total</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const on = active.filter((p) => p.grade === g);
+            const on = current.filter((p) => p.grade === g);
             let sum = 0n;
             for (const p of on) sum += totals.get(p.id) ?? 0n;
             return (
@@ -40,6 +43,7 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>{showHundredths(sum)}</td>
+                <td data-testid={`summary-grade-${g}-active`}>{on.filter((p) => isActive(p.id)).length}</td>
               </tr>
             );
           })}
