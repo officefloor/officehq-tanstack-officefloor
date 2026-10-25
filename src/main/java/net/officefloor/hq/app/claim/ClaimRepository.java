@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The claims on each sheet; ids are assigned in the order claims are added. */
+/** The claims on each sheet; ids are assigned in the order claims are added, and claims are listed newest first (a moved claim as its new person's newest). */
 @Repository
 public class ClaimRepository {
 
@@ -41,7 +41,7 @@ public class ClaimRepository {
 
     /** The person's claims, newest first. */
     public List<Claim> listOf(String sheetId, long personId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW,
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC", ROW,
                 sheetId, personId);
     }
 
@@ -52,7 +52,7 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC", ROW, sheetId);
     }
 
     /** Whether the person has a SETTLED claim with this number on the sheet. */
@@ -67,10 +67,11 @@ public class ClaimRepository {
     }
 
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+        long listed = nextListed(sheetId);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -78,6 +79,7 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setString(6, corrects);
+            ps.setLong(7, listed);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
@@ -95,6 +97,26 @@ public class ClaimRepository {
     public boolean updateStatus(Claim claim, ClaimStatus from) {
         return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ? AND status = ?",
                 claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getId(), from.name()) == 1;
+    }
+
+    /**
+     * Move the claim to its person, unbound from any statement figure and listed as that person's newest claim. Whether
+     * it was still in its status: the first of two users changing it locks the row, so the other one finds it moved.
+     */
+    public boolean reassign(Claim claim, long personId) {
+        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = ?"
+                + " WHERE id = ? AND status = ?", personId, nextListed(claim.getSheetId()), claim.getId(),
+                claim.getStatus().name()) == 1;
+        if (moved) {
+            claim.moveTo(personId);
+        }
+        return moved;
+    }
+
+    /** Take the sheet's next listing key: a claim added or moved is listed before every claim listed earlier. */
+    private long nextListed(String sheetId) {
+        return jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE "
+                + "(UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)", Long.class, sheetId);
     }
 
     /** Take the sheet's next claim number, in one statement so two users never get the same one. */

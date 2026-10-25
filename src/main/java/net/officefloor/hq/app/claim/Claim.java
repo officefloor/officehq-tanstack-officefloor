@@ -8,7 +8,7 @@ public class Claim {
 
     private final long id;
     private final String sheetId;
-    private final long personId;
+    private long personId;
     private BigDecimal amount;
     private LocalDate date;
     private String note;
@@ -59,6 +59,13 @@ public class Claim {
 
     public long getPersonId() {
         return personId;
+    }
+
+    /** Move the claim to another person: it loses any figure a statement bound it to. */
+    public void moveTo(long personId) {
+        this.personId = personId;
+        this.stated = false;
+        this.statedDue = null;
     }
 
     public BigDecimal getAmount() {
