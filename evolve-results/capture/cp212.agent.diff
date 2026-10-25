@@ -1,0 +1,57 @@
+diff --git a/src/main/frontend/features/claims/score.slot.tsx b/src/main/frontend/features/claims/score.slot.tsx
+index f3337767..b6606f7e 100644
+--- a/src/main/frontend/features/claims/score.slot.tsx
++++ b/src/main/frontend/features/claims/score.slot.tsx
+@@ -2,12 +2,12 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useSheetToday } from '../session/session';
+ import { type Person } from '../people/people';
+ import { useSettings } from '../roles/roles';
+-import { useRates } from '../rates/rates';
+-import { splitOf } from '../rates/split.slot';
++import { gradeOn } from '../people/people';
++import { chargedOf, sumDue, useRates } from '../rates/rates';
+ import { overdueOf } from './overdue.slot';
+-import { useClaims } from './claims';
++import { countsLive, holdsOf, useClaims } from './claims';
+ 
+-// A person's score: their settled-total divided by 100, minus 5 for each counted overdue claim, rounded half to even
++// A person's score: the dues of their counted SETTLED claims that correct nothing, divided by 100, minus 5 for each counted overdue claim, rounded half to even
+ // to a whole number. Worked in hundredths of the score so the rounding is exact.
+ export function scoreOf(settledTotal: string, overdueCount: number): string {
+   const [whole, frac = '00'] = settledTotal.replace('-', '').split('.');
+@@ -47,7 +47,11 @@ function PersonScore({ person }: { person: Person }) {
+   const today = useSheetToday();
+   const settings = useSettings();
+   const all = claims.data ?? [];
+-  const { settled } = splitOf(person, all, rates.data, today, settings.data);
++  // corrections are left out of the score's settled figures
++  const settled = sumDue(all
++    .filter((c) => c.personId === person.id && c.corrects === null && c.status === 'SETTLED'
++      && countsLive(c, holdsOf([person]), today))
++    .map((c) => chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)));
+   const { count } = overdueOf(person, all, rates.data, today, settings.data);
+   const score = scoreOf(settled, count);
+   return (
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index c3235403..9e1d754a 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -75,7 +75,8 @@ public class Rollup {
+                         .map(figures::due).filter(d -> d != null)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+                 BigDecimal settled = mine.stream()
+-                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && c.getStatus() == ClaimStatus.SETTLED)
++                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && c.getStatus() == ClaimStatus.SETTLED
++                                && c.getCorrects() == null)
+                         .map(figures::due).filter(d -> d != null)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add);
+                 long overdueCount = mine.stream()
+@@ -103,7 +104,7 @@ public class Rollup {
+     }
+ 
+     /** One SCORE line per person, in list order, with the score as it stands in these figures: their counted SETTLED
+-     *  claims' dues divided by 100, minus 5 for each counted overdue claim, rounded half to even to a whole number. */
++     *  claims' dues (corrections left out) divided by 100, minus 5 for each counted overdue claim, rounded half to even to a whole number. */
+     public List<String> scores(String sheetId, String user) {
+         String head = " sheet=" + sheetId.trim() + " by=" + user;
+         List<String> lines = new ArrayList<>();
