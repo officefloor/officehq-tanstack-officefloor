@@ -47,7 +47,7 @@ public class ApplyClaimStatus {
             @RequestParam(name = "reason", required = false) String reason,
             @RequestParam(name = "batch", required = false) String batch) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
-                userHeader, reason, batch, false);
+                userHeader, reason, batch, false, false);
     }
 
     /** The change itself; on a dry run (a settle only) it refuses what the settle would refuse and changes nothing. */
@@ -55,6 +55,16 @@ public class ApplyClaimStatus {
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
             Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
             String userHeader, String reason, String batch, boolean dryRun) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+        return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
+                userHeader, reason, batch, dryRun, false);
+    }
+
+    /** As above; when the four-eyes and proof rules were already judged on the claim a part-settle split it off from,
+     *  they are not judged again on it. */
+    static String run(String action, Claim claim, ClaimRepository repository,
+            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
+            Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
+            String userHeader, String reason, String batch, boolean dryRun, boolean judged) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         if (dryRun && !"settle".equals(action)) {
             throw new ClaimStatusException("Only a settle can be checked.");
         }
@@ -161,10 +171,10 @@ public class ApplyClaimStatus {
             if (next == ClaimStatus.SETTLED && claim.isDeferredOn(sheet.getToday())) {
                 throw new ClaimStatusException("A deferred claim cannot be settled until the sheet's today reaches its date.");
             }
-            if (next == ClaimStatus.SETTLED && user.equals(claim.getOpenedBy())) {
+            if (next == ClaimStatus.SETTLED && !judged && user.equals(claim.getOpenedBy())) {
                 throw new ClaimStatusException("The one who opened a claim cannot settle or approve it.");
             }
-            if (next == ClaimStatus.SETTLED && user.equals(claim.getEditedBy())) {
+            if (next == ClaimStatus.SETTLED && !judged && user.equals(claim.getEditedBy())) {
                 throw new ClaimStatusException("The one who last edited a claim cannot settle or approve it.");
             }
             if (next == ClaimStatus.SETTLED) {
@@ -174,10 +184,10 @@ public class ApplyClaimStatus {
                                 personGrades, sheet).due(claim);
                 BigDecimal threshold = sheet.proofThresholdFor(
                         personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());
-                if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
+                if (!judged && threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
                     throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof to be settled or approved.");
                 }
-                if (threshold != null && due != null && due.compareTo(threshold) > 0) {
+                if (!judged && threshold != null && due != null && due.compareTo(threshold) > 0) {
                     for (String kind : sheet.getProofKinds()) {
                         if (claim.proofsOf(kind) == 0) {
                             throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof of each of the sheet's proof kinds (" + kind + " missing) to be settled or approved.");
