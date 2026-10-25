@@ -1,0 +1,782 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+new file mode 100644
+index 00000000..1196cff3
+--- /dev/null
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -0,0 +1,172 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useSubmitOnce } from '../../mutation/useSubmitOnce';
++import { useUser } from '../session/useSession';
++import { rolesKey, settingsKey, useRoles, useSettings, type Role, type Setting } from './useAccess';
++
++const ROLES = ['clerk', 'steward'];
++const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
++
++// The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
++// assigned roles are listed under it. The server decides who may settle what.
++function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
++  const roles = useRoles(sheetId);
++  const [name, setName] = useState('');
++  const [role, setRole] = useState('');
++  const [user] = useUser();
++  const queryClient = useQueryClient();
++  const save = useMutation({
++    mutationFn: async (body: { user: string; role: string }) => {
++      if (body.user.trim() === '') throw new Error('Enter a user name');
++      if (!ROLES.includes(body.role.trim())) throw new Error('A role is clerk or steward');
++      return putJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`, { ...body, by: user ?? '' });
++    },
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) });
++    },
++  });
++  const submit = useSubmitOnce(save);
++  return (
++    <section data-testid="roles-panel">
++      <h2>Roles</h2>
++      <form
++        data-testid="role-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          submit({ user: name, role });
++        }}
++      >
++        <label>
++          User{' '}
++          <input
++            data-testid="role-form-user"
++            value={name}
++            onChange={(e) => {
++              setName(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
++        <label>
++          Role{' '}
++          <input
++            data-testid="role-form-role"
++            list="role-options"
++            placeholder="clerk or steward"
++            value={role}
++            onChange={(e) => {
++              setRole(e.target.value);
++              save.reset();
++            }}
++          />
++          <datalist id="role-options">
++            {ROLES.map((r) => (
++              <option key={r} value={r} />
++            ))}
++          </datalist>
++        </label>{' '}
++        <button type="submit" data-testid="role-form-submit" disabled={save.isPending}>
++          Set role
++        </button>
++        {save.isError && (
++          <p data-testid="role-form-error" role="alert">
++            {save.error.message}
++          </p>
++        )}
++      </form>
++      {roles.isError && (
++        <p data-testid="roles-error" role="alert">
++          {roles.error.message}
++        </p>
++      )}
++      <table data-testid="role-list">
++        <thead>
++          <tr>
++            <th>User</th>
++            <th>Role</th>
++          </tr>
++        </thead>
++        <tbody>
++          {(roles.data ?? []).map((r) => (
++            <tr key={r.user} data-testid={`role-row-${r.user}`}>
++              <td data-testid="role-user">{r.user}</td>
++              <td data-testid="role-value">{r.role}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++// The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit).
++// The value in force shows beside it.
++function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
++  const settings = useSettings(sheetId);
++  const [limit, setLimit] = useState('');
++  const [user] = useUser();
++  const queryClient = useQueryClient();
++  const current = (settings.data ?? []).find((s) => s.key === 'clerk-limit')?.value ?? '';
++  const save = useMutation({
++    mutationFn: async (body: { key: string; value: string }) => {
++      const value = body.value.trim();
++      if (value !== '' && !AMOUNT.test(value)) {
++        throw new Error('A clerk limit is an amount with up to two decimals, or blank for no limit');
++      }
++      return putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, { key: body.key, value, by: user ?? '' });
++    },
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
++    },
++  });
++  const submit = useSubmitOnce(save);
++  return (
++    <section data-testid="settings-panel">
++      <h2>Settings</h2>
++      <form
++        data-testid="settings-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          submit({ key: 'clerk-limit', value: limit });
++        }}
++      >
++        <label>
++          Clerk limit{' '}
++          <input
++            data-testid="setting-clerk-limit"
++            inputMode="decimal"
++            placeholder="no limit"
++            value={limit}
++            onChange={(e) => {
++              setLimit(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
++        <span>
++          In force: <strong data-testid="setting-clerk-limit-current">{current}</strong>
++        </span>{' '}
++        <button type="submit" data-testid="settings-save" disabled={save.isPending}>
++          Save settings
++        </button>
++        {save.isError && (
++          <p data-testid="settings-error" role="alert">
++            {save.error.message}
++          </p>
++        )}
++      </form>
++      {settings.isError && (
++        <p data-testid="settings-load-error" role="alert">
++          {settings.error.message}
++        </p>
++      )}
++    </section>
++  );
++}
++
++export const contributions = [
++  SheetBody.fill({ order: 3, Component: RolesPanel }),
++  SheetBody.fill({ order: 4, Component: SettingsPanel }),
++];
+diff --git a/src/main/frontend/features/access/useAccess.ts b/src/main/frontend/features/access/useAccess.ts
+new file mode 100644
+index 00000000..fca473e1
+--- /dev/null
++++ b/src/main/frontend/features/access/useAccess.ts
+@@ -0,0 +1,27 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A role assigned to a user name: clerk (any name without one) or steward. */
++export type Role = { user: string; role: string };
++
++/** A sheet setting; a null value is blank. */
++export type Setting = { key: string; value: string | null };
++
++export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
++export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
++
++/** The sheet's assigned roles, by user name. */
++export function useRoles(sheetId: string) {
++  return useQuery({
++    queryKey: rolesKey(sheetId),
++    queryFn: () => getJson<Role[]>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`),
++  });
++}
++
++/** The sheet's settings, by key. */
++export function useSettings(sheetId: string) {
++  return useQuery({
++    queryKey: settingsKey(sheetId),
++    queryFn: () => getJson<Setting[]>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/ApplyRole.java b/src/main/java/net/officefloor/hq/app/access/ApplyRole.java
+new file mode 100644
+index 00000000..fe57e3e8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/ApplyRole.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class ApplyRole {
++    public void apply(@Val SheetResponse sheet, @Val RoleInput input, RoleRepository repository, Out<Role> role) {
++        role.set(repository.set(sheet.id(), input.user(), input.role()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/ApplySetting.java b/src/main/java/net/officefloor/hq/app/access/ApplySetting.java
+new file mode 100644
+index 00000000..c5ffd042
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/ApplySetting.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class ApplySetting {
++    public void apply(@Val SheetResponse sheet, @Val SettingInput input, SettingRepository repository,
++            Out<Setting> setting) {
++        setting.set(repository.set(sheet.id(), input.key(), input.value()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RecordRoleSet.java b/src/main/java/net/officefloor/hq/app/access/RecordRoleSet.java
+new file mode 100644
+index 00000000..a070f197
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RecordRoleSet.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordRoleSet {
++    public void record(@Val Role role, @Val ChangedBy by, Audit audit) {
++        audit.record("ROLE_SET sheet=" + role.sheetId() + " by=" + by.name() + " user=" + role.user() + " role="
++                + role.role());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RecordSettingChanged.java b/src/main/java/net/officefloor/hq/app/access/RecordSettingChanged.java
+new file mode 100644
+index 00000000..6895e4a1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RecordSettingChanged.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordSettingChanged {
++    public void record(@Val Setting setting, @Val ChangedBy by, Audit audit) {
++        audit.record("SETTING_CHANGED sheet=" + setting.sheetId() + " by=" + by.name() + " key=" + setting.key()
++                + " value=" + (setting.value() == null ? "" : setting.value()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithRole.java b/src/main/java/net/officefloor/hq/app/access/RespondWithRole.java
+new file mode 100644
+index 00000000..54a5ab35
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithRole.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithRole {
++    public void respond(@Val Role role, ObjectResponse<RoleResponse> response) {
++        response.send(RoleResponse.from(role));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java b/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java
+new file mode 100644
+index 00000000..ea4b4400
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithRoles.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.access;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithRoles {
++    public void respond(@Val SheetResponse sheet, RoleRepository repository,
++            ObjectResponse<List<RoleResponse>> response) {
++        response.send(repository.list(sheet.id()).stream().map(RoleResponse::from).toList());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithSetting.java b/src/main/java/net/officefloor/hq/app/access/RespondWithSetting.java
+new file mode 100644
+index 00000000..b0629456
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithSetting.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSetting {
++    public void respond(@Val Setting setting, ObjectResponse<SettingResponse> response) {
++        response.send(SettingResponse.from(setting));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java
+new file mode 100644
+index 00000000..33195e6e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RespondWithSettings.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.access;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSettings {
++    public void respond(@Val SheetResponse sheet, SettingRepository repository,
++            ObjectResponse<List<SettingResponse>> response) {
++        response.send(repository.list(sheet.id()).stream().map(SettingResponse::from).toList());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/Role.java b/src/main/java/net/officefloor/hq/app/access/Role.java
+new file mode 100644
+index 00000000..b5146c0c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/Role.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.access;
++
++/** A role assigned to a user name on a sheet: clerk (any name without one) or steward. */
++public record Role(String sheetId, String user, String role) {
++
++    public static final String CLERK = "clerk";
++
++    public static final String STEWARD = "steward";
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RoleInput.java b/src/main/java/net/officefloor/hq/app/access/RoleInput.java
+new file mode 100644
+index 00000000..52282457
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RoleInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.access;
++
++/** A validated role assignment: the trimmed user name and its role. */
++public record RoleInput(String user, String role) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RoleRepository.java b/src/main/java/net/officefloor/hq/app/access/RoleRepository.java
+new file mode 100644
+index 00000000..2b76b18a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RoleRepository.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.access;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The roles assigned on each sheet; a user name without one is a clerk. */
++@Repository
++public class RoleRepository {
++
++    private static final RowMapper<Role> ROW = (rs, n) -> new Role(rs.getString("sheet_id"),
++            rs.getString("user_name"), rs.getString("role"));
++
++    private final JdbcTemplate jdbc;
++
++    public RoleRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's assigned roles, by user name. */
++    public List<Role> list(String sheetId) {
++        return jdbc.query("SELECT sheet_id, user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name", ROW,
++                sheetId);
++    }
++
++    /** The user's role on the sheet: clerk unless assigned another. */
++    public String roleOf(String sheetId, String user) {
++        return jdbc.query("SELECT sheet_id, user_name, role FROM sheet_role WHERE sheet_id = ? AND user_name = ?", ROW,
++                sheetId, user).stream().findFirst().map(Role::role).orElse(Role.CLERK);
++    }
++
++    /** Assign the user a role, replacing the one assigned before. */
++    public Role set(String sheetId, String user, String role) {
++        jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
++                sheetId, user, role);
++        return new Role(sheetId, user, role);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RoleRequest.java b/src/main/java/net/officefloor/hq/app/access/RoleRequest.java
+new file mode 100644
+index 00000000..dae0e5ab
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RoleRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.access;
++
++/** A user name, the role to assign it (clerk or steward), and the signed-in user (`by`) making the change. */
++public record RoleRequest(String user, String role, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/RoleResponse.java b/src/main/java/net/officefloor/hq/app/access/RoleResponse.java
+new file mode 100644
+index 00000000..2a16ae10
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RoleResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.access;
++
++public record RoleResponse(String user, String role) {
++    public static RoleResponse from(Role role) {
++        return new RoleResponse(role.user(), role.role());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+new file mode 100644
+index 00000000..e912ef93
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.access;
++
++/** A setting on a sheet: its key and value (null: blank). */
++public record Setting(String sheetId, String key, String value) {
++
++    /** The most a clerk may settle a claim's due for; blank means no limit. */
++    public static final String CLERK_LIMIT = "clerk-limit";
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingInput.java b/src/main/java/net/officefloor/hq/app/access/SettingInput.java
+new file mode 100644
+index 00000000..361e3eac
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/SettingInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.access;
++
++/** A validated setting: its key and its normalised value (null: blank). */
++public record SettingInput(String key, String value) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+new file mode 100644
+index 00000000..d3309f64
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -0,0 +1,46 @@
++package net.officefloor.hq.app.access;
++
++import java.math.BigDecimal;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The settings on each sheet, by key; a key without a row is blank. */
++@Repository
++public class SettingRepository {
++
++    private static final RowMapper<Setting> ROW = (rs, n) -> new Setting(rs.getString("sheet_id"),
++            rs.getString("setting_key"), rs.getString("setting_value"));
++
++    private final JdbcTemplate jdbc;
++
++    public SettingRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's settings, by key. */
++    public List<Setting> list(String sheetId) {
++        return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
++                + " ORDER BY setting_key", ROW, sheetId);
++    }
++
++    /** The setting's value; null when blank. */
++    public String find(String sheetId, String key) {
++        return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
++                + " AND setting_key = ?", ROW, sheetId, key).stream().findFirst().map(Setting::value).orElse(null);
++    }
++
++    /** The sheet's clerk limit; null when there is none. */
++    public BigDecimal clerkLimit(String sheetId) {
++        String value = find(sheetId, Setting.CLERK_LIMIT);
++        return value == null ? null : new BigDecimal(value);
++    }
++
++    /** Set a setting's value (null: blank), replacing the one there before. */
++    public Setting set(String sheetId, String key, String value) {
++        jdbc.update("MERGE INTO sheet_setting (sheet_id, setting_key, setting_value) KEY (sheet_id, setting_key)"
++                + " VALUES (?, ?, ?)", sheetId, key, value);
++        return new Setting(sheetId, key, value);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRequest.java b/src/main/java/net/officefloor/hq/app/access/SettingRequest.java
+new file mode 100644
+index 00000000..9d348dfa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.access;
++
++/** A setting's key, its value (blank to clear it), and the signed-in user (`by`) making the change. */
++public record SettingRequest(String key, String value, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingResponse.java b/src/main/java/net/officefloor/hq/app/access/SettingResponse.java
+new file mode 100644
+index 00000000..545a8718
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/SettingResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.access;
++
++public record SettingResponse(String key, String value) {
++    public static SettingResponse from(Setting setting) {
++        return new SettingResponse(setting.key(), setting.value());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateRole.java b/src/main/java/net/officefloor/hq/app/access/ValidateRole.java
+new file mode 100644
+index 00000000..39b4874c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateRole.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.access;
++
++import java.util.Set;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A role assignment's fields: a user name (no spaces) and a role, clerk or steward. */
++public class ValidateRole {
++
++    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
++
++    public void validate(@RequestBody RoleRequest request, Out<RoleInput> role, Out<ChangedBy> changedBy)
++            throws BadRequestException {
++        ChangedBy by = ChangedBy.of(request == null ? null : request.by());
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        String asked = request == null || request.role() == null ? "" : request.role().trim();
++        if (user.isEmpty()) {
++            throw new BadRequestException("Enter a user name");
++        }
++        if (user.length() > 200 || user.chars().anyMatch(Character::isWhitespace)) {
++            throw new BadRequestException("A user name is one word");
++        }
++        if (!ROLES.contains(asked)) {
++            throw new BadRequestException("A role is clerk or steward");
++        }
++        role.set(new RoleInput(user, asked));
++        changedBy.set(by);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+new file mode 100644
+index 00000000..77ae52b8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.access;
++
++import java.math.BigDecimal;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A setting's fields: a known key and its value. The clerk limit is an amount with up to two decimals, or blank for no limit. */
++public class ValidateSetting {
++
++    private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
++
++    public void validate(@RequestBody SettingRequest request, Out<SettingInput> setting, Out<ChangedBy> changedBy)
++            throws BadRequestException {
++        ChangedBy by = ChangedBy.of(request == null ? null : request.by());
++        String key = request == null || request.key() == null ? "" : request.key().trim();
++        String text = request == null || request.value() == null ? "" : request.value().trim();
++        if (!Setting.CLERK_LIMIT.equals(key)) {
++            throw new BadRequestException("No such setting: " + key);
++        }
++        String value = null;
++        if (!text.isEmpty()) {
++            if (!AMOUNT.matcher(text).matches()) {
++                throw new BadRequestException("A clerk limit is an amount with up to two decimals, or blank for no limit");
++            }
++            value = new BigDecimal(text).setScale(2).toPlainString();
++        }
++        setting.set(new SettingInput(key, value));
++        changedBy.set(by);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index a15c2483..190fc214 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -3,6 +3,9 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.Role;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -12,13 +15,15 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Moves the claim to the asked status, refusing a change its current status does not allow,
+- * and refusing to let the user who opened it settle it. Opening records who opened it; a voided claim keeps its number. Settling
++ * refusing to let the user who opened it settle it, and refusing a clerk a settle whose due is above the sheet's
++ * clerk limit (a due of n/a is within any limit; a steward settles anything). Opening records who opened it; a voided claim keeps its number. Settling
+  * fixes the claim's due at its person's grade's rate in force on the claim's date — or, while a statement binds it, at
+  * the figure it was bound to; without a figure its due stays live.
+  */
+ public class ApplyClaimStatus {
+     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
+-            PersonRepository people, RateRepository rates, @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
++            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
++            @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
+         ClaimStatus from = claim.getStatus();
+         if (!from.canBecome(status)) {
+             throw new BadRequestException("A " + from + " claim cannot become " + status);
+@@ -26,12 +31,21 @@ public class ApplyClaimStatus {
+         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+             throw new BadRequestException("The user who opened a claim cannot settle it");
+         }
++        BigDecimal due = status == ClaimStatus.SETTLED ? dueNow(claim, people, rates) : null;
++        if (status == ClaimStatus.SETTLED && due != null
++                && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
++            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
++            if (limit != null && due.compareTo(limit) > 0) {
++                throw new BadRequestException("A clerk can settle a claim only when its due is at or below the clerk limit ("
++                        + limit.toPlainString() + ")");
++            }
++        }
+         claim.setStatus(status);
+         if (status == ClaimStatus.OPEN) {
+             claim.setOpenedBy(by.name());
+         }
+         if (status == ClaimStatus.SETTLED) {
+-            claim.setSettledDue(dueNow(claim, people, rates));
++            claim.setSettledDue(due);
+         }
+         if (!repository.updateStatus(claim, from)) {
+             throw new BadRequestException("The claim was changed by someone else; reload the sheet");
+diff --git a/src/main/resources/db/migration/V18__role_and_setting.sql b/src/main/resources/db/migration/V18__role_and_setting.sql
+new file mode 100644
+index 00000000..717fd31a
+--- /dev/null
++++ b/src/main/resources/db/migration/V18__role_and_setting.sql
+@@ -0,0 +1,15 @@
++-- Each sheet assigns a role to a user name: clerk or steward. A name without a row is a clerk.
++CREATE TABLE sheet_role (
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    user_name VARCHAR(200) NOT NULL,
++    role      VARCHAR(20)  NOT NULL CHECK (role IN ('clerk', 'steward')),
++    PRIMARY KEY (sheet_id, user_name)
++);
++
++-- Each sheet's settings, by key. A null value is blank (for clerk-limit: no limit). A key without a row is blank.
++CREATE TABLE sheet_setting (
++    sheet_id      VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    setting_key   VARCHAR(50)  NOT NULL,
++    setting_value VARCHAR(200),
++    PRIMARY KEY (sheet_id, setting_key)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+new file mode 100644
+index 00000000..7ce190ec
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.GET.yml
+@@ -0,0 +1,7 @@
++# The sheet's roles.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: respond
++respond:
++  class: net.officefloor.hq.app.access.RespondWithRoles
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+new file mode 100644
+index 00000000..a16b7e9b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+@@ -0,0 +1,22 @@
++# Assign a user name a role (clerk or steward). Validate the body before touching the store, so a refusal writes nothing.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: role
++role:
++  class: net.officefloor.hq.app.access.ValidateRole
++  next: ensure
++ensure:
++  class: net.officefloor.hq.app.sheet.EnsureSheet
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.access.ApplyRole
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.access.RecordRoleSet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.access.RespondWithRole
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+new file mode 100644
+index 00000000..7e554ed2
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.GET.yml
+@@ -0,0 +1,7 @@
++# The sheet's settings.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: respond
++respond:
++  class: net.officefloor.hq.app.access.RespondWithSettings
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+new file mode 100644
+index 00000000..fffb428d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -0,0 +1,22 @@
++# Change a sheet setting (the clerk limit). Validate the body before touching the store, so a refusal writes nothing.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: setting
++setting:
++  class: net.officefloor.hq.app.access.ValidateSetting
++  next: ensure
++ensure:
++  class: net.officefloor.hq.app.sheet.EnsureSheet
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.access.ApplySetting
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.access.RecordSettingChanged
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.access.RespondWithSetting
++  govern: [ transaction ]
