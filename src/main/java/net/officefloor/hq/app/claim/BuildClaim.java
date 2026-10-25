@@ -9,6 +9,6 @@ public class BuildClaim {
     public void build(@Val Person person, @Val ClaimInput input, ClaimRepository repository,
             SheetRepository sheets, Out<Claim> claim) {
         claim.set(repository.insert(person.getSheetId(), person.getId(), input.amount(),
-                input.date() != null ? input.date() : sheets.today(person.getSheetId()), input.note()));
+                input.date() != null ? input.date() : sheets.today(person.getSheetId()), input.note(), input.corrects()));
     }
 }

@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -142,7 +141,7 @@ public class Rollup {
         return figure == null ? "n/a" : figure.toPlainString();
     }
 
-    /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor. */
+    /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor, unless it is a correction. */
     private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, BigDecimal floor) {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue().setScale(2);
@@ -151,8 +150,7 @@ public class Rollup {
             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
         }
         BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
-        return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN).max(floor);
+        return claim.figureAt(rate, floor);
     }
 
     /** The grade's rate in force on the date: the latest from-date on or before it, none counting as the earliest. */

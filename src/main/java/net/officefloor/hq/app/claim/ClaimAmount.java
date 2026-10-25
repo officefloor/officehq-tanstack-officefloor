@@ -23,4 +23,17 @@ public final class ClaimAmount {
         }
         return new BigDecimal(amount).setScale(2);
     }
+
+    /** A claim's amount on the claim form: as {@link #of}, or below 0.00 for a correction. */
+    public static BigDecimal signed(String typed) throws BadRequestException {
+        String amount = typed == null ? "" : typed.trim();
+        if (amount.startsWith("-")) {
+            BigDecimal magnitude = of(amount.substring(1));
+            if (magnitude.signum() == 0) {
+                throw new BadRequestException("An amount is a number with up to two decimals");
+            }
+            return magnitude.negate();
+        }
+        return of(amount);
+    }
 }

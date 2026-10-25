@@ -9,9 +9,9 @@ import { useHeld } from '../people/people.slot';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
-const AMOUNT = /^\d+(\.\d{1,2})?$/;
+const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
-type ClaimBody = { amount: string; date: string; note: string };
+type ClaimBody = { amount: string; date: string; note: string; corrects: string };
 
 // A person's claim form: adds a claim, or — with one of their claims' editor open — saves its
 // changes. It is re-mounted for each claim opened, so it starts filled with that claim's values.
@@ -20,13 +20,14 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
   const [amount, setAmount] = useState(editing?.amount ?? '');
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
+  const [corrects, setCorrects] = useState(editing?.corrects?.toString() ?? '');
   const [user] = useUser();
   const queryClient = useQueryClient();
   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
   const save = useMutation({
     mutationFn: async (body: ClaimBody) => {
       if (body.amount.trim() === '') throw new Error('Enter an amount');
-      if (!AMOUNT.test(body.amount.trim())) throw new Error('An amount is a number, 0.00 or more, with up to two decimals');
+      if (!AMOUNT.test(body.amount.trim())) throw new Error('An amount is a number with up to two decimals');
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
       return editing
@@ -41,6 +42,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
         setAmount('');
         setDate('');
         setNote('');
+        setCorrects('');
       }
     },
   });
@@ -55,12 +57,13 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       data-testid="claim-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ amount, date, note });
+        submit({ amount, date, note, corrects });
       }}
     >
       <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={amount} onChange={field(setAmount)} />{' '}
       <input data-testid="claim-form-date" type="date" value={date} onChange={field(setDate)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={field(setNote)} />{' '}
+      <input data-testid="claim-form-corrects" placeholder="Corrects no." inputMode="numeric" value={corrects} onChange={field(setCorrects)} />{' '}
       <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
@@ -101,6 +104,7 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
               <span data-testid="claim-amount">{Number(c.amount).toFixed(2)}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <ClaimCells.Slot sheetId={sheetId} user={user} personId={personId} claim={c} />
               {editing?.id === c.id ? (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>

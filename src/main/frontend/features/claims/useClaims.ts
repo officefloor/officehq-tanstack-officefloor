@@ -13,7 +13,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   openedBy: string | null;
   /** Whether the person's last statement bound the claim: it then shows and totals `statedDue` (none: n/a). */
   stated: boolean;
-  statedDue: string | null };
+  statedDue: string | null;
+  /** The number of the SETTLED claim this correction (a negative amount) corrects; none for any other claim. */
+  corrects: number | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do, and a held
  *  person's (`held`: the ids of the people on hold) OPEN claims do not. */

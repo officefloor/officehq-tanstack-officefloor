@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
@@ -60,7 +59,7 @@ public class ApplyClaimStatus {
         audited.set(new ClaimNumber(claim.getNumber()));
     }
 
-    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even and at least the sheet's floor; null when there is no rate. */
+    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even and at least the sheet's floor (a correction has none); null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings) {
         if (claim.isStated()) {
@@ -68,8 +67,6 @@ public class ApplyClaimStatus {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN)
-                        .max(settings.floor(claim.getSheetId()));
+        return claim.figureAt(rate, settings.floor(claim.getSheetId()));
     }
 }

@@ -9,15 +9,15 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 
 /**
  * The late charge as of the sheet's today: an OPEN claim past its due-by (its date plus the terms) gains the late
- * percent of its figure for every full 30 days it is overdue, rounded half to even to two decimals. The charge is
- * never bound by a statement; settling freezes it into the settled due.
+ * percent of its figure for every full 30 days it is overdue, rounded half to even to two decimals. A correction
+ * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
  */
 public record LateCharge(LocalDate today, int terms, BigDecimal pct) {
 
     /** The claim's late charge on its figure (zero when it is not overdue, or has no figure). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.getStatus() != ClaimStatus.OPEN) {
+        if (figure == null || claim.getStatus() != ClaimStatus.OPEN || claim.isCorrection()) {
             return none;
         }
         long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today);

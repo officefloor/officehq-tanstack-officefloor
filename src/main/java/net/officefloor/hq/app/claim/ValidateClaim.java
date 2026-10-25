@@ -9,8 +9,9 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * A claim's fields: an amount (required; a number with up to two decimals, 0.00 or more), a date
- * (blank for the sheet's today) and a note (may be empty). Publishes them parsed, with the user making the change.
+ * A claim's fields: an amount (required; a number with up to two decimals, 0.00 or more, or below 0.00
+ * for a correction), a date (blank for the sheet's today), a note (may be empty) and the number of the
+ * claim a correction corrects (blank for none). Publishes them parsed, with the user making the change.
  */
 public class ValidateClaim {
 
@@ -19,7 +20,8 @@ public class ValidateClaim {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
-        BigDecimal amount = ClaimAmount.of(request == null ? null : request.amount());
+        String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
+        BigDecimal amount = ClaimAmount.signed(request == null ? null : request.amount());
         LocalDate parsed = null;
         if (!date.isEmpty()) {
             try {
@@ -31,7 +33,14 @@ public class ValidateClaim {
         if (note.length() > 1000) {
             throw new BadRequestException("A note is at most 1000 characters");
         }
-        claim.set(new ClaimInput(amount, parsed, note));
+        Integer correctsNumber = null;
+        if (!corrects.isEmpty()) {
+            if (!corrects.matches("\\d{1,9}")) {
+                throw new BadRequestException("Name the corrected claim by its number");
+            }
+            correctsNumber = Integer.valueOf(corrects);
+        }
+        claim.set(new ClaimInput(amount, parsed, note, correctsNumber));
         changedBy.set(by);
     }
 }

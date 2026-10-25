@@ -18,10 +18,11 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
+    private Integer corrects;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Integer number, BigDecimal settledDue, String openedBy,
-            boolean stated, BigDecimal statedDue) {
+            boolean stated, BigDecimal statedDue, Integer corrects) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -34,6 +35,7 @@ public class Claim {
         this.openedBy = openedBy;
         this.stated = stated;
         this.statedDue = statedDue;
+        this.corrects = corrects;
     }
 
     public long getId() {
@@ -115,5 +117,31 @@ public class Claim {
     /** The figure the last statement bound the claim to; null when bound without one (n/a) or not bound. */
     public BigDecimal getStatedDue() {
         return statedDue;
+    }
+
+    /** The number of the SETTLED claim this correction corrects; null for a claim that is not a correction. */
+    public Integer getCorrects() {
+        return corrects;
+    }
+
+    public void setCorrects(Integer corrects) {
+        this.corrects = corrects;
+    }
+
+    /** Whether the claim is a correction: its amount is below 0.00 (no floor and no late charge apply). */
+    public boolean isCorrection() {
+        return amount.signum() < 0;
+    }
+
+    /**
+     * The claim's live figure at the rate: its amount times the rate, rounded half to even to two decimals and at
+     * least the floor — a correction has no floor. Null without a rate.
+     */
+    public BigDecimal figureAt(BigDecimal rate, BigDecimal floor) {
+        if (rate == null) {
+            return null;
+        }
+        BigDecimal figure = amount.multiply(rate).movePointLeft(2).setScale(2, java.math.RoundingMode.HALF_EVEN);
+        return isCorrection() ? figure : figure.max(floor);
     }
 }

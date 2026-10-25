@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.statement;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.access.LateCharge;
@@ -65,7 +64,6 @@ public class TakeStatement {
             return claim.getStatedDue();
         }
         BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        return rate == null ? null
-                : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN).max(floor);
+        return claim.figureAt(rate, floor);
     }
 }
