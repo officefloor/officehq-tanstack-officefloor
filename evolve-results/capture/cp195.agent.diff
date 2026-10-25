@@ -1,0 +1,68 @@
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index b2cf00f6..016b2e07 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -8,12 +8,20 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import { claimsQueryKey } from '../claims/claims';
+ import { peoplePath, peopleQueryKey, type Person } from '../people/people';
+ import { useColumnShown } from '../people/columns';
++import { csvValue, readFresh, sheetInfoPath } from '../people/export.slot';
++import { sheetQueryKey, type SheetInfo } from '../session/session';
++import { claimsPath, type Claim } from '../claims/claims';
++import { gradeOn } from '../people/people';
++import { chargedOf, ratesPath, ratesQueryKey, type Rate } from '../rates/rates';
++import { settingsPath, settingsQueryKey, type Settings } from '../roles/roles';
+ 
+ // A person's statements: one line per statement still standing, oldest first, as <date> <due-total>; how many were taken, the last one's due-total and date, and the button that takes
+ // one — recording their due-total now and binding each of their counted claims to the figure it has now; or, with a
+ // date in the entry beside it (on or before the sheet's today), as of the end of that date — and the
+ // button a steward cancels the last one with, making the claims it bound live again (anyone else, or a person with no
+-// statement, shows the row's error).
++// statement, shows the row's error). The export button downloads the statement as CSV — number, date, amount, figure
++// and status of each claim of theirs their last statement binds, oldest first, the figure as the claim's row shows it;
++// its inputs are re-read from the store when pressed, as the other exports'.
+ function StatementHeader() {
+   return <th>Statements</th>;
+ }
+@@ -52,6 +60,31 @@ function PersonStatement({ person }: { person: Person }) {
+   });
+   const submitCancel = useSubmitOnce(cancel);
+   const cancelAction = useRowAction(`person-${person.id}`);
++  const exportStatement = async () => {
++    if (!sheet) return;
++    const [info, people, claims, rates, settings] = await Promise.all([
++      readFresh<SheetInfo>(queryClient, sheetQueryKey(sheet), sheetInfoPath(sheet)),
++      readFresh<Person[]>(queryClient, peopleQueryKey(sheet), peoplePath(sheet)),
++      readFresh<Claim[]>(queryClient, claimsQueryKey(sheet), claimsPath(sheet)),
++      readFresh<Rate[]>(queryClient, ratesQueryKey(sheet), ratesPath(sheet)),
++      readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
++    ]);
++    const p = people.find((x) => x.id === person.id) ?? person;
++    const lines = [['number', 'date', 'amount', 'figure', 'status']];
++    // The sheet's claims come newest first.
++    for (const c of claims.filter((x) => x.personId === p.id && x.stated).reverse()) {
++      lines.push([c.number ?? '', c.date, c.amount, chargedOf(c, rates, gradeOn(p, c.date), settings, info.today), c.status]);
++    }
++    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `statement-${sheet}-${p.id}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  };
+   return (
+     <td>
+       {countShown && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
+@@ -74,6 +107,9 @@ function PersonStatement({ person }: { person: Person }) {
+       <button type="button" data-testid="person-unstate" disabled={cancel.isPending} onClick={() => { cancelAction.take(); submitCancel(undefined); }}>
+         Cancel statement
+       </button>
++      <button type="button" data-testid="person-export-statement" onClick={() => { void exportStatement(); }}>
++        Export statement (CSV)
++      </button>
+       {take.isError && rowAction.isLatest && <span data-testid="person-error">The statement could not be taken.</span>}
+       {cancel.isError && cancelAction.isLatest && <span data-testid="person-error">The statement could not be cancelled.</span>}
+     </td>
