@@ -3,9 +3,14 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date and period numbering from). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !isPermission(key);
+    }
+
+    /** Whether the key is one of the permission matrix's (perm-<action>). */
+    public static boolean isPermission(String key) {
+        return key.startsWith(PERMISSION) && PERMISSION_STANDING.containsKey(key.substring(PERMISSION.length()));
     }
 
     /** The value a dated key has before every from-date: the floor's, the terms' and the late percent's starting value; null (blank) for the rest. */
@@ -56,4 +61,16 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
+    /** The roles that may take an action (the key is this plus the action, perm-open): a comma separated list of roles, blank for the standing rule. */
+    public static final String PERMISSION = "perm-";
+
+    /** Each action's standing rule, the roles that may take it while its permission is blank. */
+    public static final java.util.Map<String, java.util.List<String>> PERMISSION_STANDING = java.util.Map.of(
+            "open", java.util.List.of(Role.CLERK, Role.STEWARD),
+            "settle", java.util.List.of(Role.CLERK, Role.STEWARD),
+            "void", java.util.List.of(Role.CLERK, Role.STEWARD),
+            "close", java.util.List.of(Role.CLERK, Role.STEWARD),
+            "reassign", java.util.List.of(Role.STEWARD),
+            "reopen", java.util.List.of(Role.STEWARD));
 }

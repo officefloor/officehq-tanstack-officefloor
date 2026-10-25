@@ -12,6 +12,7 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useFloorCents, useLate } from '../access/useAccess';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const NO_HOLDS = new Map();
 
 /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
  *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
@@ -66,7 +67,9 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
       if (personId !== undefined && c.personId !== personId) continue;
       if (c.date < p.from || c.date > p.to) continue;
       const then = statusAsOf(c.log, p.to);
-      if (then === undefined || !counts({ ...c, status: then }, held)) continue;
+      // Counted by its status then, but held (or deferred) as the live totals leave it out: by its status now.
+      const live = c.status === 'OPEN' || c.status === 'PENDING';
+      if (then === undefined || !counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
     return sum;

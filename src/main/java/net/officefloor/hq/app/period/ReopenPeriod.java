@@ -2,20 +2,21 @@ package net.officefloor.hq.app.period;
 
 import java.util.Map;
 import net.officefloor.hq.app.BadRequestException;
-import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
+import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Reopens a closed period, so its due-total is live again; only a steward may, and a period still open is refused.
+ * Reopens a closed period, so its due-total is live again; only a role the sheet's reopen permission gives may (a steward while blank), and a period still open is refused.
  */
 public class ReopenPeriod {
     public void reopen(@Val Period period, @Val ChangedBy by, PeriodRepository repository, RoleRepository roles,
-            Out<ReopenedPeriod> reopened) throws BadRequestException {
-        if (!Role.STEWARD.equals(roles.roleOf(period.sheetId(), by.name()))) {
-            throw new BadRequestException("Only a steward may reopen a period");
+            SettingRepository settings, Out<ReopenedPeriod> reopened) throws BadRequestException {
+        String role = roles.roleOf(period.sheetId(), by.name());
+        if (!settings.allows(period.sheetId(), "reopen", role)) {
+            throw new BadRequestException("A " + role + " may not reopen a period on this sheet");
         }
         if (!period.closed()) {
             throw new BadRequestException("That period is not closed");

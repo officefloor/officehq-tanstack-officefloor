@@ -10,6 +10,7 @@ const ROLES = ['clerk', 'steward'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,5}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 // The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
 // assigned roles are listed under it. The server decides who may settle what.
@@ -110,7 +111,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the cap (blank: none), the most
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
-// it is settled or approved. Every setting but the policy date and period numbering from is dated: saving it records
+// it is settled or approved, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
+// roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -136,6 +138,10 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
   { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A proof threshold is an amount with up to two decimals, or blank for none' },
+  ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
+    ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
+    key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',
+    invalid: 'A permission is a comma separated list of roles (clerk, steward), or blank for the standing rule', dated: false })),
 ];
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {

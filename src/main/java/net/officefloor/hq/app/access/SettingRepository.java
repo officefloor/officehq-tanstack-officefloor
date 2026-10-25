@@ -28,7 +28,7 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's undated settings, by key (the policy date and period numbering from); a key without a row is not listed. */
+    /** The sheet's undated settings, by key (the policy date, period numbering from and the permissions); a key without a row is not listed. */
     public List<Setting> listUndated(String sheetId) {
         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
                 + " ORDER BY setting_key", ROW, sheetId);
@@ -44,6 +44,13 @@ public class SettingRepository {
     public String find(String sheetId, String key) {
         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
                 + " AND setting_key = ?", ROW, sheetId, key).stream().findFirst().map(Setting::value).orElse(null);
+    }
+
+    /** Whether the role may take the action (open, settle, void, reassign, close, reopen): its permission's roles, else the standing rule. */
+    public boolean allows(String sheetId, String action, String role) {
+        String value = find(sheetId, Setting.PERMISSION + action);
+        List<String> roles = value == null ? Setting.PERMISSION_STANDING.get(action) : List.of(value.split(","));
+        return roles.contains(role);
     }
 
     /** A person's due-total held to the cap: the cap when it is above it; n/a (null) and no cap leave it as it is. */

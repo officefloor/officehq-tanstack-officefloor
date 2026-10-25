@@ -1,24 +1,25 @@
 package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.BadRequestException;
-import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
+import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves the claim to another person on the sheet: a steward's, and only for a DRAFT, OPEN or PENDING claim, never to its
+ * Moves the claim to another person on the sheet: by a role the sheet's reassign permission gives (a steward's while blank), and only for a DRAFT, OPEN or PENDING claim, never to its
  * own person nor to one retired before the claim's date. It keeps its number and date, loses any figure a statement
  * bound it to (live again until its new person's next statement) and is listed as its new person's newest claim.
  */
 public class ApplyReassign {
     public void apply(@Val ReassignTo to, @Val Claim claim, @Val ChangedBy by, ClaimRepository repository,
-            PersonRepository people, RoleRepository roles) throws BadRequestException {
+            PersonRepository people, RoleRepository roles, SettingRepository settings) throws BadRequestException {
         String sheetId = claim.getSheetId();
-        if (!Role.STEWARD.equals(roles.roleOf(sheetId, by.name()))) {
-            throw new BadRequestException("Only a steward moves a claim to another person");
+        String role = roles.roleOf(sheetId, by.name());
+        if (!settings.allows(sheetId, "reassign", role)) {
+            throw new BadRequestException("A " + role + " may not move a claim to another person on this sheet");
         }
         ClaimStatus status = claim.getStatus();
         if (status != ClaimStatus.DRAFT && !status.isOpen()) {

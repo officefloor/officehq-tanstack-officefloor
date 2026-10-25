@@ -17,7 +17,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves the claim to the asked status, refusing a change its current status does not allow and
+ * Moves the claim to the asked status, refusing a change its current status does not allow, an open, settle or void
+ * the sheet's permission for it does not give the user's role, and
  * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
@@ -31,7 +32,8 @@ public class ApplyClaimStatus {
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             PeriodRepository periods, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
-        boolean steward = Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()));
+        String role = roles.roleOf(claim.getSheetId(), by.name());
+        boolean steward = Role.STEWARD.equals(role);
         if (review.asked()) {
             if (from != ClaimStatus.PENDING) {
                 throw new BadRequestException("Only a PENDING claim is approved or rejected; this one is " + from);
@@ -45,6 +47,10 @@ public class ApplyClaimStatus {
         } else {
             if (!from.canBecome(status)) {
                 throw new BadRequestException("A " + from + " claim cannot become " + status);
+            }
+            String action = status == ClaimStatus.OPEN ? "open" : status == ClaimStatus.VOID ? "void" : "settle";
+            if (!settings.allows(claim.getSheetId(), action, role)) {
+                throw new BadRequestException("A " + role + " may not " + action + " a claim on this sheet");
             }
             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
                 throw new BadRequestException("The user who opened a claim cannot settle it");

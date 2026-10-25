@@ -179,7 +179,8 @@ public class Rollup {
 
     /** Whether the claim counts as it would in the live totals were its status {@code then}. */
     private static boolean countsAs(Claim claim, ClaimStatus then, Person person, LocalDate today) {
-        boolean held = then.isOpen() && !claim.isStated() && person.heldOn(claim.getDate());
+        // Held as the live totals hold it: by its status now, not the one it had then.
+        boolean held = claim.getStatus().isOpen() && !claim.isStated() && person.heldOn(claim.getDate());
         return then.counts() && !held && !claim.isDeferredOn(today);
     }
 
