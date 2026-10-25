@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
@@ -79,7 +80,7 @@ function ClaimsHead() {
 }
 
 // A person's claimed total, and their claims, newest first, under the form that adds or edits them.
-function ClaimsCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
   const claims = useClaims(sheetId);
   const [editingId, setEditing] = useEditingClaim();
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
@@ -96,6 +97,7 @@ function ClaimsCells({ sheetId, personId }: { sheetId: string; user: string; per
               <span data-testid="claim-amount">{Number(c.amount).toFixed(2)}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <ClaimCells.Slot sheetId={sheetId} user={user} personId={personId} claim={c} />
               {editing?.id === c.id ? (
                 <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
                   Cancel
