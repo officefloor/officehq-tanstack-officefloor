@@ -1,0 +1,645 @@
+diff --git a/src/main/frontend/features/plans/generate.slot.tsx b/src/main/frontend/features/plans/generate.slot.tsx
+index 8146bb0b..203dd79e 100644
+--- a/src/main/frontend/features/plans/generate.slot.tsx
++++ b/src/main/frontend/features/plans/generate.slot.tsx
+@@ -14,10 +14,8 @@ function GeneratePlans() {
+   const generate = useMutation({
+     mutationFn: () =>
+       postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/generate-plans`, {}, user),
+-    // Not awaited: the count shows before the new rows do.
+-    onSuccess: () => {
+-      void queryClient.invalidateQueries({ queryKey: ['sheet', sheet ?? ''] });
+-    },
++    // Awaited: the count shows once the new rows do.
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheet ?? ''] }),
+   });
+   const submit = useSubmitOnce(generate);
+   if (!user || !sheet) return null;
+diff --git a/src/main/frontend/features/plans/person.slot.tsx b/src/main/frontend/features/plans/person.slot.tsx
+index a7e485c5..256fad01 100644
+--- a/src/main/frontend/features/plans/person.slot.tsx
++++ b/src/main/frontend/features/plans/person.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useState, type ChangeEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson } from '../../api/http';
++import { postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../api/submitOnce';
+ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+@@ -9,14 +9,58 @@ import { peoplePath, type Person } from '../people/people';
+ import { plansQueryKey, usePlans, type Plan } from './plans';
+ 
+ // A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
+-// claims it has made so far and its next five dates after the sheet's today — and the form that adds another. A bad
+-// amount, interval or day, both an interval and a day, or an end before the start, is refused.
++// claims it has made so far, its next five dates after the sheet's today and whether it is paused — and the form
++// that adds another. A bad amount, interval or day, both an interval and a day, or an end before the start, is
++// refused.
+ function PlansHeader() {
+   return <th>Plans</th>;
+ }
+ 
+ const blank = { amount: '', start: '', every: '', day: '', end: '' };
+ 
++// One plan, with its pause and resume buttons: pausing on the sheet's today skips its dates from then until it is
++// resumed. Pausing a paused plan, or resuming a running one, is refused.
++function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++  const toggle = useMutation({
++    mutationFn: (action: 'pause' | 'resume') =>
++      putJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/plans/${p.id}/${action}`, {}, user),
++    onSuccess: (saved) => {
++      queryClient.setQueryData(plansQueryKey(sheet ?? ''), saved);
++    },
++  });
++  const submit = useSubmitOnce(toggle);
++  const rowAction = useRowAction(`person-${person.id}`);
++  const take = (action: 'pause' | 'resume') => { rowAction.take(); submit(action); };
++  return (
++    <li data-testid={`plan-row-${p.id}`}>
++      <span data-testid="plan-amount">{p.amount}</span> from <span data-testid="plan-start">{p.start}</span>{' '}
++      {p.day != null ? (
++        <>monthly on day <span data-testid="plan-day">{p.day}</span></>
++      ) : (
++        <>every <span data-testid="plan-every">{p.every}</span> days</>
++      )}{' '}
++      to <span data-testid="plan-end">{p.end}</span>;
++      made <span data-testid="plan-generated">{p.generated}</span>;
++      next <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>;
++      paused <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
++      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => take('pause')}>
++        Pause
++      </button>
++      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => take('resume')}>
++        Resume
++      </button>
++      {toggle.isError && rowAction.isLatest && (
++        <span data-testid="plan-error">
++          {toggle.variables === 'pause' ? 'The plan is already paused.' : 'The plan is not paused.'}
++        </span>
++      )}
++    </li>
++  );
++}
++
+ function PersonPlans({ person }: { person: Person }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -41,19 +85,7 @@ function PersonPlans({ person }: { person: Person }) {
+   return (
+     <td>
+       <ul>
+-        {mine.map((p) => (
+-          <li key={p.id} data-testid={`plan-row-${p.id}`}>
+-            <span data-testid="plan-amount">{p.amount}</span> from <span data-testid="plan-start">{p.start}</span>{' '}
+-            {p.day != null ? (
+-              <>monthly on day <span data-testid="plan-day">{p.day}</span></>
+-            ) : (
+-              <>every <span data-testid="plan-every">{p.every}</span> days</>
+-            )}{' '}
+-            to <span data-testid="plan-end">{p.end}</span>;
+-            made <span data-testid="plan-generated">{p.generated}</span>;
+-            next <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
+-          </li>
+-        ))}
++        {mine.map((p) => <PlanRow key={p.id} person={person} plan={p} />)}
+       </ul>
+       <input data-testid="plan-form-amount" placeholder="Amount" {...field('amount')} />
+       <input data-testid="plan-form-start" placeholder="Start YYYY-MM-DD" {...field('start')} />
+diff --git a/src/main/frontend/features/plans/plans.ts b/src/main/frontend/features/plans/plans.ts
+index 1b827860..10a05ce7 100644
+--- a/src/main/frontend/features/plans/plans.ts
++++ b/src/main/frontend/features/plans/plans.ts
+@@ -4,7 +4,9 @@ import { useCurrentSheet } from '../session/session';
+ 
+ /** A person's plan as the store holds it: an amount (two decimals), a start date, either every N days (at least 1) or
+  *  a day of the month (1 to 31), the other null, an end date (not before the start), and how many claims it has made
+- *  so far, and its next dates: the first five plan dates after the sheet's today and on or before its end. */
++ *  so far, its next dates: the first five plan dates after the sheet's today and on or before its end that no pause
++ *  skips, and whether it is paused (a date on or after the day it was paused and before the day it was resumed is
++ *  skipped, not postponed). */
+ export type Plan = {
+   id: number;
+   personId: number;
+@@ -15,6 +17,7 @@ export type Plan = {
+   end: string;
+   generated: number;
+   nextDates: string[];
++  paused: boolean;
+ };
+ 
+ export const plansQueryKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+index fbc186ae..fcb8e67c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyTransfer.java
+@@ -62,6 +62,7 @@ public class ApplyTransfer {
+             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
+             RateRepository rates, PeriodRepository periods, CrewRepository crews, CrewMemberRepository crewMembers,
+             net.officefloor.hq.app.plan.PlanRepository plans, net.officefloor.hq.app.plan.PlanClaimRepository planClaims,
++            net.officefloor.hq.app.plan.PlanPauseRepository planPauses,
+             EntityManager entityManager,
+             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonTransferred> transferred)
+             throws InvalidPersonException, ClerkLimitException {
+@@ -209,7 +210,7 @@ public class ApplyTransfer {
+             theirs.forEach(c -> here.addDepartedTags(c.getTagsUsed()));
+             sheets.save(here);
+         }
+-        // Plans go with them, each keeping the claims it made (now their copies).
++        // Plans go with them, each keeping the claims it made (now their copies) and its pauses.
+         Map<Long, Long> copyIds = new HashMap<>();
+         copies.forEach((claim, copy) -> copyIds.put(claim.getId(), copy.getId()));
+         for (net.officefloor.hq.app.plan.Plan plan : plans.findBySheetIdOrderByIdAsc(sheetId)) {
+@@ -227,6 +228,13 @@ public class ApplyTransfer {
+             }
+             planClaims.deleteAll(made);
+             planClaims.flush();
++            List<net.officefloor.hq.app.plan.PlanPause> paused = planPauses.findByPlanIdOrderByIdAsc(plan.getId());
++            for (net.officefloor.hq.app.plan.PlanPause p : paused) {
++                planPauses.save(new net.officefloor.hq.app.plan.PlanPause(moved.getId(), p.getPausedOn(),
++                        p.getResumedOn()));
++            }
++            planPauses.deleteAll(paused);
++            planPauses.flush();
+             plans.delete(plan);
+             plans.flush();
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/AuditPlanPaused.java b/src/main/java/net/officefloor/hq/app/plan/AuditPlanPaused.java
+new file mode 100644
+index 00000000..e6bdbebe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/AuditPlanPaused.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the plan, once it is paused. */
++public class AuditPlanPaused {
++    public void audit(@Val Plan plan, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String name = people.findByIdAndSheetId(plan.getPersonId(), plan.getSheetId()).map(p -> p.getName()).orElse("");
++        audit.record("PLAN_PAUSED sheet=" + plan.getSheetId() + " by=" + AuditUser.decode(user)
++                + " name=" + name + " start=" + plan.getStart());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/AuditPlanResumed.java b/src/main/java/net/officefloor/hq/app/plan/AuditPlanResumed.java
+new file mode 100644
+index 00000000..e3f67fa3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/AuditPlanResumed.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the plan, once it is resumed. */
++public class AuditPlanResumed {
++    public void audit(@Val Plan plan, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String name = people.findByIdAndSheetId(plan.getPersonId(), plan.getSheetId()).map(p -> p.getName()).orElse("");
++        audit.record("PLAN_RESUMED sheet=" + plan.getSheetId() + " by=" + AuditUser.decode(user)
++                + " name=" + name + " start=" + plan.getStart());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
+index 11d97854..0344c0ad 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlans.java
+@@ -19,7 +19,6 @@ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
+-import net.officefloor.hq.app.role.ViewerRefusedException;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -27,20 +26,25 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+ /**
+  * For every plan on the sheet, in the order they were added, makes a DRAFT claim with the plan's amount for each plan
+- * date (the start, then every N days) up to its end and the sheet's today that has none yet, dated that day with an
++ * date (the start, then every N days) up to its end and the sheet's today that has none yet and is not skipped by a
++ * pause (on or after the day the plan was paused and before the day it was resumed), dated that day with an
+  * empty note, by the claim form's rules: a date the form refuses is skipped, and tried again next time. Each claim is
+- * recorded and logged as the claim form records and logs it. A viewer, who changes nothing, is refused as soon as a
+- * claim would be made (before any is), and so gets a count of 0 only when there is nothing to make.
++ * recorded and logged as the claim form records and logs it. A viewer, who changes nothing, makes no claim and gets a
++ * count of 0.
+  */
+ public class GeneratePlans {
+-    public void generate(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made, PersonRepository people,
++    public void generate(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made, PlanPauseRepository pauses,
++            PersonRepository people,
+             ClaimRepository claims, PeriodRepository periods, PersonGradeRepository grades, RateRepository rates,
+             ClaimLogRepository log, HolidayRepository holidays, RoleRepository roles,
+             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
+-            Out<GeneratedPlans> madeOut) throws ViewerRefusedException {
++            Out<GeneratedPlans> madeOut) {
+         String by = AuditUser.decode(user);
+-        boolean viewer = Role.VIEWER.equals(roles.roleOf(sheet.getId(), by));
+         int count = 0;
++        if (Role.VIEWER.equals(roles.roleOf(sheet.getId(), by))) {
++            madeOut.set(new GeneratedPlans(count));
++            return;
++        }
+         for (Plan plan : plans.findBySheetIdOrderByIdAsc(sheet.getId())) {
+             Person person = people.findByIdAndSheetId(plan.getPersonId(), sheet.getId()).orElse(null);
+             if (person == null) {
+@@ -49,7 +53,7 @@ public class GeneratePlans {
+             Set<LocalDate> done = new HashSet<>();
+             made.findByPlanId(plan.getId()).forEach(m -> done.add(m.getOnDate()));
+             for (LocalDate date : plan.datesUpTo(sheet.getToday())) {
+-                if (done.contains(date)) {
++                if (done.contains(date) || pauses.skips(plan.getId(), date)) {
+                     continue;
+                 }
+                 Claim claim;
+@@ -59,9 +63,6 @@ public class GeneratePlans {
+                 } catch (InvalidClaimException e) {
+                     continue;
+                 }
+-                if (viewer) {
+-                    throw new ViewerRefusedException("A viewer cannot change anything on the sheet.");
+-                }
+                 claim = claims.saveAndFlush(claim);
+                 made.saveAndFlush(new PlanClaim(plan.getId(), date, claim.getId()));
+                 ClaimRules.auditAdded(claim, person.getName(), by, audit);
+diff --git a/src/main/java/net/officefloor/hq/app/plan/HandlePlanNotFound.java b/src/main/java/net/officefloor/hq/app/plan/HandlePlanNotFound.java
+new file mode 100644
+index 00000000..d6877ecd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/HandlePlanNotFound.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandlePlanNotFound {
++    public void handle(@Parameter PlanNotFoundException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/LoadPlan.java b/src/main/java/net/officefloor/hq/app/plan/LoadPlan.java
+new file mode 100644
+index 00000000..52883b47
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/LoadPlan.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Loads a plan of the sheet by id. */
++public class LoadPlan {
++    public void load(@Val Sheet sheet, @PathVariable("planId") String planId, PlanRepository repository,
++            Out<Plan> planOut) throws PlanNotFoundException {
++        Long id;
++        try {
++            id = Long.valueOf(planId.trim());
++        } catch (NumberFormatException e) {
++            throw new PlanNotFoundException(planId);
++        }
++        planOut.set(repository.findById(id).filter(p -> p.getSheetId().equals(sheet.getId()))
++                .orElseThrow(() -> new PlanNotFoundException(planId)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PausePlan.java b/src/main/java/net/officefloor/hq/app/plan/PausePlan.java
+new file mode 100644
+index 00000000..bc7e7fe4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PausePlan.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Pauses the plan on the sheet's today: its dates from then are skipped until it is resumed. Refuses a plan already
++ *  paused. */
++public class PausePlan {
++    public void pause(@Val Sheet sheet, @Val Plan plan, PlanPauseRepository pauses) throws InvalidPlanException {
++        if (pauses.isPaused(plan.getId())) {
++            throw new InvalidPlanException("The plan is already paused.");
++        }
++        pauses.saveAndFlush(new PlanPause(plan.getId(), sheet.getToday(), null));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index 909e4937..6e36de5c 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -11,6 +11,7 @@ import java.time.LocalDate;
+ import java.time.YearMonth;
+ import java.util.ArrayList;
+ import java.util.List;
++import java.util.function.Predicate;
+ 
+ /** A person's plan: an amount, a start date, either every N days (at least 1) or monthly on a day of the month (1 to
+  *  31), and an end date (not before the start). */
+@@ -78,9 +79,11 @@ public class Plan {
+         return dates;
+     }
+ 
+-    /** The plan's next dates: the first given number of its dates after the given day and on or before its end. */
+-    public List<LocalDate> nextDatesAfter(LocalDate today, int limit) {
+-        return datesUpTo(null).stream().filter(d -> today == null || d.isAfter(today)).limit(limit).toList();
++    /** The plan's next dates: the first given number of its dates after the given day and on or before its end, those
++     *  skipped left out. */
++    public List<LocalDate> nextDatesAfter(LocalDate today, int limit, Predicate<LocalDate> skipped) {
++        return datesUpTo(null).stream().filter(d -> today == null || d.isAfter(today)).filter(skipped.negate())
++                .limit(limit).toList();
+     }
+ 
+     public Long getId() {
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanNotFoundException.java b/src/main/java/net/officefloor/hq/app/plan/PlanNotFoundException.java
+new file mode 100644
+index 00000000..4526f503
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanNotFoundException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.plan;
++
++/** No plan with that id on the sheet. */
++public class PlanNotFoundException extends Exception {
++    public PlanNotFoundException(String planId) {
++        super("No plan " + planId + ".");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanPause.java b/src/main/java/net/officefloor/hq/app/plan/PlanPause.java
+new file mode 100644
+index 00000000..8cac7e7b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanPause.java
+@@ -0,0 +1,63 @@
++package net.officefloor.hq.app.plan;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++import java.time.LocalDate;
++
++/** A pause of a plan: the day it was paused and the day it was resumed (null while still paused). The plan's dates on
++ *  or after the first and before the second are skipped. */
++@Entity
++@Table(name = "plan_pause")
++public class PlanPause {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(name = "plan_id", nullable = false)
++    private Long planId;
++
++    @Column(name = "paused_on", nullable = false)
++    private LocalDate pausedOn;
++
++    @Column(name = "resumed_on")
++    private LocalDate resumedOn;
++
++    protected PlanPause() {
++    }
++
++    public PlanPause(Long planId, LocalDate pausedOn, LocalDate resumedOn) {
++        this.planId = planId;
++        this.pausedOn = pausedOn;
++        this.resumedOn = resumedOn;
++    }
++
++    /** Whether the plan date falls in this pause, and so is skipped. */
++    public boolean skips(LocalDate date) {
++        return !date.isBefore(pausedOn) && (resumedOn == null || date.isBefore(resumedOn));
++    }
++
++    public boolean isOpen() {
++        return resumedOn == null;
++    }
++
++    public void resume(LocalDate on) {
++        this.resumedOn = on;
++    }
++
++    public Long getPlanId() {
++        return planId;
++    }
++
++    public LocalDate getPausedOn() {
++        return pausedOn;
++    }
++
++    public LocalDate getResumedOn() {
++        return resumedOn;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanPauseRepository.java b/src/main/java/net/officefloor/hq/app/plan/PlanPauseRepository.java
+new file mode 100644
+index 00000000..3b0bf02b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanPauseRepository.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.plan;
++
++import java.time.LocalDate;
++import java.util.List;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++public interface PlanPauseRepository extends JpaRepository<PlanPause, Long> {
++
++    /** The plan's pauses, in the order they were taken. */
++    List<PlanPause> findByPlanIdOrderByIdAsc(Long planId);
++
++    /** Whether the plan date falls in one of the plan's pauses, and so is skipped. */
++    default boolean skips(Long planId, LocalDate date) {
++        return findByPlanIdOrderByIdAsc(planId).stream().anyMatch(p -> p.skips(date));
++    }
++
++    /** Whether the plan is paused now: its latest pause not yet resumed. */
++    default boolean isPaused(Long planId) {
++        return findByPlanIdOrderByIdAsc(planId).stream().anyMatch(PlanPause::isOpen);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index 2d083502..cfcd64a0 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -4,15 +4,18 @@ import java.time.LocalDate;
+ import java.util.List;
+ 
+ /** A plan as the screen shows it: its person, amount (two decimals), start, every N days or day of the month (the other
+- *  null), end, how many claims it has made so far, and its next dates: the first five plan dates after the sheet's
+- *  today and on or before its end. */
++ *  null), end, how many claims it has made so far, its next dates: the first five plan dates after the sheet's today
++ *  and on or before its end that no pause skips (while paused, none until it is resumed), and whether it is paused. */
+ public record PlanResponse(Long id, Long personId, String amount, String start, Integer every, Integer day, String end,
+-        long generated, List<String> nextDates) {
++        long generated, List<String> nextDates, boolean paused) {
+ 
+-    public static PlanResponse of(Plan plan, LocalDate today, PlanClaimRepository made) {
++    public static PlanResponse of(Plan plan, LocalDate today, PlanClaimRepository made, PlanPauseRepository pauses) {
++        List<PlanPause> taken = pauses.findByPlanIdOrderByIdAsc(plan.getId());
+         return new PlanResponse(plan.getId(), plan.getPersonId(), plan.getAmount().setScale(2).toPlainString(),
+                 plan.getStart().toString(), plan.getEvery(), plan.getDay(),
+                 plan.getEnd().toString(), made.countByPlanId(plan.getId()),
+-                plan.nextDatesAfter(today, 5).stream().map(LocalDate::toString).toList());
++                plan.nextDatesAfter(today, 5, d -> taken.stream().anyMatch(p -> p.skips(d))).stream()
++                        .map(LocalDate::toString).toList(),
++                taken.stream().anyMatch(PlanPause::isOpen));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index 7a3df526..28ff1b30 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -7,9 +7,9 @@ import net.officefloor.web.ObjectResponse;
+ 
+ /** The sheet's plans, in the order they were added. */
+ public class RespondWithPlans {
+-    public void respond(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made,
++    public void respond(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made, PlanPauseRepository pauses,
+             ObjectResponse<List<PlanResponse>> response) {
+         response.send(plans.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+-                .map(p -> PlanResponse.of(p, sheet.getToday(), made)).toList());
++                .map(p -> PlanResponse.of(p, sheet.getToday(), made, pauses)).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ResumePlan.java b/src/main/java/net/officefloor/hq/app/plan/ResumePlan.java
+new file mode 100644
+index 00000000..e84d547a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/ResumePlan.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.plan;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Resumes the plan on the sheet's today: its dates from the day it was paused up to the day before are skipped, not
++ *  postponed. Refuses a plan that is not paused. */
++public class ResumePlan {
++    public void resume(@Val Sheet sheet, @Val Plan plan, PlanPauseRepository pauses) throws InvalidPlanException {
++        PlanPause open = pauses.findByPlanIdOrderByIdAsc(plan.getId()).stream().filter(PlanPause::isOpen).findFirst()
++                .orElseThrow(() -> new InvalidPlanException("The plan is not paused."));
++        open.resume(sheet.getToday());
++        pauses.saveAndFlush(open);
++    }
++}
+diff --git a/src/main/resources/db/migration/V94__plan_pause.sql b/src/main/resources/db/migration/V94__plan_pause.sql
+new file mode 100644
+index 00000000..ad653791
+--- /dev/null
++++ b/src/main/resources/db/migration/V94__plan_pause.sql
+@@ -0,0 +1,9 @@
++-- A plan's pauses: paused on a day (the sheet's today) and resumed on a later one (null while it is still paused).
++-- A plan date on or after the day it was paused and before the day it was resumed is skipped, not postponed.
++CREATE TABLE plan_pause (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    plan_id BIGINT NOT NULL REFERENCES plan (id),
++    paused_on DATE NOT NULL,
++    resumed_on DATE
++);
++CREATE INDEX plan_pause_plan ON plan_pause (plan_id, id);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.plan.PlanNotFoundException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.plan.PlanNotFoundException.yml
+new file mode 100644
+index 00000000..8eb3266c
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.plan.PlanNotFoundException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.plan.HandlePlanNotFound
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml
+index 9022f4ac..e18b2bcf 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-plans.POST.yml
+@@ -1,6 +1,6 @@
+ # POST /api/sheets/{sheetId}/generate-plans — make the DRAFT claims every plan on the sheet is due, up to the sheet's
+ # today, by the claim form's rules (a refused date is skipped and tried again next time). Responds { "made": n }.
+-# A viewer is refused by the generate step itself, only when a claim would be made (with nothing to make it is 0).
++# A viewer, who changes nothing, makes no claim: the generate step answers 0 for them.
+ archived:
+   class: net.officefloor.hq.app.sheet.GuardArchived
+   next: before
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/pause.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/pause.PUT.yml
+new file mode 100644
+index 00000000..952b4fdd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/pause.PUT.yml
+@@ -0,0 +1,26 @@
++# PUT /api/sheets/{sheetId}/plans/{planId}/pause — pause the plan on the sheet's today (refused when it is already paused). Answers the sheet's plans.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: plan
++plan:
++  class: net.officefloor.hq.app.plan.LoadPlan
++  govern: [ transaction ]
++  next: pause
++pause:
++  class: net.officefloor.hq.app.plan.PausePlan
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.plan.AuditPlanPaused
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.plan.RespondWithPlans
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/resume.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/resume.PUT.yml
+new file mode 100644
+index 00000000..f4708117
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/resume.PUT.yml
+@@ -0,0 +1,26 @@
++# PUT /api/sheets/{sheetId}/plans/{planId}/resume — resume the plan on the sheet's today (refused when it is not paused). Answers the sheet's plans.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: plan
++plan:
++  class: net.officefloor.hq.app.plan.LoadPlan
++  govern: [ transaction ]
++  next: resume
++resume:
++  class: net.officefloor.hq.app.plan.ResumePlan
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.plan.AuditPlanResumed
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.plan.RespondWithPlans
++  govern: [ transaction ]
