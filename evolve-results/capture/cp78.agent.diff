@@ -1,0 +1,74 @@
+diff --git a/src/main/frontend/features/aging/aging.slot.tsx b/src/main/frontend/features/aging/aging.slot.tsx
+new file mode 100644
+index 00000000..edd239db
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.slot.tsx
+@@ -0,0 +1,68 @@
++import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
++import { useFloorCents, useLate } from '../access/useAccess';
++import { counts, useClaims } from '../claims/useClaims';
++import { gradeOn, useHeld, usePeople } from '../people/people.slot';
++import { claimDueCents, isOpen, showHundredths, useRates } from '../rates/useRates';
++import { useSheetToday } from '../today/today.slot';
++
++type Aged = { upTo30: bigint; upTo60: bigint; over60: bigint };
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++/** The days from a claim's date to the sheet's today (negative when it is dated after today). */
++function ageInDays(date: string, today: string): number {
++  return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / DAY_MS);
++}
++
++/** Each person's due (late charge included, n/a as 0) of their counted OPEN and PENDING claims, split by the claim's age on
++ *  the sheet's today: 0 to 30 days (a claim dated after today included), 31 to 60, and 61 or more. */
++export function useAged(sheetId: string): Map<number, Aged> {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const held = useHeld(sheetId);
++  const floor = useFloorCents(sheetId);
++  const late = useLate(sheetId);
++  const today = useSheetToday(sheetId).data?.today;
++  const byPerson = new Map<number, Aged>();
++  for (const p of people.data ?? []) {
++    const mine: Aged = { upTo30: 0n, upTo60: 0n, over60: 0n };
++    for (const c of claims.data ?? []) {
++      if (today === undefined || c.personId !== p.id || !isOpen(c) || !counts(c, held)) continue;
++      const due = claimDueCents(rates.data ?? [], gradeOn(p, c.date), c, floor, late) ?? 0n;
++      const age = ageInDays(c.date, today);
++      if (age <= 30) mine.upTo30 += due;
++      else if (age <= 60) mine.upTo60 += due;
++      else mine.over60 += due;
++    }
++    byPerson.set(p.id, mine);
++  }
++  return byPerson;
++}
++
++function AgedHeads() {
++  return (
++    <>
++      <th>Aged 0–30</th>
++      <th>Aged 31–60</th>
++      <th>Aged 61+</th>
++    </>
++  );
++}
++
++// A person's due of their counted OPEN and PENDING claims, by the claim's age on the sheet's today.
++function AgedCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
++  const mine = useAged(sheetId).get(personId) ?? { upTo30: 0n, upTo60: 0n, over60: 0n };
++  return (
++    <>
++      <td data-testid="person-aged-0-30">{showHundredths(mine.upTo30)}</td>
++      <td data-testid="person-aged-31-60">{showHundredths(mine.upTo60)}</td>
++      <td data-testid="person-aged-61">{showHundredths(mine.over60)}</td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonHeads.fill({ order: 26, Component: AgedHeads }),
++  PersonCells.fill({ order: 26, Component: AgedCells }),
++];
