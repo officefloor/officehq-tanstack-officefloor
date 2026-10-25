@@ -1,0 +1,556 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index d3b7ad4e..08fc60db 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1,12 +1,12 @@
+ import { useState, type ChangeEvent } from 'react';
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
+ import { ClaimCells } from '../../slots/defs/claimRow';
+ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/useSession';
+ import { useHeld } from '../people/people.slot';
+-import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
++import { claimLockKey, claimSaveKey, claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ 
+ const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+@@ -25,6 +25,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId:
+   const queryClient = useQueryClient();
+   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
+   const save = useMutation({
++    mutationKey: claimSaveKey(sheetId),
+     mutationFn: async (body: ClaimBody) => {
+       if (body.amount.trim() === '') throw new Error('Enter an amount');
+       if (!AMOUNT.test(body.amount.trim())) throw new Error('An amount is a number with up to two decimals');
+@@ -51,6 +52,8 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId:
+     save.reset();
+   };
+ 
++  // While a claim's editor is being opened, the form may be about to become its editor: it waits.
++  const locking = useIsMutating({ mutationKey: claimLockKey(sheetId) }) > 0;
+   const submit = useSubmitOnce(save);
+   return (
+     <form
+@@ -64,7 +67,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId:
+       <input data-testid="claim-form-date" type="date" value={date} onChange={field(setDate)} />{' '}
+       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={field(setNote)} />{' '}
+       <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={field(setCorrects)} />{' '}
+-      <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
++      <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
+         {editing ? 'Save claim' : 'Add claim'}
+       </button>
+       {save.isError && (
+@@ -85,10 +88,11 @@ function ClaimsHead() {
+   );
+ }
+ 
+-// A person's claimed total, and their claims, newest first, under the form that adds or edits them.
++// A person's claimed total, and their claims, newest first, under the form that adds or edits them. A claim's edit and
++// cancel buttons are in its status cell, with its locking.
+ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
+   const claims = useClaims(sheetId);
+-  const [editingId, setEditing] = useEditingClaim();
++  const [editingId] = useEditingClaim();
+   const held = useHeld(sheetId);
+   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
+   const editing = mine.find((c) => c.id === editingId);
+@@ -106,15 +110,6 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
+               <span data-testid="claim-note">{c.note}</span>{' '}
+               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+               <ClaimCells.Slot sheetId={sheetId} user={user} personId={personId} claim={c} />
+-              {editing?.id === c.id ? (
+-                <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
+-                  Cancel
+-                </button>
+-              ) : (
+-                <button type="button" data-testid="claim-edit" onClick={() => setEditing(c.id)}>
+-                  Edit
+-                </button>
+-              )}
+             </li>
+           ))}
+         </ul>
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 908843ac..34a3e5fa 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -1,10 +1,13 @@
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { useState } from 'react';
++import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
++import { useEffect, useState } from 'react';
+ import { postJson, putJson } from '../../api/http';
+ import { ClaimCells } from '../../slots/defs/claimRow';
+ import { usePeople } from '../people/people.slot';
++import { periodOn, usePeriods } from '../periods/periods.slot';
++import { useRoles } from '../access/useAccess';
+ import { useUser } from '../session/useSession';
+-import { claimsKey, type Claim, type ClaimStatus } from './useClaims';
++import { HttpError } from '../../api/http';
++import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, type ClaimStatus } from './useClaims';
+ 
+ // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
+ type Change = { status: ClaimStatus; review?: boolean; reason?: string };
+@@ -40,6 +43,45 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+   const [splitAmount, setSplitAmount] = useState('');
+   const [newDate, setNewDate] = useState('');
+   const people = usePeople(sheetId);
++  const [editingId, setEditing] = useEditingClaim();
++  const periods = usePeriods(sheetId);
++  const roles = useRoles(sheetId);
++  // An edit the screen can already tell is refused shows its refusal at once, before any request: the claim form must
++  // not be taken for its editor. The server refuses the same edits (and any it alone can tell).
++  const [refused, setRefused] = useState<string>();
++  const refusal = (): string | undefined => {
++    if ((roles.data ?? []).some((r) => r.user === user && r.role === 'viewer')) return 'A viewer may not change anything on this sheet';
++    if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';
++    if (periodOn(periods.data ?? [], claim.date)?.closed) return "That claim's date is in a closed period";
++    return undefined;
++  };
++  const base = `/api/sheets/${encodeURIComponent(sheetId)}/claims`;
++  // Opening the claim's editor takes its lock. A claim that cannot be edited is refused and its editor stays shut; one
++  // whose lock another user holds (409) is refused too, but its editor opens, to be saved once that user lets it go.
++  // Opening another claim's editor lets go of the one open before.
++  const lock = useMutation({
++    mutationKey: claimLockKey(sheetId),
++    mutationFn: () => postJson<Claim>(`${base}/${claim.id}/lock`, { by: user ?? '' }),
++    onSuccess: () => openEditor(),
++    onError: (e) => {
++      if (e instanceof HttpError && e.status === 409) openEditor();
++    },
++  });
++  // A save of the claim's open editor is its next action: the lock's refusal goes.
++  const saving = useIsMutating({ mutationKey: claimSaveKey(sheetId) }) > 0 && editingId === claim.id;
++  const resetLock = lock.reset;
++  useEffect(() => {
++    if (saving) resetLock();
++  }, [saving, resetLock]);
++  const openEditor = () => {
++    if (editingId !== undefined && editingId !== claim.id) unlock(editingId);
++    setEditing(claim.id);
++  };
++  const unlock = (id: number) => {
++    void postJson(`${base}/${id}/unlock`, { by: user ?? '' }).catch(() => {
++      // a lock not let go of is dropped when the sheet's today changes
++    });
++  };
+   const change = useMutation({
+     mutationFn: (to: Change) =>
+       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, { ...to, by: user ?? '' }),
+@@ -98,11 +140,24 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     proof.reset();
+     split.reset();
+     redate.reset();
++    lock.reset();
++    setRefused(undefined);
+     change.mutate(to);
+   };
+-  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
++  const resetAll = () => {
++    change.reset();
++    reassign.reset();
++    resettle.reset();
++    defer.reset();
++    proof.reset();
++    split.reset();
++    redate.reset();
++    lock.reset();
++    setRefused(undefined);
++  };
++  const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
+     || redate.isPending;
+-  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error;
++  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error;
+ 
+   return (
+     <>
+@@ -153,6 +208,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           proof.reset();
+           split.reset();
+           redate.reset();
++          lock.reset();
++          setRefused(undefined);
+           reassign.mutate(moveTo);
+         }}
+       >
+@@ -169,6 +226,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           proof.reset();
+           split.reset();
+           redate.reset();
++          lock.reset();
++          setRefused(undefined);
+           resettle.mutate();
+         }}
+       >
+@@ -196,6 +255,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           proof.reset();
+           split.reset();
+           redate.reset();
++          lock.reset();
++          setRefused(undefined);
+           defer.mutate(deferUntil);
+         }}
+       >
+@@ -213,6 +274,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           defer.reset();
+           split.reset();
+           redate.reset();
++          lock.reset();
++          setRefused(undefined);
+           proof.mutate();
+         }}
+       >
+@@ -239,6 +302,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           defer.reset();
+           proof.reset();
+           redate.reset();
++          lock.reset();
++          setRefused(undefined);
+           split.mutate(splitAmount);
+         }}
+       >
+@@ -264,11 +329,39 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           defer.reset();
+           proof.reset();
+           split.reset();
++          lock.reset();
++          setRefused(undefined);
+           redate.mutate(newDate);
+         }}
+       >
+         Re-date
+       </button>{' '}
++      <button
++        type="button"
++        data-testid="claim-edit"
++        disabled={busy}
++        onClick={() => {
++          resetAll();
++          const why = refusal();
++          if (why === undefined) lock.mutate();
++          else setRefused(why);
++        }}
++      >
++        Edit
++      </button>
++      {editingId === claim.id && (
++        <button
++          type="button"
++          data-testid="claim-cancel"
++          onClick={() => {
++            resetAll();
++            unlock(claim.id);
++            setEditing(undefined);
++          }}
++        >
++          Cancel
++        </button>
++      )}{' '}
+       {error && (
+         <span data-testid="claim-error" role="alert">
+           {error.message}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 090a20ad..5a3bc346 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -45,6 +45,12 @@ export function counts(claim: { status: ClaimStatus; personId: number; date: str
+ /** The key every feature reads the sheet's claims under. */
+ export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
+ 
++/** The key of a claim editor's lock request: a claim form waits for it before it submits. */
++export const claimLockKey = (sheetId: string) => ['sheet', sheetId, 'claim-lock'] as const;
++
++/** The key of a claim form's save: saving a claim's editor clears the claim's lock refusal. */
++export const claimSaveKey = (sheetId: string) => ['sheet', sheetId, 'claim-save'] as const;
++
+ /** Every claim on the sheet, newest first. */
+ export function useClaims(sheetId: string) {
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimLock.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimLock.java
+new file mode 100644
+index 00000000..5798d51f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimLock.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.ConflictException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** Takes the claim's lock for the user opening its editor; refused while another user holds it. */
++public class ApplyClaimLock {
++    public void apply(@Val Claim claim, @Val ChangedBy by, ClaimLockRepository locks) throws ConflictException {
++        String holder = locks.lock(claim, by.name());
++        if (!holder.equals(by.name())) {
++            throw new ConflictException(locked(holder));
++        }
++    }
++
++    static String locked(String holder) {
++        return "The claim is being edited by " + holder + "; try again once they save or cancel";
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLockRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLockRepository.java
+new file mode 100644
+index 00000000..6fe706b9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLockRepository.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.claim;
++
++import org.springframework.dao.DuplicateKeyException;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Which user's open editor holds each claim: at most one per claim, so two users never edit it at once. */
++@Repository
++public class ClaimLockRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public ClaimLockRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The user holding the claim's lock; null when no one does. */
++    public String holder(long claimId) {
++        return jdbc.query("SELECT locked_by FROM claim_lock WHERE claim_id = ?",
++                rs -> rs.next() ? rs.getString(1) : null, claimId);
++    }
++
++    /** Take the claim's lock for {@code user}, in one statement so two users never both take it. The holder after: the
++     *  user when they took it (or already held it), else whoever holds it. */
++    public String lock(Claim claim, String user) {
++        try {
++            jdbc.update("INSERT INTO claim_lock (claim_id, sheet_id, locked_by) VALUES (?, ?, ?)",
++                    claim.getId(), claim.getSheetId(), user);
++            return user;
++        } catch (DuplicateKeyException held) {
++            return holder(claim.getId());
++        }
++    }
++
++    /** Drop the claim's lock when {@code user} holds it. */
++    public void release(long claimId, String user) {
++        jdbc.update("DELETE FROM claim_lock WHERE claim_id = ? AND locked_by = ?", claimId, user);
++    }
++
++    /** Drop every lock on the sheet. */
++    public void releaseAll(String sheetId) {
++        jdbc.update("DELETE FROM claim_lock WHERE sheet_id = ?", sheetId);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLockRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLockRequest.java
+new file mode 100644
+index 00000000..62f7a2ec
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLockRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The signed-in user (`by`) opening or cancelling a claim's editor. */
++public record ClaimLockRequest(String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseLockedClaim.java b/src/main/java/net/officefloor/hq/app/claim/RefuseLockedClaim.java
+new file mode 100644
+index 00000000..9dd6e055
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseLockedClaim.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.ConflictException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses a save of a claim whose editor another user holds open. */
++public class RefuseLockedClaim {
++    public void check(@Val Claim claim, @Val ChangedBy by, ClaimLockRepository locks) throws ConflictException {
++        String holder = locks.holder(claim.getId());
++        if (holder != null && !holder.equals(by.name())) {
++            throw new ConflictException(ApplyClaimLock.locked(holder));
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReleaseClaimLock.java b/src/main/java/net/officefloor/hq/app/claim/ReleaseClaimLock.java
+new file mode 100644
+index 00000000..d8d1b048
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReleaseClaimLock.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** Drops the user's lock on the claim: its editor was saved or cancelled. */
++public class ReleaseClaimLock {
++    public void release(@Val Claim claim, @Val ChangedBy by, ClaimLockRepository locks) {
++        locks.release(claim.getId(), by.name());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReleaseSheetClaimLocks.java b/src/main/java/net/officefloor/hq/app/claim/ReleaseSheetClaimLocks.java
+new file mode 100644
+index 00000000..bfdced32
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReleaseSheetClaimLocks.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++
++/** A change of the sheet's today drops every claim lock on it. Runs before the new today is stored. */
++public class ReleaseSheetClaimLocks {
++    public void release(@Val SheetResponse sheet, @Val LocalDate today, SheetRepository sheets, ClaimLockRepository locks) {
++        if (!today.equals(sheets.today(sheet.id()))) {
++            locks.releaseAll(sheet.id());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimLock.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimLock.java
+new file mode 100644
+index 00000000..2301db25
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimLock.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** The user opening or cancelling the claim's editor. */
++public class ValidateClaimLock {
++    public void validate(@RequestBody ClaimLockRequest request, Out<ChangedBy> changedBy) throws BadRequestException {
++        changedBy.set(ChangedBy.of(request == null ? null : request.by()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V38__claim_lock.sql b/src/main/resources/db/migration/V38__claim_lock.sql
+new file mode 100644
+index 00000000..e4e98b02
+--- /dev/null
++++ b/src/main/resources/db/migration/V38__claim_lock.sql
+@@ -0,0 +1,8 @@
++-- A claim's editor lock: the signed-in user whose open editor holds the claim. Others cannot open its
++-- editor or save it until the holder saves or cancels, or the sheet's today changes (every lock is dropped).
++CREATE TABLE claim_lock (
++    claim_id  BIGINT       PRIMARY KEY REFERENCES claim (id),
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    locked_by VARCHAR(200) NOT NULL
++);
++CREATE INDEX claim_lock_sheet ON claim_lock (sheet_id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index de6cb1be..9af32eb7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,4 @@
+-# Edit a claim (amount, date, note). Validate the body before touching the store, so a refusal writes nothing.
++# Edit a claim (amount, date, note); refused while another user's editor holds it, and saving drops the user's lock. Validate the body before touching the store, so a refusal writes nothing.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
+   next: claim
+@@ -11,6 +11,10 @@ viewer:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: locked
++locked:
++  class: net.officefloor.hq.app.claim.RefuseLockedClaim
++  govern: [ transaction ]
+   next: draft
+ draft:
+   class: net.officefloor.hq.app.claim.RefuseNonDraftEdit
+@@ -39,6 +43,10 @@ rollup-before:
+ apply:
+   class: net.officefloor.hq.app.claim.ApplyClaim
+   govern: [ transaction ]
++  next: release
++release:
++  class: net.officefloor.hq.app.claim.ReleaseClaimLock
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.RecordClaimEdited
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.POST.yml
+new file mode 100644
+index 00000000..e7ab9d3f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/lock.POST.yml
+@@ -0,0 +1,30 @@
++# Open a claim's editor: take its lock for the user. Refused for a viewer, for a claim that cannot be edited (not a
++# DRAFT, or in a closed period), which takes no lock, and while another user holds it (409).
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: by
++by:
++  class: net.officefloor.hq.app.claim.ValidateClaimLock
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: draft
++draft:
++  class: net.officefloor.hq.app.claim.RefuseNonDraftEdit
++  govern: [ transaction ]
++  next: closed
++closed:
++  class: net.officefloor.hq.app.claim.RefuseClosedClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyClaimLock
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/unlock.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/unlock.POST.yml
+new file mode 100644
+index 00000000..871a3100
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/unlock.POST.yml
+@@ -0,0 +1,18 @@
++# Cancel a claim's editor: drop the user's lock on it (none held: nothing changes).
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: by
++by:
++  class: net.officefloor.hq.app.claim.ValidateClaimLock
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: release
++release:
++  class: net.officefloor.hq.app.claim.ReleaseClaimLock
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index f3f71a33..13ec6754 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -15,6 +15,10 @@ ensure:
+ rollup-before:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   govern: [ transaction ]
++  next: unlock
++unlock:
++  class: net.officefloor.hq.app.claim.ReleaseSheetClaimLocks
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplySheetToday
