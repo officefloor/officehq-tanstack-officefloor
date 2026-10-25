@@ -21,12 +21,21 @@ public class ClosePeriod {
         if (period.closed()) {
             throw new BadRequestException("That period is already closed");
         }
+        Period fixed = fix(period, repository, rollup);
+        if (fixed == null) {
+            throw new BadRequestException("The period was closed by someone else; reload the sheet");
+        }
+        closed.set(new ClosedPeriod(fixed));
+    }
+
+    /** Closes the open period, fixing its due-total and each person's as they are now; null when someone else closed it first. */
+    static Period fix(Period period, PeriodRepository repository, Rollup rollup) {
         Map<Long, BigDecimal> personTotals = rollup.dueBetweenByPerson(period.sheetId(), period.from(), period.to());
         BigDecimal total = personTotals.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         if (!repository.close(period.id(), total, personTotals)) {
-            throw new BadRequestException("The period was closed by someone else; reload the sheet");
+            return null;
         }
-        closed.set(new ClosedPeriod(new Period(period.id(), period.sheetId(), period.name(), period.from(),
-                period.to(), true, total, personTotals)));
+        return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), true, total,
+                personTotals);
     }
 }

@@ -6,8 +6,12 @@ import net.officefloor.plugin.variable.Val;
 
 public class RecordPeriodClosed {
     public void record(@Val ClosedPeriod closed, @Val ChangedBy by, Audit audit) {
-        Period period = closed.period();
-        audit.record("PERIOD_CLOSED sheet=" + period.sheetId() + " by=" + by.name() + " period=" + period.name()
-                + " total=" + period.closedTotal().toPlainString());
+        audit.record(line(closed.period(), by));
+    }
+
+    /** The PERIOD_CLOSED line for the closed period. */
+    static String line(Period period, ChangedBy by) {
+        return "PERIOD_CLOSED sheet=" + period.sheetId() + " by=" + by.name() + " period=" + period.name()
+                + " total=" + period.closedTotal().toPlainString();
     }
 }

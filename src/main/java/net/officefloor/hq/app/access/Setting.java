@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the grace days and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -61,6 +61,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
+    /** The days after its to-date an open period is closed by itself when the sheet's today moves past them; a whole number, blank for off. */
+    public static final String GRACE_DAYS = "grace-days";
 
     /** The roles that may take an action (the key is this plus the action, perm-open): a comma separated list of roles, blank for the standing rule. */
     public static final String PERMISSION = "perm-";

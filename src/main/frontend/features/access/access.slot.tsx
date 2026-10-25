@@ -110,10 +110,11 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and the late percent, what an overdue claim's due gains of its figure for every
 // full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
-// the date from which, on the sheet's today, an opened claim is numbered within its period, and the cap (blank: none), the most
+// the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
+// the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
 // it is settled or approved, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
-// roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from and the permissions is dated: saving it records
+// roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from, the grace days and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -135,6 +136,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today', dated: false },
   { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',
     invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off', dated: false },
+  { key: 'grace-days', label: 'Grace days', placeholder: 'off', blank: true, valid: DAYS, inputMode: 'numeric',
+    invalid: 'Grace days are a whole number of days, or blank for off', dated: false },
   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
   { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',

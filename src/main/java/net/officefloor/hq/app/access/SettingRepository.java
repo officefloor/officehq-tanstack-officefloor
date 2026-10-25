@@ -28,7 +28,7 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's undated settings, by key (the policy date, period numbering from and the permissions); a key without a row is not listed. */
+    /** The sheet's undated settings, by key (the policy date, period numbering from, the grace days and the permissions); a key without a row is not listed. */
     public List<Setting> listUndated(String sheetId) {
         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
                 + " ORDER BY setting_key", ROW, sheetId);
@@ -68,6 +68,12 @@ public class SettingRepository {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = find(sheetId, Setting.PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The sheet's grace days; null while off. */
+    public Integer graceDays(String sheetId) {
+        String value = find(sheetId, Setting.GRACE_DAYS);
+        return value == null ? null : Integer.valueOf(value);
     }
 
     /** The sheet's late charge as of its today, each claim's late percent the one in force on its date, with its policy date for rounding. */
