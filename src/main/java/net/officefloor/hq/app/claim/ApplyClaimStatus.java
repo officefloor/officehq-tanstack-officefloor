@@ -3,9 +3,13 @@ package net.officefloor.hq.app.claim;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.List;
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -33,7 +37,11 @@ import org.springframework.web.bind.annotation.RequestParam;
  * its settlement (its status log's SETTLED date) by the sheet's today; it keeps its number and its frozen due. While the sheet's list of
  * void reasons is not empty, a void needs a reason from it, which the claim keeps. Returns the claim's number for the
  * audit. A settle that is part of a bulk settle (its batch key) gives the claim that batch's number (the sheet's next
- * the first time a claim of the batch settles); one settled on its own has none.
+ * the first time a claim of the batch settles); one settled on its own has none. A settle as of a date (on) on or before
+ * the sheet's today freezes the claim's due as it stood at the end of that date (as the as-of view works it out: the
+ * claim, its person's grades, the rates and the sheet's settings as they then stood, that date its today), and the
+ * rules that weigh the due weigh that figure; a date after the sheet's today, or one by which the claim had not been
+ * added, is refused.
  */
 public class ApplyClaimStatus {
 
@@ -45,9 +53,42 @@ public class ApplyClaimStatus {
             @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
             @RequestHeader(name = "X-User", required = false) String userHeader,
             @RequestParam(name = "reason", required = false) String reason,
-            @RequestParam(name = "batch", required = false) String batch) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+            @RequestParam(name = "batch", required = false) String batch,
+            @RequestParam(name = "on", required = false) String on, AsOf asOf) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+        SettledAsOf settledAsOf = "settle".equals(action) ? settledAsOf(claim, sheet, on, asOf) : null;
         return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
-                userHeader, reason, batch, false, false);
+                userHeader, reason, batch, false, false, settledAsOf);
+    }
+
+    /** The date a settle is made as of, and the claim's due as it stood at the end of it (null: n/a). */
+    record SettledAsOf(LocalDate on, BigDecimal due) {
+    }
+
+    /** The settle's as-of date and the due then; null when no date is given (the settle is as of the sheet's today). */
+    static SettledAsOf settledAsOf(Claim claim, Sheet sheet, String on, AsOf asOf) throws ClaimStatusException {
+        if (on == null || on.isBlank()) {
+            return null;
+        }
+        LocalDate date;
+        try {
+            date = LocalDate.parse(on.trim());
+        } catch (DateTimeParseException e) {
+            throw new ClaimStatusException("A claim is settled as of a date YYYY-MM-DD.");
+        }
+        if (date.isAfter(sheet.getToday())) {
+            throw new ClaimStatusException("A claim cannot be settled as of a date after the sheet's today.");
+        }
+        Claim then = asOf.claims(claim.getSheetId(), date).stream().filter(c -> c.getId().equals(claim.getId()))
+                .findFirst().orElse(null);
+        Person person = then == null ? null : asOf.people(claim.getSheetId(), date).stream()
+                .filter(p -> p.getId().equals(then.getPersonId())).findFirst().orElse(null);
+        if (then == null || person == null) {
+            throw new ClaimStatusException("The claim did not exist on " + date + ".");
+        }
+        PersonGrades grades = new PersonGrades(person.getGrade(),
+                asOf.grades(claim.getSheetId(), date).getOrDefault(person.getId(), List.of()));
+        BigDecimal due = new ClaimFigures(asOf.rates(claim.getSheetId(), date), grades, asOf.sheet(sheet, date)).due(then);
+        return new SettledAsOf(date, due);
     }
 
     /** The change itself; on a dry run (a settle only) it refuses what the settle would refuse and changes nothing. */
@@ -65,6 +106,16 @@ public class ApplyClaimStatus {
             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
             Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
             String userHeader, String reason, String batch, boolean dryRun, boolean judged) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+        return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
+                userHeader, reason, batch, dryRun, judged, null);
+    }
+
+    /** As above; a settle as of a date fixes the due it stood at then (null: as of the sheet's today). */
+    static String run(String action, Claim claim, ClaimRepository repository,
+            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
+            Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
+            String userHeader, String reason, String batch, boolean dryRun, boolean judged, SettledAsOf settledAsOf)
+            throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         if (dryRun && !"settle".equals(action)) {
             throw new ClaimStatusException("Only a settle can be checked.");
         }
@@ -179,7 +230,8 @@ public class ApplyClaimStatus {
             }
             if (next == ClaimStatus.SETTLED) {
                 PersonGrades personGrades = people.findById(claim.getPersonId()).map(grades::gradesOf).orElse(null);
-                BigDecimal due = personGrades == null ? null
+                BigDecimal due = settledAsOf != null && "settle".equals(action) ? settledAsOf.due()
+                        : personGrades == null ? null
                         : new ClaimFigures(rates.findInChain(claim.getSheetId()),
                                 personGrades, sheet).due(claim);
                 BigDecimal threshold = sheet.proofThresholdFor(

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
@@ -198,13 +198,17 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   const voidReasons = useVoidReasons();
   const settings = useSettings();
   const [voidReason, setVoidReason] = useState('');
+  // The date a settle is made as of: '' for the sheet's today.
+  const [settleOn, setSettleOn] = useState('');
   const change = useMutation({
-    mutationFn: ({ action, reason }: { action: string; reason?: string }) =>
+    mutationFn: ({ action, reason, on }: { action: string; reason?: string; on?: string }) =>
       putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/${action}`
-        + (reason === undefined ? '' : `?reason=${encodeURIComponent(reason)}`), undefined, user),
+        + (reason !== undefined ? `?reason=${encodeURIComponent(reason)}`
+          : on !== undefined ? `?on=${encodeURIComponent(on)}` : ''), undefined, user),
     onSuccess: (_, { action }) => {
       if (action === 'reject') setReason('');
       if (action === 'void') setVoidReason('');
+      if (action === 'settle') setSettleOn('');
       return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
     },
   });
@@ -368,8 +372,18 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         ))}
       </select>{' '}
       {ACTIONS.map(({ action, label }) => (
+        <Fragment key={action}>
+        {action === 'settle' && (
+          <>
+            <input
+              data-testid="claim-settle-date"
+              placeholder="Settle as of YYYY-MM-DD"
+              value={settleOn}
+              onChange={(e) => { setSettleOn(e.target.value); change.reset(); }}
+            />{' '}
+          </>
+        )}
         <button
-          key={action}
           type="button"
           data-testid={`claim-${action}`}
           disabled={change.isPending}
@@ -379,11 +393,13 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             defer.reset(); redate.reset(); split.reset(); partSettle.reset();
             proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
             submitChange(action === 'reject' ? { action, reason }
-              : action === 'void' && voidReason !== '' ? { action, reason: voidReason } : { action });
+              : action === 'void' && voidReason !== '' ? { action, reason: voidReason }
+              : action === 'settle' && settleOn.trim() !== '' ? { action, on: settleOn.trim() } : { action });
           }}
         >
           {label}
         </button>
+        </Fragment>
       ))}{' '}
       <select
         data-testid="claim-reassign-to"
@@ -776,6 +792,10 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? (settings.data?.proofKinds ?? '') !== ''
               ? `This claim's due is above the proof threshold, so it needs a proof of each kind (${settings.data?.proofKinds}) before it can be settled or approved.`
               : 'This claim\'s due is above the proof threshold, so it needs a proof before it can be settled or approved.'
+            : action === 'settle' && change.variables?.on !== undefined && today !== undefined && change.variables.on > today
+            ? `A claim can be settled only as of a date on or before the sheet's today (${today}).`
+            : action === 'settle' && change.variables?.on !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(change.variables.on)
+            ? 'Settle as of a date written YYYY-MM-DD.'
             : action === 'settle' && isDeferred(claim, today)
             ? `This claim is deferred until ${claim.deferredUntil}, so it cannot be settled before then.`
             : action === 'settle' && claim.openedBy === user
@@ -786,6 +806,8 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             ? 'You last edited this claim, so someone else must settle it.'
             : action === 'approve' && claim.editedBy === user && claim.status === 'PENDING'
             ? 'You last edited this claim, so someone else must approve it.'
+            : action === 'settle' && change.variables?.on !== undefined && claim.status === 'OPEN' && change.error instanceof HttpError && change.error.status === 409
+            ? `This claim had not been added by ${change.variables.on}, so it cannot be settled as of then.`
             : action === 'reject' && claim.status === 'PENDING' && reason.trim() === ''
             ? 'Give a reason to reject this claim.'
             : `That status change is not allowed for a ${claim.status} claim.`}

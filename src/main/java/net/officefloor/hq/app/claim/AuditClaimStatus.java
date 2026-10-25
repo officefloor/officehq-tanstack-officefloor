@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.person.Person;
@@ -18,6 +19,7 @@ public class AuditClaimStatus {
     public void audit(@Parameter String number, @Val Claim claim, PersonRepository people,
             @PathVariable("action") String action, ClaimLogRepository log,
             @RequestParam(name = "reason", required = false) String reason,
+            @RequestParam(name = "on", required = false) String on,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
         String event = switch (action) {
@@ -41,6 +43,9 @@ public class AuditClaimStatus {
         }
         if (claim.getStatus() == ClaimStatus.VOID && claim.getVoidReason() != null) {
             line += " reason=" + claim.getVoidReason();
+        }
+        if ("settle".equals(action) && claim.getStatus() == ClaimStatus.SETTLED && on != null && !on.isBlank()) {
+            line += " on=" + LocalDate.parse(on.trim());
         }
         audit.record(line);
     }
