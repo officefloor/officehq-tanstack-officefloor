@@ -77,6 +77,10 @@ public class Claim {
 
     /** The date its due-by counts from, fixed when it was created (its date then). It does not change when its date
      *  changes later. */
+    /** Whether a steward set the due-by directly; a due-by set so stays as set and is not worked out again. */
+    @Column(name = "due_by_set", nullable = false)
+    private boolean dueBySet;
+
     @Column(name = "due_from", nullable = false)
     private LocalDate dueFrom;
 
@@ -237,9 +241,22 @@ public class Claim {
         reworkDueBy(holidays);
     }
 
-    /** Works the due-by out again for the sheet's holidays now. */
+    /** Works the due-by out again for the sheet's holidays now; a due-by a steward set stays as set. */
     public void reworkDueBy(Set<LocalDate> holidays) {
+        if (dueBySet) {
+            return;
+        }
         this.dueBy = BusinessDays.after(dueFrom, dueTerms, holidays);
+    }
+
+    /** Sets the due-by directly; it stays as set from then on. */
+    public void setDueBy(LocalDate dueBy) {
+        this.dueBy = dueBy;
+        this.dueBySet = true;
+    }
+
+    public boolean isDueBySet() {
+        return dueBySet;
     }
 
     public String getNote() {
@@ -480,6 +497,7 @@ public class Claim {
         then.editedBy = editedBy;
         then.settleBatch = settleBatch;
         then.dueBy = dueBy;
+        then.dueBySet = dueBySet;
         then.dueFrom = dueFrom;
         then.dueTerms = dueTerms;
         then.correctsDate = correctsDate;
@@ -516,6 +534,7 @@ public class Claim {
         moved.openedBy = openedBy;
         moved.editedBy = editedBy;
         moved.dueBy = dueBy;
+        moved.dueBySet = dueBySet;
         moved.dueFrom = dueFrom;
         moved.dueTerms = dueTerms;
         moved.correctsDate = correctsDate;
