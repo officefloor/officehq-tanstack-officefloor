@@ -80,7 +80,7 @@ export function roundsHalfUp(c: Claim, settings: Settings | undefined, today: st
 
 /** A claim's figure: a settled claim's frozen due, else the figure its person's last statement bound it to,
  *  else its rate figure at the rate on its date (of those that apply to it: a forward-only rate saved after it was added does not) of the grade (its person's grade on its date) ("n/a" when it has none),
- *  rounded by the sheet's policy; no floor (that comes last, in {@link chargedOf}). */
+ *  rounded by the sheet's policy; no floor (that comes before the late charge, in {@link chargedOf}). */
 export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, halfUp = false): string {
   if (c.due !== null) return c.due;
   if (isBound(c)) return c.statedDue ?? 'n/a';
@@ -88,10 +88,10 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, hal
 }
 
 /** A claim's due: a settled claim's frozen due, else the greater of the sheet's floor in force on its date and its figure
- *  plus its late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that
- *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
+ *  (the floored figure), plus its late charge worked out on that floored figure — for each full 30 days it is overdue on the
+ *  sheet's today, the sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the floored figure plus the charges of the boundaries
  *  before it, rounded like a due, added up; a boundary at 0.00 adds
- *  nothing ("n/a" when it has no figure). A statement binds the due as shown, the charge and the floor included: while
+ *  nothing ("n/a" when it has no figure). A statement binds the due as shown, the floored figure and its charge: while
  *  bound it no longer follows the sheet's today. A correction takes neither floor nor late charge; a claim whose late charge is waived takes no late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
   today: string | undefined): string {
@@ -100,16 +100,17 @@ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, se
   const figure = figureOf(c, rates, grade, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
   const floor = settings && settingOn(settings, 'floor', c.date, '1.00');
-  if (today === undefined || c.waived || !isOverdue(c, today, grade, settings)) return atLeast(figure, floor);
+  const floored = atLeast(figure, floor);
+  if (today === undefined || c.waived || !isOverdue(c, today, grade, settings)) return floored;
   const dueBy = Date.parse(`${lateFromOf(c, grade, settings)}T00:00:00Z`);
   const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
   let charge = 0n;
   for (let k = 1; k <= periods; k++) {
     const boundary = new Date(dueBy + k * 30 * 86_400_000).toISOString().slice(0, 10);
     const pct = settingOn(settings, 'late-pct', boundary, '0.00');
-    if (hundredths(pct) !== 0n) charge += hundredths(dueOf(formatCents(hundredths(figure) + charge), pct, halfUp));
+    if (hundredths(pct) !== 0n) charge += hundredths(dueOf(formatCents(hundredths(floored) + charge), pct, halfUp));
   }
-  return atLeast(formatCents(hundredths(figure) + charge), floor);
+  return formatCents(hundredths(floored) + charge);
 }
 
 /** A due raised to the floor when below it ("n/a" stays n/a; no floor leaves it as it is). */

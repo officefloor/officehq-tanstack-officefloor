@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Takes a statement for the person: records their due-total now, on the sheet's today, and binds each of
- * their claims that counts to the due it shows now, late charge and floor included (a claim already bound keeps the due
+ * their claims that counts to the due it shows now, its floored figure plus the late charge on it (a claim already bound keeps the due
  * it is bound to, and a bound due no longer follows the sheet's today); their claims that do not count (a person's unbound OPEN ones dated within a
  * hold among them) are unbound (live again).
  * <p>
