@@ -17,4 +17,10 @@ public record Setting(String sheetId, String key, String value) {
 
     /** The terms a sheet starts with, until they are set. */
     public static final String TERMS_DEFAULT = "14";
+
+    /** The percent of its figure an overdue claim's due gains for every full 30 days it is overdue; two decimals. */
+    public static final String LATE_PCT = "late-pct";
+
+    /** The late percent a sheet starts with, until it is set. */
+    public static final String LATE_PCT_DEFAULT = "0.00";
 }

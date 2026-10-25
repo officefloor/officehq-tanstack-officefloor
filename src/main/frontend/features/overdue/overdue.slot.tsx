@@ -1,18 +1,11 @@
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { useFloorCents, useTermsDays } from '../access/useAccess';
+import { useFloorCents, useLate, useTermsDays } from '../access/useAccess';
 import { counts, useClaims } from '../claims/useClaims';
 import { useHeld, usePeople } from '../people/people.slot';
-import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
+import { addDays, claimDueCents, showHundredths, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
-
-/** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
-function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 /** A claim's due-by: its date plus the sheet's terms in force. */
 function useDueBy(sheetId: string): (claim: { date: string }) => string {
@@ -29,13 +22,14 @@ function useIsOverdue(sheetId: string): (claim: { status: string; date: string }
 
 type Overdue = { count: number; cents: bigint };
 
-/** The overdue claims that count, per person and for the sheet: how many, and their due added up (n/a as 0). */
+/** The overdue claims that count, per person and for the sheet: how many, and their due (late charge included) added up (n/a as 0). */
 function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: Overdue } {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const held = useHeld(sheetId);
   const floor = useFloorCents(sheetId);
+  const late = useLate(sheetId);
   const isOverdue = useIsOverdue(sheetId);
   const byPerson = new Map<number, Overdue>();
   const sheet: Overdue = { count: 0, cents: 0n };
@@ -44,7 +38,7 @@ function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: O
     for (const c of claims.data ?? []) {
       if (c.personId !== p.id || !counts(c, held) || !isOverdue(c)) continue;
       mine.count += 1;
-      mine.cents += claimDueCents(rates.data ?? [], p.grade, c, floor) ?? 0n;
+      mine.cents += claimDueCents(rates.data ?? [], p.grade, c, floor, late) ?? 0n;
     }
     byPerson.set(p.id, mine);
     sheet.count += mine.count;

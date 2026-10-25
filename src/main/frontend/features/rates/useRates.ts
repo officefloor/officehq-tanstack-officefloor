@@ -56,11 +56,35 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint): bigint {
   return whole;
 }
 
+/** The late charge's terms as of the sheet's today: its terms in days and its late percent (in hundredths). */
+export type Late = { today: string; termsDays: number; pctHundredths: bigint };
+
+/** A date (yyyy-mm-dd) plus a number of days, as yyyy-mm-dd. */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The days from one date (yyyy-mm-dd) to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+/** A claim's late charge in cents on its figure: for an OPEN claim past its due-by (its date plus the terms), the
+ *  late percent of the figure for every full 30 days it is overdue, rounded half to even; otherwise 0. */
+export function lateCents(late: Late | undefined, claim: { date: string; status: string }, figureCents: bigint): bigint {
+  if (late === undefined || claim.status !== 'OPEN') return 0n;
+  const overdue = daysBetween(addDays(claim.date, late.termsDays), late.today);
+  const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
+  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths);
+}
+
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
  *  otherwise its amount times its person's grade's rate
  *  in force on the claim's date, rounded half to even, and at least the sheet's floor (in cents). Null when there is
  *  no figure (no rate of the grade then). */
-export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
+export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null },
   floorCents: bigint): bigint | null {
   if (claim.settledDue != null) return toHundredths(claim.settledDue);
@@ -69,4 +93,13 @@ export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   if (found === undefined) return null;
   const due = dueCents(toHundredths(claim.amount), toHundredths(found.rate));
   return due < floorCents ? floorCents : due;
+}
+
+/** A claim's due in cents: its figure (claimFigureCents) with its late charge on top while it is overdue. The
+ *  charge is never bound by a statement; a settled claim's due already has it frozen in. Null without a figure. */
+export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
+  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null },
+  floorCents: bigint, late: Late | undefined): bigint | null {
+  const figure = claimFigureCents(rates, grade, claim, floorCents);
+  return figure == null ? null : figure + lateCents(late, claim, figure);
 }

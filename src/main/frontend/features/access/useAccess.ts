@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { toHundredths } from '../rates/useRates';
+import { toHundredths, type Late } from '../rates/useRates';
+import { useSheetToday } from '../today/today.slot';
 
 /** A role assigned to a user name: clerk (any name without one) or steward. */
 export type Role = { user: string; role: string };
@@ -43,4 +44,16 @@ export const TERMS_DEFAULT = '14';
 export function useTermsDays(sheetId: string): number {
   const value = useSettings(sheetId).data?.find((s) => s.key === 'terms')?.value ?? TERMS_DEFAULT;
   return Number(value);
+}
+
+/** The late percent a sheet starts with, until it is set. */
+export const LATE_PCT_DEFAULT = '0.00';
+
+/** The sheet's late charge as of its today: its terms and its late percent (0.00 until it is set). Undefined
+ *  until the sheet's today is known. */
+export function useLate(sheetId: string): Late | undefined {
+  const pct = useSettings(sheetId).data?.find((s) => s.key === 'late-pct')?.value ?? LATE_PCT_DEFAULT;
+  const termsDays = useTermsDays(sheetId);
+  const today = useSheetToday(sheetId).data?.today;
+  return today === undefined ? undefined : { today, termsDays, pctHundredths: toHundredths(pct) };
 }

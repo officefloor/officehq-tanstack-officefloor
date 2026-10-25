@@ -19,7 +19,7 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's settings, by key; the floor and the terms show their starting values until they are set. */
+    /** The sheet's settings, by key; the floor, the terms and the late percent show their starting values until they are set. */
     public List<Setting> list(String sheetId) {
         List<Setting> found = new java.util.ArrayList<>(jdbc.query("SELECT sheet_id, setting_key, setting_value"
                 + " FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key", ROW, sheetId));
@@ -28,6 +28,9 @@ public class SettingRepository {
         }
         if (found.stream().noneMatch(s -> Setting.TERMS.equals(s.key()))) {
             found.add(new Setting(sheetId, Setting.TERMS, Setting.TERMS_DEFAULT));
+        }
+        if (found.stream().noneMatch(s -> Setting.LATE_PCT.equals(s.key()))) {
+            found.add(new Setting(sheetId, Setting.LATE_PCT, Setting.LATE_PCT_DEFAULT));
         }
         return found;
     }
@@ -48,6 +51,23 @@ public class SettingRepository {
     public BigDecimal floor(String sheetId) {
         String value = find(sheetId, Setting.FLOOR);
         return new BigDecimal(value == null ? Setting.FLOOR_DEFAULT : value).setScale(2);
+    }
+
+    /** The sheet's terms: the days after its date a claim is due by (14 until they are set). */
+    public int terms(String sheetId) {
+        String value = find(sheetId, Setting.TERMS);
+        return Integer.parseInt(value == null ? Setting.TERMS_DEFAULT : value);
+    }
+
+    /** The sheet's late percent (0.00 until it is set). */
+    public BigDecimal latePct(String sheetId) {
+        String value = find(sheetId, Setting.LATE_PCT);
+        return new BigDecimal(value == null ? Setting.LATE_PCT_DEFAULT : value).setScale(2);
+    }
+
+    /** The sheet's late-charge terms as of its today. */
+    public LateCharge lateCharge(String sheetId, java.time.LocalDate today) {
+        return new LateCharge(today, terms(sheetId), latePct(sheetId));
     }
 
     /** Set a setting's value (null: blank), replacing the one there before. */

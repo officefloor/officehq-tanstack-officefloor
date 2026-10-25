@@ -10,7 +10,7 @@ import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
-import { useFloorCents } from '../access/useAccess';
+import { useFloorCents, useLate } from '../access/useAccess';
 
 const GRADES = ['A', 'B', 'C'] as const;
 const RATE = /^\d{1,3}(\.\d{1,2})?$/;
@@ -39,6 +39,7 @@ function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const today = useRateByGrade(sheetId);
   const held = useHeld(sheetId);
   const floor = useFloorCents(sheetId);
+  const late = useLate(sheetId);
   const totals = new Map<number, bigint | null>();
   for (const p of people.data ?? []) {
     const counted = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
@@ -47,7 +48,7 @@ function useDueTotals(sheetId: string): Map<number, bigint | null> {
       continue;
     }
     let sum = 0n;
-    for (const c of counted) sum += claimDueCents(rates.data ?? [], p.grade, c, floor) ?? 0n;
+    for (const c of counted) sum += claimDueCents(rates.data ?? [], p.grade, c, floor, late) ?? 0n;
     totals.set(p.id, sum);
   }
   return totals;
@@ -200,14 +201,15 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
 }
 
 // A claim's due: fixed when it was settled; the bound figure while a statement binds it; otherwise its amount times its person's grade's rate in
-// force on the claim's date (at least the sheet's floor), n/a when no rate of the grade applies then.
+// force on the claim's date (at least the sheet's floor); with its late charge on top while it is overdue; n/a when no rate of the grade applies then.
 function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
-  claim: { amount: string; date: string; settledDue: string | null; stated: boolean; statedDue: string | null } }) {
+  claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null } }) {
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
   const floor = useFloorCents(sheetId);
+  const late = useLate(sheetId);
   const grade = people.data?.find((p) => p.id === personId)?.grade;
-  const due = claimDueCents(rates.data ?? [], grade, claim, floor);
+  const due = claimDueCents(rates.data ?? [], grade, claim, floor, late);
   return <span data-testid="claim-due">{due == null ? NA : showHundredths(due)}</span>;
 }
 

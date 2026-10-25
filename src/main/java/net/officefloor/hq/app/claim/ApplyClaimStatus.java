@@ -10,6 +10,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.session.ChangedBy;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -18,11 +19,11 @@ import net.officefloor.plugin.variable.Val;
  * refusing to let the user who opened it settle it, and refusing a clerk a settle whose due is above the sheet's
  * clerk limit (a due of n/a is within any limit; a steward settles anything). Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at its person's grade's rate in force on the claim's date (at least the sheet's floor) — or, while a statement binds it, at
- * the figure it was bound to; without a figure its due stays live.
+ * the figure it was bound to — with its late charge as of the sheet's today frozen in on top; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
-            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
+            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         if (!from.canBecome(status)) {
@@ -31,7 +32,8 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
             throw new BadRequestException("The user who opened a claim cannot settle it");
         }
-        BigDecimal due = status == ClaimStatus.SETTLED ? dueNow(claim, people, rates, settings) : null;
+        BigDecimal due = status == ClaimStatus.SETTLED ? settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()))
+                .due(claim, dueNow(claim, people, rates, settings)) : null;
         if (status == ClaimStatus.SETTLED && due != null
                 && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());

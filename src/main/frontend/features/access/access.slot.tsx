@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
-import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
+import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
 
 const ROLES = ['clerk', 'steward'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
@@ -104,7 +104,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 
 // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
-// due by (14 until they are set). The value in force shows beside each. Saving
+// due by (14 until they are set), and the late percent, what an overdue claim's due gains of its figure for every
+// full 30 days it is overdue (0.00 until it is set). The value in force shows beside each. Saving
 // sends only the settings whose field was touched since the last save.
 const SETTINGS = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
@@ -113,6 +114,8 @@ const SETTINGS = [
     invalid: 'A floor is an amount with up to two decimals' },
   { key: 'terms', label: 'Terms (days)', placeholder: TERMS_DEFAULT, blank: false, valid: DAYS, inputMode: 'numeric',
     invalid: 'Terms are a whole number of days' },
+  { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A late percent is a number with up to two decimals' },
 ] as const;
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
