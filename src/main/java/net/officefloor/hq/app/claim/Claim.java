@@ -110,6 +110,10 @@ public class Claim {
     @Column(nullable = false)
     private boolean escalated;
 
+    /** Whether a steward waived the claim's late charge; a waived claim bears no late charge from then on. */
+    @Column(nullable = false)
+    private boolean waived;
+
     /** The sheet's today when the claim last went to REVIEW; null for a claim never in review. */
     @Column(name = "review_on")
     private LocalDate reviewOn;
@@ -352,6 +356,14 @@ public class Claim {
         this.escalated = escalated;
     }
 
+    public boolean isWaived() {
+        return waived;
+    }
+
+    public void setWaived(boolean waived) {
+        this.waived = waived;
+    }
+
     /** Whether the claim is deferred on a day: it is OPEN and deferred until a date after that day. Until then it counts
      *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
     public boolean isDeferredOn(LocalDate today) {
@@ -407,6 +419,7 @@ public class Claim {
         then.deferredUntil = deferredUntil;
         then.remindedOn = remindedOn;
         then.escalated = escalated;
+        then.waived = waived;
         then.reviewOn = reviewOn;
         then.proofs = proofs;
         then.splitFrom = splitFrom;
@@ -435,6 +448,7 @@ public class Claim {
         moved.deferredUntil = deferredUntil;
         moved.remindedOn = remindedOn;
         moved.escalated = escalated;
+        moved.waived = waived;
         moved.reviewOn = reviewOn;
         moved.proofs = proofs;
         moved.lateEntry = lateEntry;

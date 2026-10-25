@@ -47,6 +47,8 @@ export type Claim = {
   remindedOn: string | null;
   /** The sheet's today when it last went to REVIEW (YYYY-MM-DD), or null when it never did. */
   reviewOn: string | null;
+  /** Whether a steward waived its late charge: it bears no late charge from then on, whatever its overdue state. */
+  waived: boolean;
   /** Its external reference, trimmed (unique on the sheet, ignoring case), or null when it has none. */
   ref: string | null;
   /** Its tags, trimmed, lower-cased and sorted, without repeats; empty when it has none. */

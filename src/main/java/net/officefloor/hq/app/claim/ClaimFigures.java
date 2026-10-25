@@ -81,9 +81,10 @@ public class ClaimFigures {
     }
 
     /** The late charge on a figure: for each full 30 days the claim is overdue, the late percent in force on that
-     *  boundary date of it plus the charges before it, rounded like its due, added up; 0.00 when it is not overdue. */
+     *  boundary date of it plus the charges before it, rounded like its due, added up; 0.00 when it is not overdue,
+     *  or its late charge is waived. */
     public BigDecimal lateCharge(Claim claim, BigDecimal figure) {
-        if (figure == null || claim.isCorrection() || !overdue(claim)) {
+        if (figure == null || claim.isCorrection() || claim.isWaived() || !overdue(claim)) {
             return BigDecimal.ZERO.setScale(2);
         }
         return chargeByBoundary(claim, figure);
@@ -181,7 +182,7 @@ public class ClaimFigures {
         if (figure == null) {
             return null;
         }
-        if (claim.isCorrection() || !lateFrom(claim).isBefore(today)) {
+        if (claim.isCorrection() || claim.isWaived() || !lateFrom(claim).isBefore(today)) {
             return floored(claim, figure);
         }
         return floored(claim, figure.add(chargeByBoundary(claim, figure)));

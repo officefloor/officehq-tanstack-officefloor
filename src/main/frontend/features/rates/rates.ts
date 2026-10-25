@@ -92,14 +92,14 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, hal
  *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
  *  before it, rounded like a due, added up; a boundary at 0.00 adds
  *  nothing ("n/a" when it has no figure). A statement binds only the figure: the charge and the floor keep following the
- *  sheet. A correction takes neither floor nor late charge. */
+ *  sheet. A correction takes neither floor nor late charge; a claim whose late charge is waived takes no late charge. */
 export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
   today: string | undefined): string {
   const halfUp = roundsHalfUp(c, settings, today);
   const figure = figureOf(c, rates, grade, halfUp);
   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
   const floor = settings && settingOn(settings, 'floor', c.date, '1.00');
-  if (today === undefined || !isOverdue(c, today, grade, settings)) return atLeast(figure, floor);
+  if (today === undefined || c.waived || !isOverdue(c, today, grade, settings)) return atLeast(figure, floor);
   const dueBy = Date.parse(`${lateFromOf(c, grade, settings)}T00:00:00Z`);
   const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
   let charge = 0n;
