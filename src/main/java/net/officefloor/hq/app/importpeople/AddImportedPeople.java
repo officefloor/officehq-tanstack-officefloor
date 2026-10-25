@@ -11,6 +11,7 @@ import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.AddedGradeRepository;
 import net.officefloor.hq.app.grade.RetiredGradeRepository;
 import net.officefloor.hq.app.grade.RetiredGrades;
 import net.officefloor.hq.app.person.InvalidPersonException;
@@ -45,7 +46,7 @@ public class AddImportedPeople {
 
     public void add(@Val ImportedLines lines, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
             TreeNames tree, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
-            PersonGradeRepository grades, AsOf asOf, RetiredGradeRepository retired, EntityManager entityManager,
+            PersonGradeRepository grades, AsOf asOf, RetiredGradeRepository retired, AddedGradeRepository addedGrades, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<ImportedPeople> addedOut) throws InvalidPersonException {
         List<Person> onSheet = people.findListed(sheet.getId());
@@ -57,7 +58,7 @@ public class AddImportedPeople {
             at++;
             PersonRequest line = given.grade().isEmpty() ? given.withGrade(defaultGrade) : given;
             try {
-                PersonRules.refuseRetired(sheet.getId(), line.grade(), retired);
+                PersonRules.refuseRetired(sheet.getId(), line.grade(), retired, addedGrades);
                 Optional<Person> match = PersonAliasRepository.findByNameOrAlias(onSheet, aliases, sheet.getId(),
                         line.name());
                 if (match.isPresent()) {

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
+import net.officefloor.hq.app.grade.AddedGradeRepository;
 import net.officefloor.hq.app.grade.RetiredGradeRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
@@ -17,9 +18,9 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
             PersonAliasRepository aliases, TreeNames tree,
-            PersonGradeRepository grades, RetiredGradeRepository retired, EntityManager entityManager)
+            PersonGradeRepository grades, RetiredGradeRepository retired, AddedGradeRepository added, EntityManager entityManager)
             throws InvalidPersonException, PersonConflictException {
-        PersonRules.refuseRetired(person.getSheetId(), request.grade(), retired);
+        PersonRules.refuseRetired(person.getSheetId(), request.grade(), retired, added);
         if (request.version() == null || request.version() != person.getVersion()) {
             throw new PersonConflictException();
         }

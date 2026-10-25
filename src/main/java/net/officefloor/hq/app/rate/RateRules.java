@@ -3,14 +3,13 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.grade.AddedGradeRepository;
+import net.officefloor.hq.app.grade.RetiredGrades;
 import net.officefloor.hq.app.sheet.Sheet;
 
 /** The rate form's rules and how it sets a rate, shared by the form and the rate import. */
 public final class RateRules {
-
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     private static final Pattern PCT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
@@ -21,8 +20,8 @@ public final class RateRules {
     public static RateInput check(RateRequest request) throws InvalidRateException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidRateException("The grade must be A, B or C.");
+        if (!RetiredGrades.isCode(grade)) {
+            throw new InvalidRateException("The grade must be one of the sheet's grades.");
         }
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidRateException("The rate must be a percent, 0.00 or more, with up to two decimals.");
@@ -49,6 +48,13 @@ public final class RateRules {
             throw new InvalidRateException("The to-date must not be before the from-date.");
         }
         return new RateInput(grade, new BigDecimal(pct).setScale(2), parsed, until);
+    }
+
+    /** Refuses a rate for a grade that is not one of the sheet's grades. */
+    public static void refuseUnknown(RateInput input, Sheet sheet, AddedGradeRepository added) throws InvalidRateException {
+        if (!RetiredGrades.isGrade(sheet.getId(), input.grade(), added)) {
+            throw new InvalidRateException("The grade must be one of the sheet's grades.");
+        }
     }
 
     /** Sets the grade's rate as the rate form does, returning it saved: when the grade already has one for the

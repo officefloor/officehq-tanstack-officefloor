@@ -4,7 +4,8 @@ import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { GRADES, personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
+import { personSaveKey, peoplePath, peopleQueryKey, usePeople, useEditingPerson, type Person } from './people';
+import { useGradeCodes } from '../grades/grades';
 
 // The person form: adds a person, or — while a person's editor is open — saves their changes. A save records the
 // grade from the from-date (blank: the sheet's today), keeping the grades already recorded; the grade a person is
@@ -53,6 +54,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
   const [tags, setTags] = useState((person?.tags ?? []).join(', '));
   const [version, setVersion] = useState(person?.version);
   const queryClient = useQueryClient();
+  const gradeCodes = useGradeCodes();
   const save = useMutation({
     mutationKey: personSaveKey,
     mutationFn: (body: { name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string }) =>
@@ -130,7 +132,7 @@ function PersonFormFields({ sheet, person, people, refused, setRefused }: {
         value={grade}
         onChange={(e) => { setGrade(e.target.value); save.reset(); setRefused(false); }}
       >
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>

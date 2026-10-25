@@ -8,6 +8,8 @@ import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.AddedGradeRepository;
+import net.officefloor.hq.app.grade.RetiredGrades;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -22,7 +24,11 @@ import net.officefloor.web.ObjectResponse;
  *  and the sum of the differences (new due minus current due; n/a counts as 0.00). Nothing is saved. */
 public class RespondWithRatePreview {
     public void respond(@Val Sheet sheet, @Val RatePreviewInput input, RateRepository rates, PersonRepository persons,
-            ClaimRepository claims, PersonGradeRepository grades, ObjectResponse<RatePreviewResponse> response) {
+            ClaimRepository claims, PersonGradeRepository grades, AddedGradeRepository added,
+            ObjectResponse<RatePreviewResponse> response) throws InvalidRateException {
+        if (!RetiredGrades.isGrade(sheet.getId(), input.grade(), added)) {
+            throw new InvalidRateException("The grade must be one of the sheet's grades.");
+        }
         List<Rate> current = rates.findInChain(sheet.getId());
         List<Rate> candidate = new ArrayList<>(current.stream().filter(r -> !r.getGrade().equals(input.grade())).toList());
         candidate.add(new Rate(sheet.getId(), input.grade(), input.pct(), null, null));

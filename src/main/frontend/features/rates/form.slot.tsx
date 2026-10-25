@@ -6,6 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { GRADES } from '../people/people';
 import { rateOn, ratesPath, ratesPreviewPath, ratesQueryKey, useRates, type Rate } from './rates';
+import { useGradeCodes } from '../grades/grades';
 
 // The sheet's rates: each grade's rate in force on the sheet's today (its parent's, up to three levels up, when it
 // has none in force; n/a for a grade with none), every
@@ -15,6 +16,7 @@ function Rates() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const today = useSheetToday();
+  const gradeCodes = useGradeCodes();
   const rates = useRates();
   const [grade, setGrade] = useState<string>(GRADES[0]);
   const [pct, setPct] = useState('');
@@ -57,7 +59,7 @@ function Rates() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.flatMap((g) => {
+          {gradeCodes.flatMap((g) => {
             const mine = (rates.data ?? []).filter((r) => r.sheet === sheet && r.grade === g);
             const start = mine.find((r) => r.from === null);
             const dated = mine.filter((r) => r.from !== null);
@@ -97,7 +99,7 @@ function Rates() {
           value={grade}
           onChange={(e) => { setGrade(e.target.value); save.reset(); }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>{g}</option>
           ))}
         </select>
@@ -140,7 +142,7 @@ function Rates() {
           value={previewGrade}
           onChange={(e) => { setPreviewGrade(e.target.value); preview.reset(); }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>{g}</option>
           ))}
         </select>

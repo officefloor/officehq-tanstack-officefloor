@@ -10,6 +10,7 @@ import { overdueOf } from '../claims/overdue.slot';
 import { personDue } from '../rates/due.slot';
 import { STATUSES } from '../summary/summary.slot';
 import { poolsPath, usePools, type Pool } from '../pools/pools';
+import { useGradeCodes } from '../grades/grades';
 
 // The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
 // parent, and so on down), the number of people — each person once across the tree: people whose names or aliases
@@ -28,6 +29,7 @@ export type Figures = {
   overdues: string[];
   /** How many of its people's claims are overdue, as the rollup counts them. */
   overdueCount: number;
+  /** Per grade (A, B, C and any a person not retired has in force), the due-total of the people on it. */
   grades: Record<string, string>;
   statuses: Record<string, number>;
 };
@@ -41,7 +43,7 @@ export function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | u
     dues: people.map((p) => personDue(p, claims, rates, today, settings, people, pools)),
     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
     overdueCount: people.reduce((n, p) => n + overdueOf(p, claims, rates, today, settings).count, 0),
-    grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
+    grades: Object.fromEntries([...new Set([...GRADES, ...current.map((p) => gradeOn(p, today))])].map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
       .map((p) => personDue(p, claims, rates, today, settings, people, pools)))])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
   };
@@ -99,6 +101,7 @@ function ConsolidatedFigures() {
   const settings = useSettings();
   const pools = usePools();
   const today = useSheetToday();
+  const gradeCodes = useGradeCodes();
   const asOf = currentAsOf();
   const descendants = useQuery({
     queryKey: [...descendantsQueryKey(sheet ?? ''), asOf, currentPreview()],
@@ -114,10 +117,10 @@ function ConsolidatedFigures() {
       {' · '}Due <strong data-testid="consolidated-due-total">{trimmedSum(all.flatMap((f) => f.dues))}</strong>
       {' · '}Overdue <strong data-testid="consolidated-overdue-total">{trimmedSum(all.flatMap((f) => f.overdues))}</strong>
       <div>
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <span key={g}>
             {' · '}Grade {g} due{' '}
-            <strong data-testid={`consolidated-grade-${g}-due-total`}>{sumDue(all.map((f) => f.grades[g]))}</strong>
+            <strong data-testid={`consolidated-grade-${g}-due-total`}>{sumDue(all.map((f) => f.grades[g] ?? 'n/a'))}</strong>
           </span>
         ))}
       </div>

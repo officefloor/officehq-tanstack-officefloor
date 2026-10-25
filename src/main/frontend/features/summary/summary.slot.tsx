@@ -1,6 +1,6 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { GRADES, gradeOn, usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { isReviewLate, useClaims } from '../claims/claims';
 import { personDue } from '../rates/due.slot';
 import { diffDue, sumDue, useRates } from '../rates/rates';
@@ -9,6 +9,7 @@ import { periodDue, usePeriods } from '../periods/periods';
 import { isActive } from '../claims/active.slot';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { usePools } from '../pools/pools';
+import { useGradeCodes } from '../grades/grades';
 
 /** The statuses the summary counts claims by. */
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
@@ -28,6 +29,7 @@ function Summary() {
   const pools = usePools();
   const today = useSheetToday();
   const voidReasons = useVoidReasons();
+  const gradeCodes = useGradeCodes();
   if (!user || !sheet) return null;
   const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const allClaims = claims.data ?? [];
@@ -46,7 +48,7 @@ function Summary() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
+          {gradeCodes.map((g) => {
             const onGrade = current.filter((p) => gradeOn(p, today) === g);
             return (
               <tr key={g}>

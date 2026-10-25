@@ -3,14 +3,11 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
-import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.Sheet;
 
 /** The person form's rules, shared by the form and the people import box. */
 public final class PersonRules {
-
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     private static final Pattern TERMS = Pattern.compile("\\d{1,5}");
 
@@ -18,7 +15,7 @@ public final class PersonRules {
     }
 
     /**
-     * Checks the form's fields, trimming the name; refuses an empty name or a grade other than A, B or C, a grade
+     * Checks the form's fields, trimming the name; refuses an empty name or a grade not shaped as one (the sheet's grades are checked by refuseRetired), a grade
      * from-date that is not a calendar date, and terms that are not a whole number of days; the contact is trimmed
      * and lower-cased; the tags are normalised as Tags.normalise does.
      */
@@ -42,8 +39,8 @@ public final class PersonRules {
         if (name.isEmpty()) {
             throw new InvalidPersonException("A name is required.");
         }
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("The grade must be A, B or C.");
+        if (!net.officefloor.hq.app.grade.RetiredGrades.isCode(grade)) {
+            throw new InvalidPersonException("The grade must be one of the sheet's grades.");
         }
         gradeFrom = gradeFrom == null ? "" : gradeFrom.trim();
         if (!gradeFrom.isEmpty()) {
@@ -91,9 +88,14 @@ public final class PersonRules {
         return person;
     }
 
-    /** Refuses a grade retired on the sheet: people on it keep it, but it cannot be chosen for a new person or in an edit. */
+    /** Refuses a grade not one of the sheet's grades, and one retired on the sheet: people on it keep it, but it
+     *  cannot be chosen for a new person or in an edit. */
     public static void refuseRetired(String sheetId, String grade,
-            net.officefloor.hq.app.grade.RetiredGradeRepository retired) throws InvalidPersonException {
+            net.officefloor.hq.app.grade.RetiredGradeRepository retired,
+            net.officefloor.hq.app.grade.AddedGradeRepository added) throws InvalidPersonException {
+        if (!net.officefloor.hq.app.grade.RetiredGrades.isGrade(sheetId, grade, added)) {
+            throw new InvalidPersonException("The grade must be one of the sheet's grades.");
+        }
         if (net.officefloor.hq.app.grade.RetiredGrades.isRetired(sheetId, grade, retired)) {
             throw new InvalidPersonException("The grade " + grade + " is retired.");
         }

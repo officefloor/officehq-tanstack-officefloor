@@ -4,7 +4,7 @@ import { getJsonLive } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { GRADES } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { figuresOf } from '../consolidated/consolidated.slot';
 
 // The sheet comparison: one line per grade of this sheet — `<grade> <this> <other>`: each the grade's due-total as
@@ -12,18 +12,19 @@ import { figuresOf } from '../consolidated/consolidated.slot';
 // n/a), 0.00 for a grade the other sheet has no one on. A sheet the store does not hold gives no lines (and is not
 // started by the comparison). Both sheets are read as the screen shows them (as of its date, if any).
 
-async function compareSheets(sheetId: string, other: string): Promise<string[]> {
+async function compareSheets(sheetId: string, other: string, grades: string[]): Promise<string[]> {
   const id = other.trim();
   if (id === '' || !(await getJsonLive<boolean>(`/api/sheets/${encodeURIComponent(id)}/exists`))) return [];
   const [own, theirs] = await Promise.all([figuresOf(sheetId), figuresOf(id)]);
-  return GRADES.map((g) => `${g} ${own.grades[g]} ${theirs.grades[g]}`);
+  return grades.map((g) => `${g} ${own.grades[g] ?? '0.00'} ${theirs.grades[g] ?? '0.00'}`);
 }
 
 function SheetCompare() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const gradeCodes = useGradeCodes();
   const [other, setOther] = useState('');
-  const compare = useMutation({ mutationFn: (id: string) => compareSheets(sheet ?? '', id) });
+  const compare = useMutation({ mutationFn: (id: string) => compareSheets(sheet ?? '', id, gradeCodes) });
   const submit = useSubmitOnce(compare);
   if (!user || !sheet) return null;
 

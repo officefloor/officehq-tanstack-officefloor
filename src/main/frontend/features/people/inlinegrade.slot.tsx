@@ -6,7 +6,8 @@ import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
-import { GRADES, peoplePath, peopleQueryKey, type Person } from './people';
+import { peoplePath, peopleQueryKey, type Person } from './people';
+import { useGradeCodes } from '../grades/grades';
 
 // A grade select and save button on each person's row: gives them the chosen grade from the sheet's today. It is
 // saved exactly as the person form would save it (same name, terms, contact and tags, the version the row was
@@ -20,6 +21,7 @@ function PersonInlineGrade({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const [grade, setGrade] = useState(person.grade);
   const queryClient = useQueryClient();
+  const gradeCodes = useGradeCodes();
   const save = useMutation({
     mutationFn: (body: { grade: string }) =>
       putJson<Person>(`${peoplePath(sheet ?? '')}/${person.id}`, {
@@ -41,7 +43,7 @@ function PersonInlineGrade({ person }: { person: Person }) {
   return (
     <td>
       <select data-testid="person-inline-grade" value={grade} onChange={(e) => { setGrade(e.target.value); save.reset(); }}>
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}

@@ -27,12 +27,16 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public class ApplyGradeMerge {
     public void apply(@Val GradeMergeRequest request, @Val Sheet sheet,
             @RequestHeader(name = "X-User", required = false) String userHeader, RoleRepository roles,
-            RetiredGradeRepository retired, SheetRepository sheets, PersonRepository people, ClaimRepository claims,
+            RetiredGradeRepository retired, AddedGradeRepository added, SheetRepository sheets, PersonRepository people, ClaimRepository claims,
             RateRepository rates, PersonGradeRepository grades, AsOf asOf, EntityManager entityManager, Audit audit,
             Out<GradeMerged> mergedOut) throws InvalidGradeException {
         String user = AuditUser.decode(userHeader);
         if (!Role.STEWARD.equals(roles.roleOf(sheet.getId(), user))) {
             throw new InvalidGradeException("Only a steward can merge a grade.");
+        }
+        if (!RetiredGrades.isGrade(sheet.getId(), request.from(), added)
+                || !RetiredGrades.isGrade(sheet.getId(), request.into(), added)) {
+            throw new InvalidGradeException("The grades must be the sheet's grades.");
         }
         if (retired.existsBySheetIdAndGrade(sheet.getId(), request.into())) {
             throw new InvalidGradeException("The grade " + request.into() + " is retired.");

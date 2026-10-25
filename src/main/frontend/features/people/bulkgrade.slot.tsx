@@ -5,7 +5,8 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
-import { GRADES, peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
+import { peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
+import { useGradeCodes } from '../grades/grades';
 
 // Gives every selected person a grade from a date (blank: the sheet's today) with one button, in list order. Each
 // is saved exactly as the person form would save them (same name, terms, contact and tags, the version as the store holds it now),
@@ -36,6 +37,7 @@ function BulkGrade() {
   const [showRetired] = useShowRetired();
   const { selected, clear } = useSelectedPeople();
   const queryClient = useQueryClient();
+  const gradeCodes = useGradeCodes();
   const [grade, setGrade] = useState('A');
   const [from, setFrom] = useState('');
   const [result, setResult] = useState<{ graded: number; refused: number } | null>(null);
@@ -87,7 +89,7 @@ function BulkGrade() {
   return (
     <div>
       <select data-testid="bulk-grade" value={grade} onChange={(e) => { setGrade(e.target.value); setResult(null); }}>
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <option key={g} value={g}>{g}</option>
         ))}
       </select>{' '}
