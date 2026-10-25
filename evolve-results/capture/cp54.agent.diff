@@ -1,0 +1,487 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index f10eeb35..0aac09a9 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -6,13 +6,14 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useUser } from '../session/useSession';
+ import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
+ 
+-const ROLES = ['clerk', 'steward'];
++const ROLES = ['clerk', 'steward', 'viewer'];
+ const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
+ const DAYS = /^\d{1,5}$/;
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
+ const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
+ 
+-// The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
++// The role form: assigns a user name a role, clerk, steward or viewer (any name not listed is a clerk; a viewer
++// sees everything and may change nothing). The
+ // assigned roles are listed under it. The server decides who may settle what.
+ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+   const roles = useRoles(sheetId);
+@@ -23,7 +24,7 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+   const save = useMutation({
+     mutationFn: async (body: { user: string; role: string }) => {
+       if (body.user.trim() === '') throw new Error('Enter a user name');
+-      if (!ROLES.includes(body.role.trim())) throw new Error('A role is clerk or steward');
++      if (!ROLES.includes(body.role.trim())) throw new Error('A role is clerk, steward or viewer');
+       return putJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`, { ...body, by: user ?? '' });
+     },
+     onSuccess: async () => {
+@@ -57,7 +58,7 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+           <input
+             data-testid="role-form-role"
+             list="role-options"
+-            placeholder="clerk or steward"
++            placeholder="clerk, steward or viewer"
+             value={role}
+             onChange={(e) => {
+               setRole(e.target.value);
+diff --git a/src/main/frontend/features/access/useAccess.ts b/src/main/frontend/features/access/useAccess.ts
+index 5a28e45f..419d68ce 100644
+--- a/src/main/frontend/features/access/useAccess.ts
++++ b/src/main/frontend/features/access/useAccess.ts
+@@ -4,7 +4,7 @@ import { toHundredths, type Late } from '../rates/useRates';
+ import { useSheetToday } from '../today/today.slot';
+ import { useClaims } from '../claims/useClaims';
+ 
+-/** A role assigned to a user name: clerk (any name without one) or steward. */
++/** A role assigned to a user name: clerk (any name without one), steward or viewer. */
+ export type Role = { user: string; role: string };
+ 
+ /** A sheet setting: its value in force on the sheet's today (null: blank) and, for a dated one, every value recorded
+diff --git a/src/main/java/net/officefloor/hq/app/access/RefuseViewer.java b/src/main/java/net/officefloor/hq/app/access/RefuseViewer.java
+new file mode 100644
+index 00000000..eae84878
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RefuseViewer.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.access;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses any change by a viewer on the sheet, before it touches the store. */
++public class RefuseViewer {
++    public void refuse(@Val SheetResponse sheet, @Val ChangedBy by, RoleRepository roles) throws BadRequestException {
++        if (roles.isViewer(sheet.id(), by.name())) {
++            throw new BadRequestException("A viewer may not change anything on this sheet");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/Role.java b/src/main/java/net/officefloor/hq/app/access/Role.java
+index b5146c0c..195738bf 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Role.java
++++ b/src/main/java/net/officefloor/hq/app/access/Role.java
+@@ -1,9 +1,11 @@
+ package net.officefloor.hq.app.access;
+ 
+-/** A role assigned to a user name on a sheet: clerk (any name without one) or steward. */
++/** A role assigned to a user name on a sheet: clerk (any name without one), steward or viewer (sees everything, changes nothing). */
+ public record Role(String sheetId, String user, String role) {
+ 
+     public static final String CLERK = "clerk";
+ 
+     public static final String STEWARD = "steward";
++
++    public static final String VIEWER = "viewer";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/RoleRepository.java b/src/main/java/net/officefloor/hq/app/access/RoleRepository.java
+index 2b76b18a..d615cacf 100644
+--- a/src/main/java/net/officefloor/hq/app/access/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/RoleRepository.java
+@@ -36,4 +36,9 @@ public class RoleRepository {
+                 sheetId, user, role);
+         return new Role(sheetId, user, role);
+     }
++
++    /** Whether the user is a viewer on the sheet, who may change nothing. */
++    public boolean isViewer(String sheetId, String user) {
++        return Role.VIEWER.equals(roleOf(sheetId, user));
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateRole.java b/src/main/java/net/officefloor/hq/app/access/ValidateRole.java
+index 39b4874c..210d5617 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateRole.java
+@@ -6,10 +6,10 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A role assignment's fields: a user name (no spaces) and a role, clerk or steward. */
++/** A role assignment's fields: a user name (no spaces) and a role, clerk, steward or viewer. */
+ public class ValidateRole {
+ 
+-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
++    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
+ 
+     public void validate(@RequestBody RoleRequest request, Out<RoleInput> role, Out<ChangedBy> changedBy)
+             throws BadRequestException {
+@@ -23,7 +23,7 @@ public class ValidateRole {
+             throw new BadRequestException("A user name is one word");
+         }
+         if (!ROLES.contains(asked)) {
+-            throw new BadRequestException("A role is clerk or steward");
++            throw new BadRequestException("A role is clerk, steward or viewer");
+         }
+         role.set(new RoleInput(user, asked));
+         changedBy.set(by);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index e15e30fb..f247a188 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -27,6 +27,11 @@ public class OpenClaims {
+             SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
+             Out<BulkOpenResponse> result) {
+         int opened = 0;
++        if (roles.isViewer(sheet.id(), by.name())) {
++            // A viewer's press goes through with nothing done: every selected claim is refused.
++            result.set(new BulkOpenResponse(0, selected.ids().size()));
++            return;
++        }
+         ApplyClaimStatus apply = new ApplyClaimStatus();
+         RefuseClosedClaim closed = new RefuseClosedClaim();
+         RecordClaimStatus record = new RecordClaimStatus();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index 5a1ed5ee..50150a69 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -28,6 +28,11 @@ public class SettleClaims {
+             SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
+             Out<BulkSettleResponse> result) {
+         int settled = 0;
++        if (roles.isViewer(sheet.id(), by.name())) {
++            // A viewer's press goes through with nothing done: every selected claim is refused.
++            result.set(new BulkSettleResponse(0, selected.ids().size()));
++            return;
++        }
+         ApplyClaimStatus apply = new ApplyClaimStatus();
+         RefuseClosedClaim closed = new RefuseClosedClaim();
+         RecordClaimStatus record = new RecordClaimStatus();
+diff --git a/src/main/resources/db/migration/V32__role_viewer.sql b/src/main/resources/db/migration/V32__role_viewer.sql
+new file mode 100644
+index 00000000..5520a132
+--- /dev/null
++++ b/src/main/resources/db/migration/V32__role_viewer.sql
+@@ -0,0 +1,11 @@
++-- A third role, viewer: sees every screen and figure and may change nothing. The role's check is
++-- unnamed (generated), so the table is rebuilt with the wider check.
++CREATE TABLE sheet_role_new (
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    user_name VARCHAR(200) NOT NULL,
++    role      VARCHAR(20)  NOT NULL CHECK (role IN ('clerk', 'steward', 'viewer')),
++    PRIMARY KEY (sheet_id, user_name)
++);
++INSERT INTO sheet_role_new (sheet_id, user_name, role) SELECT sheet_id, user_name, role FROM sheet_role;
++DROP TABLE sheet_role;
++ALTER TABLE sheet_role_new RENAME TO sheet_role;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml
+index a793ee8f..f12f418b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml
+@@ -5,6 +5,9 @@ validate:
+   next: lines
+ lines:
+   class: net.officefloor.hq.app.claim.ValidatePaste
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: add
+ add:
+   class: net.officefloor.hq.app.claim.AddPastedClaims
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index b1d3f3dc..de6cb1be 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -4,6 +4,9 @@ validate:
+   next: claim
+ claim:
+   class: net.officefloor.hq.app.claim.ValidateClaim
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
+index 56108bb6..8bce0efe 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
+@@ -5,6 +5,9 @@ validate:
+   next: defer
+ defer:
+   class: net.officefloor.hq.app.claim.ValidateDefer
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index 65c2a57f..c8923270 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -5,6 +5,9 @@ validate:
+   next: reassign
+ reassign:
+   class: net.officefloor.hq.app.claim.ValidateReassign
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml
+index 28930e4c..9ac18eba 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml
+@@ -5,6 +5,9 @@ validate:
+   next: proof
+ proof:
+   class: net.officefloor.hq.app.claim.ValidateProof
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+index fc164fb9..347ac149 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+@@ -5,6 +5,9 @@ validate:
+   next: resettle
+ resettle:
+   class: net.officefloor.hq.app.claim.ValidateResettle
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+index 723cb657..479f79c5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.PUT.yml
+@@ -5,6 +5,9 @@ validate:
+   next: status
+ status:
+   class: net.officefloor.hq.app.claim.ValidateClaimStatus
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 70198b77..4fe28e58 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: person
+ person:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 07b9d721..dcd16b7e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -4,6 +4,9 @@ validate:
+   next: person
+ person:
+   class: net.officefloor.hq.app.person.ValidatePerson
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 5aa81325..55ee4224 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: claim
+ claim:
+   class: net.officefloor.hq.app.claim.ValidateClaim
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+index a8f9e4c8..20bbf337 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: hold
+ hold:
+   class: net.officefloor.hq.app.person.ValidateHold
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index b3b98e33..75fb5a23 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: patron
+ patron:
+   class: net.officefloor.hq.app.person.ValidatePatron
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index 0fa51eb0..368c2c5c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: retire
+ retire:
+   class: net.officefloor.hq.app.person.ValidateRetire
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements.POST.yml
+index 38f840ae..1fcd682b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statements.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: statement
+ statement:
+   class: net.officefloor.hq.app.statement.ValidateStatement
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index 8bf021b9..5457b0ff 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: period
+ period:
+   class: net.officefloor.hq.app.period.ValidatePeriod
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml
+index 192c6157..b588d34d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/close.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: by
+ by:
+   class: net.officefloor.hq.app.period.ValidateClosePeriod
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.period.LoadPeriod
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.POST.yml
+index e169681f..2791c200 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodId}/reopen.POST.yml
+@@ -4,6 +4,9 @@ validate:
+   next: by
+ by:
+   class: net.officefloor.hq.app.period.ValidateClosePeriod
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: load
+ load:
+   class: net.officefloor.hq.app.period.LoadPeriod
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+index 230ecf3d..85e8fb4d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-add.POST.yml
+@@ -5,6 +5,9 @@ validate:
+   next: fields
+ fields:
+   class: net.officefloor.hq.app.quickadd.ValidateQuickAdd
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index d17a86b1..6465ca62 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -4,6 +4,9 @@ validate:
+   next: rate
+ rate:
+   class: net.officefloor.hq.app.rate.ValidateRate
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+index a16b7e9b..4b3752f5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+@@ -4,6 +4,9 @@ validate:
+   next: role
+ role:
+   class: net.officefloor.hq.app.access.ValidateRole
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index 8bf60505..333c551f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -6,6 +6,9 @@ validate:
+   next: setting
+ setting:
+   class: net.officefloor.hq.app.access.ValidateSetting
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 0502c0fa..ffcb1261 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -4,6 +4,9 @@ validate:
+   next: date
+ date:
+   class: net.officefloor.hq.app.sheet.ValidateSheetToday
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
