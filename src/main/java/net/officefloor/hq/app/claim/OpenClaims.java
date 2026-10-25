@@ -27,6 +27,11 @@ public class OpenClaims {
             SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log,
             Out<BulkOpenResponse> result) {
         int opened = 0;
+        if (roles.isViewer(sheet.id(), by.name())) {
+            // A viewer's press goes through with nothing done: every selected claim is refused.
+            result.set(new BulkOpenResponse(0, selected.ids().size()));
+            return;
+        }
         ApplyClaimStatus apply = new ApplyClaimStatus();
         RefuseClosedClaim closed = new RefuseClosedClaim();
         RecordClaimStatus record = new RecordClaimStatus();

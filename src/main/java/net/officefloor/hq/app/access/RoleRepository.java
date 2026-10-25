@@ -36,4 +36,9 @@ public class RoleRepository {
                 sheetId, user, role);
         return new Role(sheetId, user, role);
     }
+
+    /** Whether the user is a viewer on the sheet, who may change nothing. */
+    public boolean isViewer(String sheetId, String user) {
+        return Role.VIEWER.equals(roleOf(sheetId, user));
+    }
 }

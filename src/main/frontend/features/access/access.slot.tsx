@@ -6,13 +6,14 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
 import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
 
-const ROLES = ['clerk', 'steward'];
+const ROLES = ['clerk', 'steward', 'viewer'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,5}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
-// The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
+// The role form: assigns a user name a role, clerk, steward or viewer (any name not listed is a clerk; a viewer
+// sees everything and may change nothing). The
 // assigned roles are listed under it. The server decides who may settle what.
 function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
   const roles = useRoles(sheetId);
@@ -23,7 +24,7 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
   const save = useMutation({
     mutationFn: async (body: { user: string; role: string }) => {
       if (body.user.trim() === '') throw new Error('Enter a user name');
-      if (!ROLES.includes(body.role.trim())) throw new Error('A role is clerk or steward');
+      if (!ROLES.includes(body.role.trim())) throw new Error('A role is clerk, steward or viewer');
       return putJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`, { ...body, by: user ?? '' });
     },
     onSuccess: async () => {
@@ -57,7 +58,7 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
           <input
             data-testid="role-form-role"
             list="role-options"
-            placeholder="clerk or steward"
+            placeholder="clerk, steward or viewer"
             value={role}
             onChange={(e) => {
               setRole(e.target.value);

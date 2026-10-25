@@ -4,7 +4,7 @@ import { toHundredths, type Late } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 import { useClaims } from '../claims/useClaims';
 
-/** A role assigned to a user name: clerk (any name without one) or steward. */
+/** A role assigned to a user name: clerk (any name without one), steward or viewer. */
 export type Role = { user: string; role: string };
 
 /** A sheet setting: its value in force on the sheet's today (null: blank) and, for a dated one, every value recorded

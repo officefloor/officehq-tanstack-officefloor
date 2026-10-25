@@ -6,10 +6,10 @@ import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** A role assignment's fields: a user name (no spaces) and a role, clerk or steward. */
+/** A role assignment's fields: a user name (no spaces) and a role, clerk, steward or viewer. */
 public class ValidateRole {
 
-    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD);
+    private static final Set<String> ROLES = Set.of(Role.CLERK, Role.STEWARD, Role.VIEWER);
 
     public void validate(@RequestBody RoleRequest request, Out<RoleInput> role, Out<ChangedBy> changedBy)
             throws BadRequestException {
@@ -23,7 +23,7 @@ public class ValidateRole {
             throw new BadRequestException("A user name is one word");
         }
         if (!ROLES.contains(asked)) {
-            throw new BadRequestException("A role is clerk or steward");
+            throw new BadRequestException("A role is clerk, steward or viewer");
         }
         role.set(new RoleInput(user, asked));
         changedBy.set(by);
