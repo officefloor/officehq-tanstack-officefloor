@@ -34,7 +34,7 @@ export function personNamed(people: Person[], user: string | undefined): Person 
 // claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
 // figures them); and the signed-in user's own due-total (as their row shows it, "n/a" included) and overdue-total, when a person on the sheet goes by their
 // name (blank when none does), with their crew total: the due-totals of the crews that person leads, added up (blank
-// when they lead none).
+// when they lead none); and how many REVIEW claims are assigned to the signed-in user.
 function HeaderCounters() {
   const people = usePeople();
   const claims = useClaims();
@@ -55,6 +55,7 @@ function HeaderCounters() {
   const myCrewDue = led.length > 0
     ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))
     : '';
+  const myReviews = allClaims.filter((c) => c.status === 'REVIEW' && !!user && c.reviewAssigned === user).length;
   return (
     <section data-testid="header-counters">
       People <strong data-testid="header-people-count">{allPeople.length}</strong>
@@ -68,6 +69,7 @@ function HeaderCounters() {
       {' · '}My due <strong data-testid="my-due-total">{mine.due}</strong>
       {' · '}My overdue <strong data-testid="my-overdue-total">{mine.overdue}</strong>
       {' · '}My crew due <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
+      {' · '}My reviews <strong data-testid="my-reviews-count">{myReviews}</strong>
     </section>
   );
 }

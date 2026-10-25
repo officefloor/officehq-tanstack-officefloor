@@ -7,14 +7,14 @@ import java.util.List;
  * whether its person's last statement binds it, and the figure it binds it to (null: none, or n/a); the number of the
  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
  * the date of the claim it corrects, else its own); and its due-by (YYYY-MM-DD), fixed when it was created; and its status log, oldest first
- * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held; and the people it is shared with, in the order added (their id and share). */
+ * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held; and the people it is shared with, in the order added (their id and share); and the user its review is assigned to (null when none). */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy,
         boolean stated, String statedDue, String corrects, String roundsOn, String dueBy,
         List<String> log, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, boolean lateEntry, String remindedOn, String ref,
         List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, String editedBy,
         Integer settleBatch, List<String> lines, String reviewOn, boolean waived, boolean held,
-        List<ShareLine> shares) {
+        List<ShareLine> shares, String reviewAssigned) {
 
     /** One holder's share of the claim: the person's id and their share with two decimals. */
     public record ShareLine(long personId, String share) {
@@ -35,6 +35,7 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 claim.getSettleBatch(), lines, claim.getReviewOn() == null ? null : claim.getReviewOn().toString(),
                 claim.isWaived(), claim.isHeld(),
                 ClaimShares.of(claim).stream()
-                        .map(sh -> new ShareLine(sh.personId(), sh.share().toPlainString())).toList());
+                        .map(sh -> new ShareLine(sh.personId(), sh.share().toPlainString())).toList(),
+                claim.getReviewAssigned());
     }
 }

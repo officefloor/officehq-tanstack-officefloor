@@ -122,6 +122,10 @@ public class Claim {
     @Column(name = "review_on")
     private LocalDate reviewOn;
 
+    /** The user name a steward assigned the claim's review to; null while never assigned. */
+    @Column(name = "review_assigned")
+    private String reviewAssigned;
+
     /** How many proofs the claim has: raised by one at a time; 0 for a new claim. */
     @Column(nullable = false)
     private int proofs;
@@ -360,6 +364,14 @@ public class Claim {
         this.reviewOn = reviewOn;
     }
 
+    public String getReviewAssigned() {
+        return reviewAssigned;
+    }
+
+    public void setReviewAssigned(String reviewAssigned) {
+        this.reviewAssigned = reviewAssigned;
+    }
+
     public boolean isEscalated() {
         return escalated;
     }
@@ -460,6 +472,7 @@ public class Claim {
         then.waived = waived;
         then.held = held;
         then.reviewOn = reviewOn;
+        then.reviewAssigned = reviewAssigned;
         then.proofs = proofs;
         then.proofsPhoto = proofsPhoto;
         then.splitFrom = splitFrom;
@@ -492,6 +505,7 @@ public class Claim {
         moved.waived = waived;
         moved.held = held;
         moved.reviewOn = reviewOn;
+        moved.reviewAssigned = reviewAssigned;
         moved.proofs = proofs;
         moved.proofsPhoto = proofsPhoto;
         moved.lateEntry = lateEntry;

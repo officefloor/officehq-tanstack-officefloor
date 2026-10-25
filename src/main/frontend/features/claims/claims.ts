@@ -72,6 +72,8 @@ export type Claim = {
   settleBatch: number | null;
   /** The people it is shared with, in the order added: each person's id and share (two decimals). */
   shares: { personId: number; share: string }[];
+  /** The user its review is assigned to (null when none). */
+  reviewAssigned: string | null;
 };
 
 /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */

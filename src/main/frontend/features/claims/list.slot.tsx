@@ -302,9 +302,19 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     },
   });
   const submitShare = useSubmitOnce(share);
+  const [assignTo, setAssignTo] = useState('');
+  const assign = useMutation({
+    mutationFn: (to: string) =>
+      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/review/assign?user=${encodeURIComponent(to)}`, undefined, user),
+    onSuccess: () => {
+      setAssignTo('');
+      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+    },
+  });
+  const submitAssign = useSubmitOnce(assign);
   const resetAllButShare = () => {
     change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset();
-    remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset();
+    remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset();
     line.reset();
   };
   const [lineLabel, setLineLabel] = useState('');
@@ -365,7 +375,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
   const submitLock = useSubmitOnce(lock);
   // Submitting the claim's editor is the next action on it: a refused lock's error goes.
   useEffect(() => {
-    if (editorSubmits > 0) lock.reset(); inline.reset(); line.reset();
+    if (editorSubmits > 0) lock.reset(); inline.reset(); line.reset(); assign.reset();
   }, [editorSubmits]);
   const action = change.variables?.action;
   const periods = usePeriods();
@@ -378,12 +388,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-reject-reason"
         placeholder="Reason to reject"
         value={reason}
-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <select
         data-testid="claim-void-reason"
         value={voidReason}
-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       >
         <option value="">(no void reason)</option>
         {(voidReasons.data ?? []).map((r) => (
@@ -410,7 +420,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             setEditRefused(false); lock.reset(); inline.reset(); line.reset();
             move.reset();
             defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-            proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+            proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
             submitChange(action === 'reject' ? { action, reason }
               : action === 'void' && voidReason !== '' ? { action, reason: voidReason }
               : action === 'settle' && settleOn.trim() !== '' ? { action, on: settleOn.trim() } : { action });
@@ -423,7 +433,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
       <select
         data-testid="claim-reassign-to"
         value={target ? String(target.id) : ''}
-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       >
         {others.map((p) => (
           <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -436,7 +446,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         onClick={() => {
           change.reset();
           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           if (target) submitMove(target.id);
         }}
@@ -447,7 +457,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-defer-date"
         placeholder="Defer until YYYY-MM-DD"
         value={deferTo}
-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -456,7 +466,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         onClick={() => {
           change.reset();
           move.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
           split.reset(); partSettle.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitDefer(deferTo);
@@ -468,7 +478,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-date-new"
         placeholder="Re-date to YYYY-MM-DD"
         value={redateTo}
-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -478,7 +488,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
           split.reset(); partSettle.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitRedate(redateTo);
@@ -517,7 +527,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-          proof.reset(); comment.reset(); share.reset(); waive.reset(); hold.reset();
+          proof.reset(); comment.reset(); share.reset(); waive.reset(); hold.reset(); assign.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitRemind(undefined);
         }}
@@ -532,7 +542,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-          proof.reset(); remind.reset(); comment.reset(); share.reset(); hold.reset();
+          proof.reset(); remind.reset(); comment.reset(); share.reset(); hold.reset(); assign.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitWaive(undefined);
         }}
@@ -547,18 +557,36 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-          proof.reset(); remind.reset(); waive.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); comment.reset(); share.reset(); assign.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitHold(undefined);
         }}
       >
         {claim.held ? 'Release' : 'Hold'}
       </button>{' '}
+      <span data-testid="claim-review-assigned">{claim.reviewAssigned ?? ''}</span>{' '}
+      <input
+        data-testid="claim-review-user"
+        placeholder="Assign review to"
+        value={assignTo}
+        onChange={(e) => { setAssignTo(e.target.value); assign.reset(); resetAllButShare(); share.reset(); }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-review-assign"
+        disabled={assign.isPending}
+        onClick={() => {
+          resetAllButShare(); share.reset();
+          submitAssign(assignTo);
+        }}
+      >
+        Assign review
+      </button>{' '}
       <input
         data-testid="claim-comment-text"
         placeholder="Comment"
         value={commentText}
-        onChange={(e) => { setCommentText(e.target.value); comment.reset(); share.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setCommentText(e.target.value); comment.reset(); share.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -568,7 +596,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); share.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitComment(commentText);
         }}
@@ -606,21 +634,21 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         data-testid="claim-line-label"
         placeholder="Line label"
         value={lineLabel}
-        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <input
         data-testid="claim-line-qty"
         placeholder="Qty"
         inputMode="numeric"
         value={lineQty}
-        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <input
         data-testid="claim-line-unit"
         placeholder="Unit amount"
         inputMode="decimal"
         value={lineUnit}
-        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
       />{' '}
       <button
         type="button"
@@ -630,7 +658,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
           setEditRefused(false); lock.reset(); inline.reset();
           submitLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
         }}
@@ -642,7 +670,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         placeholder="Amount to split off"
         inputMode="decimal"
         value={splitAmount}
-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -652,7 +680,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           partSettle.reset();
           submitSplit(splitAmount);
@@ -665,7 +693,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         placeholder="Amount to settle"
         inputMode="decimal"
         value={partAmount}
-        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
       />{' '}
       <button
         type="button"
@@ -675,14 +703,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
           change.reset();
           move.reset();
           defer.reset(); redate.reset(); split.reset();
-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
           submitPartSettle(partAmount);
         }}
       >
         Settle part
       </button>{' '}
-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
+      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
         <input
           data-testid="claim-inline-amount"
           placeholder="Amount"
@@ -716,9 +744,17 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
         </button>
         {children}
       </span>
-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || share.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
+      {(assign.isError || change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || share.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
         <span data-testid="claim-error">
-          {share.isError
+          {assign.isError
+            ? assign.error instanceof HttpError && assign.error.status === 403
+              ? 'A viewer cannot assign a review, and no review on an archived sheet can be assigned.'
+              : claim.status !== 'REVIEW'
+              ? `Only a claim in review can have its review assigned; this one is ${claim.status}.`
+              : (assign.variables ?? '').trim() === ''
+              ? 'Name the user to assign the review to.'
+              : 'Only a steward can assign a review.'
+            : share.isError
             ? share.error instanceof HttpError && share.error.status === 403
               ? 'A viewer cannot share a claim, and no claim on an archived sheet can be shared.'
               : claim.status === 'SETTLED' || claim.status === 'VOID' || claim.status === 'DELETED'
