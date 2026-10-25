@@ -1,0 +1,128 @@
+diff --git a/src/main/frontend/features/plans/person.slot.tsx b/src/main/frontend/features/plans/person.slot.tsx
+index 319b911a..c39eae2b 100644
+--- a/src/main/frontend/features/plans/person.slot.tsx
++++ b/src/main/frontend/features/plans/person.slot.tsx
+@@ -6,6 +6,7 @@ import { useRowAction } from '../../api/rowAction';
+ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { peoplePath, type Person } from '../people/people';
++import { claimsQueryKey } from '../claims/claims';
+ import { plansQueryKey, usePlans, type Plan } from './plans';
+ 
+ // A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
+@@ -44,8 +45,10 @@ function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
+   const change = useMutation({
+     mutationFn: (value: string) =>
+       putJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/plans/${p.id}/amount`, { amount: value }, user),
+-    onSuccess: (saved) => {
++    onSuccess: async (saved) => {
+       queryClient.setQueryData(plansQueryKey(sheet ?? ''), saved);
++      // The plan's draft claims take the new amount.
++      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(p.sheet ?? sheet ?? '') });
+     },
+   });
+   const submitChange = useSubmitOnce(change);
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+index eb070e61..ec3d7a8f 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+@@ -4,7 +4,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Changes the plan's amount on the sheet's today, recording the change: the claims generated from then on take the
+- *  new amount, those already generated keep theirs. */
++ *  new amount; of those already generated, the drafts take it too ({@link EditPlanDrafts}). */
+ public class ChangePlanAmount {
+     public void change(@Val Sheet sheet, @Val Plan plan, @Val PlanAmountInput input, PlanRepository plans,
+             PlanChangeRepository changes) {
+diff --git a/src/main/java/net/officefloor/hq/app/plan/EditPlanDrafts.java b/src/main/java/net/officefloor/hq/app/plan/EditPlanDrafts.java
+new file mode 100644
+index 00000000..7bd2fe88
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/plan/EditPlanDrafts.java
+@@ -0,0 +1,48 @@
++package net.officefloor.hq.app.plan;
++
++import java.math.BigDecimal;
++import java.util.Comparator;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimAudit;
++import net.officefloor.hq.app.claim.ClaimLineRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Gives the plan's new amount to the claims it generated that are still DRAFT, each as the claim form would edit it
++ *  (recording who last edited it and writing CLAIM_EDITED), in the order they were generated. A draft the claim form
++ *  would refuse the amount for keeps its own: one locked by another user, one whose due-by is in a closed period, one
++ *  whose lines total another amount, and one dated after its person's retirement date. Claims in any other status keep
++ *  theirs. */
++public class EditPlanDrafts {
++    public void edit(@Val Plan plan, PlanClaimRepository planClaims, ClaimRepository claims, PeriodRepository periods,
++            ClaimLineRepository lines, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String userHeader, Audit audit) {
++        String user = AuditUser.decode(userHeader);
++        BigDecimal amount = plan.getAmount();
++        planClaims.findByPlanId(plan.getId()).stream().sorted(Comparator.comparing(PlanClaim::getClaimId))
++                .forEach(made -> claims.findById(made.getClaimId()).ifPresent(claim -> {
++                    if (claim.getStatus() != ClaimStatus.DRAFT || claim.isLockedFor(user) || periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
++                        return;
++                    }
++                    BigDecimal lined = lines.totalOf(claim);
++                    if (lined != null && amount.compareTo(lined) != 0) {
++                        return;
++                    }
++                    Person person = people.findById(claim.getPersonId()).orElse(null);
++                    if (person != null && person.retiredOn(claim.getDate())) {
++                        return;
++                    }
++                    claim.setAmount(amount);
++                    claim.setEditedBy(user);
++                    claims.saveAndFlush(claim);
++                    audit.record(ClaimAudit.line("CLAIM_EDITED", claim, person == null ? "" : person.getName(), user));
++                }));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.PUT.yml
+index a8ee9bf7..923a4e76 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.PUT.yml
+@@ -1,5 +1,5 @@
+ # PUT /api/sheets/{sheetId}/plans/{planId}/amount — change the plan's amount on the sheet's today; the claims generated
+-# from then on take it. Body: { "amount": "20.00" } (0.00 or more with up to two decimals). Answers the sheet's plans.
++# from then on take it, and those it generated that are still DRAFT are edited to it as the claim form would. Body: { "amount": "20.00" } (0.00 or more with up to two decimals). Answers the sheet's plans.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
+   next: archived
+@@ -8,6 +8,10 @@ archived:
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.plan.ValidatePlanAmount
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
+@@ -24,6 +28,14 @@ change:
+ audit:
+   class: net.officefloor.hq.app.plan.AuditPlanChanged
+   govern: [ transaction ]
++  next: drafts
++drafts:
++  class: net.officefloor.hq.app.plan.EditPlanDrafts
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.plan.RespondWithPlans
