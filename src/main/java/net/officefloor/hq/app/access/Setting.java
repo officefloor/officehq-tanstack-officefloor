@@ -1,7 +1,22 @@
 package net.officefloor.hq.app.access;
 
-/** A setting on a sheet: its key and value (null: blank). */
-public record Setting(String sheetId, String key, String value) {
+/** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
+public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
+
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date and period numbering from). */
+    public static boolean isDated(String key) {
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+    }
+
+    /** The value a dated key has before every from-date: the floor's, the terms' and the late percent's starting value; null (blank) for the rest. */
+    public static String starting(String key) {
+        return switch (key) {
+            case FLOOR -> FLOOR_DEFAULT;
+            case TERMS -> TERMS_DEFAULT;
+            case LATE_PCT -> LATE_PCT_DEFAULT;
+            default -> null;
+        };
+    }
 
     /** The most a clerk may settle a claim's due for; blank means no limit. */
     public static final String CLERK_LIMIT = "clerk-limit";

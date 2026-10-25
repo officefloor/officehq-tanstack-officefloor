@@ -62,10 +62,10 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = f
   return whole;
 }
 
-/** The late charge's terms as of the sheet's today: its late percent (in hundredths); and
+/** The late charge's terms as of the sheet's today: its late percent (in hundredths) in force on a claim's date; and
  *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
  *  live figures round. */
-export type Late = { today: string; pctHundredths: bigint; policyDate: string;
+export type Late = { today: string; pctOn: (date: string) => bigint; policyDate: string;
   dateOfNumber: ReadonlyMap<string, string> };
 
 /** Whether the claim's live figures round half up: it (or, for a correction, the claim it corrects) is dated before
@@ -105,22 +105,22 @@ export function isBound(claim: { stated: boolean; status?: string }): boolean {
 }
 
 /** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), the
- *  late percent of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
+ *  late percent in force on its date of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
 export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; dueBy: string; corrects?: string | null },
   figureCents: bigint): bigint {
   if (late === undefined || !isOpen(claim) || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
-  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctHundredths, roundsHalfUp(late, claim));
+  return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctOn(claim.date), roundsHalfUp(late, claim));
 }
 
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
  *  otherwise (or while it is PENDING) its amount times its person's grade's rate
- *  in force on the claim's date, rounded half to even (half up when `halfUp`), and at least the sheet's floor (in cents) unless it is a correction. Null when there is
+ *  in force on the claim's date, rounded half to even (half up when `halfUp`), and at least the sheet's floor in force on the claim's date (in cents) unless it is a correction. Null when there is
  *  no figure (no rate of the grade then). */
 export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null },
-  floorCents: bigint, halfUp = false): bigint | null {
+  floorOn: (date: string) => bigint, halfUp = false): bigint | null {
   if (claim.settledDue != null) return toHundredths(claim.settledDue);
   if (isBound(claim)) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
   const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
@@ -128,7 +128,8 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
   const correction = isCorrection(claim);
   const amount = toHundredths(correction ? claim.amount.trim().slice(1) : claim.amount);
   const due = dueCents(correction ? -amount : amount, toHundredths(found.rate), halfUp);
-  return correction || due >= floorCents ? due : floorCents;
+  const floor = floorOn(claim.date);
+  return correction || due >= floor ? due : floor;
 }
 
 /** A claim's due in cents: its figure (claimFigureCents) with its late charge on top while it is overdue. The
@@ -136,7 +137,7 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
 export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
     dueBy: string; corrects?: string | null },
-  floorCents: bigint, late: Late | undefined): bigint | null {
-  const figure = claimFigureCents(rates, grade, claim, floorCents, roundsHalfUp(late, claim));
+  floorOn: (date: string) => bigint, late: Late | undefined): bigint | null {
+  const figure = claimFigureCents(rates, grade, claim, floorOn, roundsHalfUp(late, claim));
   return figure == null ? null : figure + lateCents(late, claim, figure);
 }

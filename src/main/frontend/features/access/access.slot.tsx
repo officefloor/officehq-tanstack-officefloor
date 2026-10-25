@@ -109,10 +109,11 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 // full 30 days it is overdue (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the cap (blank: none), the most
-// a person's due-total may be. The value in force shows beside each. Saving
-// sends only the settings whose field was touched since the last save.
+// a person's due-total may be. Every setting but the policy date and period numbering from is dated: saving it records
+// its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
+// force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
-  inputMode: 'decimal' | 'numeric' | 'text'; invalid: string };
+  inputMode: 'decimal' | 'numeric' | 'text'; invalid: string; dated?: false };
 
 const SETTINGS: readonly SettingField[] = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
@@ -127,9 +128,9 @@ const SETTINGS: readonly SettingField[] = [
   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A late percent is a number with up to two decimals' },
   { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
-    invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today' },
+    invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today', dated: false },
   { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',
-    invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off' },
+    invalid: 'Period numbering from is a date (yyyy-mm-dd), or blank for off', dated: false },
   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
 ];
@@ -137,22 +138,26 @@ const SETTINGS: readonly SettingField[] = [
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
   const settings = useSettings(sheetId);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [froms, setFroms] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const [user] = useUser();
   const queryClient = useQueryClient();
   const current = (key: string) => (settings.data ?? []).find((s) => s.key === key)?.value ?? '';
   const touch = (key: string) => setTouched((t) => (t.has(key) ? t : new Set(t).add(key)));
   const save = useMutation({
-    mutationFn: async (body: { keys: string[]; values: Record<string, string> }) => {
+    mutationFn: async (body: { keys: string[]; values: Record<string, string>; froms: Record<string, string> }) => {
       const changes = SETTINGS.filter((s) => body.keys.includes(s.key));
       if (changes.length === 0) throw new Error('Change a setting first');
       for (const s of changes) {
         const value = (body.values[s.key] ?? '').trim();
         if (value === '' ? !s.blank : !s.valid.test(value)) throw new Error(s.invalid);
+        const from = (body.froms[s.key] ?? '').trim();
+        if (from !== '' && !DATE.test(from)) throw new Error('A from-date is a date (yyyy-mm-dd), or blank for the sheet\'s today');
       }
       for (const s of changes) {
         await putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`,
-          { key: s.key, value: (body.values[s.key] ?? '').trim(), by: user ?? '' });
+          { key: s.key, value: (body.values[s.key] ?? '').trim(),
+            ...(s.dated === false ? {} : { from: (body.froms[s.key] ?? '').trim() }), by: user ?? '' });
       }
     },
     onSuccess: async () => {
@@ -168,7 +173,7 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
         data-testid="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ keys: [...touched], values });
+          submit({ keys: [...touched], values, froms });
         }}
       >
         {SETTINGS.map((s) => (
@@ -189,6 +194,25 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
                 }}
               />
             </label>{' '}
+            {s.dated !== false && (
+              <>
+                <label>
+                  from{' '}
+                  <input
+                    data-testid={`setting-${s.key}-from`}
+                    placeholder="today"
+                    value={froms[s.key] ?? ''}
+                    onFocus={() => touch(s.key)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFroms((f) => ({ ...f, [s.key]: value }));
+                      touch(s.key);
+                      save.reset();
+                    }}
+                  />
+                </label>{' '}
+              </>
+            )}
             <span>
               In force: <strong data-testid={`setting-${s.key}-current`}>{current(s.key)}</strong>
             </span>{' '}

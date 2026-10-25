@@ -19,10 +19,10 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow and
  * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
- * clerk limit leaves it PENDING instead (a due of n/a is within any limit; a steward settles anything). A review of a
+ * clerk limit in force on its today leaves it PENDING instead (a due of n/a is within any limit; a steward settles anything). A review of a
  * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
  * returns it to OPEN, bound again by its last statement if that bound it. Opening records who opened it; a voided claim keeps its number. Settling
- * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date (at least the sheet's floor) — or, while a statement binds it, at
+ * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date (at least the sheet's floor in force on the claim's date) — or, while a statement binds it, at
  * the figure it was bound to — with its late charge as of the sheet's today frozen in on top; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
@@ -53,7 +53,7 @@ public class ApplyClaimStatus {
         BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;
         ClaimStatus to = status;
         if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
-            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            BigDecimal limit = late.settings().clerkLimit(late.today());
             if (limit != null && due.compareTo(limit) > 0) {
                 to = ClaimStatus.PENDING; // awaits a steward's approval
             }
@@ -102,6 +102,6 @@ public class ApplyClaimStatus {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        return claim.figureAt(rate, settings.floor(claim.getSheetId()), late.rounding(claim));
+        return claim.figureAt(rate, late.settings().floor(claim.getDate()), late.rounding(claim));
     }
 }

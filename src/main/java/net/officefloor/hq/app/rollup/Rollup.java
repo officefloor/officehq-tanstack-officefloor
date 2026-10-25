@@ -22,9 +22,9 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
- * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor;
+ * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even, and at least the sheet's floor in force on its date;
  * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
- * figure or one at another grade, and at most the sheet's cap (an n/a one is not capped); their overdue-total is the figures (late charge included) of
+ * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
  * those of their claims that are OPEN or PENDING and past their due-by on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
  * then a TOTALS line when any of the sheet's three totals moved. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
  * binds them; their other claims still do.
@@ -55,9 +55,8 @@ public class Rollup {
         LocalDate today = sheets.today(sheetId);
         List<Rate> sheetRates = rates.list(sheetId);
         List<Claim> sheetClaims = claims.list(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
         LateCharge late = settings.lateCharge(sheetId, today);
-        BigDecimal cap = settings.cap(sheetId);
+        BigDecimal cap = late.settings().cap(today);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         BigDecimal dueTotal = ZERO;
@@ -74,7 +73,7 @@ public class Rollup {
                 claimed = claimed.add(c.getAmount().setScale(2));
                 kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
                 String grade = p.gradeOn(c.getDate());
-                BigDecimal figure = late.due(c, figure(c, grade, sheetRates, floor, late));
+                BigDecimal figure = late.due(c, figure(c, grade, sheetRates, late));
                 // A figure at a grade other than today's does not hang on today's grade having a rate; nor does one
                 // dated on or before today, whose rate may have ended since.
                 kept |= figure != null && (!grade.equals(p.getGrade()) || !c.getDate().isAfter(today));
@@ -111,7 +110,6 @@ public class Rollup {
      */
     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         List<Rate> sheetRates = rates.list(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
         LateCharge late = settings.lateCharge(sheetId, sheets.today(sheetId));
         Map<Long, Person> byId = new LinkedHashMap<>();
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
@@ -124,7 +122,7 @@ public class Rollup {
             if (p == null || !counts(c, p) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
                 continue;
             }
-            BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, floor, late));
+            BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, late));
             if (figure != null) {
                 totals.merge(p.getId(), figure, BigDecimal::add);
             }
@@ -140,7 +138,7 @@ public class Rollup {
             return null;
         }
         LateCharge late = settings.lateCharge(sheetId, sheets.today(sheetId));
-        return late.due(claim, figure(claim, p.gradeOn(claim.getDate()), rates.list(sheetId), settings.floor(sheetId), late));
+        return late.due(claim, figure(claim, p.gradeOn(claim.getDate()), rates.list(sheetId), late));
     }
 
     /** Record the figures the change moved, from {@code before} to the sheet's figures now. */
@@ -183,8 +181,8 @@ public class Rollup {
         return figure == null ? "n/a" : figure.toPlainString();
     }
 
-    /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor, unless it is a correction. */
-    private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, BigDecimal floor, LateCharge late) {
+    /** A claim's figure; a live one (neither settled nor bound) is at least the sheet's floor in force on its date, unless it is a correction. */
+    private static BigDecimal figure(Claim claim, String grade, List<Rate> sheetRates, LateCharge late) {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue().setScale(2);
         }
@@ -192,7 +190,7 @@ public class Rollup {
             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
         }
         BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
-        return claim.figureAt(rate, floor, late.rounding(claim));
+        return claim.figureAt(rate, late.settings().floor(claim.getDate()), late.rounding(claim));
     }
 
     /**
