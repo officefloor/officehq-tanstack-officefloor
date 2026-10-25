@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+import { useUser } from '../session/useSession';
 
 type SheetToday = { id: string; today: string };
 
@@ -21,11 +22,12 @@ export function useSheetToday(sheetId: string) {
 function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const [input, setInput] = useState('');
+  const [user] = useUser();
   const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: async (date: string) => {
       if (date.trim() === '') throw new Error('Enter a date');
-      return putJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date.trim() });
+      return putJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date.trim(), by: user ?? '' });
     },
     onSuccess: async (saved) => {
       queryClient.setQueryData(sheetTodayKey(sheetId), saved);
