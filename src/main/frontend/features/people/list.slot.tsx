@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useIsFetching, useIsMutating } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
@@ -10,7 +11,7 @@ import { useCrews, type Crew } from '../crews/crews';
 import { roleOf } from '../header/dashboard.slot';
 import { personNamed } from '../header/counters.slot';
 import {
-  gradeOn, nameKey, shownName, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
+  gradeOn, keepQuickAddedFor, nameKey, shownName, useQuickAdded, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
   type Person,
 } from './people';
 
@@ -36,7 +37,8 @@ function visibleTo(people: Person[], roles: Role[] | undefined, delegations: Del
 // The sheet's people in list order — or as the sort select shows them — — retired people only while show-retired is on — each with their name (shown as <name> (<grade>)), grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
 // features add their own columns through PeopleColumns / PersonCells. A restricted user (in the role they act in)
 // sees only the person going by their name and the people of the crews that person leads or belongs to (none until
-// the roles and crews are read); every other figure stays over everyone.
+// the roles and crews are read), and the people this screen quick-added since it loaded the sheet; every other figure
+// stays over everyone.
 function PeopleList() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -53,9 +55,11 @@ function PeopleList() {
   const crews = useCrews();
   const saving = useIsMutating({ mutationKey: personSaveKey }) > 0;
   const reading = useIsFetching({ queryKey: peopleQueryKey(sheet ?? '') }) > 0;
+  const quickAdded = useQuickAdded(sheet);
+  useEffect(() => keepQuickAddedFor(sheet ?? ''), [sheet]);
   if (!user || !sheet) return null;
   const visible = visibleTo(people.data ?? [], roles.data, delegations.data, crews.data, user, today);
-  const listed = (people.data ?? []).filter((p) => visible(p) && (showRetired || p.retiredFrom === null));
+  const listed = (people.data ?? []).filter((p) => (visible(p) || quickAdded.includes(p.id)) && (showRetired || p.retiredFrom === null));
   const due = (p: Person) => {
     const d = personDue(p, claims.data ?? [], rates.data, today, settings.data);
     return d === 'n/a' ? null : Number(d);

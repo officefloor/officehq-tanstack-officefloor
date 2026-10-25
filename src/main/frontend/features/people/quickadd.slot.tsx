@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { claimsQueryKey, type Claim } from '../claims/claims';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { peopleQueryKey } from './people';
+import { noteQuickAdded, peopleQueryKey } from './people';
 
 // The quick-add bar above the people list: a name and an amount make a DRAFT claim for that person, dated the
 // sheet's entry date (else its today) with an empty note; a name not on the sheet adds the person first, with the sheet's default grade (blank: A). The server
@@ -19,7 +19,8 @@ function QuickAddBar() {
   const add = useMutation({
     mutationFn: (body: { name: string; amount: string }) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/quick-add`, body, user),
-    onSuccess: async () => {
+    onSuccess: async (claim) => {
+      noteQuickAdded(sheet ?? '', claim.personId);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet ?? '') }),
         queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet ?? '') }),

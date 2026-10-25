@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { getJson } from '../../api/http';
@@ -168,4 +169,32 @@ export function sortedBy<K extends string | number>(people: Person[], key: (p: P
     return a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i;
   });
   return keyed.map((e) => e.p);
+}
+
+// The people this screen added through the quick-add bar since it loaded the sheet: a restricted user's list shows
+// them too, so the claim they just made is seen landing; loading another sheet (or re-loading this one) forgets them.
+let quickAdded: { sheet: string; ids: number[] } = { sheet: '', ids: [] };
+const quickAddedListeners = new Set<() => void>();
+
+function setQuickAdded(next: { sheet: string; ids: number[] }) {
+  quickAdded = next;
+  quickAddedListeners.forEach((l) => l());
+}
+
+export function noteQuickAdded(sheet: string, personId: number) {
+  const ids = quickAdded.sheet === sheet ? quickAdded.ids : [];
+  if (!ids.includes(personId)) setQuickAdded({ sheet, ids: [...ids, personId] });
+}
+
+/** Forgets the quick-added people unless they were added on `sheet`. */
+export function keepQuickAddedFor(sheet: string) {
+  if (quickAdded.sheet !== sheet && quickAdded.ids.length > 0) setQuickAdded({ sheet, ids: [] });
+}
+
+export function useQuickAdded(sheet: string | undefined): number[] {
+  const state = useSyncExternalStore((l) => {
+    quickAddedListeners.add(l);
+    return () => quickAddedListeners.delete(l);
+  }, () => quickAdded);
+  return state.sheet === sheet ? state.ids : [];
 }
