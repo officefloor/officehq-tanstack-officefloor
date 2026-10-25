@@ -32,17 +32,36 @@ export function periodOn(periods: readonly Period[], date: string): Period | und
   return periods.find((p) => p.from <= date && date <= p.to);
 }
 
-// The period form: adds a period with a name unique on the sheet and a from and to date, not
-// overlapping another period. Every period is listed under it with its due-total: the due figures of
-// the counted claims whose date falls in it, added up.
-function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
-  const periods = usePeriods(sheetId);
+/** A period's live due-total in cents: the due figures of the counted claims whose date falls in it, added up. */
+export function usePeriodDueTotal(sheetId: string): (p: Period) => bigint {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const held = useHeld(sheetId);
   const rates = useRates(sheetId);
   const floor = useFloorCents(sheetId);
   const late = useLate(sheetId);
+  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
+  return (p: Period): bigint => {
+    let sum = 0n;
+    for (const c of claims.data ?? []) {
+      if (!counts(c, held) || c.date < p.from || c.date > p.to) continue;
+      sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
+    }
+    return sum;
+  };
+}
+
+/** A period's due-total as shown: the one fixed when it was closed; while open, the live figure. */
+export function showPeriodDueTotal(p: Period, live: bigint): string {
+  return p.closed && p.closedTotal != null ? p.closedTotal : showHundredths(live);
+}
+
+// The period form: adds a period with a name unique on the sheet and a from and to date, not
+// overlapping another period. Every period is listed under it with its due-total: the due figures of
+// the counted claims whose date falls in it, added up.
+function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
+  const periods = usePeriods(sheetId);
+  const dueTotal = usePeriodDueTotal(sheetId);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -69,16 +88,6 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     save.reset();
-  };
-
-  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
-  const dueTotal = (p: Period): bigint => {
-    let sum = 0n;
-    for (const c of claims.data ?? []) {
-      if (!counts(c, held) || c.date < p.from || c.date > p.to) continue;
-      sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
-    }
-    return sum;
   };
 
   const submit = useSubmitOnce(save);
@@ -160,7 +169,7 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
       <td data-testid="period-from">{p.from}</td>
       <td data-testid="period-to">{p.to}</td>
       <td data-testid="period-due-total">
-        {p.closed && p.closedTotal != null ? p.closedTotal : showHundredths(dueTotal)}
+        {showPeriodDueTotal(p, dueTotal)}
       </td>
       <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
       <td>
