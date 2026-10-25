@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /**
  * A claim's fields: an amount (required; a number with up to two decimals, 0.00 or more, or below 0.00
  * for a correction), a date (blank for the sheet's today), a note (may be empty) and the number of the
- * claim a correction corrects (blank for none). Publishes them parsed, with the user making the change.
+ * claim a correction corrects (blank for none) and an external reference (blank for none). Publishes them parsed, with the user making the change.
  */
 public class ValidateClaim {
 
@@ -26,6 +26,7 @@ public class ValidateClaim {
     static ClaimInput parse(ClaimRequest request) throws BadRequestException {
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
+        String ref = request == null || request.ref() == null ? "" : request.ref().trim();
         String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
         BigDecimal amount = ClaimAmount.signed(request == null ? null : request.amount());
         LocalDate parsed = null;
@@ -39,6 +40,9 @@ public class ValidateClaim {
         if (note.length() > 1000) {
             throw new BadRequestException("A note is at most 1000 characters");
         }
+        if (ref.length() > 200) {
+            throw new BadRequestException("A reference is at most 200 characters");
+        }
         String correctsNumber = null;
         if (!corrects.isEmpty()) {
             if (!corrects.matches("\\d{1,9}|.{1,200}-\\d{1,9}")) {
@@ -46,6 +50,6 @@ public class ValidateClaim {
             }
             correctsNumber = corrects.matches("\\d+") ? String.valueOf(Integer.parseInt(corrects)) : corrects;
         }
-        return new ClaimInput(amount, parsed, note, correctsNumber);
+        return new ClaimInput(amount, parsed, note, correctsNumber, ref.isEmpty() ? null : ref);
     }
 }

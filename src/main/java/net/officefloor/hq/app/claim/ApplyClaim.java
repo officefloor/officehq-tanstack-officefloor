@@ -9,6 +9,7 @@ public class ApplyClaim {
         claim.setDate(input.date() != null ? input.date() : sheets.today(claim.getSheetId()));
         claim.setNote(input.note());
         claim.setCorrects(input.corrects());
+        claim.setRef(input.ref());
         repository.update(claim);
     }
 }

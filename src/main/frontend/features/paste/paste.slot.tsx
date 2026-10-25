@@ -10,8 +10,9 @@ type PasteResult = { added: number };
 
 // The paste box: lines of name,amount,date,note (the note may hold commas; a blank date is the sheet's today;
 // the note may be absent) add a DRAFT claim per line, in order, for the named person. The server checks every
-// line with the claim form's rules first, so a refusal adds nothing. Shows how many were added; the count is
-// gone while it runs, and shows before the new rows do.
+// line with the claim form's rules first, so a refusal adds nothing. A note ending " #<reference>" gives the claim
+// that reference instead (a reference already on the sheet, or repeated in the paste, refuses it all).
+// Shows how many were added; the count is gone while it runs, and shows before the new rows do.
 function PasteClaims({ sheetId }: { sheetId: string; user: string }) {
   const [lines, setLines] = useState('');
   const [added, setAdded] = useState<number | null>(null);

@@ -28,6 +28,7 @@ public class Claim {
     private String splitFrom;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private String ref;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -112,6 +113,15 @@ public class Claim {
 
     public void setRemindedOn(LocalDate remindedOn) {
         this.remindedOn = remindedOn;
+    }
+
+    /** The claim's external reference; null when it has none. */
+    public String getRef() {
+        return ref;
+    }
+
+    public void setRef(String ref) {
+        this.ref = ref;
     }
 
     /** Keep {@code amount} of the claim, the rest split off: it loses any figure a statement bound it to. */

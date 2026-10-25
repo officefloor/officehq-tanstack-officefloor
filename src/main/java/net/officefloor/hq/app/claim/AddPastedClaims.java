@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Adds a DRAFT claim per pasted line, in order, for the person of that name (case and surrounding spaces ignored).
- * Every line is first checked as the claim form checks a new claim (person on the sheet, correction, closed period,
+ * Every line is first checked as the claim form checks a new claim (person on the sheet, correction, reference, closed period,
  * retirement); one refusal refuses them all before anything is written. Each added claim is recorded as CLAIM_ADDED,
  * then the rollup lines for what the paste moved.
  */
@@ -42,6 +42,7 @@ public class AddPastedClaims {
             LocalDate date = input.date() != null ? input.date() : today;
             try {
                 RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), claims);
+                RefuseUsedRef.refuse(sheet.id(), input.ref(), -1, claims);
                 RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
                 RefuseRetiredDate.refuse(person, date);
             } catch (BadRequestException e) {
@@ -56,11 +57,11 @@ public class AddPastedClaims {
             ClaimInput input = pasted.lines().get(i).input();
             LocalDate date = input.date() != null ? input.date() : today;
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
-                    input.corrects(), BuildClaim.terms(person, date, settings));
+                    input.corrects(), input.ref(), BuildClaim.terms(person, date, settings));
             if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
                 claims.markLate(claim);
             }
-            audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));
+            audit.record(ClaimAudit.added(claim, by, person.getName()));
             if (claim.isLateEntry()) {
                 audit.record(ClaimAudit.line("LATE_ENTRY", claim, by, person.getName()));
             }

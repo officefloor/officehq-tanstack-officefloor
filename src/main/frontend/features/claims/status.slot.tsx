@@ -144,7 +144,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/remind`, { by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
-  // A DRAFT's amount changed in the row: the claim form's edit, under its rules, keeping the claim's date, note and corrects.
+  // A DRAFT's amount changed in the row: the claim form's edit, under its rules, keeping the claim's date, note, corrects and reference.
   const inline = useMutation({
     mutationFn: (amount: string) => {
       const why = refusal();
@@ -152,7 +152,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       if (amount.trim() === '') throw new Error('Enter an amount');
       if (!AMOUNT.test(amount.trim())) throw new Error('An amount is a number with up to two decimals');
       return putJson<Claim>(`${base}/${claim.id}`, { amount: amount.trim(), date: claim.date, note: claim.note,
-        corrects: claim.corrects ?? '', by: user ?? '' });
+        corrects: claim.corrects ?? '', ref: claim.ref ?? '', by: user ?? '' });
     },
     onSuccess: () => {
       setInlineAmount('');

@@ -15,6 +15,11 @@ final class ClaimAudit {
         return line(event, claim, by, personName, claim.getNumber());
     }
 
+    /** The CLAIM_ADDED record: the claim's line, then its reference when it has one. */
+    static String added(Claim claim, ChangedBy by, String personName) {
+        return line("CLAIM_ADDED", claim, by, personName) + (claim.getRef() == null ? "" : " ref=" + claim.getRef());
+    }
+
     static String line(String event, Claim claim, ChangedBy by, String personName, String number) {
         return event + " sheet=" + claim.getSheetId() + " by=" + by.name() + " person=" + personName + " amount="
                 + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate()

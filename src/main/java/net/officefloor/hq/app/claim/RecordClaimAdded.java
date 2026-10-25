@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
 
 public class RecordClaimAdded {
     public void record(@Val Claim claim, @Val Person person, @Val ChangedBy by, Audit audit, ClaimLog log) {
-        audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));
+        audit.record(ClaimAudit.added(claim, by, person.getName()));
         if (claim.isLateEntry()) {
             audit.record(ClaimAudit.line("LATE_ENTRY", claim, by, person.getName()));
         }

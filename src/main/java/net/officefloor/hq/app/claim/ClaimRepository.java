@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -37,6 +37,7 @@ public class ClaimRepository {
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
+        claim.setRef(rs.getString("ref"));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -96,14 +97,26 @@ public class ClaimRepository {
                 .stream().findFirst().orElse(null);
     }
 
-    /** Add a draft claim, its due-by counting {@code terms} business days from its date for good. */
+    /** Whether a claim on the sheet other than {@code exceptId} carries the reference, comparing without regard to case. */
+    public boolean refUsed(String sheetId, String ref, long exceptId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+                Integer.class, sheetId, ref, exceptId) > 0;
+    }
+
+    /** Add a draft claim without a reference. */
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             int terms) {
+        return insert(sheetId, personId, amount, date, note, corrects, null, terms);
+    }
+
+    /** Add a draft claim, its due-by counting {@code terms} business days from its date for good. */
+    public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            String ref, int terms) {
         long listed = nextListed(sheetId);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -114,11 +127,13 @@ public class ClaimRepository {
             ps.setLong(7, listed);
             ps.setDate(8, Date.valueOf(date));
             ps.setInt(9, terms);
+            ps.setString(10, ref);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
         claim.setDueFrom(date);
         claim.setTerms(terms);
+        claim.setRef(ref);
         due(List.of(claim));
         return claim;
     }
@@ -151,8 +166,8 @@ public class ClaimRepository {
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?", claim.getAmount(),
-                Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getId());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ? WHERE id = ?", claim.getAmount(),
+                Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getId());
     }
 
     /** Defer the claim until its deferred-until date. Whether it was still OPEN: another user may have moved it. */

@@ -16,7 +16,7 @@ public class BuildClaim {
         LocalDate date = input.date() != null ? input.date()
                 : settings.entryDate(person.getSheetId(), sheets.today(person.getSheetId()));
         Claim added = repository.insert(person.getSheetId(), person.getId(), input.amount(), date, input.note(),
-                input.corrects(), terms(person, date, settings));
+                input.corrects(), input.ref(), terms(person, date, settings));
         if (periods.softClosedOn(person.getSheetId(), added.getDueBy())) {
             repository.markLate(added);
         }
