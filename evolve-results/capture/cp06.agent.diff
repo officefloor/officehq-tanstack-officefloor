@@ -1,0 +1,338 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index ff2ff2e9..a9e4ad8f 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
+ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
++import { useUser } from '../session/useSession';
+ import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
+ 
+ const AMOUNT = /^\d+(\.\d{1,2})?$/;
+@@ -16,15 +17,18 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId:
+   const [amount, setAmount] = useState(editing?.amount ?? '');
+   const [date, setDate] = useState(editing?.date ?? '');
+   const [note, setNote] = useState(editing?.note ?? '');
++  const [user] = useUser();
+   const queryClient = useQueryClient();
+   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
+   const save = useMutation({
+     mutationFn: async (body: ClaimBody) => {
+       if (body.amount.trim() === '') throw new Error('Enter an amount');
+       if (!AMOUNT.test(body.amount.trim())) throw new Error('An amount is a number, 0.00 or more, with up to two decimals');
++      // `by` is the signed-in user the change is recorded against.
++      const sent = { ...body, by: user ?? '' };
+       return editing
+-        ? putJson<Claim>(`${sheet}/claims/${editing.id}`, body)
+-        : postJson<Claim>(`${sheet}/people/${personId}/claims`, body);
++        ? putJson<Claim>(`${sheet}/claims/${editing.id}`, sent)
++        : postJson<Claim>(`${sheet}/people/${personId}/claims`, sent);
+     },
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 5c0198c5..3af54d75 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson, postJson, putJson } from '../../api/http';
+ import { asNumber, useSearchParam } from '../../url/useSearchParam';
++import { useUser } from '../session/useSession';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+ 
+@@ -30,14 +31,17 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
+   const [, setEditing] = useEditingPerson();
+   const [name, setName] = useState(editing?.name ?? '');
+   const [grade, setGrade] = useState(editing?.grade ?? 'A');
++  const [user] = useUser();
+   const queryClient = useQueryClient();
+   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+   const save = useMutation({
+     mutationFn: async (body: { name: string; grade: string }) => {
+       if (body.name.trim() === '') throw new Error('Enter a name');
++      // `by` is the signed-in user the change is recorded against.
++      const sent = { ...body, by: user ?? '' };
+       return editing
+-        ? putJson<Person>(`${base}/${editing.id}`, body)
+-        : postJson<Person>(base, body);
++        ? putJson<Person>(`${base}/${editing.id}`, sent)
++        : postJson<Person>(base, sent);
+     },
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+new file mode 100644
+index 00000000..eacedef9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.session.ChangedBy;
++
++/** A claim's audit record: the event, sheet, user, then person, amount (two decimals) and date. */
++final class ClaimAudit {
++
++    private ClaimAudit() {
++    }
++
++    static String line(String event, Claim claim, ChangedBy by, String personName) {
++        return event + " sheet=" + claim.getSheetId() + " by=" + by.name() + " person=" + personName + " amount="
++                + claim.getAmount().setScale(2).toPlainString() + " date=" + claim.getDate();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+index bd2d88ac..ecb57152 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+@@ -1,5 +1,8 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A claim's fields as typed: amount, date (blank for the sheet's today) and note. */
+-public record ClaimRequest(String amount, String date, String note) {
++/**
++ * A claim's fields as typed: amount, date (blank for the sheet's today) and note, and the
++ * signed-in user (`by`) making the change.
++ */
++public record ClaimRequest(String amount, String date, String note, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimAdded.java
+new file mode 100644
+index 00000000..be71f9ff
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordClaimAdded {
++    public void record(@Val Claim claim, @Val Person person, @Val ChangedBy by, Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimEdited.java
+new file mode 100644
+index 00000000..fc73b9aa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimEdited.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordClaimEdited {
++    public void record(@Val Claim claim, @Val ChangedBy by, PersonRepository people, Audit audit) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        audit.record(ClaimAudit.line("CLAIM_EDITED", claim, by, person == null ? "" : person.getName()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index 21b64861..7da5ed8f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -5,18 +5,21 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+  * A claim's fields: an amount (required; a number with up to two decimals, 0.00 or more), a date
+- * (blank for the sheet's today) and a note (may be empty). Publishes them parsed.
++ * (blank for the sheet's today) and a note (may be empty). Publishes them parsed, with the user making the change.
+  */
+ public class ValidateClaim {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,12}(\\.\\d{1,2})?");
+ 
+-    public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> claim) throws BadRequestException {
++    public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> claim,
++            Out<ChangedBy> changedBy) throws BadRequestException {
++        ChangedBy by = ChangedBy.of(request == null ? null : request.by());
+         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+         String date = request == null || request.date() == null ? "" : request.date().trim();
+         String note = request == null || request.note() == null ? "" : request.note().trim();
+@@ -38,5 +41,6 @@ public class ValidateClaim {
+             throw new BadRequestException("A note is at most 1000 characters");
+         }
+         claim.set(new ClaimInput(new BigDecimal(amount).setScale(2), parsed, note));
++        changedBy.set(by);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index 5d76b7a2..6d80def2 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,4 +1,5 @@
+ package net.officefloor.hq.app.person;
+ 
+-public record PersonRequest(String name, String grade) {
++/** A person's fields, and the signed-in user (`by`) making the change. */
++public record PersonRequest(String name, String grade, String by) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonAdded.java
+new file mode 100644
+index 00000000..0d239877
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordPersonAdded {
++    public void record(@Val Person person, @Val ChangedBy by, Audit audit) {
++        audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by.name() + " name=" + person.getName()
++                + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonEdited.java
+new file mode 100644
+index 00000000..a2aa5ff7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonEdited.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordPersonEdited {
++    public void record(@Val Person person, @Val ChangedBy by, Audit audit) {
++        audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + by.name() + " name=" + person.getName()
++                + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 7bf6eeda..e4e3dd51 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -2,16 +2,18 @@ package net.officefloor.hq.app.person;
+ 
+ import java.util.Set;
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A person's fields: a name (required) and a grade, one of A, B or C. Publishes them trimmed. */
++/** A person's fields: a name (required) and a grade, one of A, B or C. Publishes them trimmed, with the user making the change. */
+ public class ValidatePerson {
+ 
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+-    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> person)
+-            throws BadRequestException {
++    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> person,
++            Out<ChangedBy> changedBy) throws BadRequestException {
++        ChangedBy by = ChangedBy.of(request == null ? null : request.by());
+         String name = request == null || request.name() == null ? "" : request.name().trim();
+         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
+         if (name.isEmpty()) {
+@@ -23,6 +25,7 @@ public class ValidatePerson {
+         if (!GRADES.contains(grade)) {
+             throw new BadRequestException("Choose a grade: A, B or C");
+         }
+-        person.set(new PersonRequest(name, grade));
++        person.set(new PersonRequest(name, grade, by.name()));
++        changedBy.set(by);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/session/ChangedBy.java b/src/main/java/net/officefloor/hq/app/session/ChangedBy.java
+new file mode 100644
+index 00000000..cab1f547
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/session/ChangedBy.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.session;
++
++import net.officefloor.hq.app.BadRequestException;
++
++/** The signed-in user a change is made by, as sent with the change; the audit records it. */
++public record ChangedBy(String name) {
++
++    /** The trimmed user, refusing a change sent without one. */
++    public static ChangedBy of(String by) throws BadRequestException {
++        String name = by == null ? "" : by.trim();
++        if (name.isEmpty()) {
++            throw new BadRequestException("Sign in to make a change");
++        }
++        return new ChangedBy(name);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index db3f7538..9e303e22 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -12,6 +12,10 @@ load:
+ apply:
+   class: net.officefloor.hq.app.claim.ApplyClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 8208817b..245ccb84 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -16,6 +16,10 @@ name:
+ build:
+   class: net.officefloor.hq.app.person.BuildPerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 8f230349..9e57efce 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -16,6 +16,10 @@ name:
+ apply:
+   class: net.officefloor.hq.app.person.ApplyPerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 23245124..4f9292a8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -12,6 +12,10 @@ load:
+ build:
+   class: net.officefloor.hq.app.claim.BuildClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordClaimAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
