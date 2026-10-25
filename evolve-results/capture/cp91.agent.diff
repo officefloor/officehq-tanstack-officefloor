@@ -1,0 +1,444 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 67131d4b..edbd8e4b 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -37,6 +37,7 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
+ // A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
+ // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
+ // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
++// A claim in any status can be commented; an empty comment is refused.
+ // A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
+ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
+   const [user] = useUser();
+@@ -49,6 +50,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+   const [splitAmount, setSplitAmount] = useState('');
+   const [newDate, setNewDate] = useState('');
+   const [inlineAmount, setInlineAmount] = useState('');
++  const [commentText, setCommentText] = useState('');
+   const people = usePeople(sheetId);
+   const [editingId, setEditing] = useEditingClaim();
+   const periods = usePeriods(sheetId);
+@@ -148,6 +150,17 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/remind`, { by: user ?? '' }),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+   });
++  // A comment kept on the claim with the user and the sheet's today; the server refuses an empty one too.
++  const comment = useMutation({
++    mutationFn: (text: string) => {
++      if (text.trim() === '') throw new Error('Enter a comment');
++      return postJson<Claim>(`${base}/${claim.id}/comment`, { text: text.trim(), by: user ?? '' });
++    },
++    onSuccess: () => {
++      setCommentText('');
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
+   // A DRAFT's amount changed in the row: the claim form's edit, under its rules, keeping the claim's date, note, corrects, reference and tags.
+   const inline = useMutation({
+     mutationFn: (amount: string) => {
+@@ -174,6 +187,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     lock.reset();
+     remind.reset();
+     inline.reset();
++    comment.reset();
+     setRefused(undefined);
+     change.mutate(to);
+   };
+@@ -188,11 +202,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+     lock.reset();
+     remind.reset();
+     inline.reset();
++    comment.reset();
+     setRefused(undefined);
+   };
+   const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
+-    || redate.isPending || remind.isPending || inline.isPending;
+-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error;
++    || redate.isPending || remind.isPending || inline.isPending || comment.isPending;
++  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error ?? comment.error;
+ 
+   return (
+     <>
+@@ -261,6 +276,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           lock.reset();
+           remind.reset();
+           inline.reset();
++          comment.reset();
+           setRefused(undefined);
+           reassign.mutate(moveTo);
+         }}
+@@ -281,6 +297,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           lock.reset();
+           remind.reset();
+           inline.reset();
++          comment.reset();
+           setRefused(undefined);
+           resettle.mutate();
+         }}
+@@ -312,6 +329,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           lock.reset();
+           remind.reset();
+           inline.reset();
++          comment.reset();
+           setRefused(undefined);
+           defer.mutate(deferUntil);
+         }}
+@@ -333,6 +351,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           lock.reset();
+           remind.reset();
+           inline.reset();
++          comment.reset();
+           setRefused(undefined);
+           proof.mutate();
+         }}
+@@ -363,6 +382,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           lock.reset();
+           remind.reset();
+           inline.reset();
++          comment.reset();
+           setRefused(undefined);
+           split.mutate(splitAmount);
+         }}
+@@ -392,6 +412,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           lock.reset();
+           remind.reset();
+           inline.reset();
++          comment.reset();
+           setRefused(undefined);
+           redate.mutate(newDate);
+         }}
+@@ -434,6 +455,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+         onChange={(e) => {
+           setInlineAmount(e.target.value);
+           inline.reset();
++          comment.reset();
+         }}
+       />
+       <button
+@@ -446,6 +468,26 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+         }}
+       >
+         Save amount
++      </button>{' '}
++      <input
++        data-testid="claim-comment-text"
++        placeholder="Comment"
++        value={commentText}
++        onChange={(e) => {
++          setCommentText(e.target.value);
++          comment.reset();
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-comment-add"
++        disabled={busy}
++        onClick={() => {
++          resetAll();
++          comment.mutate(commentText);
++        }}
++      >
++        Comment
+       </button>
+       {editingId === claim.id && (
+         <button
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 7179e302..e7f5d91c 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -38,7 +38,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
+   /** The claim's tags, sorted; empty when it has none. */
+   tags: string[];
+   /** The reason the claim was voided with, from the sheet's list; none when none was given. */
+-  voidReason: string | null };
++  voidReason: string | null;
++  /** The claim's comments, oldest first: `<user> on <date>: <text>` (the sheet's today when written). */
++  comments: string[] };
+ 
+ /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
+  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
+diff --git a/src/main/frontend/features/comments/claimComments.slot.tsx b/src/main/frontend/features/comments/claimComments.slot.tsx
+new file mode 100644
+index 00000000..94ee0da7
+--- /dev/null
++++ b/src/main/frontend/features/comments/claimComments.slot.tsx
+@@ -0,0 +1,14 @@
++import { ClaimCells } from '../../slots/defs/claimRow';
++
++// A claim's comments, oldest first, as `<user> on <date>: <text>` (the sheet's today when it was written).
++function ClaimComments({ claim }: { sheetId: string; user: string; personId: number; claim: { comments?: string[] } }) {
++  return (
++    <ol data-testid="claim-comments">
++      {(claim.comments ?? []).map((line, i) => (
++        <li key={i} data-testid="claim-comments-line">{line}</li>
++      ))}
++    </ol>
++  );
++}
++
++export const contribution = ClaimCells.fill({ order: 45, Component: ClaimComments });
+diff --git a/src/main/frontend/slots/defs/claimRow.ts b/src/main/frontend/slots/defs/claimRow.ts
+index eda6b8bc..cf05c800 100644
+--- a/src/main/frontend/slots/defs/claimRow.ts
++++ b/src/main/frontend/slots/defs/claimRow.ts
+@@ -11,5 +11,6 @@ export const ClaimCells = defineSlot<{
+   claim: { id: number; personId: number; amount: string; date: string; note: string; status: 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+     settledDue: string | null; openedBy: string | null; stated: boolean; statedDue: string | null; dueBy: string; log: string[];
+     deferred?: boolean; deferredUntil?: string | null; proofs?: number; splitFrom?: string | null; lateEntry?: boolean;
+-    reminded?: string | null; corrects?: string | null; ref?: string | null; tags?: string[] };
++    reminded?: string | null; corrects?: string | null; ref?: string | null; tags?: string[];
++    comments?: string[] };
+ }>('claim.cells');
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyComment.java b/src/main/java/net/officefloor/hq/app/claim/ApplyComment.java
+new file mode 100644
+index 00000000..3c9e39cf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyComment.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Keeps the comment on the claim, with the user who wrote it and the sheet's today. */
++public class ApplyComment {
++    public void apply(@Val Claim claim, @Val ClaimComment comment, @Val ChangedBy by, ClaimCommentRepository comments,
++            SheetRepository sheets) {
++        comments.add(claim, by.name(), sheets.today(claim.getSheetId()), comment.text());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimComment.java b/src/main/java/net/officefloor/hq/app/claim/ClaimComment.java
+new file mode 100644
+index 00000000..ac5ec8ae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimComment.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A comment's trimmed text, as validated. */
++public record ClaimComment(String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimCommentRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimCommentRepository.java
+new file mode 100644
+index 00000000..dc43588e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimCommentRepository.java
+@@ -0,0 +1,37 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Each claim's comments, oldest first. */
++@Repository
++public class ClaimCommentRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public ClaimCommentRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Add the comment to the claim, by the user on the date. */
++    public void add(Claim claim, String by, LocalDate on, String text) {
++        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, written_on, text) VALUES (?, ?, ?, ?, ?)",
++                claim.getSheetId(), claim.getId(), by, java.sql.Date.valueOf(on), text);
++    }
++
++    /** The sheet's comments by claim id, each claim's oldest first, as {@code <user> on <date>: <text>}. */
++    public Map<Long, List<String>> lines(String sheetId) {
++        Map<Long, List<String>> lines = new HashMap<>();
++        jdbc.query("SELECT claim_id, by_user, written_on, text FROM claim_comment WHERE sheet_id = ? ORDER BY id", rs -> {
++            lines.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>())
++                    .add(rs.getString("by_user") + " on " + rs.getObject("written_on", LocalDate.class) + ": "
++                            + rs.getString("text"));
++        }, sheetId);
++        return lines;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index cf5a6b6a..776efefc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -2,15 +2,21 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
+ 
+-/** A claim as the screen shows it; `deferred` as of the sheet's today, and `deferredUntil` the date it was last deferred until (null when never deferred), and `splitFrom` the number of the claim it was split off (null when none), and `lateEntry` whether it was added while its period was soft-closed, and `reminded` the last day a reminder was written (null when never), and `ref` its external reference (null when none), and `tags` its tags, sorted (empty when none), and `voidReason` the reason it was voided with (null when none). */
++/** A claim as the screen shows it; `deferred` as of the sheet's today, and `deferredUntil` the date it was last deferred until (null when never deferred), and `splitFrom` the number of the claim it was split off (null when none), and `lateEntry` whether it was added while its period was soft-closed, and `reminded` the last day a reminder was written (null when never), and `ref` its external reference (null when none), and `tags` its tags, sorted (empty when none), and `voidReason` the reason it was voided with (null when none), and `comments` its comments, oldest first, as `<user> on <date>: <text>`. */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
+         java.util.List<String> log, boolean deferred, String deferredUntil, int proofs,
+         String splitFrom, boolean lateEntry, String reminded, String ref,
+-        java.util.List<String> tags, String voidReason) {
++        java.util.List<String> tags, String voidReason, java.util.List<String> comments) {
+ 
+     /** The claim with its status log, oldest first, as of the sheet's today. */
+     public static ClaimResponse from(Claim claim, java.util.List<String> log, LocalDate today) {
++        return from(claim, log, java.util.List.of(), today);
++    }
++
++    /** The claim with its status log and its comments, each oldest first, as of the sheet's today. */
++    public static ClaimResponse from(Claim claim, java.util.List<String> log, java.util.List<String> comments,
++            LocalDate today) {
+         boolean deferred = claim.isDeferredOn(today);
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().toPlainString(),
+                 claim.getDate().toString(), claim.getNote(), claim.getStatus().name(),
+@@ -21,6 +27,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getProofs(), claim.getSplitFrom(), claim.isLateEntry(),
+                 claim.getRemindedOn() == null ? null : claim.getRemindedOn().toString(), claim.getRef(),
+                 claim.getTags() == null ? java.util.List.of() : java.util.List.of(claim.getTags().split(",")),
+-                claim.getVoidReason());
++                claim.getVoidReason(), comments);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CommentRequest.java b/src/main/java/net/officefloor/hq/app/claim/CommentRequest.java
+new file mode 100644
+index 00000000..809aef38
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CommentRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The signed-in user (`by`) commenting a claim, and the comment's text. */
++public record CommentRequest(String text, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordCommentAdded.java b/src/main/java/net/officefloor/hq/app/claim/RecordCommentAdded.java
+new file mode 100644
+index 00000000..c4bec501
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordCommentAdded.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** COMMENT_ADDED, naming the claim, then its text. */
++public class RecordCommentAdded {
++    public void record(@Val Claim claim, @Val ClaimComment comment, @Val ChangedBy by, PersonRepository people,
++            Audit audit) {
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        audit.record(ClaimAudit.line("COMMENT_ADDED", claim, by, person == null ? "" : person.getName())
++                + " text=" + comment.text());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index 73f4a08c..4a0af172 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -15,9 +15,11 @@ public class RespondWithClaims {
+             ObjectResponse<List<ClaimResponse>> response) {
+         response.send(history.view(sheet.id(), asOf.on(), jdbc -> {
+             Map<Long, List<String>> lines = new ClaimLogRepository(jdbc).lines(sheet.id());
++            Map<Long, List<String>> comments = new ClaimCommentRepository(jdbc).lines(sheet.id());
+             LocalDate today = new SheetRepository(jdbc).today(sheet.id());
+             return new ClaimRepository(jdbc).list(sheet.id()).stream()
+-                    .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()), today)).toList();
++                    .map(c -> ClaimResponse.from(c, lines.getOrDefault(c.getId(), List.of()),
++                            comments.getOrDefault(c.getId(), List.of()), today)).toList();
+         }));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateComment.java b/src/main/java/net/officefloor/hq/app/claim/ValidateComment.java
+new file mode 100644
+index 00000000..152b2c98
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateComment.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** The user commenting the claim, and the comment's text: an empty comment is refused. */
++public class ValidateComment {
++    public void validate(@RequestBody CommentRequest request, Out<ChangedBy> changedBy, Out<ClaimComment> comment)
++            throws BadRequestException {
++        changedBy.set(ChangedBy.of(request == null ? null : request.by()));
++        String text = request == null || request.text() == null ? "" : request.text().trim();
++        if (text.isEmpty()) {
++            throw new BadRequestException("Enter a comment");
++        }
++        if (text.length() > 4000) {
++            throw new BadRequestException("A comment is at most 4000 characters");
++        }
++        comment.set(new ClaimComment(text));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+index 2410b6b5..51156eda 100644
+--- a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
++++ b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+@@ -25,7 +25,7 @@ public class SheetHistory {
+     /** The tables the screen reads (a statement's figures among them), parents before children. */
+     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold",
+             "person_patron", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
+-            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason");
++            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment");
+ 
+     private final JdbcTemplate jdbc;
+ 
+diff --git a/src/main/resources/db/migration/V48__claim_comment.sql b/src/main/resources/db/migration/V48__claim_comment.sql
+new file mode 100644
+index 00000000..01258671
+--- /dev/null
++++ b/src/main/resources/db/migration/V48__claim_comment.sql
+@@ -0,0 +1,15 @@
++-- A claim's comments, in the order written (by id): who wrote it, the sheet's today then, and its trimmed text.
++CREATE TABLE claim_comment (
++    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id   VARCHAR(200)  NOT NULL REFERENCES sheet (id),
++    claim_id   BIGINT        NOT NULL REFERENCES claim (id),
++    by_user    VARCHAR(200)  NOT NULL,
++    written_on DATE          NOT NULL,
++    text       VARCHAR(4000) NOT NULL
++);
++CREATE INDEX claim_comment_sheet ON claim_comment (sheet_id, claim_id, id);
++
++-- Snapshotted with the rest of the screen (see V40, V41).
++CREATE TABLE hist.claim_comment AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM claim_comment t WHERE FALSE;
++CREATE INDEX hist_claim_comment_snapshot ON hist.claim_comment (snapshot_id);
++CREATE TABLE asof.claim_comment AS SELECT * FROM claim_comment WHERE FALSE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/comment.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/comment.POST.yml
+new file mode 100644
+index 00000000..76e42c6e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/comment.POST.yml
+@@ -0,0 +1,25 @@
++# Comment a claim, in any status: kept with the user and the sheet's today. An empty comment is refused.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: comment
++comment:
++  class: net.officefloor.hq.app.claim.ValidateComment
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyComment
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.RecordCommentAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
