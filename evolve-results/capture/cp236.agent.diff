@@ -1,0 +1,84 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 78743157..4ee43bc8 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -85,10 +85,11 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
+  *  claim like any other). */
+ export const isBound = (c: Claim) => c.stated;
+ 
+-/** Whether a claim is deferred on the sheet's today: it is OPEN and deferred until a date after it. Until then it
+- *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
++/** Whether a claim is deferred on the sheet's today: it is OPEN (or was settled while a statement bound it) and
++ *  deferred until a date after it, and no statement binds it. Until then it counts in no total, is not overdue, cannot
++ *  be settled and is left unbound by a statement. While bound the deferral waits: it takes effect once the binding ends. */
+ export const isDeferred = (c: Claim, today: string | undefined) =>
+-  c.status === 'OPEN' && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
++  (c.status === 'OPEN' || c.status === 'SETTLED') && !isBound(c) && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+ 
+ /** Whether a claim counts toward claimed and the totals: only OPEN, PENDING and SETTLED claims do, but not a
+  *  deferred one. */
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index d617510b..ca2d7bfa 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -60,8 +60,9 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}
+             <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+             <span data-testid="claim-overdue">{isOverdue(c, today, gradeOn(person, c.date), settings.data) ? 'yes' : 'no'}</span>{' '}
+-            {/* Shown while its deferral runs, whatever its status since; only an OPEN one is held out of the totals. */}
+-            <span data-testid="claim-deferred">{c.deferredUntil !== null && today !== undefined && today < c.deferredUntil ? 'yes' : 'no'}</span>{' '}
++            {/* Shown while its deferral runs and no statement binds it, whatever its status since; only an OPEN (or
++                bound-then-settled) one is held out of the totals. */}
++            <span data-testid="claim-deferred">{!c.stated && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil ? 'yes' : 'no'}</span>{' '}
+             <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+             <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+             (receipts <span data-testid="claim-proofs-receipt">{c.proofsReceipt}</span>, photos{' '}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 3ba1ee01..fbbb8c2c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -429,10 +429,17 @@ public class Claim {
+         this.held = held;
+     }
+ 
+-    /** Whether the claim is deferred on a day: it is OPEN and deferred until a date after that day. Until then it counts
+-     *  in no total, is not overdue, cannot be settled and is left unbound by a statement. */
++    /** Whether the claim is deferred on a day: it is OPEN (or was settled while a statement bound it) and deferred until
++     *  a date after that day, and no statement binds it. Until then it counts in no total, is not overdue, cannot be
++     *  settled and is left unbound by a statement. While bound the deferral waits: it takes effect once the binding ends. */
+     public boolean isDeferredOn(LocalDate today) {
+-        return getStatus() == ClaimStatus.OPEN && deferredUntil != null && deferredUntil.isAfter(today);
++        return isDeferralOn(getStatus(), today);
++    }
++
++    /** As {@link #isDeferredOn}, taking the claim at the given status. */
++    public boolean isDeferralOn(ClaimStatus status, LocalDate today) {
++        return (status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED) && !isBound()
++                && deferredUntil != null && deferredUntil.isAfter(today);
+     }
+ 
+     public int getProofs() {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 12ea223a..2d7f0522 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -121,8 +121,8 @@ public class ClaimFigures {
+         return floor != null && due.compareTo(floor) < 0 ? floor.setScale(2) : due;
+     }
+ 
+-    /** Whether a claim counts toward the totals on a day: only OPEN, PENDING and SETTLED claims do, but not an OPEN
+-     *  one deferred until after that day. */
++    /** Whether a claim counts toward the totals on a day: only OPEN, PENDING and SETTLED claims do, but not one
++     *  deferred until after that day ({@link Claim#isDeferredOn}: a bound one's deferral waits for its binding to end). */
+     public static boolean counts(Claim claim, LocalDate today) {
+         return (claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED) && !claim.isDeferredOn(today);
+     }
+@@ -147,7 +147,7 @@ public class ClaimFigures {
+         if (then == null || !(then.isOpen() || then == ClaimStatus.SETTLED)) {
+             return false;
+         }
+-        boolean deferred = then == ClaimStatus.OPEN && claim.getDeferredUntil() != null && claim.getDeferredUntil().isAfter(today);
++        boolean deferred = claim.isDeferralOn(then, today);
+         return !deferred && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
+     }
+ 
