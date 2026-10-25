@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
-import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { asFlag, asNumber, useSearchParam } from '../../url/useSearchParam';
 import { useUser } from '../session/useSession';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
@@ -9,9 +9,10 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/useClaims';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
- *  none) and `statementDate` are the last statement's, none before the first. */
+ *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
+ *  is retired from; set at all, they count as retired. */
 export type Person = { id: number; name: string; grade: string; version: number;
-  statementCount: number; statedTotal: string | null; statementDate: string | null };
+  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null };
 
 const GRADES = ['A', 'B', 'C'] as const;
 
@@ -198,9 +199,17 @@ function QuickAddBar({ sheetId }: { sheetId: string }) {
   );
 }
 
-// The people on the sheet, in the order they were added, and the form that adds or edits them.
+/** Whether retired people are listed (search param `showRetired`): off when the screen is first opened, and left
+ *  as it is by loading a sheet. */
+export function useShowRetired() {
+  return useSearchParam('showRetired', asFlag);
+}
+
+// The people on the sheet, in the order they were added, and the form that adds or edits them. Retired people
+// have no row unless "show retired" is on.
 function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
+  const [showRetired, setShowRetired] = useShowRetired();
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => p.id === editingId);
 
@@ -214,6 +223,15 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
           {people.error.message}
         </p>
       )}
+      <label>
+        <input
+          type="checkbox"
+          data-testid="show-retired"
+          checked={showRetired}
+          onChange={(e) => setShowRetired(e.target.checked || undefined)}
+        />{' '}
+        Show retired
+      </label>
       <table data-testid="people-list">
         <thead>
           <tr>
@@ -224,7 +242,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {(people.data ?? []).map((p) => (
+          {(people.data ?? []).filter((p) => showRetired || p.retiredFrom === null).map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>

@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
+
 /** A person on a sheet. Mutable so an Apply step can change it in place. */
 public class Person {
 
@@ -9,6 +11,7 @@ public class Person {
     private String grade;
     private long version;
     private Statements statements = Statements.NONE;
+    private LocalDate retiredFrom;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -57,5 +60,18 @@ public class Person {
 
     public void setStatements(Statements statements) {
         this.statements = statements;
+    }
+
+    /** The date the person is retired from; null when not retired. Set at all, the person counts as retired. */
+    public LocalDate getRetiredFrom() {
+        return retiredFrom;
+    }
+
+    public void setRetiredFrom(LocalDate retiredFrom) {
+        this.retiredFrom = retiredFrom;
+    }
+
+    public boolean isRetired() {
+        return retiredFrom != null;
     }
 }

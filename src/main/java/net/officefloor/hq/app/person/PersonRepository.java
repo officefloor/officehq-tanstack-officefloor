@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version, p.retired_from,"
             + " (SELECT COUNT(*) FROM statement s WHERE s.person_id = p.id) AS statement_count,"
             + " (SELECT s.due_total FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS stated_total,"
             + " (SELECT s.taken_on FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS statement_date";
@@ -23,6 +23,7 @@ public class PersonRepository {
                 rs.getString("grade"), rs.getLong("version"));
         person.setStatements(new Statements(rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
                 rs.getObject("statement_date", LocalDate.class)));
+        person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         return person;
     };
 
@@ -83,5 +84,11 @@ public class PersonRepository {
         }
         person.setVersion(person.getVersion() + 1);
         return true;
+    }
+
+    /** Retire the person from the date; false (nothing written) when they were retired already. */
+    public boolean retire(long id, LocalDate from) {
+        return jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND retired_from IS NULL",
+                java.sql.Date.valueOf(from), id) == 1;
     }
 }

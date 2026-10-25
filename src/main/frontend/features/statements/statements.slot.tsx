@@ -5,6 +5,7 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey, usePeople, type Person } from '../people/people.slot';
 import { useUser } from '../session/useSession';
+import { personActionKey, useLastPersonAction } from '../people/personAction';
 
 function StatementHeads() {
   return (
@@ -19,12 +20,13 @@ function StatementHeads() {
 
 // A person's statement count, the last statement's due-total and date, and the button that takes a statement:
 // it records their due-total and binds their counting claims to the figures they have now. A refusal shows on
-// the person until their next statement.
+// the person until the next action on their row.
 function StatementCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
   const [user] = useUser();
   const queryClient = useQueryClient();
   const take = useMutation({
+    mutationKey: personActionKey(sheetId, personId),
     mutationFn: () =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/statements`, { by: user ?? '' }),
     onSuccess: async () => {
@@ -34,6 +36,7 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string; 
       ]);
     },
   });
+  const last = useLastPersonAction(sheetId, personId, take.submittedAt);
 
   return (
     <>
@@ -44,7 +47,7 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string; 
         <button type="button" data-testid="person-statement" disabled={take.isPending} onClick={() => take.mutate()}>
           Statement
         </button>
-        {take.isError && (
+        {take.isError && last && (
           <span data-testid="person-error" role="alert">
             {take.error.message}
           </span>
