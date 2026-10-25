@@ -8,7 +8,7 @@ import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
-import { claimDueCents, isBound, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
+import { claimDueCents, isBound, rateOn, ratesKey, showHundredths, toHundredths, trimmedSum, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useCapCents, useFloorCents, useLate } from '../access/useAccess';
 
@@ -265,12 +265,11 @@ function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string;
   return <span data-testid="claim-due">{due == null ? NA : showHundredths(due)}</span>;
 }
 
-/** The sheet's due-total: everyone's due-total added up, skipping those that are n/a. */
+/** The sheet's due-total: everyone's due-total added up, skipping those that are n/a, and leaving out the single highest
+ *  and the single lowest when three or more people have one. */
 export function useSheetDueTotal(sheetId: string): bigint {
   const totals = useDueTotals(sheetId);
-  let sum = 0n;
-  for (const t of totals.values()) if (t != null) sum += t;
-  return sum;
+  return trimmedSum([...totals.values()].filter((t): t is bigint => t != null));
 }
 
 // The sheet's due-total, as the rollup shows it.

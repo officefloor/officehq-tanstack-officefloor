@@ -4,7 +4,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useFloorCents, useLate } from '../access/useAccess';
 import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
-import { claimDueCents, isOpen, showHundredths, useRates } from '../rates/useRates';
+import { claimDueCents, isOpen, showHundredths, trimmedSum, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 
 /** Whether a claim is overdue: OPEN or PENDING, not deferred past the sheet's today, and its due-by before the sheet's today. */
@@ -15,7 +15,8 @@ function useIsOverdue(sheetId: string): (claim: { status: string; dueBy: string;
 
 type Overdue = { count: number; cents: bigint };
 
-/** The overdue claims that count, per person and for the sheet: how many, and their due (late charge included) added up (n/a as 0). */
+/** The overdue claims that count, per person and for the sheet: how many, and their due (late charge included) added up (n/a as 0);
+ *  the sheet's total leaves out the single highest and the single lowest person's when there are three or more people. */
 export function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: Overdue } {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -35,8 +36,8 @@ export function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; s
     }
     byPerson.set(p.id, mine);
     sheet.count += mine.count;
-    sheet.cents += mine.cents;
   }
+  sheet.cents = trimmedSum([...byPerson.values()].map((o) => o.cents));
   return { byPerson, sheet };
 }
 

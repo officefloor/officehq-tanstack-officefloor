@@ -148,3 +148,13 @@ export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   const figure = claimFigureCents(rates, grade, claim, floorOn, roundsHalfUp(late, claim));
   return figure == null ? null : figure + lateCents(late, claim, figure);
 }
+
+/** Figures added up, leaving out the single highest and the single lowest when there are three or more. */
+export function trimmedSum(figures: bigint[]): bigint {
+  let sum = 0n;
+  for (const f of figures) sum += f;
+  if (figures.length < 3) return sum;
+  const max = figures.reduce((a, b) => (b > a ? b : a));
+  const min = figures.reduce((a, b) => (b < a ? b : a));
+  return sum - max - min;
+}
