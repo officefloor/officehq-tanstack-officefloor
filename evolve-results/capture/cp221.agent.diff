@@ -1,0 +1,60 @@
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index 4ff64567..55bc348a 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -11,6 +11,7 @@ import type { Claim } from '../claims/claims';
+ import { STATUSES } from '../summary/summary.slot';
+ import { useCrews } from '../crews/crews';
+ import { crewDue } from '../crews/crews.slot';
++import { useWatched } from '../people/watch.slot';
+ 
+ /** A sheet's due-total and overdue-total, as the rollup figures them, from what the store holds for it. */
+ export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+@@ -34,13 +35,15 @@ export function personNamed(people: Person[], user: string | undefined): Person
+ // claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
+ // figures them); and the signed-in user's own due-total (as their row shows it, "n/a" included) and overdue-total, when a person on the sheet goes by their
+ // name (blank when none does), with their crew total: the due-totals of the crews that person leads, added up (blank
+-// when they lead none); and how many REVIEW claims are assigned to the signed-in user.
++// when they lead none); the due-totals of the people the signed-in user watches, added up (0.00 when watching no one);
++// and how many REVIEW claims are assigned to the signed-in user.
+ function HeaderCounters() {
+   const people = usePeople();
+   const claims = useClaims();
+   const rates = useRates();
+   const crews = useCrews();
+   const settings = useSettings();
++  const watched = useWatched();
+   const today = useSheetToday();
+   const allPeople = people.data ?? [];
+   const allClaims = claims.data ?? [];
+@@ -55,6 +58,9 @@ function HeaderCounters() {
+   const myCrewDue = led.length > 0
+     ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))
+     : '';
++  const watchedIds = watched.data ?? [];
++  const watchedDue = sumDue(allPeople.filter((p) => watchedIds.includes(p.id))
++    .map((p) => personDue(p, allClaims, rates.data, today, settings.data, allPeople)));
+   const myReviews = allClaims.filter((c) => c.status === 'REVIEW' && !!user && c.reviewAssigned === user).length;
+   return (
+     <section data-testid="header-counters">
+@@ -69,6 +75,7 @@ function HeaderCounters() {
+       {' · '}My due <strong data-testid="my-due-total">{mine.due}</strong>
+       {' · '}My overdue <strong data-testid="my-overdue-total">{mine.overdue}</strong>
+       {' · '}My crew due <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
++      {' · '}Watched due <strong data-testid="watched-due-total">{watchedDue}</strong>
+       {' · '}My reviews <strong data-testid="my-reviews-count">{myReviews}</strong>
+     </section>
+   );
+diff --git a/src/main/frontend/features/people/watch.slot.tsx b/src/main/frontend/features/people/watch.slot.tsx
+index aee4930c..33b6002d 100644
+--- a/src/main/frontend/features/people/watch.slot.tsx
++++ b/src/main/frontend/features/people/watch.slot.tsx
+@@ -11,7 +11,7 @@ import { peoplePath, type Person } from './people';
+ const watchedQueryKey = (sheetId: string, user: string) => ['sheet', sheetId, 'watched', user] as const;
+ 
+ /** The ids of the people the signed-in user watches on the sheet. */
+-function useWatched() {
++export function useWatched() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   return useQuery({
