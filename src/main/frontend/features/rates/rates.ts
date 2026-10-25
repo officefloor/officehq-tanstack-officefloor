@@ -37,6 +37,9 @@ export const ratesQueryKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as
 
 export const ratesPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rates`;
 
+/** Where a steward withdraws the newest version of a grade's rate for a from-date. */
+export const rateWithdrawPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rate-withdraw`;
+
 /** Where a candidate rate is previewed: what it would change, saving nothing. */
 export const ratesPreviewPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rate-preview`;
 

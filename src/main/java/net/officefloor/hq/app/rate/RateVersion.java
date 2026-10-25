@@ -53,11 +53,19 @@ public class RateVersion {
         this.replacedOn = replacedOn;
     }
 
+    public LocalDate getFromDate() {
+        return fromDate;
+    }
+
     public int getVersion() {
         return version;
     }
 
     public BigDecimal getPct() {
         return pct;
+    }
+
+    public LocalDate getToDate() {
+        return toDate;
     }
 }

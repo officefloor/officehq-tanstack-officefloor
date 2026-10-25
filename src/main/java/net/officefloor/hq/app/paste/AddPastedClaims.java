@@ -5,6 +5,7 @@ import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,7 +42,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Finds each line's person on the sheet by name or alias, ignoring case. A line whose person, date (blank: the
- * sheet's entry date) and note match one of that person's claims as they stood before the paste updates that claim:
+ * sheet's entry date) and note match one of that person's claims (a draft first, then the oldest) as they stood before the paste updates that claim:
  * a DRAFT is edited to the line's amount (CLAIM_EDITED when it changes; refused while another user edits it or when
  * its lines total otherwise) and opened; a match in any other status refuses the paste. Any other line makes its
  * claim by the claim form's rules (a reference repeating one of an earlier line, ignoring case, is refused too),
@@ -82,6 +83,7 @@ public class AddPastedClaims {
             Claim claim = before.get(person.getId()).stream()
                     .filter(c -> date.equals(c.getDate()) && note.equals(noteOf(c.getNote())))
                     .filter(c -> !matched.contains(c.getId()))
+                    .sorted(Comparator.comparing(Claim::getId))
                     .min((a, b) -> Boolean.compare(a.getStatus() != ClaimStatus.DRAFT, b.getStatus() != ClaimStatus.DRAFT))
                     .orElse(null);
             if (claim != null) {

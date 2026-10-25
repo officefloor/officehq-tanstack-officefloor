@@ -100,6 +100,13 @@ public class Rate {
         version++;
     }
 
+    /** Makes it an older version again: its percent, to-date and version number as that version had them. */
+    public void restore(RateVersion older) {
+        this.pct = older.getPct();
+        this.toDate = older.getToDate();
+        this.version = older.getVersion();
+    }
+
     /** Whether it has ended by a date: it has a to-date before it. */
     public boolean endedBy(LocalDate on) {
         return toDate != null && toDate.isBefore(on);
