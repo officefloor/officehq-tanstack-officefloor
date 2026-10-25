@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
 import { ratesQueryKey } from '../rates/rates';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | PermKey;
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | PermKey;
 
 /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
  *  Not dated. */
@@ -23,7 +23,7 @@ const PERMS = [
 type PermKey = (typeof PERMS)[number]['key'];
 
 /** The settings that carry a figure: each is saved from a from-date (blank: the sheet's today). */
-const DATED = ['clerkLimit', 'floor', 'terms', 'latePct', 'termsA', 'termsB', 'termsC', 'cap', 'proofThreshold', 'noteThreshold', 'graceA', 'graceB', 'graceC', 'proofThresholdA', 'proofThresholdB', 'proofThresholdC', 'rounding', 'reviewThreshold'] as const;
+const DATED = ['clerkLimit', 'clerkLimitA', 'clerkLimitB', 'clerkLimitC', 'floor', 'terms', 'latePct', 'termsA', 'termsB', 'termsC', 'cap', 'proofThreshold', 'noteThreshold', 'graceA', 'graceB', 'graceC', 'proofThresholdA', 'proofThresholdB', 'proofThresholdC', 'rounding', 'reviewThreshold'] as const;
 type DatedKey = (typeof DATED)[number];
 type FromKey = `${DatedKey}From`;
 type Key = ValueKey | FromKey;
@@ -46,6 +46,12 @@ const GRADE_PROOF_THRESHOLD = [
   { grade: 'B', key: 'proofThresholdB' },
   { grade: 'C', key: 'proofThresholdC' },
 ] as const;
+/** The grades that may have their own clerk limit, and the setting key of each. */
+const GRADE_CLERK_LIMIT = [
+  { grade: 'A', key: 'clerkLimitA' },
+  { grade: 'B', key: 'clerkLimitB' },
+  { grade: 'C', key: 'clerkLimitC' },
+] as const;
 type Drafts = Partial<Record<Key, string>>;
 
 // The sheet's settings: the clerk limit in force (blank when there is none), the floor in force (a claim's live
@@ -53,8 +59,8 @@ type Drafts = Partial<Record<Key, string>>;
 // claim's due gains, for each full 30 days overdue, the one in force on that boundary date of its figure), the policy date (a claim dated before it rounds half
 // up, one on or after it half to even; blank: the sheet's today), the period numbering from (while the sheet's today is on or after it, a claim
 // opened is numbered within its period: P1-1, X-1 for no period; blank: off), each grade's own terms (blank: the sheet's terms;
-// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the proof kinds (a comma separated list of receipt and photo: while set, a claim whose due is above its proof threshold needs at least one proof of each to be settled or approved; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), the default grade (a person added by the quick-add bar, or by an import line with a blank grade, gets it; changing it changes no one; blank: A; not dated), and the form that sets them. A clerk settles a claim only when its due is at or below the
-// limit; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
+// a claim's due-by is fixed when it is created, from the terms of its person's grade on its date), the cap (a person's due-total is at most it; blank: none), the proof threshold (a claim whose due is above the one in force on its date cannot be settled or approved while it has no proof; blank: none), the note threshold (a claim whose due is above the one in force on its date cannot be opened while its note is empty; blank: none), the review threshold (a claim whose due is above the one in force on its date goes to REVIEW when opened, until a steward reviews it; blank: none), the escalation gap (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per claim; blank: off; not dated), the review SLA (a REVIEW claim whose review day plus that many days is before the sheet's today is late; blank: none; not dated), the proof kinds (a comma separated list of receipt and photo: while set, a claim whose due is above its proof threshold needs at least one proof of each to be settled or approved; blank: none; not dated), the permission matrix (for each of open, settle, void, reassign, close and reopen, the roles that may take it; blank: the standing rule — open, settle, void and close by clerk and steward, reassign and reopen by steward; not dated), the grace days (once the sheet's today is changed, each open period whose to-date plus them is before it is closed; blank: off; not dated), the entry date (while it is set, a new claim left without a date — on the claim form, the quick-add bar, a pasted line or a correction — is dated it in place of the sheet's today; blank: off; not dated), each grade's grace days (an overdue claim's lateness — when it is overdue, and its late charge's 30-day boundaries — counts from its due-by plus those of its person's grade on its date, in force on its date; blank: none), each grade's proof threshold (in force on a claim's date, it applies to a claim of its person's grade on that date in place of the sheet's; blank: none, the sheet's applies), the pot (shared out among the members of each balanced pool by their shares; blank: none; not dated), the parent sheet (a grade with no rate in force on a date here takes the parent's, then its parent's, up to three levels up; blank: none; not dated), the fiscal year start month (1 to 12; blank: 1; not dated), the alert threshold (a person whose due-total goes above it is alerted in the audit; blank: off; not dated), the rounding mode (half-up or half-even: a claim with one in force on its date rounds every live figure by it; blank: none, the policy date decides), the default grade (a person added by the quick-add bar, or by an import line with a blank grade, gets it; changing it changes no one; blank: A; not dated), each grade's clerk limit (on the sheet's today, it applies to a claim of its person's grade then in place of the sheet's; blank: none, the sheet's applies), and the form that sets them. A clerk settles a claim only when its due is at or below the
+// limit in force for it; a steward settles anything. Each field shows the value in force until it is typed in (or focused); saving sets only
 // the fields typed in (all of them when none was). Each setting that carries a figure is saved from its from-date (blank:
 // the sheet's today), keeping the values recorded from other dates; each shown is the one in force on the sheet's today.
 function SheetSettings() {
@@ -107,6 +113,9 @@ function SheetSettings() {
     reviewSla: settings.data?.reviewSla ?? '',
     proofKinds: settings.data?.proofKinds ?? '',
     defaultGrade: settings.data?.defaultGrade ?? '',
+    clerkLimitA: settings.data?.clerkLimitA ?? '',
+    clerkLimitB: settings.data?.clerkLimitB ?? '',
+    clerkLimitC: settings.data?.clerkLimitC ?? '',
     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
@@ -144,6 +153,12 @@ function SheetSettings() {
       <p>
         Clerk limit: <span data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</span>
       </p>
+      {GRADE_CLERK_LIMIT.map(({ grade, key }) => (
+        <p key={grade}>
+          Clerk limit of grade {grade} (blank: the sheet's):{' '}
+          <span data-testid={`setting-clerk-limit-${grade}-current`}>{settings.data?.[key] ?? ''}</span>
+        </p>
+      ))}
       <p>
         Floor: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
       </p>
@@ -256,6 +271,20 @@ function SheetSettings() {
           onFocus={touch('clerkLimit')}
         />
         {fromField('clerkLimit', 'setting-clerk-limit')}
+        {GRADE_CLERK_LIMIT.map(({ grade, key }) => (
+          <Fragment key={grade}>
+            <input
+              data-testid={`setting-clerk-limit-${grade}`}
+              placeholder={`Clerk limit of grade ${grade} (blank: the sheet's)`}
+              inputMode="decimal"
+              value={valueOf(key)}
+              onChange={edit(key)}
+              onInput={edit(key)}
+              onFocus={touch(key)}
+            />
+            {fromField(key, `setting-clerk-limit-${grade}`)}
+          </Fragment>
+        ))}
         <input
           data-testid="setting-floor"
           placeholder="Floor (blank: 1.00)"

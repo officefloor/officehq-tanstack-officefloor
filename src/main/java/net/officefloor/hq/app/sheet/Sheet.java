@@ -192,6 +192,23 @@ public class Sheet {
         return amountOn(CLERK_LIMIT, today);
     }
 
+    /** The setting key of a grade's clerk limit (dated). */
+    public static String clerkLimitKey(String grade) {
+        return CLERK_LIMIT + "-" + grade;
+    }
+
+    /** The grade's own clerk limit in force on a date; null when it has none. */
+    public BigDecimal gradeClerkLimitOn(String grade, LocalDate on) {
+        return grade == null ? null : amountOn(clerkLimitKey(grade), on);
+    }
+
+    /** The clerk limit in force for a claim of a grade: the grade's own in force on the sheet's today when one is
+     *  set, else the sheet's; null when there is none. */
+    public BigDecimal clerkLimitFor(String grade) {
+        BigDecimal own = gradeClerkLimitOn(grade, today);
+        return own != null ? own : getClerkLimit();
+    }
+
     /** The floor in force on a date; the starting 1.00 before every from-date. */
     public BigDecimal floorOn(LocalDate on) {
         BigDecimal floor = amountOn(FLOOR, on);

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  decimals, and terms that are not a whole number of days, and a late percent that is negative or has more than two decimals, and a policy date or period numbering from that is not a calendar date
  *  (YYYY-MM-DD). A blank clerk limit means no limit; a blank floor is
  *  1.00; blank terms are 14; a blank late percent is 0.00; a blank policy date is the sheet's today; a blank period numbering from is off; a blank entry date is off; a blank cap is none (else an amount like the floor); a blank proof threshold is none (else an amount like the floor); a blank note threshold is none (else an amount like the floor). A grade's terms must be a whole number of days, or blank (the grade uses the sheet's terms). A permission matrix entry must be a comma separated list of
- *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. The alert threshold is an amount like the floor, or blank (off); not dated. The rounding mode is half-up or half-even, or blank (none); dated. A blank review threshold is none (else an amount like the floor); dated. The escalation gap must be a whole number of days, or blank (off); not dated. The proof kinds are a comma separated list of receipt and photo, or blank (none); not dated. The default grade is A, B or C, or blank (A); not dated. A key left out is not changed.
+ *  roles (clerk, steward), or blank (the standing rule). The grace days must be a whole number of days, or blank (off). A grade's grace days must be a whole number of days, or blank (none). A grade's proof threshold is an amount like the floor, or blank (none: the sheet's applies). The pot is an amount like the floor, or blank (none); not dated. The fiscal year start month is a month 1 to 12, or blank (1); not dated. The alert threshold is an amount like the floor, or blank (off); not dated. The rounding mode is half-up or half-even, or blank (none); dated. A blank review threshold is none (else an amount like the floor); dated. The escalation gap must be a whole number of days, or blank (off); not dated. The proof kinds are a comma separated list of receipt and photo, or blank (none); not dated. The default grade is A, B or C, or blank (A); not dated. A grade's clerk limit is an amount like the floor, or blank (none: the sheet's applies); dated. A key left out is not changed.
  *  A from-date must be a calendar date (YYYY-MM-DD), or blank (the sheet's today). */
 public class ValidateSettings {
 
@@ -89,6 +89,12 @@ public class ValidateSettings {
                     "The review SLA must be a whole number of days, 0 or more, or blank.");
             proofKinds(changes, request.proofKinds());
             defaultGrade(changes, request.defaultGrade());
+            amount(changes, Sheet.clerkLimitKey("A"), request.clerkLimitA(), null, request.clerkLimitAFrom(),
+                    "The clerk limit of grade A must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            amount(changes, Sheet.clerkLimitKey("B"), request.clerkLimitB(), null, request.clerkLimitBFrom(),
+                    "The clerk limit of grade B must be an amount, 0.00 or more, with up to two decimals, or blank.");
+            amount(changes, Sheet.clerkLimitKey("C"), request.clerkLimitC(), null, request.clerkLimitCFrom(),
+                    "The clerk limit of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
         }
         body.set(new SettingsInput(changes));
     }

@@ -11,6 +11,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -20,7 +21,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Splits an amount (more than 0.00 and less than the claim's amount) off an OPEN claim. The claim keeps the rest and
  * loses any figure a statement bound it to; a new OPEN claim of the same person gets the split-off amount, the same
  * date and note, the next number (as opening gives one), the signed-in user as who opened it, a due-by fixed now from
- * the terms in force on the date, the original's number as the one it was split from, and the original's tags. A PENDING, deferred, settled
+ * the terms in force on the date, the original's number as the one it was split from, and the original's tags. A user whose role the sheet's permission matrix does not allow to open a claim cannot split one (the split opens
+ * the new claim). A PENDING, deferred, settled
  * or any other non-OPEN claim, or one whose due-by is in a closed period, is refused. The new claim is numbered in the period its own due-by falls in, and is a late entry when that period is soft-closed. Returns the split, for the audit.
  */
 public class ApplySplit {
@@ -29,7 +31,7 @@ public class ApplySplit {
 
     public Split apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository, EntityManager entityManager,
             PeriodRepository periods, PersonRepository people, PersonGradeRepository grades, RateRepository rates,
-            ClaimLogRepository log, HolidayRepository holidays,
+            ClaimLogRepository log, HolidayRepository holidays, RoleRepository roles,
             @RequestHeader(name = "X-User", required = false) String userHeader,
             @RequestParam(name = "amount", required = false) String amountParam) throws ClaimStatusException {
         String user = AuditUser.decode(userHeader);
@@ -38,6 +40,10 @@ public class ApplySplit {
             throw new ClaimStatusException("The amount to split off must be a number with up to two decimals.");
         }
         BigDecimal amount = new BigDecimal(amountField).setScale(2);
+        String role = roles.roleOf(claim.getSheetId(), user);
+        if (!sheet.allows("open", role)) {
+            throw new ClaimStatusException("A " + role + " cannot open a claim, so cannot split one.");
+        }
         if (periods.isClosedOn(claim.getSheetId(), claim.getDueBy())) {
             throw new ClaimStatusException("A claim in a closed period cannot be split.");
         }
