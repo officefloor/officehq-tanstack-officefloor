@@ -1,0 +1,505 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 653c48a0..d90c0063 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -170,7 +170,9 @@ const ACTIONS = [
+ // threshold in force on its date cannot be settled or approved while it has no proof, nor while it lacks a proof of each of the sheet's proof kinds: that shows the claim's error.
+ // An OPEN claim splits off an amount (typed beside the split button; more than 0.00 and less than its amount) into a
+ // new OPEN claim; any other status, a deferred claim, a claim whose due-by is in a closed period or an amount out of range shows the
+-// claim's error. A steward re-dates an OPEN or PENDING claim (the date typed beside the re-date button); anyone
++// claim's error. An OPEN claim is part-settled (the amount typed beside the settle-part button): the amount is split off as
++// the split does and the new claim settled at once as the settle does; a refused split or settle (four-eyes and proof
++// judged on the original) shows the claim's error and changes nothing. A steward re-dates an OPEN or PENDING claim (the date typed beside the re-date button); anyone
+ // else, any other status, a claim whose due-by is in a closed period, or a new date after the person's retirement shows
+ // the claim's error. Re-dating keeps the due-by, so the claim keeps its period and number. An OPEN or PENDING claim is
+ // reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
+@@ -304,6 +306,16 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     },
+   });
+   const submitSplit = useSubmitOnce(split);
++  const [partAmount, setPartAmount] = useState('');
++  const partSettle = useMutation({
++    mutationFn: (amount: string) =>
++      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/settle/part?amount=${encodeURIComponent(amount)}`, undefined, user),
++    onSuccess: () => {
++      setPartAmount('');
++      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
++    },
++  });
++  const submitPartSettle = useSubmitOnce(partSettle);
+   const [inlineAmount, setInlineAmount] = useState('');
+   const inline = useMutation({
+     mutationFn: (amount: string) =>
+@@ -343,12 +355,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-reject-reason"
+         placeholder="Reason to reject"
+         value={reason}
+-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <select
+         data-testid="claim-void-reason"
+         value={voidReason}
+-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         <option value="">(no void reason)</option>
+         {(voidReasons.data ?? []).map((r) => (
+@@ -364,7 +376,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           onClick={() => {
+             setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+             move.reset();
+-            defer.reset(); redate.reset(); split.reset();
++            defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+             proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+             submitChange(action === 'reject' ? { action, reason }
+               : action === 'void' && voidReason !== '' ? { action, reason: voidReason } : { action });
+@@ -376,7 +388,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+       <select
+         data-testid="claim-reassign-to"
+         value={target ? String(target.id) : ''}
+-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         {others.map((p) => (
+           <option key={p.id} value={String(p.id)}>{p.name}</option>
+@@ -388,7 +400,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         disabled={move.isPending || !target}
+         onClick={() => {
+           change.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           if (target) submitMove(target.id);
+@@ -400,7 +412,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-defer-date"
+         placeholder="Defer until YYYY-MM-DD"
+         value={deferTo}
+-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -410,7 +422,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+-          split.reset();
++          split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitDefer(deferTo);
+         }}
+@@ -421,7 +433,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-date-new"
+         placeholder="Re-date to YYYY-MM-DD"
+         value={redateTo}
+-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -432,7 +444,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           move.reset();
+           defer.reset();
+           proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+-          split.reset();
++          split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRedate(redateTo);
+         }}
+@@ -455,7 +467,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitProof(proofKind);
+         }}
+@@ -469,7 +481,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           proof.reset(); comment.reset(); waive.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRemind(undefined);
+@@ -484,7 +496,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           proof.reset(); remind.reset(); comment.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitWaive(undefined);
+@@ -499,7 +511,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           proof.reset(); remind.reset(); waive.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitHold(undefined);
+@@ -511,7 +523,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-comment-text"
+         placeholder="Comment"
+         value={commentText}
+-        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -520,7 +532,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           proof.reset(); remind.reset(); waive.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitComment(commentText);
+@@ -532,21 +544,21 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-line-label"
+         placeholder="Line label"
+         value={lineLabel}
+-        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-qty"
+         placeholder="Qty"
+         inputMode="numeric"
+         value={lineQty}
+-        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-unit"
+         placeholder="Unit amount"
+         inputMode="decimal"
+         value={lineUnit}
+-        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -555,7 +567,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          defer.reset(); redate.reset(); split.reset();
++          defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+           proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset();
+           submitLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
+@@ -568,7 +580,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to split off"
+         inputMode="decimal"
+         value={splitAmount}
+-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -580,12 +592,35 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           defer.reset(); redate.reset();
+           proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
++          partSettle.reset();
+           submitSplit(splitAmount);
+         }}
+       >
+         Split
+       </button>{' '}
+-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
++      <input
++        data-testid="claim-settle-part-amount"
++        placeholder="Amount to settle"
++        inputMode="decimal"
++        value={partAmount}
++        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="claim-settle-part"
++        disabled={partSettle.isPending}
++        onClick={() => {
++          change.reset();
++          move.reset();
++          defer.reset(); redate.reset(); split.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          setEditRefused(false); lock.reset(); inline.reset(); line.reset();
++          submitPartSettle(partAmount);
++        }}
++      >
++        Settle part
++      </button>{' '}
++      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
+         <input
+           data-testid="claim-inline-amount"
+           placeholder="Amount"
+@@ -619,7 +654,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         </button>
+         {children}
+       </span>
+-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || line.isError || split.isError || editRefused || lock.isError || inline.isError) && (
++      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
+         <span data-testid="claim-error">
+           {line.isError
+             ? line.error instanceof HttpError && line.error.status === 423
+@@ -651,6 +686,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+               : closed
+               ? 'This claim is due by a date in a closed period, so it cannot be edited.'
+               : `Only a draft claim can be edited; void this ${claim.status} claim and add a new one.`
++            : partSettle.isError
++            ? partSettle.error instanceof HttpError && partSettle.error.status === 403
++              ? 'A viewer cannot settle a claim, and no claim on an archived sheet can be settled.'
++              : closed
++              ? 'This claim is due by a date in a closed period, so no part of it can be settled.'
++              : claim.status !== 'OPEN' || isDeferred(claim, today)
++              ? `Only an open claim that is not deferred can be part-settled; this one is ${isDeferred(claim, today) ? 'deferred' : claim.status}.`
++              : `No part of this claim can be settled: the amount must be more than 0.00 and less than its ${claim.amount}, and you must be able to settle the claim itself (not its opener or last editor, with the proof its due needs).`
+             : split.isError
+             ? closed
+               ? 'This claim is due by a date in a closed period, so it cannot be split.'
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 0ddc8957..f6d7ae8a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -47,7 +47,7 @@ public class ApplyClaimStatus {
+             @RequestParam(name = "reason", required = false) String reason,
+             @RequestParam(name = "batch", required = false) String batch) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+         return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
+-                userHeader, reason, batch, false);
++                userHeader, reason, batch, false, false);
+     }
+ 
+     /** The change itself; on a dry run (a settle only) it refuses what the settle would refuse and changes nothing. */
+@@ -55,6 +55,16 @@ public class ApplyClaimStatus {
+             EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
+             Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
+             String userHeader, String reason, String batch, boolean dryRun) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
++        return run(action, claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log, voidReasons,
++                userHeader, reason, batch, dryRun, false);
++    }
++
++    /** As above; when the four-eyes and proof rules were already judged on the claim a part-settle split it off from,
++     *  they are not judged again on it. */
++    static String run(String action, Claim claim, ClaimRepository repository,
++            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
++            Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
++            String userHeader, String reason, String batch, boolean dryRun, boolean judged) throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
+         if (dryRun && !"settle".equals(action)) {
+             throw new ClaimStatusException("Only a settle can be checked.");
+         }
+@@ -161,10 +171,10 @@ public class ApplyClaimStatus {
+             if (next == ClaimStatus.SETTLED && claim.isDeferredOn(sheet.getToday())) {
+                 throw new ClaimStatusException("A deferred claim cannot be settled until the sheet's today reaches its date.");
+             }
+-            if (next == ClaimStatus.SETTLED && user.equals(claim.getOpenedBy())) {
++            if (next == ClaimStatus.SETTLED && !judged && user.equals(claim.getOpenedBy())) {
+                 throw new ClaimStatusException("The one who opened a claim cannot settle or approve it.");
+             }
+-            if (next == ClaimStatus.SETTLED && user.equals(claim.getEditedBy())) {
++            if (next == ClaimStatus.SETTLED && !judged && user.equals(claim.getEditedBy())) {
+                 throw new ClaimStatusException("The one who last edited a claim cannot settle or approve it.");
+             }
+             if (next == ClaimStatus.SETTLED) {
+@@ -174,10 +184,10 @@ public class ApplyClaimStatus {
+                                 personGrades, sheet).due(claim);
+                 BigDecimal threshold = sheet.proofThresholdFor(
+                         personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());
+-                if (threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
++                if (!judged && threshold != null && due != null && due.compareTo(threshold) > 0 && claim.getProofs() == 0) {
+                     throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof to be settled or approved.");
+                 }
+-                if (threshold != null && due != null && due.compareTo(threshold) > 0) {
++                if (!judged && threshold != null && due != null && due.compareTo(threshold) > 0) {
+                     for (String kind : sheet.getProofKinds()) {
+                         if (claim.proofsOf(kind) == 0) {
+                             throw new ProofRequiredException("A claim whose due is above the proof threshold needs a proof of each of the sheet's proof kinds (" + kind + " missing) to be settled or approved.");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+new file mode 100644
+index 00000000..f07d6384
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.persistence.EntityManager;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.voidreason.VoidReasonRepository;
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Settles the claim a part-settle has just split off, as the settle button does (PENDING when the clerk limit says
++ *  so), by the signed-in user; its four-eyes and proof rules were judged on the original. Notes the sheet's figures
++ *  between the split and the settle first, for the audit. */
++public class ApplyPartSettle {
++    public PartSettle apply(@Parameter Split split, @Val Sheet sheet, ClaimRepository repository,
++            EntityManager entityManager, SheetRepository sheets, PersonRepository people, RateRepository rates,
++            PersonGradeRepository grades, PeriodRepository periods, RoleRepository roles, ClaimLogRepository log,
++            VoidReasonRepository voidReasons, @RequestHeader(name = "X-User", required = false) String userHeader)
++            throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
++        Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades);
++        Claim made = split.made();
++        String number = ApplyClaimStatus.run("settle", made, repository, entityManager, people, rates, grades, periods,
++                sheet, roles, log, voidReasons, userHeader, null, null, false, true);
++        ClaimRules.log(made, sheet, log, people, rates, grades, AuditUser.decode(userHeader));
++        return new PartSettle(split, between, number);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
+new file mode 100644
+index 00000000..8e0c3a86
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditPartSettle.java
+@@ -0,0 +1,45 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.watch.Watch;
++import net.officefloor.hq.app.watch.WatchRepository;
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records a part-settle, once it is saved, as the split and then the settle would each record themselves: the
++ *  split's lines and the figures it moved, then the new claim's settle (with its due), its watchers' notices and the
++ *  figures the settle moved. */
++public class AuditPartSettle {
++    public void audit(@Parameter PartSettle part, @Val Claim claim, @Val Rollup before, SheetRepository sheets,
++            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
++            WatchRepository watches, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
++        String by = AuditUser.decode(user);
++        Claim made = part.split().made();
++        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + made.getNumber());
++        audit.record(ClaimAudit.line(ClaimStatus.OPEN.event(), made, person, by));
++        part.between().changesSince(before, claim.getSheetId(), by).forEach(audit::record);
++
++        String line = ClaimAudit.line(made.getStatus().event(), made, person, by, part.number());
++        if (made.getStatus() == ClaimStatus.SETTLED) {
++            line += " due=" + (made.getDue() == null ? "n/a" : made.getDue().setScale(2).toPlainString());
++            audit.record(line);
++            for (Watch watch : watches.findByPersonIdOrderByIdAsc(made.getPersonId())) {
++                audit.record("NOTIFY sheet=" + made.getSheetId() + " by=" + by + " user=" + watch.getUserName()
++                        + " person=" + person + " number=" + made.getNumber());
++            }
++        } else {
++            audit.record(line);
++        }
++        Rollup now = Rollup.of(claim.getSheetId(), sheets, people, claims, rates, grades);
++        now.changesSince(part.between(), claim.getSheetId(), by).forEach(audit::record);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/CheckPartSettle.java
+new file mode 100644
+index 00000000..2bb073b3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckPartSettle.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.persistence.EntityManager;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.voidreason.VoidReasonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Before a part-settle splits anything: refuses, as the claim's own settle would, a settle the signed-in user cannot
++ *  make of the original claim (its four-eyes rules and its proof rule are judged on it), and changes nothing. */
++public class CheckPartSettle {
++    public void check(@Val Claim claim, ClaimRepository repository,
++            EntityManager entityManager, PersonRepository people, RateRepository rates, PersonGradeRepository grades, PeriodRepository periods,
++            @Val Sheet sheet, RoleRepository roles, ClaimLogRepository log, VoidReasonRepository voidReasons,
++            @RequestHeader(name = "X-User", required = false) String userHeader)
++            throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
++        ApplyClaimStatus.run("settle", claim, repository, entityManager, people, rates, grades, periods, sheet, roles, log,
++                voidReasons, userHeader, null, null, true);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PartSettle.java b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+new file mode 100644
+index 00000000..c58fe848
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.rollup.Rollup;
++
++/** A part-settle: the split that made the new claim, the sheet's figures between the split and the settle, and the
++ *  new claim's number as its settle left it. */
++public record PartSettle(Split split, Rollup between, String number) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle/part.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle/part.PUT.yml
+new file mode 100644
+index 00000000..c36712d3
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle/part.PUT.yml
+@@ -0,0 +1,39 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/settle/part?amount=N.NN — split an amount off an OPEN claim, as the split does,
++# and settle the new claim at once, as the settle does; a refused settle (judged on the original) or split refuses it all.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: claim
++claim:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.claim.CheckPartSettle
++  govern: [ transaction ]
++  next: split
++split:
++  class: net.officefloor.hq.app.claim.ApplySplit
++  govern: [ transaction ]
++  next: settle
++settle:
++  class: net.officefloor.hq.app.claim.ApplyPartSettle
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditPartSettle
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
