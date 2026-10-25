@@ -10,7 +10,8 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 /** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
  *  replacing the grade recorded for that date and keeping the others; a grade (or terms with no from-date) the same as
- *  the one already in force is left unrecorded, so a grade or terms later recorded from an earlier date still reach past it. */
+ *  the one already in force is left unrecorded when no from-date is given, so a grade or terms later recorded from an
+ *  earlier date still reach past it; a grade given with a from-date is recorded from it. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
             PersonAliasRepository aliases, TreeNames tree,
@@ -54,9 +55,10 @@ public class ApplyPerson {
             // saved by someone else between the load and this save
             throw new PersonConflictException();
         }
-        // A grade left as it is in force on the from-date records nothing, so a grade later recorded from an earlier
-        // date still reaches it.
-        if (request.grade().equals(grades.gradesOf(person).on(from))
+        // A grade left as it is in force on the sheet's today, with no from-date given, records nothing, so a grade later
+        // recorded from an earlier date still reaches it. A grade given with a from-date is recorded from that date.
+        boolean fromGiven = request.gradeFrom() != null && !request.gradeFrom().isEmpty();
+        if (!fromGiven && request.grade().equals(grades.gradesOf(person).on(from))
                 && grades.findByPersonIdAndFromDate(person.getId(), from).isEmpty()) {
             return;
         }

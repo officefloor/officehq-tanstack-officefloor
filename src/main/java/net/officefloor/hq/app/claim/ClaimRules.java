@@ -63,11 +63,13 @@ public final class ClaimRules {
     }
 
     /** The claim the input makes for the person, not yet saved; refused as BuildClaim refuses it. Its due-by is the
-     *  terms-th business day after its date, skipping weekends and the sheet's holidays now on its list. */
+     *  terms-th business day after its date (the terms in force on the
+     *  sheet's today, the day it is created), skipping weekends and the sheet's holidays now on its list. */
     public static Claim make(ClaimInput input, Sheet sheet, Person person, ClaimRepository repository,
             PeriodRepository periods, PersonGradeRepository grades, HolidayRepository holidays) throws InvalidClaimException {
         LocalDate date = input.date() != null ? input.date() : sheet.entryDateInForce();
-        int terms = sheet.termsFor(person.termsOn(date), grades.gradesOf(person).on(date), date);
+        LocalDate created = sheet.getToday();
+        int terms = sheet.termsFor(person.termsOn(created), grades.gradesOf(person).on(created), created);
         LocalDate dueBy = holidays.dueBy(sheet.getId(), date, terms);
         if (periods.isClosedOn(sheet.getId(), dueBy)) {
             throw new InvalidClaimException("No claim can be added in a closed period.");

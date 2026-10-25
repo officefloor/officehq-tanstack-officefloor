@@ -36,8 +36,7 @@ public class ApplyClaim {
         }
         Person person = people.findById(claim.getPersonId()).orElse(null);
         if (person != null && !date.equals(claim.getDate())) {
-            int terms = sheet.termsFor(person.termsOn(date), grades.gradesOf(person).on(date), date);
-            if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, terms))) {
+            if (periods.isClosedOn(sheet.getId(), holidays.dueBy(sheet.getId(), date, claim.getDueTerms()))) {
                 throw new InvalidClaimException("No claim can be moved to a date whose due-by is in a closed period.");
             }
         }

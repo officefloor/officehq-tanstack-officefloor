@@ -80,8 +80,8 @@ public class Claim {
     @Column(name = "due_from", nullable = false)
     private LocalDate dueFrom;
 
-    /** The terms its due-by was fixed with when it was created: its person's own, else their grade's in force on its
-     *  date, else the sheet's. It does not change when the terms change later. */
+    /** The terms its due-by was fixed with when it was created: its person's own, else their grade's, else the sheet's,
+     *  each in force on the day it was created (the sheet's today then). It does not change when the terms change later. */
     @Column(name = "due_terms", nullable = false)
     private int dueTerms;
 
