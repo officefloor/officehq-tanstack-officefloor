@@ -3,11 +3,12 @@ package net.officefloor.hq.app.person;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
+import net.officefloor.hq.app.grade.RetiredGradeRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
-/** Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
+/** Refuses a grade retired on the sheet, even one the person already has. Saves the person's name, terms (from the form's terms from-date, replacing those recorded for that date and keeping
  *  the others; from the beginning of time when blank), contact and tags, and records their grade from the form's from-date (the sheet's today when blank),
  *  replacing the grade recorded for that date and keeping the others, even when it is the same as the one in force
  *  (a grade with no from-date the same as the one in force on the sheet's today is left unrecorded, so a grade later
@@ -16,8 +17,9 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, PersonRepository repository,
             PersonAliasRepository aliases, TreeNames tree,
-            PersonGradeRepository grades, EntityManager entityManager)
+            PersonGradeRepository grades, RetiredGradeRepository retired, EntityManager entityManager)
             throws InvalidPersonException, PersonConflictException {
+        PersonRules.refuseRetired(person.getSheetId(), request.grade(), retired);
         if (request.version() == null || request.version() != person.getVersion()) {
             throw new PersonConflictException();
         }

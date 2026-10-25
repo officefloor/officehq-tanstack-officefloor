@@ -10,6 +10,8 @@ import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.RetiredGradeRepository;
+import net.officefloor.hq.app.grade.RetiredGrades;
 import net.officefloor.hq.app.person.InvalidPersonException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonAliasRepository;
@@ -28,7 +30,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
- * A line with a blank grade takes the sheet's default grade. Checks every line by the person form's rules before any is stored, so a refused line imports nothing. A line whose
+ * A line with a blank grade takes the sheet's default grade (A when it is retired); a line with a retired grade is refused. Checks every line by the person form's rules before any is stored, so a refused line imports nothing. A line whose
  * name is a person's name or alias on the sheet, ignoring case, updates that person as the person form's edit would:
  * their grade is recorded from the sheet's today, and their terms and contact are set when the line gives them. Any
  * other line adds a person. The lines are then applied in order, each recorded as the person form records it
@@ -42,17 +44,19 @@ public class AddImportedPeople {
 
     public void add(@Val ImportedLines lines, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
             TreeNames tree, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
-            PersonGradeRepository grades, EntityManager entityManager,
+            PersonGradeRepository grades, RetiredGradeRepository retired, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<ImportedPeople> addedOut) throws InvalidPersonException {
         List<Person> onSheet = people.findListed(sheet.getId());
         List<Planned> planned = new ArrayList<>();
         Set<Long> updating = new HashSet<>();
+        String defaultGrade = RetiredGrades.defaultGrade(sheet.getId(), sheet.getDefaultGrade(), retired);
         int at = 0;
         for (PersonRequest given : lines.people()) {
             at++;
-            PersonRequest line = given.grade().isEmpty() ? given.withGrade(sheet.getDefaultGrade()) : given;
+            PersonRequest line = given.grade().isEmpty() ? given.withGrade(defaultGrade) : given;
             try {
+                PersonRules.refuseRetired(sheet.getId(), line.grade(), retired);
                 Optional<Person> match = PersonAliasRepository.findByNameOrAlias(onSheet, aliases, sheet.getId(),
                         line.name());
                 if (match.isPresent()) {

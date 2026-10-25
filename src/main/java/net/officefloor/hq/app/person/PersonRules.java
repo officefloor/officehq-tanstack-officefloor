@@ -91,6 +91,14 @@ public final class PersonRules {
         return person;
     }
 
+    /** Refuses a grade retired on the sheet: people on it keep it, but it cannot be chosen for a new person or in an edit. */
+    public static void refuseRetired(String sheetId, String grade,
+            net.officefloor.hq.app.grade.RetiredGradeRepository retired) throws InvalidPersonException {
+        if (net.officefloor.hq.app.grade.RetiredGrades.isRetired(sheetId, grade, retired)) {
+            throw new InvalidPersonException("The grade " + grade + " is retired.");
+        }
+    }
+
     /** The PERSON_ADDED record for the added person: their terms when they have any, their contact when they have one. */
     public static String addedLine(Person person, String by) {
         return "PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by
