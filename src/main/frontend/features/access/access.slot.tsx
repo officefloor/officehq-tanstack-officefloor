@@ -4,10 +4,11 @@ import { putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
-import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, type Role, type Setting } from './useAccess';
+import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
 
 const ROLES = ['clerk', 'steward'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
+const DAYS = /^\d{1,5}$/;
 
 // The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
 // assigned roles are listed under it. The server decides who may settle what.
@@ -102,13 +103,16 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
 }
 
 // The settings form: the clerk limit, the most a clerk may settle a claim's due for (blank: no limit), and the
-// floor, the least a claim's live due may be (1.00 until it is set). The value in force shows beside each. Saving
+// floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
+// due by (14 until they are set). The value in force shows beside each. Saving
 // sends only the settings whose field was touched since the last save.
 const SETTINGS = [
-  { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true,
+  { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A clerk limit is an amount with up to two decimals, or blank for no limit' },
-  { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false,
+  { key: 'floor', label: 'Floor', placeholder: FLOOR_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A floor is an amount with up to two decimals' },
+  { key: 'terms', label: 'Terms (days)', placeholder: TERMS_DEFAULT, blank: false, valid: DAYS, inputMode: 'numeric',
+    invalid: 'Terms are a whole number of days' },
 ] as const;
 
 function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
@@ -125,7 +129,7 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
       if (changes.length === 0) throw new Error('Change a setting first');
       for (const s of changes) {
         const value = (body.values[s.key] ?? '').trim();
-        if (value === '' ? !s.blank : !AMOUNT.test(value)) throw new Error(s.invalid);
+        if (value === '' ? !s.blank : !s.valid.test(value)) throw new Error(s.invalid);
       }
       for (const s of changes) {
         await putJson<Setting>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`,
@@ -154,7 +158,7 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
               {s.label}{' '}
               <input
                 data-testid={`setting-${s.key}`}
-                inputMode="decimal"
+                inputMode={s.inputMode}
                 placeholder={s.placeholder}
                 value={values[s.key] ?? ''}
                 onFocus={() => touch(s.key)}

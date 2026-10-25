@@ -35,3 +35,12 @@ export function useFloorCents(sheetId: string): bigint {
   const value = useSettings(sheetId).data?.find((s) => s.key === 'floor')?.value ?? FLOOR_DEFAULT;
   return toHundredths(value);
 }
+
+/** The terms a sheet starts with, until they are set: the days after its date a claim is due by. */
+export const TERMS_DEFAULT = '14';
+
+/** The sheet's terms in days: a claim is due by its date plus these (14 until they are set). */
+export function useTermsDays(sheetId: string): number {
+  const value = useSettings(sheetId).data?.find((s) => s.key === 'terms')?.value ?? TERMS_DEFAULT;
+  return Number(value);
+}

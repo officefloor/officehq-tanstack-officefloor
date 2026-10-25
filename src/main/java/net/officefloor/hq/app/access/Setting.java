@@ -11,4 +11,10 @@ public record Setting(String sheetId, String key, String value) {
 
     /** The floor a sheet starts with, until it is set. */
     public static final String FLOOR_DEFAULT = "1.00";
+
+    /** The number of days after its date a claim is due by; a whole number. */
+    public static final String TERMS = "terms";
+
+    /** The terms a sheet starts with, until they are set. */
+    public static final String TERMS_DEFAULT = "14";
 }

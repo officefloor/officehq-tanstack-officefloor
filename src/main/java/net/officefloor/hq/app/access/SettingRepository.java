@@ -19,12 +19,15 @@ public class SettingRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's settings, by key; the floor shows its starting value until it is set. */
+    /** The sheet's settings, by key; the floor and the terms show their starting values until they are set. */
     public List<Setting> list(String sheetId) {
         List<Setting> found = new java.util.ArrayList<>(jdbc.query("SELECT sheet_id, setting_key, setting_value"
                 + " FROM sheet_setting WHERE sheet_id = ? ORDER BY setting_key", ROW, sheetId));
         if (found.stream().noneMatch(s -> Setting.FLOOR.equals(s.key()))) {
             found.add(new Setting(sheetId, Setting.FLOOR, Setting.FLOOR_DEFAULT));
+        }
+        if (found.stream().noneMatch(s -> Setting.TERMS.equals(s.key()))) {
+            found.add(new Setting(sheetId, Setting.TERMS, Setting.TERMS_DEFAULT));
         }
         return found;
     }
