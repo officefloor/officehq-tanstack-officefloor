@@ -14,8 +14,11 @@ public class RoleRepository {
 
     private final JdbcTemplate jdbc;
 
-    public RoleRepository(JdbcTemplate jdbc) {
+    private final DelegationRepository delegations;
+
+    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations) {
         this.jdbc = jdbc;
+        this.delegations = delegations;
     }
 
     /** The sheet's assigned roles, by user name. */
@@ -24,8 +27,16 @@ public class RoleRepository {
                 sheetId);
     }
 
-    /** The user's role on the sheet: clerk unless assigned another. */
+    /**
+     * The role the user acts in on the sheet, which every rule decides by: steward while a delegation holds the
+     * sheet's today, else the assigned role.
+     */
     public String roleOf(String sheetId, String user) {
+        return delegations.actingFor(sheetId, user).isPresent() ? Role.STEWARD : assignedRoleOf(sheetId, user);
+    }
+
+    /** The user's assigned role on the sheet: clerk unless assigned another. */
+    public String assignedRoleOf(String sheetId, String user) {
         return jdbc.query("SELECT sheet_id, user_name, role FROM sheet_role WHERE sheet_id = ? AND user_name = ?", ROW,
                 sheetId, user).stream().findFirst().map(Role::role).orElse(Role.CLERK);
     }

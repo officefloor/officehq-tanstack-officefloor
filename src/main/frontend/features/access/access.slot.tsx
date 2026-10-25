@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
-import { rolesKey, settingsKey, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Role, type Setting } from './useAccess';
+import { delegationsKey, rolesKey, settingsKey, useDelegations, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Delegation, type Role, type Setting } from './useAccess';
 
 const ROLES = ['clerk', 'steward', 'viewer'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
@@ -101,6 +101,84 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
           ))}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+// The delegation form: a steward delegates the steward role to a user for a from-date (blank: the sheet's today) to a
+// to-date, inclusive by the sheet's today; while the sheet's today is inside the range the user acts as a steward. The
+// server refuses anyone but a steward, or a to-date before the from-date. The delegations are listed under it.
+function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
+  const delegations = useDelegations(sheetId);
+  const [name, setName] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [user] = useUser();
+  const queryClient = useQueryClient();
+  const save = useMutation({
+    mutationFn: async (body: { user: string; from: string; to: string }) => {
+      if (body.user.trim() === '') throw new Error('Enter a user name');
+      if (body.from.trim() !== '' && !DATE.test(body.from.trim())) throw new Error('Enter a date as YYYY-MM-DD');
+      if (body.to.trim() === '') throw new Error('Enter a to-date');
+      if (!DATE.test(body.to.trim())) throw new Error('Enter a date as YYYY-MM-DD');
+      return postJson<Delegation>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`, { ...body, by: user ?? '' });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: delegationsKey(sheetId) });
+    },
+  });
+  const submit = useSubmitOnce(save);
+  const field = (testId: string, label: string, value: string, set: (v: string) => void, placeholder?: string) => (
+    <label>
+      {label}{' '}
+      <input
+        data-testid={testId}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => {
+          set(e.target.value);
+          save.reset();
+        }}
+      />
+    </label>
+  );
+  return (
+    <section data-testid="delegate-panel">
+      <h2>Delegations</h2>
+      <form
+        data-testid="delegate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit({ user: name, from, to });
+        }}
+      >
+        {field('delegate-user', 'User', name, setName)}{' '}
+        {field('delegate-from', 'From', from, setFrom, 'today')}{' '}
+        {field('delegate-to', 'To', to, setTo, 'yyyy-mm-dd')}{' '}
+        <button type="submit" data-testid="delegate-submit" disabled={save.isPending}>
+          Delegate steward
+        </button>
+        {save.isError && (
+          <p data-testid="delegate-error" role="alert">
+            {save.error.message}
+          </p>
+        )}
+      </form>
+      {delegations.isError && (
+        <p data-testid="delegations-error" role="alert">
+          {delegations.error.message}
+        </p>
+      )}
+      <ul data-testid="delegate-list">
+        {(delegations.data ?? []).map((d, i) => (
+          <li key={i} data-testid="delegate-line">
+            <span data-testid="delegate-line-user">{d.user}</span> acts as steward for{' '}
+            <span data-testid="delegate-line-by">{d.by}</span> from{' '}
+            <span data-testid="delegate-line-from">{d.from}</span> to{' '}
+            <span data-testid="delegate-line-to">{d.to}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -251,5 +329,6 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
 
 export const contributions = [
   SheetBody.fill({ order: 3, Component: RolesPanel }),
+  SheetBody.fill({ order: 3.5, Component: DelegatePanel }),
   SheetBody.fill({ order: 4, Component: SettingsPanel }),
 ];

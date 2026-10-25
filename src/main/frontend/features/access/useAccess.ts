@@ -22,6 +22,19 @@ export function settingOn(setting: Setting | undefined, date: string, starting: 
   return found?.value ?? starting;
 }
 
+/** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd), both inclusive. */
+export type Delegation = { user: string; from: string; to: string; by: string };
+
+export const delegationsKey = (sheetId: string) => ['sheet', sheetId, 'delegations'] as const;
+
+/** The sheet's delegations of the steward role, in the order they were made. */
+export function useDelegations(sheetId: string) {
+  return useQuery({
+    queryKey: delegationsKey(sheetId),
+    queryFn: () => getJson<Delegation[]>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`),
+  });
+}
+
 export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
 
