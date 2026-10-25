@@ -1,0 +1,298 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 3cf045e7..f10eeb35 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -10,6 +10,7 @@ const ROLES = ['clerk', 'steward'];
+ const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
+ const DAYS = /^\d{1,5}$/;
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
++const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
+ 
+ // The role form: assigns a user name a role, clerk or steward (any name not listed is a clerk). The
+ // assigned roles are listed under it. The server decides who may settle what.
+@@ -110,7 +111,8 @@ function RolesPanel({ sheetId }: { sheetId: string; user: string }) {
+ // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
+ // the date from which, on the sheet's today, an opened claim is numbered within its period, and the cap (blank: none), the most
+ // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
+-// it is settled or approved. Every setting but the policy date and period numbering from is dated: saving it records
++// it is settled or approved, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
++// roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from and the permissions is dated: saving it records
+ // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
+ // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
+ type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
+@@ -136,6 +138,10 @@ const SETTINGS: readonly SettingField[] = [
+     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
+   { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A proof threshold is an amount with up to two decimals, or blank for none' },
++  ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
++    ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
++    key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',
++    invalid: 'A permission is a comma separated list of roles (clerk, steward), or blank for the standing rule', dated: false })),
+ ];
+ 
+ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 0de3ab2d..84cfa5d8 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -12,6 +12,7 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useFloorCents, useLate } from '../access/useAccess';
+ 
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
++const NO_HOLDS = new Map();
+ 
+ /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
+  *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
+@@ -66,7 +67,9 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
+       if (personId !== undefined && c.personId !== personId) continue;
+       if (c.date < p.from || c.date > p.to) continue;
+       const then = statusAsOf(c.log, p.to);
+-      if (then === undefined || !counts({ ...c, status: then }, held)) continue;
++      // Counted by its status then, but held (or deferred) as the live totals leave it out: by its status now.
++      const live = c.status === 'OPEN' || c.status === 'PENDING';
++      if (then === undefined || !counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
+       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
+     }
+     return sum;
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 637fa8b6..a1aa61da 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -3,9 +3,14 @@ package net.officefloor.hq.app.access;
+ /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
+ public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
+ 
+-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date and period numbering from). */
++    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from and the permissions). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
++        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !isPermission(key);
++    }
++
++    /** Whether the key is one of the permission matrix's (perm-<action>). */
++    public static boolean isPermission(String key) {
++        return key.startsWith(PERMISSION) && PERMISSION_STANDING.containsKey(key.substring(PERMISSION.length()));
+     }
+ 
+     /** The value a dated key has before every from-date: the floor's, the terms' and the late percent's starting value; null (blank) for the rest. */
+@@ -56,4 +61,16 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+ 
+     /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
+     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
++
++    /** The roles that may take an action (the key is this plus the action, perm-open): a comma separated list of roles, blank for the standing rule. */
++    public static final String PERMISSION = "perm-";
++
++    /** Each action's standing rule, the roles that may take it while its permission is blank. */
++    public static final java.util.Map<String, java.util.List<String>> PERMISSION_STANDING = java.util.Map.of(
++            "open", java.util.List.of(Role.CLERK, Role.STEWARD),
++            "settle", java.util.List.of(Role.CLERK, Role.STEWARD),
++            "void", java.util.List.of(Role.CLERK, Role.STEWARD),
++            "close", java.util.List.of(Role.CLERK, Role.STEWARD),
++            "reassign", java.util.List.of(Role.STEWARD),
++            "reopen", java.util.List.of(Role.STEWARD));
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+index 54d19f47..8c7465e9 100644
+--- a/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/access/SettingRepository.java
+@@ -28,7 +28,7 @@ public class SettingRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's undated settings, by key (the policy date and period numbering from); a key without a row is not listed. */
++    /** The sheet's undated settings, by key (the policy date, period numbering from and the permissions); a key without a row is not listed. */
+     public List<Setting> listUndated(String sheetId) {
+         return jdbc.query("SELECT sheet_id, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?"
+                 + " ORDER BY setting_key", ROW, sheetId);
+@@ -46,6 +46,13 @@ public class SettingRepository {
+                 + " AND setting_key = ?", ROW, sheetId, key).stream().findFirst().map(Setting::value).orElse(null);
+     }
+ 
++    /** Whether the role may take the action (open, settle, void, reassign, close, reopen): its permission's roles, else the standing rule. */
++    public boolean allows(String sheetId, String action, String role) {
++        String value = find(sheetId, Setting.PERMISSION + action);
++        List<String> roles = value == null ? Setting.PERMISSION_STANDING.get(action) : List.of(value.split(","));
++        return roles.contains(role);
++    }
++
+     /** A person's due-total held to the cap: the cap when it is above it; n/a (null) and no cap leave it as it is. */
+     public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
+         return dueTotal == null || cap == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index 5fa66308..cdbb3d8a 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -112,6 +112,19 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.isPermission(key)) {
++            String value = null;
++            if (!text.isEmpty()) {
++                java.util.List<String> roles = java.util.Arrays.stream(text.split(",", -1)).map(String::trim).toList();
++                if (roles.stream().anyMatch(r -> !r.equals(Role.CLERK) && !r.equals(Role.STEWARD))) {
++                    throw new BadRequestException("A permission is a comma separated list of roles (clerk, steward), or blank for the standing rule");
++                }
++                value = String.join(",", roles);
++            }
++            setting.set(new SettingInput(key, value, from));
++            changedBy.set(by);
++            return;
++        }
+         if (!Setting.CLERK_LIMIT.equals(key)) {
+             throw new BadRequestException("No such setting: " + key);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6e8555a2..d6fbb67e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -17,7 +17,8 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Moves the claim to the asked status, refusing a change its current status does not allow and
++ * Moves the claim to the asked status, refusing a change its current status does not allow, an open, settle or void
++ * the sheet's permission for it does not give the user's role, and
+  * refusing to let the user who opened it settle it; a clerk's settle whose due is above the sheet's
+  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
+  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
+@@ -31,7 +32,8 @@ public class ApplyClaimStatus {
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+             PeriodRepository periods, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
+         ClaimStatus from = claim.getStatus();
+-        boolean steward = Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()));
++        String role = roles.roleOf(claim.getSheetId(), by.name());
++        boolean steward = Role.STEWARD.equals(role);
+         if (review.asked()) {
+             if (from != ClaimStatus.PENDING) {
+                 throw new BadRequestException("Only a PENDING claim is approved or rejected; this one is " + from);
+@@ -46,6 +48,10 @@ public class ApplyClaimStatus {
+             if (!from.canBecome(status)) {
+                 throw new BadRequestException("A " + from + " claim cannot become " + status);
+             }
++            String action = status == ClaimStatus.OPEN ? "open" : status == ClaimStatus.VOID ? "void" : "settle";
++            if (!settings.allows(claim.getSheetId(), action, role)) {
++                throw new BadRequestException("A " + role + " may not " + action + " a claim on this sheet");
++            }
+             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+                 throw new BadRequestException("The user who opened a claim cannot settle it");
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index 44be2903..23754e70 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -1,24 +1,25 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+-import net.officefloor.hq.app.access.Role;
+ import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Moves the claim to another person on the sheet: a steward's, and only for a DRAFT, OPEN or PENDING claim, never to its
++ * Moves the claim to another person on the sheet: by a role the sheet's reassign permission gives (a steward's while blank), and only for a DRAFT, OPEN or PENDING claim, never to its
+  * own person nor to one retired before the claim's date. It keeps its number and date, loses any figure a statement
+  * bound it to (live again until its new person's next statement) and is listed as its new person's newest claim.
+  */
+ public class ApplyReassign {
+     public void apply(@Val ReassignTo to, @Val Claim claim, @Val ChangedBy by, ClaimRepository repository,
+-            PersonRepository people, RoleRepository roles) throws BadRequestException {
++            PersonRepository people, RoleRepository roles, SettingRepository settings) throws BadRequestException {
+         String sheetId = claim.getSheetId();
+-        if (!Role.STEWARD.equals(roles.roleOf(sheetId, by.name()))) {
+-            throw new BadRequestException("Only a steward moves a claim to another person");
++        String role = roles.roleOf(sheetId, by.name());
++        if (!settings.allows(sheetId, "reassign", role)) {
++            throw new BadRequestException("A " + role + " may not move a claim to another person on this sheet");
+         }
+         ClaimStatus status = claim.getStatus();
+         if (status != ClaimStatus.DRAFT && !status.isOpen()) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 8b44df6b..435aa8c2 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -3,14 +3,21 @@ package net.officefloor.hq.app.period;
+ import java.math.BigDecimal;
+ import java.util.Map;
+ import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Closes the period, fixing its due-total and each person's as they are now; refuses a period already closed. */
++/** Closes the period (by a role the sheet's close permission gives), fixing its due-total and each person's as they are now; refuses a period already closed. */
+ public class ClosePeriod {
+-    public void close(@Val Period period, PeriodRepository repository, Rollup rollup, Out<ClosedPeriod> closed)
+-            throws BadRequestException {
++    public void close(@Val Period period, @Val ChangedBy by, PeriodRepository repository, RoleRepository roles,
++            SettingRepository settings, Rollup rollup, Out<ClosedPeriod> closed) throws BadRequestException {
++        String role = roles.roleOf(period.sheetId(), by.name());
++        if (!settings.allows(period.sheetId(), "close", role)) {
++            throw new BadRequestException("A " + role + " may not close a period on this sheet");
++        }
+         if (period.closed()) {
+             throw new BadRequestException("That period is already closed");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index c75aaef3..61099e50 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -2,20 +2,21 @@ package net.officefloor.hq.app.period;
+ 
+ import java.util.Map;
+ import net.officefloor.hq.app.BadRequestException;
+-import net.officefloor.hq.app.access.Role;
+ import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.access.SettingRepository;
+ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Reopens a closed period, so its due-total is live again; only a steward may, and a period still open is refused.
++ * Reopens a closed period, so its due-total is live again; only a role the sheet's reopen permission gives may (a steward while blank), and a period still open is refused.
+  */
+ public class ReopenPeriod {
+     public void reopen(@Val Period period, @Val ChangedBy by, PeriodRepository repository, RoleRepository roles,
+-            Out<ReopenedPeriod> reopened) throws BadRequestException {
+-        if (!Role.STEWARD.equals(roles.roleOf(period.sheetId(), by.name()))) {
+-            throw new BadRequestException("Only a steward may reopen a period");
++            SettingRepository settings, Out<ReopenedPeriod> reopened) throws BadRequestException {
++        String role = roles.roleOf(period.sheetId(), by.name());
++        if (!settings.allows(period.sheetId(), "reopen", role)) {
++            throw new BadRequestException("A " + role + " may not reopen a period on this sheet");
+         }
+         if (!period.closed()) {
+             throw new BadRequestException("That period is not closed");
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 520d02db..0541d9fe 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -179,7 +179,8 @@ public class Rollup {
+ 
+     /** Whether the claim counts as it would in the live totals were its status {@code then}. */
+     private static boolean countsAs(Claim claim, ClaimStatus then, Person person, LocalDate today) {
+-        boolean held = then.isOpen() && !claim.isStated() && person.heldOn(claim.getDate());
++        // Held as the live totals hold it: by its status now, not the one it had then.
++        boolean held = claim.getStatus().isOpen() && !claim.isStated() && person.heldOn(claim.getDate());
+         return then.counts() && !held && !claim.isDeferredOn(today);
+     }
+ 
