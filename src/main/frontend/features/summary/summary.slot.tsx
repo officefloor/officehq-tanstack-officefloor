@@ -8,6 +8,7 @@ import { useSettings } from '../roles/roles';
 import { periodDue, usePeriods } from '../periods/periods';
 import { isActive } from '../claims/active.slot';
 import { useVoidReasons } from '../voidreasons/voidreasons';
+import { usePools } from '../pools/pools';
 
 /** The statuses the summary counts claims by. */
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
@@ -24,6 +25,7 @@ function Summary() {
   const rates = useRates();
   const periods = usePeriods();
   const settings = useSettings();
+  const pools = usePools();
   const today = useSheetToday();
   const voidReasons = useVoidReasons();
   if (!user || !sheet) return null;
@@ -51,7 +53,7 @@ function Summary() {
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
-                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)))}
+                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data, pools.data)))}
                 </td>
                 <td data-testid={`summary-grade-${g}-active`}>
                   {onGrade.filter((p) => isActive(p, allClaims, today)).length}

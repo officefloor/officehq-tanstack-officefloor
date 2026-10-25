@@ -261,14 +261,24 @@ public class ClaimFigures {
      *  others shared with them (null: they hold no share of a counted claim) added before the cap: their own claims
      *  count less the holders' parts, and when they would have none (n/a) their parts are their due-total. */
     public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held) {
+        return dueTotal(claims, today, person, held, null);
+    }
+
+    /** The person's live due-total, as {@link #dueTotal(List, LocalDate, Person, BigDecimal)}, with the cap covering
+     *  it plus their cut total (null: none): it is held to the cap less their cut total, not below 0.00. */
+    public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held, BigDecimal cut) {
         String sum = uncappedDueTotal(claims, today, person);
         if (held != null) {
             sum = ("n/a".equals(sum) ? held : new BigDecimal(sum).add(held)).setScale(2).toPlainString();
         }
-        if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
+        if (cap == null || "n/a".equals(sum)) {
             return sum;
         }
-        return cap.setScale(2).toPlainString();
+        BigDecimal limit = cut == null ? cap : cap.subtract(cut).max(BigDecimal.ZERO);
+        if (new BigDecimal(sum).compareTo(limit) <= 0) {
+            return sum;
+        }
+        return limit.setScale(2).toPlainString();
     }
 
     /** The person's live due-total before the cap: the sum of their figures. */

@@ -12,11 +12,13 @@ import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimShares;
 import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonGrades;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -27,7 +29,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
  * person's and the sheet's overdue-total (their counted overdue claims' dues, with late charge, skipping n/a).
  * The sheet's due-total and overdue-total leave out the single highest and lowest figure when there are three or more.
  * A hold (a person's or a claim's) takes no claim out of any figure; a person's OPEN and PENDING claims, once their
- * retirement date is reached, count in none of them, unless a statement binds them. The sheet's alert threshold (null: off) is kept with them, as it stands now.
+ * retirement date is reached, count in none of them, unless a statement binds them. The cap covers a person's due-total
+ * plus their cut total (their cuts across every pool): their due-total is held to the cap less it, not below 0.00. The sheet's alert threshold (null: off) is kept with them, as it stands now.
  */
 public class Rollup {
 
@@ -52,7 +55,7 @@ public class Rollup {
 
     /** Works out the sheet's figures now; a sheet not yet stored has none. */
     public static Rollup of(String sheetId, SheetRepository sheets, PersonRepository persons,
-            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades) {
+            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf) {
         String id = sheetId.trim();
         Optional<Sheet> sheet = sheets.findById(id);
         Map<Long, Figures> people = new LinkedHashMap<>();
@@ -65,6 +68,7 @@ public class Rollup {
             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
             List<Person> listed = persons.findListed(id);
             Map<Long, BigDecimal> held = new LinkedHashMap<>();
+            Map<Long, BigDecimal> cuts = PoolCuts.totalsByPerson(sheet.get(), asOf);
             for (Person owner : listed) {
                 ClaimFigures ownerFigures = new ClaimFigures(sheetRates,
                         new PersonGrades(owner.getGrade(), dated.getOrDefault(owner.getId(), List.of())), sheet.get());
@@ -84,7 +88,8 @@ public class Rollup {
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
                 ClaimFigures figures = new ClaimFigures(sheetRates,
                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
-                String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()));
+                String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()),
+                        cuts.get(person.getId()));
                 BigDecimal overdue = mine.stream()
                         .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c))
                         .map(figures::due).filter(d -> d != null)

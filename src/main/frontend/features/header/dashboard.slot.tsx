@@ -7,6 +7,7 @@ import { useClaims } from '../claims/claims';
 import { descendantFigures, descendantsQueryKey, figuresFrom } from '../consolidated/consolidated.slot';
 import { useRates } from '../rates/rates';
 import { useDelegations, useRoles, useSettings, type Delegation, type Role } from '../roles/roles';
+import { usePools } from '../pools/pools';
 
 /** The role a user name acts in on the sheet, as the server finds it: steward while the sheet's today is inside a
  *  delegation to it, else its own role (clerk when none is set). */
@@ -27,6 +28,7 @@ function StewardDashboard() {
   const claims = useClaims();
   const rates = useRates();
   const settings = useSettings();
+  const pools = usePools();
   const roles = useRoles();
   const delegations = useDelegations();
   const today = useSheetToday();
@@ -38,7 +40,7 @@ function StewardDashboard() {
   });
   const steward = roles.data !== undefined && delegations.data !== undefined
     && roleOf(roles.data, delegations.data, user, today) === 'steward';
-  const all = [figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data),
+  const all = [figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data, pools.data),
     ...(descendants.data ?? [])];
   const pending = steward ? String(all.reduce((n, f) => n + f.statuses.PENDING, 0)) : '';
   const review = steward ? String(all.reduce((n, f) => n + f.statuses.REVIEW, 0)) : '';

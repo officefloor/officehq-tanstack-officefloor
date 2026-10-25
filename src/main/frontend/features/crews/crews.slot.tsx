@@ -9,7 +9,7 @@ import { useClaims } from '../claims/claims';
 import { useSettings } from '../roles/roles';
 import { sumDue, useRates } from '../rates/rates';
 import { personDue } from '../rates/due.slot';
-import { poolsQueryKey } from '../pools/pools';
+import { poolsQueryKey, usePools, type Pool } from '../pools/pools';
 import { crewsPath, crewsQueryKey, useCrews, type Crew } from './crews';
 import type { Person } from '../people/people';
 import type { Claim } from '../claims/claims';
@@ -18,9 +18,9 @@ import type { Settings } from '../roles/roles';
 
 /** A crew's due-total: its lead's and its members' due-totals added up, n/a skipped. */
 export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
-  settings: Settings | undefined): string {
+  settings: Settings | undefined, pools: Pool[] | undefined): string {
   const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
-  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings, people)));
+  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings, people, pools)));
 }
 
 // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.
@@ -101,6 +101,7 @@ function CrewRow({ crew }: { crew: Crew }) {
   const rates = useRates();
   const today = useSheetToday();
   const settings = useSettings();
+  const pools = usePools();
   const [personId, setPersonId] = useState('');
   const queryClient = useQueryClient();
   const add = useMutation({
@@ -125,7 +126,7 @@ function CrewRow({ crew }: { crew: Crew }) {
           ))}
         </ul>
       </td>
-      <td data-testid="crew-due-total">{crewDue(crew, people.data ?? [], claims.data ?? [], rates.data, today, settings.data)}</td>
+      <td data-testid="crew-due-total">{crewDue(crew, people.data ?? [], claims.data ?? [], rates.data, today, settings.data, pools.data)}</td>
       <td>
         <select
           data-testid="crew-member-select"

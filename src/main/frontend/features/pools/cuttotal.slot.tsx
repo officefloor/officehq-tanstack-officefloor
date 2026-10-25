@@ -2,17 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import type { Person } from '../people/people';
-import { usePools, type Pool } from './pools';
-
-/** The cuts of the given person (every person when null) across every pool they are a member of, added up; a pool
- *  that shows no cuts adds nothing. Summed in whole cents, so the total is exact. */
-function cutTotalOf(pools: Pool[], personId: number | null): string {
-  const cents = pools
-    .flatMap((p) => p.members)
-    .filter((m) => m.personId != null && (personId == null || m.personId === personId) && m.cut !== '')
-    .reduce((n, m) => n + Math.round(Number(m.cut) * 100), 0);
-  return (cents / 100).toFixed(2);
-}
+import { cutTotalOf, usePools } from './pools';
 
 // A person's cut total: their cuts across every pool they are a member of, added up.
 function CutTotalHeader() {

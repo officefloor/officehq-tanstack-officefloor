@@ -9,6 +9,7 @@ import { settingsPath, useSettings, type Settings } from '../roles/roles';
 import { overdueOf } from '../claims/overdue.slot';
 import { personDue } from '../rates/due.slot';
 import { STATUSES } from '../summary/summary.slot';
+import { poolsPath, usePools, type Pool } from '../pools/pools';
 
 // The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
 // parent, and so on down), the number of people — each person once across the tree: people whose names or aliases
@@ -33,15 +34,15 @@ export type Figures = {
 
 /** A sheet's figures, from its people, claims, rates, today and settings. */
 export function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
-  settings: Settings | undefined): Figures {
+  settings: Settings | undefined, pools: Pool[] | undefined): Figures {
   const current = people.filter((p) => p.retiredFrom === null);
   return {
     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
-    dues: people.map((p) => personDue(p, claims, rates, today, settings, people)),
+    dues: people.map((p) => personDue(p, claims, rates, today, settings, people, pools)),
     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
     overdueCount: people.reduce((n, p) => n + overdueOf(p, claims, rates, today, settings).count, 0),
     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
-      .map((p) => personDue(p, claims, rates, today, settings, people)))])),
+      .map((p) => personDue(p, claims, rates, today, settings, people, pools)))])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
   };
 }
@@ -66,14 +67,15 @@ export const descendantsQueryKey = (sheetId: string) => ['sheet', sheetId, 'desc
 
 /** A sheet's figures, read from the store as the screen shows it (as of its date, if any). */
 export async function figuresOf(id: string): Promise<Figures> {
-  const [info, people, claims, rates, settings] = await Promise.all([
+  const [info, people, claims, rates, settings, pools] = await Promise.all([
     getJson<SheetInfo>(sheetPath(id)),
     getJson<Person[]>(peoplePath(id)),
     getJson<Claim[]>(claimsPath(id)),
     getJson<Rate[]>(ratesPath(id)),
     getJson<Settings>(settingsPath(id)),
+    getJson<Pool[]>(poolsPath(id)),
   ]);
-  return figuresFrom(people, claims, rates, info.today, settings);
+  return figuresFrom(people, claims, rates, info.today, settings, pools);
 }
 
 /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
@@ -95,6 +97,7 @@ function ConsolidatedFigures() {
   const claims = useClaims();
   const rates = useRates();
   const settings = useSettings();
+  const pools = usePools();
   const today = useSheetToday();
   const asOf = currentAsOf();
   const descendants = useQuery({
@@ -103,7 +106,7 @@ function ConsolidatedFigures() {
     enabled: !!sheet,
   });
   if (!user || !sheet) return null;
-  const own = figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data);
+  const own = figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data, pools.data);
   const all = [own, ...(descendants.data ?? [])];
   return (
     <section data-testid="consolidated">

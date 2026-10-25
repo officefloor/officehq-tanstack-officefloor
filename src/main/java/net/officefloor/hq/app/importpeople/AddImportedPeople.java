@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.importpeople;
 
+import net.officefloor.hq.app.history.AsOf;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ public class AddImportedPeople {
 
     public void add(@Val ImportedLines lines, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
             TreeNames tree, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
-            PersonGradeRepository grades, RetiredGradeRepository retired, EntityManager entityManager,
+            PersonGradeRepository grades, AsOf asOf, RetiredGradeRepository retired, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
             Out<ImportedPeople> addedOut) throws InvalidPersonException {
         List<Person> onSheet = people.findListed(sheet.getId());
@@ -72,7 +73,7 @@ public class AddImportedPeople {
         int added = 0;
         int updated = 0;
         for (Planned line : planned) {
-            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
+            Rollup before = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
             if (line.update() == null) {
                 Person saved = people.saveAndFlush(line.person());
                 audit.record(PersonRules.addedLine(saved, by));
@@ -98,7 +99,7 @@ public class AddImportedPeople {
                 audit.record(PersonRules.editedLine(person, grades.gradesOf(person).on(sheet.getToday()), by));
                 updated++;
             }
-            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades).changesSince(before, sheet.getId(), by)
+            Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf).changesSince(before, sheet.getId(), by)
                     .forEach(audit::record);
         }
         addedOut.set(new ImportedPeople(added, updated));

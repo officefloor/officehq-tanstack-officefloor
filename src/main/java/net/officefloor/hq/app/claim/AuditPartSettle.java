@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  *  figures the settle moved. */
 public class AuditPartSettle {
     public void audit(@Parameter PartSettle part, @Val Claim claim, @Val Rollup before, SheetRepository sheets,
-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
+            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
             WatchRepository watches, @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
         String by = AuditUser.decode(user);
@@ -40,7 +41,7 @@ public class AuditPartSettle {
         } else {
             audit.record(line);
         }
-        Rollup now = Rollup.of(claim.getSheetId(), sheets, people, claims, rates, grades);
+        Rollup now = Rollup.of(claim.getSheetId(), sheets, people, claims, rates, grades, asOf);
         now.changesSince(part.between(), claim.getSheetId(), by).forEach(audit::record);
     }
 }

@@ -12,12 +12,13 @@ import { STATUSES } from '../summary/summary.slot';
 import { useCrews } from '../crews/crews';
 import { crewDue } from '../crews/crews.slot';
 import { useWatched } from '../people/watch.slot';
+import { usePools, type Pool } from '../pools/pools';
 
 /** A sheet's due-total and overdue-total, as the rollup figures them, from what the store holds for it. */
 export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
-  settings: Settings | undefined): { due: string; overdue: string } {
+  settings: Settings | undefined, pools: Pool[] | undefined): { due: string; overdue: string } {
   return {
-    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings, people))),
+    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings, people, pools))),
     overdue: trimmedSum(people.map((p) => overdueOf(p, claims, rates, today, settings).total)),
   };
 }
@@ -43,24 +44,25 @@ function HeaderCounters() {
   const rates = useRates();
   const crews = useCrews();
   const settings = useSettings();
+  const pools = usePools();
   const watched = useWatched();
   const today = useSheetToday();
   const allPeople = people.data ?? [];
   const allClaims = claims.data ?? [];
-  const { due, overdue } = sheetTotals(allPeople, allClaims, rates.data, today, settings.data);
+  const { due, overdue } = sheetTotals(allPeople, allClaims, rates.data, today, settings.data, pools.data);
   const [user] = useCurrentUser();
   const me = personNamed(allPeople, user);
   const mine = me
-    ? { due: personDue(me, allClaims, rates.data, today, settings.data, allPeople),
-        overdue: sheetTotals([me], allClaims, rates.data, today, settings.data).overdue }
+    ? { due: personDue(me, allClaims, rates.data, today, settings.data, allPeople, pools.data),
+        overdue: sheetTotals([me], allClaims, rates.data, today, settings.data, pools.data).overdue }
     : { due: '', overdue: '' };
   const led = me ? (crews.data ?? []).filter((c) => c.lead?.id === me.id) : [];
   const myCrewDue = led.length > 0
-    ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))
+    ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data, pools.data)))
     : '';
   const watchedIds = watched.data ?? [];
   const watchedDue = sumDue(allPeople.filter((p) => watchedIds.includes(p.id))
-    .map((p) => personDue(p, allClaims, rates.data, today, settings.data, allPeople)));
+    .map((p) => personDue(p, allClaims, rates.data, today, settings.data, allPeople, pools.data)));
   const myReviews = allClaims.filter((c) => c.status === 'REVIEW' && !!user && c.reviewAssigned === user).length;
   return (
     <section data-testid="header-counters">

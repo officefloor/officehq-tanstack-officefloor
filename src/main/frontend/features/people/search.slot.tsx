@@ -9,6 +9,7 @@ import { personDue } from '../rates/due.slot';
 import { ratesPath, type Rate } from '../rates/rates';
 import { settingsPath, type Settings } from '../roles/roles';
 import { peoplePath, shownName, type Person } from './people';
+import { poolsPath, type Pool } from '../pools/pools';
 
 // The tree search: over the sheet and every other sheet of its tree (its ancestors and descendants), every person —
 // retired ones too — whose name or an alias contains the typed text, case ignored (blank: everyone), one line each:
@@ -20,17 +21,18 @@ const treePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)
 
 /** The lines for one sheet's matching people, in list order. */
 async function linesOf(sheetId: string, text: string): Promise<string[]> {
-  const [info, people, claims, rates, settings] = await Promise.all([
+  const [info, people, claims, rates, settings, pools] = await Promise.all([
     getJsonLive<SheetInfo>(`/api/sheets/${encodeURIComponent(sheetId)}`),
     getJsonLive<Person[]>(peoplePath(sheetId)),
     getJsonLive<Claim[]>(claimsPath(sheetId)),
     getJsonLive<Rate[]>(ratesPath(sheetId)),
     getJsonLive<Settings>(settingsPath(sheetId)),
+    getJsonLive<Pool[]>(poolsPath(sheetId)),
   ]);
   const key = text.toLowerCase();
   return people
     .filter((p) => [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(key)))
-    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings, people)}`);
+    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings, people, pools)}`);
 }
 
 async function searchTree(sheetId: string, text: string): Promise<string[]> {

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.history.AsOf;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -59,7 +60,7 @@ public class ApplyTransfer {
             ClaimLogRepository logs, ClaimCommentRepository comments, ClaimLineRepository claimLines,
             PersonAliasRepository aliases,
             PatronRepository patrons, PoolMemberRepository members, StatementRepository statements, BindingLogRepository bindings,
-            WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
+            WatchRepository watches, PersonGradeRepository grades, AsOf asOf, RoleRepository roles, SheetRepository sheets,
             RateRepository rates, PeriodRepository periods, CrewRepository crews, CrewMemberRepository crewMembers,
             net.officefloor.hq.app.plan.PlanRepository plans, net.officefloor.hq.app.plan.PlanClaimRepository planClaims,
             net.officefloor.hq.app.plan.PlanPauseRepository planPauses,
@@ -105,7 +106,7 @@ public class ApplyTransfer {
             throw new InvalidPersonException("The contact is already in use on the other sheet.");
         }
 
-        Rollup toBefore = Rollup.of(to, sheets, people, claims, rates, grades);
+        Rollup toBefore = Rollup.of(to, sheets, people, claims, rates, grades, asOf);
         if (target == null) {
             target = sheets.saveAndFlush(new Sheet(to));
         }

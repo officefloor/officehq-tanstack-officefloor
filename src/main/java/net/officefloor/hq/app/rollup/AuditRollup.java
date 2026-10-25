@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.rollup;
 
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -15,9 +16,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
  *  when they moved. */
 public class AuditRollup {
     public void audit(@PathVariable("sheetId") String sheetId, @Val Rollup before, SheetRepository sheets,
-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
+            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
-        Rollup now = Rollup.of(sheetId, sheets, people, claims, rates, grades);
+        Rollup now = Rollup.of(sheetId, sheets, people, claims, rates, grades, asOf);
         now.changesSince(before, sheetId, AuditUser.decode(user)).forEach(audit::record);
     }
 }

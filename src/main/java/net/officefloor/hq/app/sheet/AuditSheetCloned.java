@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.sheet;
 
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -14,13 +15,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
  *  lines for every person and its totals. */
 public class AuditSheetCloned {
     public void audit(@Val SheetCloned cloned, SheetRepository sheets, PersonRepository people, ClaimRepository claims,
-            RateRepository rates, PersonGradeRepository grades,
+            RateRepository rates, PersonGradeRepository grades, AsOf asOf,
             @RequestHeader(name = "X-User", required = false) String userHeader, Audit audit) {
         String user = AuditUser.decode(userHeader);
         String from = cloned.fromSheet();
         String to = cloned.toSheet();
         audit.record("SHEET_CLONE_MADE sheet=" + from + " by=" + user + " to=" + to);
         audit.record("SHEET_CLONED sheet=" + to + " by=" + user + " from=" + from);
-        Rollup.of(to, sheets, people, claims, rates, grades).lines(to, user).forEach(audit::record);
+        Rollup.of(to, sheets, people, claims, rates, grades, asOf).lines(to, user).forEach(audit::record);
     }
 }

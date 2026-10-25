@@ -6,6 +6,7 @@ import { personDue } from '../rates/due.slot';
 import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
 import { useSettings, type Settings } from '../roles/roles';
 import { periodOn, usePeriods, type Period } from '../periods/periods';
+import { usePools } from '../pools/pools';
 
 /** A period's classic due-total: the dues (with any late charge, as shown now) of the claims whose due-by falls in it
  *  that count by the status they have now (OPEN, PENDING, SETTLED; not a person's unbound OPEN ones dated within a hold
@@ -30,11 +31,12 @@ function ClassicSummary() {
   const rates = useRates();
   const periods = usePeriods();
   const settings = useSettings();
+  const pools = usePools();
   const today = useSheetToday();
   if (!user || !sheet) return null;
   const allClaims = claims.data ?? [];
   const sortedPeriods = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
-  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)));
+  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data, pools.data)));
   return (
     <section data-testid="classic-summary">
       <h2>Classic summary</h2>

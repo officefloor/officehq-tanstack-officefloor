@@ -7,6 +7,7 @@ import { settingsPath, settingsQueryKey, type Settings } from '../roles/roles';
 import { ratesPath, ratesQueryKey, type Rate } from '../rates/rates';
 import { personDue } from '../rates/due.slot';
 import { gradeOn, peoplePath, peopleQueryKey, type Person } from './people';
+import { poolsPath, poolsQueryKey, type Pool } from '../pools/pools';
 
 // The export button: downloads every person on the sheet (retired people included, in list order) as CSV —
 // name, grade in force on the sheet's today, retired-from date (blank when not retired) and due-total as shown.
@@ -29,17 +30,18 @@ function ExportPeople() {
   const queryClient = useQueryClient();
   if (!user || !sheet) return null;
   const download = async () => {
-    const [info, people, claims, rates, settings] = await Promise.all([
+    const [info, people, claims, rates, settings, pools] = await Promise.all([
       readFresh<SheetInfo>(queryClient, sheetQueryKey(sheet), sheetInfoPath(sheet)),
       readFresh<Person[]>(queryClient, peopleQueryKey(sheet), peoplePath(sheet)),
       readFresh<Claim[]>(queryClient, claimsQueryKey(sheet), claimsPath(sheet)),
       readFresh<Rate[]>(queryClient, ratesQueryKey(sheet), ratesPath(sheet)),
       readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
+      readFresh<Pool[]>(queryClient, poolsQueryKey(sheet), poolsPath(sheet)),
     ]);
     const today = info.today;
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
-      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people)]);
+      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people, pools)]);
     }
     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

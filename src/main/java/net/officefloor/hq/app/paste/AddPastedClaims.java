@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.paste;
 
+import net.officefloor.hq.app.history.AsOf;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -50,7 +51,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  */
 public class AddPastedClaims {
     public void add(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, PersonAliasRepository aliases,
-            ClaimRepository claims, PeriodRepository periods, PersonGradeRepository grades, RateRepository rates,
+            ClaimRepository claims, PeriodRepository periods, PersonGradeRepository grades, AsOf asOf, RateRepository rates,
             ClaimLogRepository log, HolidayRepository holidays, ClaimLineRepository claimLines, SheetRepository sheets,
             RoleRepository roles, VoidReasonRepository voidReasons, EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit,
@@ -61,7 +62,7 @@ public class AddPastedClaims {
         Set<String> refs = new HashSet<>();
         Set<Long> matched = new HashSet<>();
         List<String> records = new ArrayList<>();
-        Rollup rollup = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
+        Rollup rollup = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
         int at = 0;
         for (PastedLine line : pasted.lines()) {
             at++;
@@ -133,7 +134,7 @@ public class AddPastedClaims {
             }
             records.add(ClaimAudit.line(claim.getStatus().event(), claim, person.getName(), by));
             ClaimRules.log(claim, sheet, log, people, rates, grades, by);
-            Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
+            Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
             records.addAll(now.changesSince(rollup, sheet.getId(), by));
             rollup = now;
         }

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.rollup;
 
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Notes the sheet's figures before the change, so the audit can tell afterwards which of them moved. */
 public class TakeRollup {
     public void take(@PathVariable("sheetId") String sheetId, SheetRepository sheets, PersonRepository people,
-            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, Out<Rollup> before) {
-        before.set(Rollup.of(sheetId, sheets, people, claims, rates, grades));
+            ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf, Out<Rollup> before) {
+        before.set(Rollup.of(sheetId, sheets, people, claims, rates, grades, asOf));
     }
 }

@@ -6,6 +6,7 @@ import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/c
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, formatCents, hundredths, rateOn, sharePart, sumDue, trimmedSum, useRates, type Rate } from './rates';
 import { useColumnShown } from '../people/columns';
+import { cutTotalOf, usePools, type Pool } from '../pools/pools';
 
 // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
 // frozen due, else the figure their last statement bound it to, else its live due, at least the sheet's floor; plus
@@ -13,19 +14,21 @@ import { useColumnShown } from '../people/columns';
 // When their grade in force on the sheet's today has no rate in force then it is n/a, unless a counted claim keeps
 // a figure — settled, bound, or live at another grade they had on its date, or live
 // on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
-// the sheet's cap: above it, it shows the cap and their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
+// the sheet's cap less their cut total (their cuts across every pool; not below 0.00): above it, it shows that and
+// their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
 // A claim shared with other people gives each holder their part of its due (its due times their share divided by
 // 100, rounded half to even): it counts in their due-total (theirs is just their parts when they would otherwise
 // have none, n/a), and its own person's counts its due less the holders' parts — before the cap.
 export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
-  settings: Settings | undefined, people: Person[] | undefined): string {
-  return capped(withShares(person, claims, rates, today, settings, people), settings).due;
+  settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
+  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).due;
 }
 
-/** A person's excess: how much the sum of their figures is above the sheet's cap; 0.00 when it is not (or n/a). */
+/** A person's excess: how much the sum of their figures plus their cut total is above the sheet's cap; 0.00 when
+ *  it is not (or n/a). */
 export function personExcess(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
-  settings: Settings | undefined, people: Person[] | undefined): string {
-  return capped(withShares(person, claims, rates, today, settings, people), settings).excess;
+  settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
+  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).excess;
 }
 
 /** The sum of a person's figures with the shares: their own claims' holders' parts taken off, and their parts of
@@ -54,11 +57,15 @@ function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined, 
   return formatCents(hundredths(sum) - given + (held ?? 0n));
 }
 
-/** A sum of figures held to the sheet's cap ("" for none), and how much it was above it; n/a is not capped. */
-function capped(sum: string, settings: Settings | undefined): { due: string; excess: string } {
+/** A sum of figures held to the sheet's cap ("" for none) less the cut total (not below 0.00), and how much it was
+ *  above that; n/a is not capped. */
+function capped(sum: string, settings: Settings | undefined, cut: string): { due: string; excess: string } {
   const cap = settings?.cap ?? '';
-  if (sum === 'n/a' || cap === '' || Number(sum) <= Number(cap)) return { due: sum, excess: '0.00' };
-  return { due: sumDue([cap]), excess: subtract(sum, cap) };
+  if (sum === 'n/a' || cap === '') return { due: sum, excess: '0.00' };
+  const diff = subtract(cap, cut);
+  const limit = diff.startsWith('-') ? '0.00' : diff;
+  if (Number(sum) <= Number(limit)) return { due: sum, excess: '0.00' };
+  return { due: limit, excess: subtract(sum, limit) };
 }
 
 /** The difference of two two-decimal amounts, exactly. */
@@ -92,8 +99,9 @@ function PersonDue({ person }: { person: Person }) {
   const rates = useRates();
   const today = useSheetToday();
   const settings = useSettings();
+  const pools = usePools();
   if (!shown) return null;
-  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data, people.data)}</td>;
+  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data)}</td>;
 }
 
 function ExcessHeader() {
@@ -108,8 +116,9 @@ function PersonExcess({ person }: { person: Person }) {
   const rates = useRates();
   const today = useSheetToday();
   const settings = useSettings();
+  const pools = usePools();
   if (!shown) return null;
-  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data, people.data)}</td>;
+  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data)}</td>;
 }
 
 function DueTotal() {
@@ -120,8 +129,9 @@ function DueTotal() {
   const rates = useRates();
   const today = useSheetToday();
   const settings = useSettings();
+  const pools = usePools();
   if (!user || !sheet) return null;
-  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data)));
+  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data, pools.data)));
   return (
     <p>
       Due in total <strong data-testid="rollup-due-total">{total}</strong>

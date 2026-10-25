@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.person;
 
+import net.officefloor.hq.app.history.AsOf;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
@@ -13,20 +14,20 @@ import org.springframework.web.bind.annotation.RequestHeader;
  *  merge, when they were merged into someone there), then its rollup lines. */
 public class AuditPersonTransferred {
     public void audit(@Val PersonTransferred transferred, @Val Rollup before, SheetRepository sheets,
-            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
+            PersonRepository people, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
             @RequestHeader(name = "X-User", required = false) String userHeader, Audit audit) {
         String user = AuditUser.decode(userHeader);
         String from = transferred.fromSheet();
         String to = transferred.toSheet();
         audit.record("PERSON_TRANSFERRED sheet=" + from + " by=" + user + " name=" + transferred.name() + " to=" + to);
-        Rollup.of(from, sheets, people, claims, rates, grades).changesSince(before, from, user)
+        Rollup.of(from, sheets, people, claims, rates, grades, asOf).changesSince(before, from, user)
                 .forEach(audit::record);
         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user + " name=" + transferred.name() + " from=" + from);
         if (transferred.mergedInto() != null) {
             audit.record("PERSON_MERGED sheet=" + to + " by=" + user + " from=" + transferred.name() + " into="
                     + transferred.mergedInto());
         }
-        Rollup.of(to, sheets, people, claims, rates, grades).changesSince(transferred.toBefore(), to, user)
+        Rollup.of(to, sheets, people, claims, rates, grades, asOf).changesSince(transferred.toBefore(), to, user)
                 .forEach(audit::record);
     }
 }

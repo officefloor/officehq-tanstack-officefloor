@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.history.AsOf;
 import jakarta.persistence.EntityManager;
 import net.officefloor.hq.app.AuditUser;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -21,10 +22,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public class ApplyPartSettle {
     public PartSettle apply(@Parameter Split split, @Val Sheet sheet, ClaimRepository repository,
             EntityManager entityManager, SheetRepository sheets, PersonRepository people, RateRepository rates,
-            PersonGradeRepository grades, PeriodRepository periods, RoleRepository roles, ClaimLogRepository log,
+            PersonGradeRepository grades, AsOf asOf, PeriodRepository periods, RoleRepository roles, ClaimLogRepository log,
             VoidReasonRepository voidReasons, @RequestHeader(name = "X-User", required = false) String userHeader)
             throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
-        Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades);
+        Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades, asOf);
         Claim made = split.made();
         String splitNumber = made.getNumber();
         String number = ApplyClaimStatus.run("settle", made, repository, entityManager, people, rates, grades, periods,

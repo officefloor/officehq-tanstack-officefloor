@@ -9,6 +9,7 @@ import { personDue } from '../rates/due.slot';
 import { ratesPath, type Rate } from '../rates/rates';
 import { settingsPath, type Settings } from '../roles/roles';
 import { peoplePath, type Person } from './people';
+import { poolsPath, type Pool } from '../pools/pools';
 
 // The snapshot comparison: one line per person, in list order — `<name> <then> <now>`: `then` their due-total in
 // the SNAPSHOT written when the sheet's today was changed away from the from-date (blank: the sheet's today), `now`
@@ -22,18 +23,19 @@ function snapshotOn(person: Person, date: string): string {
 }
 
 async function compareSnapshots(sheetId: string, from: string, to: string): Promise<string[]> {
-  const [info, people, claims, rates, settings] = await Promise.all([
+  const [info, people, claims, rates, settings, pools] = await Promise.all([
     getJsonLive<SheetInfo>(`/api/sheets/${encodeURIComponent(sheetId)}`),
     getJsonLive<Person[]>(peoplePath(sheetId)),
     getJsonLive<Claim[]>(claimsPath(sheetId)),
     getJsonLive<Rate[]>(ratesPath(sheetId)),
     getJsonLive<Settings>(settingsPath(sheetId)),
+    getJsonLive<Pool[]>(poolsPath(sheetId)),
   ]);
   const fromDate = from.trim() === '' ? info.today : from.trim();
   return people.map((p) => {
     const then = snapshotOn(p, fromDate);
-    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings, people) : snapshotOn(p, to.trim());
-    return [p.name, then, now].filter((s) => s !== '').join(' ');
+    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings, people, pools) : snapshotOn(p, to.trim());
+    return [p.name, then, now].join(' ').trim();
   });
 }
 

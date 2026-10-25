@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.quickadd;
 
+import net.officefloor.hq.app.history.AsOf;
 import java.util.Optional;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.AuditUser;
@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  */
 public class FindOrAddPerson {
     public void find(@Val QuickAddName name, @Val Sheet sheet, @Val Rollup before, PersonRepository people, PersonAliasRepository aliases,
-            SheetRepository sheets, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
+            SheetRepository sheets, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades, AsOf asOf,
             @RequestHeader(name = "X-User", required = false) String user, Audit audit, TreeNames tree, RetiredGradeRepository retired, Out<Person> personOut,
             Out<Rollup> rollupOut) throws InvalidClaimException {
         Optional<Person> found = PersonAliasRepository.findByNameOrAlias(
@@ -46,7 +47,7 @@ public class FindOrAddPerson {
         String by = AuditUser.decode(user);
         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + by + " name=" + person.getName()
                 + " grade=" + person.getGrade());
-        Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades);
+        Rollup now = Rollup.of(sheet.getId(), sheets, people, claims, rates, grades, asOf);
         now.changesSince(before, sheet.getId(), by).forEach(audit::record);
         personOut.set(person);
         rollupOut.set(now);
