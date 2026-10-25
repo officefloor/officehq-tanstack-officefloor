@@ -120,6 +120,10 @@ public class Person {
     @Column(name = "flag_until")
     private LocalDate flagUntil;
 
+    /** The user who may approve or reject their PENDING claims as a steward may (null: none). */
+    @Column(name = "approver")
+    private String approver;
+
     protected Person() {
     }
 
@@ -291,6 +295,7 @@ public class Person {
         then.addedOn = addedOn;
         then.flagReason = flagReason;
         then.flagUntil = flagUntil;
+        then.approver = approver;
         if (retiredMadeOn == null || !retiredMadeOn.isAfter(date)) {
             then.retiredFrom = retiredFrom;
             then.retiredMadeOn = retiredMadeOn;
@@ -359,6 +364,15 @@ public class Person {
     public boolean retiredOn(LocalDate date) {
         return (retiredFrom != null && date.isAfter(retiredFrom))
                 || retirements.stream().anyMatch(r -> r.refuses(date));
+    }
+
+    public String getApprover() {
+        return approver;
+    }
+
+    /** Makes the user their approver (null: none). */
+    public void setApprover(String approver) {
+        this.approver = approver;
     }
 
     /** Flags them with the reason until the date, inclusive, replacing any flag they had. */

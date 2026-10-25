@@ -12,13 +12,13 @@ import net.officefloor.hq.app.statement.Statement;
  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
  *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, in
  *  the order they stand (oldest first), and their flag's reason while it is in
- *  force on the sheet's today (null: none in force). */
+ *  force on the sheet's today (null: none in force), and their approver (null: none). */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
         List<Hold> holds, List<Long> patronIds, Integer terms,
         String contact, List<String> aliases, boolean clashing, String origin,
         List<Retirement> retirements, List<String> tags, List<Snapshot> snapshots,
-        List<StatementLine> statements, String flag) {
+        List<StatementLine> statements, String flag, String approver) {
 
     /** A statement still standing: the date it was taken as of and the due-total it recorded. */
     public record StatementLine(String date, String dueTotal) {
@@ -72,6 +72,6 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                 person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
                         .toList(),
                 statements.stream().map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList(),
-                person.flaggedOn(today) ? person.getFlagReason() : null);
+                person.flaggedOn(today) ? person.getFlagReason() : null, person.getApprover());
     }
 }

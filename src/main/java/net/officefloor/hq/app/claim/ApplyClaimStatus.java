@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * X-<n> for a claim in no period) and records who opened it; a voided claim keeps its number (never reused). The one who opened a
  * claim cannot settle it, and a clerk (any name not made a steward) settles a claim only when its due is at or below
  * the clerk limit in force (its person's grade's on the sheet's today when one is set, else the sheet's; a due of n/a is within any limit; no limit when the sheet has none): a clerk settling one
- * above it leaves it PENDING instead. Only a steward approves a PENDING claim (it is settled, its due fixed at its live
+ * above it leaves it PENDING instead. Only a steward, or its person's approver, approves a PENDING claim (it is settled, its due fixed at its live
  * figure then) or rejects it, with a reason that is not blank (it is OPEN again); the one who opened it cannot approve it. The one who last edited a claim (its form or its amount entry) cannot settle or approve it either. Settling fixes the claim's due at the rate of the grade its
  * person had on the claim's date, in force on the claim's date, at least the sheet's floor (or at the figure its person's last statement bound it to), plus its late charge on the sheet's today (none when no rate applies then, so it stays live). A claim deferred until after the sheet's today cannot be settled. A claim whose due is above the proof threshold in force on the claim's date (its person's grade's on that date when one is set, else the sheet's) cannot be settled or approved while it has no proof, nor while the sheet's proof kinds are set and it lacks a proof of one of them — refused before the clerk limit is considered. A claim whose due is above the sheet's note threshold in force on the claim's date cannot be opened while its note is empty. A claim whose due is above the sheet's review threshold in force on the claim's date goes to REVIEW when opened instead of OPEN: it records who opened it but takes no number yet. Only a steward reviews a REVIEW claim, which opens it (OPEN) and gives it its number then. A claim whose due-by is in a closed period cannot change status. A claim whose due-by is in a period with a cap cannot be opened while its person already has that many OPEN or PENDING claims whose due-by is in it. A DRAFT is deleted (DELETED: it counts nowhere and
  * cannot be edited, opened or voided) and restored (DRAFT again) only on the sheet's today it was deleted (its status log's last DELETED date). Only a steward voids a SETTLED claim, and only within 7 days of
@@ -191,8 +191,9 @@ public class ApplyClaimStatus {
         } else {
             ClaimStatus next = check(claim, action);
             boolean steward = Role.STEWARD.equals(role);
-            if (("approve".equals(action) || "reject".equals(action)) && !steward) {
-                throw new ClerkLimitException("Only a steward can approve or reject a pending claim.");
+            if (("approve".equals(action) || "reject".equals(action)) && !steward && !people.findById(claim.getPersonId())
+                    .map(p -> user.equals(p.getApprover())).orElse(false)) {
+                throw new ClerkLimitException("Only a steward or the person's approver can approve or reject a pending claim.");
             }
             if ("void".equals(action) && claim.getStatus() == ClaimStatus.SETTLED) {
                 if (!steward) {

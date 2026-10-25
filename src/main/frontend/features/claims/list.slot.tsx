@@ -148,7 +148,7 @@ const ACTIONS = [
 
 // A claim's status and the buttons that change it. A change its status does not allow is refused
 // by the server and shows the claim's error, as is settling or approving a claim the signed-in user opened, a
-// non-steward approving or rejecting a PENDING claim, an open, settle or void by a role the permission matrix does
+// non-steward (other than the person's approver) approving or rejecting a PENDING claim, an open, settle or void by a role the permission matrix does
 // not allow, or rejecting one without a reason (typed beside the reject
 // button), or a review by anyone but a steward. A claim whose due is above the review threshold in force on its date goes to
 // REVIEW when opened; a steward's review button opens it (it is numbered then). A clerk settling a claim whose due is above the clerk limit leaves it PENDING. The error goes as soon as
@@ -767,7 +767,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
             : action === 'review' && claim.status === 'REVIEW' && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can review a claim.'
             : (action === 'approve' || action === 'reject') && change.error instanceof HttpError && change.error.status === 403
-            ? 'Only a steward can approve or reject a pending claim.'
+            ? 'Only a steward or the person\'s approver can approve or reject a pending claim.'
             : action === 'void' && claim.status === 'SETTLED' && change.error instanceof HttpError && change.error.status === 403
             ? 'Only a steward can void a settled claim.'
             : (action === 'open' || action === 'settle' || action === 'void') && change.error instanceof HttpError && change.error.status === 403
