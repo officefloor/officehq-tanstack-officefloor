@@ -134,9 +134,13 @@ public class Claim {
     @Column(nullable = false)
     private int proofs;
 
-    /** How many of the claim's proofs are photos; the rest are receipts. 0 for a new claim. */
+    /** How many of the claim's proofs are photos. 0 for a new claim. */
     @Column(name = "proofs_photo", nullable = false)
     private int proofsPhoto;
+
+    /** How many of the claim's proofs are receipts; a proof of no kind is neither. 0 for a new claim. */
+    @Column(name = "proofs_receipt", nullable = false)
+    private int proofsReceipt;
 
     /** The number of the claim this one was split off from; null for a claim not made by a split. */
     @Column(name = "split_from")
@@ -420,7 +424,7 @@ public class Claim {
 
     /** How many of the claim's proofs are receipts. */
     public int getProofsReceipt() {
-        return proofs - proofsPhoto;
+        return proofsReceipt;
     }
 
     /** How many of the claim's proofs are photos. */
@@ -433,11 +437,13 @@ public class Claim {
         return ProofKind.PHOTO.equals(kind) ? getProofsPhoto() : ProofKind.RECEIPT.equals(kind) ? getProofsReceipt() : 0;
     }
 
-    /** Raises the claim's proofs count by one, of a kind (receipt or photo). */
+    /** Raises the claim's proofs count by one, of a kind (receipt or photo; null for none). */
     public void addProof(String kind) {
         proofs++;
         if (ProofKind.PHOTO.equals(kind)) {
             proofsPhoto++;
+        } else if (ProofKind.RECEIPT.equals(kind)) {
+            proofsReceipt++;
         }
     }
 
@@ -488,6 +494,7 @@ public class Claim {
         then.reviewAssigned = reviewAssigned;
         then.proofs = proofs;
         then.proofsPhoto = proofsPhoto;
+        then.proofsReceipt = proofsReceipt;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.ref = ref;
@@ -522,6 +529,7 @@ public class Claim {
         moved.reviewAssigned = reviewAssigned;
         moved.proofs = proofs;
         moved.proofsPhoto = proofsPhoto;
+        moved.proofsReceipt = proofsReceipt;
         moved.lateEntry = lateEntry;
         moved.tags = tags;
         moved.tagsUsed = tagsUsed;

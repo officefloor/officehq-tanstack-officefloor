@@ -30,10 +30,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 /**
  * Merges the person into another of the sheet; only a steward may, and not into themselves, nor when either of them is
  * retired. Their claims move to the other, keeping their numbers and dates, listed after the other's claims in the
- * order they were added, each keeping any figure a statement bound it to. Their name and aliases become aliases of the
+ * order they were added, each keeping any figure a statement bound it to and released when held. Their name and aliases become aliases of the
  * other. Their patrons are added to the other's (not the other themselves, no repeats); anyone naming them as patron
  * names the other instead (not themselves, no repeats). Their pool memberships move to the other (shares added when the
- * other is already a member). The crews they lead are led by the other (who leaves those crews' members), and their crew
+ * other is already a member). The crews they lead are left without a lead, and their crew
  * memberships move to the other (dropped where the other already leads or is in the crew). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
  * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
  * are dropped, and they leave the sheet.
@@ -64,12 +64,13 @@ public class ApplyMerge {
         Long from = person.getId();
         Long to = into.getId();
 
-        // Claims: moved in the order they were added, each listed as the other's newest.
+        // Claims: moved in the order they were added, each listed as the other's newest and released when held.
         List<Claim> moved = new ArrayList<>(claims.findBySheetIdOrderByIdDesc(sheetId).stream()
                 .filter(c -> from.equals(c.getPersonId())).toList());
         moved.sort(Comparator.comparing(Claim::getId));
         for (Claim claim : moved) {
             claim.setPersonId(to);
+            claim.setHeld(false);
             claims.saveAndFlush(claim);
             claims.relist(claim.getId());
         }
@@ -119,9 +120,9 @@ public class ApplyMerge {
             }
         }
 
-        // Crews they lead are led by the other; their crew memberships move to the other where not already there.
+        // Crews they lead are left without a lead; their crew memberships move to the other where not already there.
         for (Crew crew : crews.findByLeadIdOrderByIdAsc(from)) {
-            crew.setLeadId(to);
+            crew.setLeadId(null);
             crews.saveAndFlush(crew);
         }
         for (CrewMember member : crewMembers.findByPersonIdOrderByIdAsc(from)) {

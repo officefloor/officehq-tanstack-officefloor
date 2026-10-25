@@ -169,7 +169,7 @@ const ACTIONS = [
 // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
 // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
 // whose due-by is in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
-// proofs count by one, of the kind chosen beside it (receipt when none is chosen); on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
+// proofs count by one, of the kind chosen beside it (when none is chosen, a receipt while the sheet has proof kinds, else of no kind); on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
 // threshold in force on its date cannot be settled or approved while it has no proof, nor while it lacks a proof of each of the sheet's proof kinds: that shows the claim's error.
 // An OPEN claim splits off an amount (typed beside the split button; more than 0.00 and less than its amount) into a
 // new OPEN claim; any other status, a deferred claim, a claim whose due-by is in a closed period or an amount out of range shows the
@@ -250,7 +250,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     },
   });
   const submitRedate = useSubmitOnce(redate);
-  // The kind of the next proof: '' when none is chosen (the proof is a receipt, and no kind is recorded).
+  // The kind of the next proof: '' when none is chosen (a receipt while the sheet has proof kinds, else no kind is recorded).
   const [proofKind, setProofKind] = useState('');
   const proof = useMutation({
     mutationFn: (kind: string) =>

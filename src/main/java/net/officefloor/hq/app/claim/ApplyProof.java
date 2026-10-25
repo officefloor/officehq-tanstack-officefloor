@@ -1,12 +1,14 @@
 package net.officefloor.hq.app.claim;
 
+import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Raises the claim's proofs count by one, of the kind chosen (receipt or photo; receipt when none is chosen); a
+/** Raises the claim's proofs count by one, of the kind chosen (receipt or photo; when none is chosen, a receipt while the
+ *  sheet has proof kinds, else of no kind — neither a receipt nor a photo); a
  *  SETTLED or VOID claim, or an unknown kind, is refused. */
 public class ApplyProof {
-    public void apply(@Val Claim claim, ClaimRepository repository,
+    public void apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository,
             @RequestParam(name = "kind", required = false) String kind) throws ClaimStatusException {
         String chosen = kind == null || kind.isBlank() ? null : kind.trim();
         if (chosen != null && !ProofKind.ALL.contains(chosen)) {
@@ -15,7 +17,7 @@ public class ApplyProof {
         if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot gain a proof.");
         }
-        claim.addProof(chosen == null ? ProofKind.RECEIPT : chosen);
+        claim.addProof(chosen != null ? chosen : sheet.getProofKinds().isEmpty() ? null : ProofKind.RECEIPT);
         repository.saveAndFlush(claim);
     }
 }
