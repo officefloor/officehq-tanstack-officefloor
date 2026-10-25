@@ -15,9 +15,9 @@ export const GRADES = ['A', 'B', 'C'] as const;
 // one's due-total and the sheet's today when it was taken (null with none).
 // `retiredFrom` is the date they are retired from (null: not retired); with one set they count as retired at
 // once, whatever the date; from the day it is reached (the sheet's today on or after it) their OPEN and PENDING
-// claims count in no live total, as a hold's would, unless a statement binds them.
-// `held`: whether they have any hold. `holds`: their holds, earliest from-date first; their OPEN and PENDING
-// claims dated within one count in no live total, unless a statement binds them; their other claims still count.
+// claims count in no live total, unless a statement binds them.
+// `held`: whether they have any hold. `holds`: their holds, earliest from-date first; a hold takes none of their
+// claims out of any total — while one covers the sheet's today they get no pool cut, their share spread over the others.
 // `terms`: their own terms in days in force on the sheet's today (null: none); a claim of theirs is due by its date plus these, ahead of their
 // grade's terms and the sheet's.
 // `contact`: their contact, trimmed and lower-cased (null: none); no two people on a sheet share one.

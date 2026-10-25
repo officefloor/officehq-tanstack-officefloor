@@ -3,8 +3,8 @@ package net.officefloor.hq.app.claim;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Holds an OPEN or PENDING claim, or releases it when it is held. A claim in any other status is refused. While held,
- * the claim counts in no live total, as a held person's claims do, unless a statement binds it.
+ * Holds an OPEN or PENDING claim, or releases it when it is held. A claim in any other status is refused. A held
+ * claim still counts in every total.
  */
 public class ApplyHold {
     public void apply(@Val Claim claim, ClaimRepository repository) throws ClaimStatusException {

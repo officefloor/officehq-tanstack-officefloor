@@ -178,7 +178,7 @@ const ACTIONS = [
 // reminded once per sheet's today (its reminded date becomes today); a second press that day, or any other status, shows
 // the claim's error. A steward waives an OPEN or PENDING claim's late charge (it bears none from then on, whatever its
 // overdue state); anyone else, any other status, or a claim already waived shows the claim's error. An OPEN or PENDING
-// claim is held, or released when held (while held it counts in no live total unless a statement binds it); any other
+// claim is held, or released when held (a held claim still counts in every total); any other
 // status shows the claim's error. While the sheet's list of void reasons is not empty, a void needs a reason chosen from it (picked
 // beside the void button); a void without one shows the claim's error. A claim of any status is commented with the
 // text typed beside the comment button (shown on the claim, oldest first, as <user> on <date>: <text>); an empty

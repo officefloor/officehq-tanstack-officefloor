@@ -353,12 +353,6 @@ public class Person {
         return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
     }
 
-    /** Whether their OPEN and PENDING claims on the date leave the live totals on the day: a hold of theirs covers
-     *  the date, or their retirement date is reached. */
-    public boolean leftOn(LocalDate date, LocalDate today) {
-        return heldOn(date) || retiredBy(today);
-    }
-
     /** Whether a claim on this date is refused: it is after their retirement date, or after the from and before the
      *  to of a past retirement. */
     public boolean retiredOn(LocalDate date) {

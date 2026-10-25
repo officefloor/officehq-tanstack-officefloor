@@ -30,8 +30,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Takes a statement for the person: records their due-total now, on the sheet's today, and binds each of
  * their claims that counts to the due it shows now, its floored figure plus the late charge on it (a claim already bound keeps the due
- * it is bound to, and a bound due no longer follows the sheet's today); their claims that do not count (a person's unbound OPEN ones dated within a
- * hold among them) are unbound (live again).
+ * it is bound to, and a bound due no longer follows the sheet's today); their claims that do not count (a retired person's unbound OPEN ones among
+ * them; a hold takes none out) are unbound (live again).
  * <p>
  * Taken as of a date (on or before the sheet's today, and not before the person was added), it works the same out
  * as at the end of that date: every change made while the sheet's today was on or before it counts (a claim's status

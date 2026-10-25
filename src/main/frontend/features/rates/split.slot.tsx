@@ -7,7 +7,7 @@ import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, sumDue, useRates, type Rate } from './rates';
 
 // A person's settled-total and open-total: the dues of their counted SETTLED claims (frozen figures, corrections
-// included), and of their counted OPEN and PENDING claims (a held, deferred or retired-and-excluded one left out, as
+// included), and of their counted OPEN and PENDING claims (a deferred or retired-and-excluded one left out, as
 // from the due-total), each added up skipping n/a. Together they make their due-total before the cap. The sheet's are
 // everyone's added up (not trimmed).
 export function splitOf(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,

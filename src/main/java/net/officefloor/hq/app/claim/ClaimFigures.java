@@ -127,9 +127,8 @@ public class ClaimFigures {
         return (claim.getStatus().isOpen() || claim.getStatus() == ClaimStatus.SETTLED) && !claim.isDeferredOn(today);
     }
 
-    /** Whether a claim counts toward the live totals: as {@link #counts}, except an OPEN or PENDING claim that is
-     *  held, and its person's OPEN and PENDING claims dated within a hold of theirs, or all of them once their retirement date is reached, unless a statement
-     *  binds them (null person: no holds). */
+    /** Whether a claim counts toward the live totals: as {@link #counts}, except its person's OPEN and PENDING
+     *  claims once their retirement date is reached, unless a statement binds them (null person: not retired). */
     public static boolean countsLive(Claim claim, Person person, LocalDate today) {
         return counts(claim, today) && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
     }
@@ -152,10 +151,11 @@ public class ClaimFigures {
         return !deferred && !(claim.getStatus().isOpen() && !claim.isBound() && leftOn(claim, person, today));
     }
 
-    /** Whether the claim, while OPEN or PENDING and unbound, leaves the live totals on the day: it is held itself, or
-     *  its person's claims on its date do ({@link Person#leftOn}; null person: no holds). */
+    /** Whether the claim, while OPEN or PENDING and unbound, leaves the live totals on the day: its person's
+     *  retirement date is reached (null person: not retired). A hold, the claim's or its person's, does not take it
+     *  out; it only denies its person a pool cut. */
     private static boolean leftOn(Claim claim, Person person, LocalDate today) {
-        return claim.isHeld() || (person != null && person.leftOn(claim.getDate(), today));
+        return person != null && person.retiredBy(today);
     }
 
     /** The percent of the grade's rate in force on a date; none when that rate's to-date is before it. When the
@@ -244,8 +244,8 @@ public class ClaimFigures {
         return dueTotal(claims, today, null);
     }
 
-    /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims dated within a hold
-     *  of theirs do not count, unless a statement binds them. At most the sheet's cap (n/a is not capped). */
+    /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims do not count once their
+     *  retirement date is reached, unless a statement binds them. At most the sheet's cap (n/a is not capped). */
     public String dueTotal(List<Claim> claims, LocalDate today, Person person) {
         String sum = uncappedDueTotal(claims, today, person);
         if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
