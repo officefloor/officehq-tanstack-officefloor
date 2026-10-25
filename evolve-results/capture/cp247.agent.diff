@@ -1,0 +1,55 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 1f1bfac5..6a255322 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  * instead), when its due-by (as it stands before the edit) is in a closed period, when its date moves to one whose due-by
+  * (its person's terms on that date, counted in business days) would be in a closed period, and when it would move after its
+  * person's retirement date, an amount other than its lines' total when it has lines, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving records who
+- * last edited it and closes the claim's editor: it releases the claim's lock. Its due-by keeps counting from the date and
+- * terms fixed when it was created ({@link Claim#getDueFrom}). */
++ * last edited it and closes the claim's editor: it releases the claim's lock. Its due-by counts from its date as saved,
++ * with the terms fixed when it was created ({@link Claim#getDueTerms}); a due-by a steward set stays as set. */
+ public class ApplyClaim {
+     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
+             PeriodRepository periods, PersonRepository people, PersonGradeRepository grades, HolidayRepository holidays,
+@@ -50,6 +50,9 @@ public class ApplyClaim {
+         claim.setCorrects(input.corrects());
+         claim.setCorrectsDate(correctsDate);
+         claim.setDate(date);
++        if (!date.equals(claim.getDueFrom())) {
++            claim.fixDue(date, claim.getDueTerms(), holidays.datesOf(sheet.getId()));
++        }
+         claim.setNote(input.note());
+         claim.setRef(input.ref());
+         claim.setTags(input.tags());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+index 3f96b21a..524a4bf8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+@@ -1,14 +1,12 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Raises the claim's proofs count by one, of the kind chosen (receipt or photo; when none is chosen, a receipt while the
+- *  sheet has proof kinds, else of no kind — neither a receipt nor a photo); a
++/** Raises the claim's proofs count by one, of the kind chosen (receipt or photo; when none is chosen, a receipt); a
+  *  SETTLED or VOID claim, or an unknown kind, is refused. */
+ public class ApplyProof {
+-    public void apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository,
++    public void apply(@Val Claim claim, ClaimRepository repository,
+             @RequestParam(name = "kind", required = false) String kind) throws ClaimStatusException {
+         String chosen = kind == null || kind.isBlank() ? null : kind.trim();
+         if (chosen != null && !ProofKind.ALL.contains(chosen)) {
+@@ -17,7 +15,7 @@ public class ApplyProof {
+         if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
+             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot gain a proof.");
+         }
+-        claim.addProof(chosen != null ? chosen : sheet.getProofKinds().isEmpty() ? null : ProofKind.RECEIPT);
++        claim.addProof(chosen != null ? chosen : ProofKind.RECEIPT);
+         repository.saveAndFlush(claim);
+     }
+ }
