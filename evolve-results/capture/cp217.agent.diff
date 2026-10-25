@@ -1,0 +1,952 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index f429bb4b..fd70a767 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -70,6 +70,8 @@ export type Claim = {
+   lines: string[];
+   /** The number of the bulk settle batch that settled it (or left it PENDING); null when settled one at a time. */
+   settleBatch: number | null;
++  /** The people it is shared with, in the order added: each person's id and share (two decimals). */
++  shares: { personId: number; share: string }[];
+ };
+ 
+ /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 599fb1c6..3a2d0607 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -27,6 +27,7 @@ function PersonClaims({ person }: { person: Person }) {
+   const [submits, setSubmits] = useState<{ id: number | null; count: number }>({ id: null, count: 0 });
+   const { selected, toggle } = useSelectedClaims();
+   const claims = useClaims();
++  const people = usePeople();
+   const rates = useRates();
+   const periods = usePeriods();
+   const settings = useSettings();
+@@ -72,6 +73,7 @@ function PersonClaims({ person }: { person: Person }) {
+             <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+             <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
+             <span data-testid="claim-tags">{(c.tags ?? []).join(', ')}</span>{' '}
++            <span data-testid="claim-shares">{(c.shares ?? []).map((sh) => `${people.data?.find((p) => p.id === sh.personId)?.name ?? ''} ${sh.share}`).join(', ')}</span>{' '}
+             <span data-testid="claim-batch">{c.settleBatch ?? ''}</span>{' '}
+             <span data-testid="claim-review-late">{isReviewLate(c, today, settings.data) ? 'yes' : 'no'}</span>{' '}
+             <ClaimStatusActions key={`${sheet}:${c.id}`} sheet={sheet} claim={c} onEdit={() => { setSubmits({ id: c.id, count: 0 }); setEditing(String(c.id)); }}
+@@ -288,6 +290,23 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     },
+   });
+   const submitComment = useSubmitOnce(comment);
++  const [shareWith, setShareWith] = useState('');
++  const [sharePct, setSharePct] = useState('');
++  const shareTo = (people.data ?? []).find((p) => String(p.id) === shareWith) ?? (people.data ?? [])[0];
++  const share = useMutation({
++    mutationFn: (s: { personId: string; share: string }) =>
++      postJson<Claim>(`${claimsPath(sheet)}/${claim.id}/shares`, s, user),
++    onSuccess: () => {
++      setSharePct('');
++      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
++    },
++  });
++  const submitShare = useSubmitOnce(share);
++  const resetAllButShare = () => {
++    change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset();
++    remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset();
++    line.reset();
++  };
+   const [lineLabel, setLineLabel] = useState('');
+   const [lineQty, setLineQty] = useState('');
+   const [lineUnit, setLineUnit] = useState('');
+@@ -359,12 +378,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-reject-reason"
+         placeholder="Reason to reject"
+         value={reason}
+-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <select
+         data-testid="claim-void-reason"
+         value={voidReason}
+-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         <option value="">(no void reason)</option>
+         {(voidReasons.data ?? []).map((r) => (
+@@ -391,7 +410,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+             setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+             move.reset();
+             defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-            proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++            proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+             submitChange(action === 'reject' ? { action, reason }
+               : action === 'void' && voidReason !== '' ? { action, reason: voidReason }
+               : action === 'settle' && settleOn.trim() !== '' ? { action, on: settleOn.trim() } : { action });
+@@ -404,7 +423,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+       <select
+         data-testid="claim-reassign-to"
+         value={target ? String(target.id) : ''}
+-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         {others.map((p) => (
+           <option key={p.id} value={String(p.id)}>{p.name}</option>
+@@ -417,7 +436,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           if (target) submitMove(target.id);
+         }}
+@@ -428,7 +447,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-defer-date"
+         placeholder="Defer until YYYY-MM-DD"
+         value={deferTo}
+-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -437,7 +456,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+           split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitDefer(deferTo);
+@@ -449,7 +468,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-date-new"
+         placeholder="Re-date to YYYY-MM-DD"
+         value={redateTo}
+-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -459,7 +478,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+           split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRedate(redateTo);
+@@ -498,7 +517,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); comment.reset(); waive.reset(); hold.reset();
++          proof.reset(); comment.reset(); share.reset(); waive.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRemind(undefined);
+         }}
+@@ -513,7 +532,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); comment.reset(); hold.reset();
++          proof.reset(); remind.reset(); comment.reset(); share.reset(); hold.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitWaive(undefined);
+         }}
+@@ -528,7 +547,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitHold(undefined);
+         }}
+@@ -539,7 +558,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-comment-text"
+         placeholder="Comment"
+         value={commentText}
+-        onChange={(e) => { setCommentText(e.target.value); comment.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setCommentText(e.target.value); comment.reset(); share.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -549,32 +568,59 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitComment(commentText);
+         }}
+       >
+         Comment
+       </button>{' '}
++      <select
++        data-testid="claim-share-select"
++        value={shareTo ? String(shareTo.id) : ''}
++        onChange={(e) => { setShareWith(e.target.value); share.reset(); resetAllButShare(); }}
++      >
++        {(people.data ?? []).map((p) => (
++          <option key={p.id} value={String(p.id)}>{p.name}</option>
++        ))}
++      </select>{' '}
++      <input
++        data-testid="claim-share-pct"
++        placeholder="Share %"
++        inputMode="decimal"
++        value={sharePct}
++        onChange={(e) => { setSharePct(e.target.value); share.reset(); resetAllButShare(); }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="claim-share-add"
++        disabled={share.isPending}
++        onClick={() => {
++          resetAllButShare();
++          submitShare({ personId: shareTo ? String(shareTo.id) : '', share: sharePct });
++        }}
++      >
++        Share
++      </button>{' '}
+       <input
+         data-testid="claim-line-label"
+         placeholder="Line label"
+         value={lineLabel}
+-        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-qty"
+         placeholder="Qty"
+         inputMode="numeric"
+         value={lineQty}
+-        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-unit"
+         placeholder="Unit amount"
+         inputMode="decimal"
+         value={lineUnit}
+-        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -584,7 +630,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset();
+           submitLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
+         }}
+@@ -596,7 +642,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to split off"
+         inputMode="decimal"
+         value={splitAmount}
+-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -606,7 +652,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           partSettle.reset();
+           submitSplit(splitAmount);
+@@ -619,7 +665,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to settle"
+         inputMode="decimal"
+         value={partAmount}
+-        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -629,14 +675,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitPartSettle(partAmount);
+         }}
+       >
+         Settle part
+       </button>{' '}
+-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
++      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
+         <input
+           data-testid="claim-inline-amount"
+           placeholder="Amount"
+@@ -670,9 +716,19 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         </button>
+         {children}
+       </span>
+-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
++      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || share.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
+         <span data-testid="claim-error">
+-          {line.isError
++          {share.isError
++            ? share.error instanceof HttpError && share.error.status === 403
++              ? 'A viewer cannot share a claim, and no claim on an archived sheet can be shared.'
++              : claim.status === 'SETTLED' || claim.status === 'VOID' || claim.status === 'DELETED'
++              ? `A ${claim.status} claim cannot be shared.`
++              : share.variables?.personId === String(claim.personId)
++              ? 'A claim cannot be shared with its own person.'
++              : (claim.shares ?? []).some((sh) => String(sh.personId) === share.variables?.personId)
++              ? 'That person already holds a share of this claim.'
++              : 'A share must have up to two decimals, more than 0.00, and the claim\'s shares cannot total more than 100.00.'
++            : line.isError
+             ? line.error instanceof HttpError && line.error.status === 423
+               ? 'Another user is editing this claim; no line can be added until they save or cancel.'
+               : line.error instanceof HttpError && line.error.status === 403
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index d865ccc2..2f9c4761 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -35,10 +35,10 @@ function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefine
+   const current = people.filter((p) => p.retiredFrom === null);
+   return {
+     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
+-    dues: people.map((p) => personDue(p, claims, rates, today, settings)),
++    dues: people.map((p) => personDue(p, claims, rates, today, settings, people)),
+     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
+     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
+-      .map((p) => personDue(p, claims, rates, today, settings)))])),
++      .map((p) => personDue(p, claims, rates, today, settings, people)))])),
+     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+   };
+ }
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 816cf1e5..d729cc52 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -20,7 +20,7 @@ import type { Settings } from '../roles/roles';
+ export function crewDue(crew: Crew, people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined): string {
+   const ids = [crew.lead?.id, ...crew.members.map((m) => m.id)];
+-  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings)));
++  return sumDue(people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, claims, rates, today, settings, people)));
+ }
+ 
+ // The sheet's crews, each with its lead, its members and its due-total, and the entry that adds a crew with a lead.
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index 3ce9c63e..acbaffb8 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -16,7 +16,7 @@ import { crewDue } from '../crews/crews.slot';
+ export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined): { due: string; overdue: string } {
+   return {
+-    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings))),
++    due: trimmedSum(people.map((p) => personDue(p, claims, rates, today, settings, people))),
+     overdue: trimmedSum(people.map((p) => overdueOf(p, claims, rates, today, settings).total)),
+   };
+ }
+@@ -48,7 +48,7 @@ function HeaderCounters() {
+   const [user] = useCurrentUser();
+   const me = personNamed(allPeople, user);
+   const mine = me
+-    ? { due: personDue(me, allClaims, rates.data, today, settings.data),
++    ? { due: personDue(me, allClaims, rates.data, today, settings.data, allPeople),
+         overdue: sheetTotals([me], allClaims, rates.data, today, settings.data).overdue }
+     : { due: '', overdue: '' };
+   const led = me ? (crews.data ?? []).filter((c) => c.lead?.id === me.id) : [];
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index d8d60c4d..47a49957 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -39,7 +39,7 @@ function ExportPeople() {
+     const today = info.today;
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+     for (const p of people) {
+-      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings)]);
++      lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people)]);
+     }
+     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 30720945..73658d2d 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -61,7 +61,7 @@ function PeopleList() {
+   const visible = visibleTo(people.data ?? [], roles.data, delegations.data, crews.data, user, today);
+   const listed = (people.data ?? []).filter((p) => (visible(p) || quickAdded.includes(p.id)) && (showRetired || p.retiredFrom === null));
+   const due = (p: Person) => {
+-    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data);
++    const d = personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data);
+     return d === 'n/a' ? null : Number(d);
+   };
+   const shown = sort === 'name' ? sortedBy(listed, (p) => nameKey(p.name))
+diff --git a/src/main/frontend/features/people/search.slot.tsx b/src/main/frontend/features/people/search.slot.tsx
+index 462c0972..d88c4b26 100644
+--- a/src/main/frontend/features/people/search.slot.tsx
++++ b/src/main/frontend/features/people/search.slot.tsx
+@@ -30,7 +30,7 @@ async function linesOf(sheetId: string, text: string): Promise<string[]> {
+   const key = text.toLowerCase();
+   return people
+     .filter((p) => [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(key)))
+-    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings)}`);
++    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings, people)}`);
+ }
+ 
+ async function searchTree(sheetId: string, text: string): Promise<string[]> {
+diff --git a/src/main/frontend/features/people/snapshotcompare.slot.tsx b/src/main/frontend/features/people/snapshotcompare.slot.tsx
+index 3711699f..a6c16b0a 100644
+--- a/src/main/frontend/features/people/snapshotcompare.slot.tsx
++++ b/src/main/frontend/features/people/snapshotcompare.slot.tsx
+@@ -32,7 +32,7 @@ async function compareSnapshots(sheetId: string, from: string, to: string): Prom
+   const fromDate = from.trim() === '' ? info.today : from.trim();
+   return people.map((p) => {
+     const then = snapshotOn(p, fromDate);
+-    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings) : snapshotOn(p, to.trim());
++    const now = to.trim() === '' ? personDue(p, claims, rates, info.today, settings, people) : snapshotOn(p, to.trim());
+     return [p.name, then, now].filter((s) => s !== '').join(' ');
+   });
+ }
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 98c7d2ca..864c7017 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -4,7 +4,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import { gradeOn, usePeople, type Person } from '../people/people';
+ import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
+ import { useSettings, type Settings } from '../roles/roles';
+-import { chargedOf, formatCents, rateOn, sumDue, trimmedSum, useRates, type Rate } from './rates';
++import { chargedOf, formatCents, hundredths, rateOn, sharePart, sumDue, trimmedSum, useRates, type Rate } from './rates';
+ import { useColumnShown } from '../people/columns';
+ 
+ // A person's due-total: the sum of their counted claims' dues, each already rounded (a settled claim's
+@@ -14,15 +14,44 @@ import { useColumnShown } from '../people/columns';
+ // a figure — settled, bound, or live at another grade they had on its date, or live
+ // on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
+ // the sheet's cap: above it, it shows the cap and their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
++// A claim shared with other people gives each holder their part of its due (its due times their share divided by
++// 100, rounded half to even): it counts in their due-total (theirs is just their parts when they would otherwise
++// have none, n/a), and its own person's counts its due less the holders' parts — before the cap.
+ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined): string {
+-  return capped(personFigures(person, claims, rates, today, settings), settings).due;
++  settings: Settings | undefined, people: Person[] | undefined): string {
++  return capped(withShares(person, claims, rates, today, settings, people), settings).due;
+ }
+ 
+ /** A person's excess: how much the sum of their figures is above the sheet's cap; 0.00 when it is not (or n/a). */
+ export function personExcess(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+-  settings: Settings | undefined): string {
+-  return capped(personFigures(person, claims, rates, today, settings), settings).excess;
++  settings: Settings | undefined, people: Person[] | undefined): string {
++  return capped(withShares(person, claims, rates, today, settings, people), settings).excess;
++}
++
++/** The sum of a person's figures with the shares: their own claims' holders' parts taken off, and their parts of
++ *  the claims shared with them added (theirs alone when the sum is n/a). */
++function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
++  settings: Settings | undefined, people: Person[] | undefined): string {
++  const sum = personFigures(person, claims, rates, today, settings);
++  let given = 0n;
++  let held: bigint | null = null;
++  for (const c of claims) {
++    if ((c.shares ?? []).length === 0) continue;
++    const mineToGive = c.personId === person.id;
++    const share = (c.shares ?? []).find((s) => s.personId === person.id);
++    if (!mineToGive && !share) continue;
++    const owner = mineToGive ? person : (people ?? []).find((p) => p.id === c.personId);
++    if (!owner || !countsLive(c, holdsOf([owner]), today)) continue;
++    const due = chargedOf(c, rates, gradeOn(owner, c.date), settings, today);
++    if (due === 'n/a') continue;
++    if (mineToGive) {
++      for (const s of c.shares) given += sharePart(due, s.share);
++    } else if (share) {
++      held = (held ?? 0n) + sharePart(due, share.share);
++    }
++  }
++  if (sum === 'n/a') return held === null ? sum : formatCents(held);
++  return formatCents(hundredths(sum) - given + (held ?? 0n));
+ }
+ 
+ /** A sum of figures held to the sheet's cap ("" for none), and how much it was above it; n/a is not capped. */
+@@ -58,12 +87,13 @@ function DueHeader() {
+ 
+ function PersonDue({ person }: { person: Person }) {
+   const shown = useColumnShown('due-total');
++  const people = usePeople();
+   const claims = useClaims();
+   const rates = useRates();
+   const today = useSheetToday();
+   const settings = useSettings();
+   if (!shown) return null;
+-  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data)}</td>;
++  return <td data-testid="person-due-total">{personDue(person, claims.data ?? [], rates.data, today, settings.data, people.data)}</td>;
+ }
+ 
+ function ExcessHeader() {
+@@ -73,12 +103,13 @@ function ExcessHeader() {
+ 
+ function PersonExcess({ person }: { person: Person }) {
+   const shown = useColumnShown('excess');
++  const people = usePeople();
+   const claims = useClaims();
+   const rates = useRates();
+   const today = useSheetToday();
+   const settings = useSettings();
+   if (!shown) return null;
+-  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data)}</td>;
++  return <td data-testid="person-excess">{personExcess(person, claims.data ?? [], rates.data, today, settings.data, people.data)}</td>;
+ }
+ 
+ function DueTotal() {
+@@ -90,7 +121,7 @@ function DueTotal() {
+   const today = useSheetToday();
+   const settings = useSettings();
+   if (!user || !sheet) return null;
+-  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data)));
++  const total = trimmedSum((people.data ?? []).map((p) => personDue(p, claims.data ?? [], rates.data, today, settings.data, people.data)));
+   return (
+     <p>
+       Due in total <strong data-testid="rollup-due-total">{total}</strong>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 43b30b4f..b050cc1a 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -120,7 +120,7 @@ export function atLeast(due: string, floor: string | null | undefined): string {
+ }
+ 
+ /** A two-decimal string ("12.50") in hundredths, exactly. */
+-const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
++export const hundredths = (s: string) => BigInt(Math.round(Number(s) * 100));
+ 
+ /**
+  * The due on an amount: amount times the percent, divided by 100, rounded half to even (or half up, away from
+@@ -163,3 +163,14 @@ export function trimmedSum(dues: string[]): string {
+   const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
+   return formatCents(kept.reduce((n, d) => n + d, 0n));
+ }
++
++/** A holder's part of a due, in hundredths: the due times their share divided by 100, rounded half to even. */
++export function sharePart(due: string, share: string): bigint {
++  const n = hundredths(due) * hundredths(share);
++  const neg = n < 0n;
++  const abs = neg ? -n : n;
++  let q = abs / 10_000n;
++  const r = abs % 10_000n;
++  if (r * 2n > 10_000n || (r * 2n === 10_000n && q % 2n === 1n)) q += 1n;
++  return neg ? -q : q;
++}
+diff --git a/src/main/frontend/features/summary/classic.slot.tsx b/src/main/frontend/features/summary/classic.slot.tsx
+index 899db117..18197508 100644
+--- a/src/main/frontend/features/summary/classic.slot.tsx
++++ b/src/main/frontend/features/summary/classic.slot.tsx
+@@ -34,7 +34,7 @@ function ClassicSummary() {
+   if (!user || !sheet) return null;
+   const allClaims = claims.data ?? [];
+   const sortedPeriods = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+-  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data)));
++  const total = sumDue((people.data ?? []).map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)));
+   return (
+     <section data-testid="classic-summary">
+       <h2>Classic summary</h2>
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 863062a2..0ca249ec 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -51,7 +51,7 @@ function Summary() {
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>
+-                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data)))}
++                  {sumDue(onGrade.map((p) => personDue(p, allClaims, rates.data, today, settings.data, people.data)))}
+                 </td>
+                 <td data-testid={`summary-grade-${g}-active`}>
+                   {onGrade.filter((p) => isActive(p, allClaims, today)).length}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyShare.java b/src/main/java/net/officefloor/hq/app/claim/ApplyShare.java
+new file mode 100644
+index 00000000..49022bfc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyShare.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.util.List;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Shares the claim with another person on the sheet. A SETTLED, VOID or DELETED claim cannot be shared; nor can it be
++ * shared with its own person, with a person already holding a share of it, or so its shares total more than 100.00.
++ */
++public class ApplyShare {
++    public void apply(@Val ShareRequest request, @Val Claim claim, PersonRepository people, ClaimRepository repository,
++            Out<Person> holder) throws ClaimStatusException, InvalidClaimException {
++        ClaimStatus status = claim.getStatus();
++        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID || status == ClaimStatus.DELETED) {
++            throw new ClaimStatusException("A " + status + " claim cannot be shared.");
++        }
++        Long personId = Long.valueOf(request.personId());
++        Person person = people.findById(personId).filter(p -> p.getSheetId().equals(claim.getSheetId()))
++                .orElseThrow(() -> new InvalidClaimException("No such person on the sheet."));
++        if (personId.equals(claim.getPersonId())) {
++            throw new InvalidClaimException("A claim cannot be shared with its own person.");
++        }
++        List<ClaimShares.Share> shares = ClaimShares.of(claim);
++        if (shares.stream().anyMatch(s -> s.personId().equals(personId))) {
++            throw new InvalidClaimException(person.getName() + " already holds a share of this claim.");
++        }
++        BigDecimal share = new BigDecimal(request.share());
++        if (ClaimShares.total(shares).add(share).compareTo(new BigDecimal("100.00")) > 0) {
++            throw new InvalidClaimException("A claim's shares cannot total more than 100.00.");
++        }
++        claim.setShares(ClaimShares.adding(claim, personId, share));
++        repository.saveAndFlush(claim);
++        holder.set(person);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimShared.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimShared.java
+new file mode 100644
+index 00000000..1a6507ac
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimShared.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the share, once it is saved: the claim's line, then with=<holder> share=<share>. */
++public class AuditClaimShared {
++    public void audit(@Val Claim claim, @Val ShareRequest request, @Val Person holder, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
++        audit.record(ClaimAudit.line("CLAIM_SHARED", claim, person, AuditUser.decode(user))
++                + " with=" + holder.getName() + " share=" + request.share());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 8f59b49f..2f96fe7d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -158,6 +158,10 @@ public class Claim {
+     @Column(name = "void_reason")
+     private String voidReason;
+ 
++    /** The people the claim is shared with, in the order added: <person id>:<share>, comma separated; null for none. */
++    @Column(name = "shares", length = 2000)
++    private String shares;
++
+     protected Claim() {
+     }
+ 
+@@ -463,6 +467,7 @@ public class Claim {
+         then.ref = ref;
+         then.tags = tags;
+         then.tagsUsed = tagsUsed;
++        then.shares = shares;
+         then.voidReason = status == ClaimStatus.VOID ? voidReason : null;
+         then.bind(stated, statedDue);
+         return then;
+@@ -535,4 +540,13 @@ public class Claim {
+     public void setVoidReason(String voidReason) {
+         this.voidReason = voidReason;
+     }
++
++    public String getShares() {
++        return shares;
++    }
++
++    /** Gives the claim its shares (null: none). */
++    public void setShares(String shares) {
++        this.shares = shares;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 86a46e3b..d377a629 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -237,6 +237,13 @@ public class ClaimFigures {
+                 .orElse(null);
+     }
+ 
++    /** The claim's due less its holders' parts (each its due times their share divided by 100, rounded half to
++     *  even): what its own person's due-total counts of it; null when it has none (n/a). */
++    public BigDecimal ownDue(Claim claim) {
++        BigDecimal due = due(claim);
++        return due == null ? null : due.subtract(ClaimShares.parts(claim, due));
++    }
++
+     /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade
+      *  in force on the day has no rate in force then, unless a counted claim keeps a figure: a fixed one (settled or bound), or a
+      *  live one at another grade they had on its date, or one dated on or before the day (at a rate that has ended since). */
+@@ -247,7 +254,17 @@ public class ClaimFigures {
+     /** The person's live due-total, as {@link #dueTotal(List, LocalDate)}; their OPEN claims do not count once their
+      *  retirement date is reached, unless a statement binds them. At most the sheet's cap (n/a is not capped). */
+     public String dueTotal(List<Claim> claims, LocalDate today, Person person) {
++        return dueTotal(claims, today, person, null);
++    }
++
++    /** The person's live due-total, as {@link #dueTotal(List, LocalDate, Person)}, with their parts of the claims of
++     *  others shared with them (null: they hold no share of a counted claim) added before the cap: their own claims
++     *  count less the holders' parts, and when they would have none (n/a) their parts are their due-total. */
++    public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held) {
+         String sum = uncappedDueTotal(claims, today, person);
++        if (held != null) {
++            sum = ("n/a".equals(sum) ? held : new BigDecimal(sum).add(held)).setScale(2).toPlainString();
++        }
+         if (cap == null || "n/a".equals(sum) || new BigDecimal(sum).compareTo(cap) <= 0) {
+             return sum;
+         }
+@@ -263,7 +280,7 @@ public class ClaimFigures {
+         if (rateOn(grade, today).isEmpty() && !kept) {
+             return "n/a";
+         }
+-        return counted.stream().map(this::due).filter(f -> f != null)
++        return counted.stream().map(this::ownDue).filter(f -> f != null)
+                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 727c9c69..c562673e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -7,13 +7,19 @@ import java.util.List;
+  * whether its person's last statement binds it, and the figure it binds it to (null: none, or n/a); the number of the
+  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
+  * the date of the claim it corrects, else its own); and its due-by (YYYY-MM-DD), fixed when it was created; and its status log, oldest first
+- * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held. */
++ * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held; and the people it is shared with, in the order added (their id and share). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy,
+         boolean stated, String statedDue, String corrects, String roundsOn, String dueBy,
+         List<String> log, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, boolean lateEntry, String remindedOn, String ref,
+         List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, String editedBy,
+-        Integer settleBatch, List<String> lines, String reviewOn, boolean waived, boolean held) {
++        Integer settleBatch, List<String> lines, String reviewOn, boolean waived, boolean held,
++        List<ShareLine> shares) {
++
++    /** One holder's share of the claim: the person's id and their share with two decimals. */
++    public record ShareLine(long personId, String share) {
++    }
++
+ 
+     public static ClaimResponse from(Claim claim, List<String> log, List<String> comments, List<String> lines) {
+         return new ClaimResponse(claim.getId(), claim.getPersonId(), claim.getAmount().setScale(2).toPlainString(),
+@@ -27,6 +33,8 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getRemindedOn() == null ? null : claim.getRemindedOn().toString(), claim.getRef(),
+                 Tags.list(claim.getTags()), Tags.list(claim.getTagsUsed()), claim.getVoidReason(), comments, claim.getEditedBy(),
+                 claim.getSettleBatch(), lines, claim.getReviewOn() == null ? null : claim.getReviewOn().toString(),
+-                claim.isWaived(), claim.isHeld());
++                claim.isWaived(), claim.isHeld(),
++                ClaimShares.of(claim).stream()
++                        .map(sh -> new ShareLine(sh.personId(), sh.share().toPlainString())).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java b/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java
+new file mode 100644
+index 00000000..e01f3c24
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java
+@@ -0,0 +1,54 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.util.ArrayList;
++import java.util.List;
++
++/** The people a claim is shared with, as its shares column holds them (<person id>:<share>, comma separated, in the
++ *  order added), and each holder's part of its due. */
++public final class ClaimShares {
++
++    /** One holder's share of a claim: the person and their percent (two decimals). */
++    public record Share(Long personId, BigDecimal share) {
++    }
++
++    private ClaimShares() {
++    }
++
++    /** The claim's shares, in the order added; empty when it is shared with no one. */
++    public static List<Share> of(Claim claim) {
++        List<Share> shares = new ArrayList<>();
++        String held = claim.getShares();
++        if (held == null || held.isBlank()) {
++            return shares;
++        }
++        for (String pair : held.split(",")) {
++            int colon = pair.indexOf(':');
++            shares.add(new Share(Long.valueOf(pair.substring(0, colon)), new BigDecimal(pair.substring(colon + 1)).setScale(2)));
++        }
++        return shares;
++    }
++
++    /** The claim's shares with one more added at the end, as its shares column holds them. */
++    public static String adding(Claim claim, Long personId, BigDecimal share) {
++        String pair = personId + ":" + share.setScale(2).toPlainString();
++        String held = claim.getShares();
++        return held == null || held.isBlank() ? pair : held + "," + pair;
++    }
++
++    /** The shares added up (0.00 with none). */
++    public static BigDecimal total(List<Share> shares) {
++        return shares.stream().map(Share::share).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
++    }
++
++    /** A holder's part of a due: the due times their share divided by 100, rounded half to even. */
++    public static BigDecimal part(BigDecimal due, BigDecimal share) {
++        return due.multiply(share).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
++    }
++
++    /** The holders' parts of a due added up (0.00 with no holders). */
++    public static BigDecimal parts(Claim claim, BigDecimal due) {
++        return of(claim).stream().map(s -> part(due, s.share())).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ShareRequest.java b/src/main/java/net/officefloor/hq/app/claim/ShareRequest.java
+new file mode 100644
+index 00000000..96ad9979
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ShareRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A share of a claim as the screen sends it: the person to share it with (their id) and their share percent. */
++public record ShareRequest(String personId, String share) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateShare.java b/src/main/java/net/officefloor/hq/app/claim/ValidateShare.java
+new file mode 100644
+index 00000000..05a51e5c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateShare.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Reads the share from the body: a person must be chosen, and the share must be a number with up to two decimals,
++ *  more than 0.00. */
++public class ValidateShare {
++    public void validate(@RequestBody ShareRequest request, Out<ShareRequest> share) throws InvalidClaimException {
++        String person = request == null || request.personId() == null ? "" : request.personId().trim();
++        String pct = request == null || request.share() == null ? "" : request.share().trim();
++        if (!person.matches("\\d+")) {
++            throw new InvalidClaimException("Choose a person to share the claim with.");
++        }
++        if (!pct.matches("\\d+(\\.\\d{1,2})?") || new BigDecimal(pct).signum() <= 0) {
++            throw new InvalidClaimException("A share must be a number with up to two decimals, more than 0.00.");
++        }
++        share.set(new ShareRequest(person, new BigDecimal(pct).setScale(2).toPlainString()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 9e1d754a..ef29e6c3 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -10,6 +10,7 @@ import java.util.Optional;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimFigures;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimShares;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGrade;
+@@ -62,14 +63,28 @@ public class Rollup {
+             List<Claim> all = claims.findBySheetIdOrderByIdDesc(id);
+             var sheetRates = rates.findInChain(id);
+             Map<Long, List<PersonGrade>> dated = grades.datedOnSheet(id);
+-            for (Person person : persons.findListed(id)) {
++            List<Person> listed = persons.findListed(id);
++            Map<Long, BigDecimal> held = new LinkedHashMap<>();
++            for (Person owner : listed) {
++                ClaimFigures ownerFigures = new ClaimFigures(sheetRates,
++                        new PersonGrades(owner.getGrade(), dated.getOrDefault(owner.getId(), List.of())), sheet.get());
++                all.stream().filter(c -> owner.getId().equals(c.getPersonId()) && c.getShares() != null
++                        && ClaimFigures.countsLive(c, owner, sheet.get().getToday())).forEach(c -> {
++                            BigDecimal claimDue = ownerFigures.due(c);
++                            if (claimDue != null) {
++                                ClaimShares.of(c).forEach(s -> held.merge(s.personId(),
++                                        ClaimShares.part(claimDue, s.share()), BigDecimal::add));
++                            }
++                        });
++            }
++            for (Person person : listed) {
+                 List<Claim> mine = all.stream().filter(c -> person.getId().equals(c.getPersonId())).toList();
+                 BigDecimal claimed = mine.stream()
+                         .filter(c -> c.getCorrects() == null && ClaimFigures.countsClaimed(c, person, sheet.get().getToday())).map(Claim::getAmount)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+                 ClaimFigures figures = new ClaimFigures(sheetRates,
+                         new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
+-                String due = figures.dueTotal(mine, sheet.get().getToday(), person);
++                String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()));
+                 BigDecimal overdue = mine.stream()
+                         .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c))
+                         .map(figures::due).filter(d -> d != null)
+diff --git a/src/main/resources/db/migration/V98__claim_shares.sql b/src/main/resources/db/migration/V98__claim_shares.sql
+new file mode 100644
+index 00000000..3df0c9ac
+--- /dev/null
++++ b/src/main/resources/db/migration/V98__claim_shares.sql
+@@ -0,0 +1,4 @@
++-- The people a claim is shared with, in the order added: <person id>:<share> pairs, comma separated (each share two
++-- decimals, more than 0.00, together at most 100.00); null for a claim shared with no one. Each holder's due-total
++-- counts their part of the claim's due, and the claim's own person's the rest.
++ALTER TABLE claim ADD COLUMN shares VARCHAR(2000);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/shares.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/shares.POST.yml
+new file mode 100644
+index 00000000..baa64c57
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/shares.POST.yml
+@@ -0,0 +1,39 @@
++# POST /api/sheets/{sheetId}/claims/{claimId}/shares — shares a claim with another person on the sheet. Body:
++# { "personId": "...", "share": "33.33" }; the claim's own person, a person already holding a share, shares totalling
++# more than 100.00, or a SETTLED, VOID or DELETED claim are refused.
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: validate
++validate:
++  class: net.officefloor.hq.app.claim.ValidateShare
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: claim
++claim:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyShare
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimShared
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
