@@ -1,0 +1,90 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 424d0f65..fec76396 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -91,10 +91,11 @@ export function figureOf(c: Claim, rates: Rate[] | undefined, grade: string, hal
+  *  plus its late charge — for each full 30 days it is overdue on the sheet's today, the sheet's late percent in force on that
+  *  boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus the charges of the boundaries
+  *  before it, rounded like a due, added up; a boundary at 0.00 adds
+- *  nothing ("n/a" when it has no figure). A statement binds only the figure: the charge and the floor keep following the
+- *  sheet. A correction takes neither floor nor late charge; a claim whose late charge is waived takes no late charge. */
++ *  nothing ("n/a" when it has no figure). A statement binds the due as shown, the charge and the floor included: while
++ *  bound it no longer follows the sheet's today. A correction takes neither floor nor late charge; a claim whose late charge is waived takes no late charge. */
+ export function chargedOf(c: Claim, rates: Rate[] | undefined, grade: string, settings: Settings | undefined,
+   today: string | undefined): string {
++  if (c.due === null && isBound(c)) return c.statedDue ?? 'n/a';
+   const halfUp = roundsHalfUp(c, settings, today);
+   const figure = figureOf(c, rates, grade, halfUp);
+   if (c.due !== null || c.corrects !== null || figure === 'n/a') return figure;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 497ee043..159eba54 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -21,8 +21,8 @@ import net.officefloor.hq.app.sheet.Sheet;
+  * sheet's late percent in force on that boundary date (its due-by plus its grade's grace, plus 30, 60, 90 ... days) of the figure plus
+  * the charges of the boundaries before it (compounding), rounded like a due, and
+  * the charges added up (a boundary whose percent is 0.00 adds nothing). The floor comes last: an unsettled claim's due is the
+- * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the figure only (never
+- * the floor or the charge); settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
++ * greater of the sheet's floor in force on its date and its figure plus its late charge. A statement binds the due as shown (the floor
++ * and the late charge included), which then no longer follows the sheet's today; settling freezes the due in. A correction's live due is its amount times the rate, rounded the same way, with no floor, and it
+  * never takes a late charge. The rounding policy: a claim dated before the sheet's policy date (its today when blank)
+  * rounds half up, one dated on or after it half to even — unless the sheet has a rounding mode (half-up or half-even) in force on
+  * that date, which it then rounds by; a correction goes by the date of the claim it corrects.
+@@ -188,17 +188,21 @@ public class ClaimFigures {
+         return floored(claim, figure.add(chargeByBoundary(claim, figure)));
+     }
+ 
+-    /** The claim's due: its frozen due when settled, else the greater of its floor and its figure plus the late
+-     *  charge; null when it has none (n/a). */
++    /** The claim's due: its frozen due when settled, else the due its person's last statement bound it to, else the
++     *  greater of its floor and its figure plus the late charge; null when it has none (n/a). */
+     public BigDecimal due(Claim claim) {
+         if (claim.getDue() != null) {
+             return claim.getDue();
+         }
++        if (claim.isBound()) {
++            return claim.getStatedDue();
++        }
+         BigDecimal figure = figure(claim);
+         return figure == null ? null : floored(claim, figure.add(lateCharge(claim, figure)));
+     }
+ 
+-    /** The claim's figure, without any late charge or floor; null when it has none (n/a). */
++    /** The claim's figure, without any late charge or floor (a bound claim's: the due it is bound to); null when it
++     *  has none (n/a). */
+     public BigDecimal figure(Claim claim) {
+         if (claim.getDue() != null) {
+             return claim.getDue();
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index ab353e5b..6105d1fe 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -29,7 +29,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Takes a statement for the person: records their due-total now, on the sheet's today, and binds each of
+- * their claims that counts to the figure it has now (never its late charge, which keeps following the sheet's today); their claims that do not count (a person's unbound OPEN ones dated within a
++ * their claims that counts to the due it shows now, late charge and floor included (a claim already bound keeps the due
++ * it is bound to, and a bound due no longer follows the sheet's today); their claims that do not count (a person's unbound OPEN ones dated within a
+  * hold among them) are unbound (live again).
+  * <p>
+  * Taken as of a date (on or before the sheet's today, and not before the person was added), it works the same out
+@@ -57,7 +58,7 @@ public class TakeStatement {
+             dueTotal = figures.dueTotal(mine, sheet.getToday(), person);
+             for (Claim claim : mine) {
+                 if (ClaimFigures.countsLive(claim, person, sheet.getToday())) {
+-                    BigDecimal figure = figures.figure(claim);
++                    BigDecimal figure = figures.due(claim);
+                     claim.bind(true, figure);
+                     binding.bind(claim.getId(), figure);
+                     counted++;
+@@ -87,7 +88,7 @@ public class TakeStatement {
+             mine.forEach(c -> c.bind(false, null));
+             for (Claim claimThen : claimsThen) {
+                 if (ClaimFigures.countsLive(claimThen, personThen, asOf)) {
+-                    BigDecimal figure = figures.figure(claimThen);
++                    BigDecimal figure = figures.due(claimThen);
+                     byId.get(claimThen.getId()).bind(true, figure);
+                     binding.bind(claimThen.getId(), figure);
+                     counted++;
