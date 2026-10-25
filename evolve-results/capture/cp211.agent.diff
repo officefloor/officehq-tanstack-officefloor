@@ -1,0 +1,256 @@
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 6aced987..d8175eb7 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -27,7 +27,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewThreshold: string;
+   escalateAfter: string; reviewSla: string; proofKinds: string; defaultGrade: string;
+   clerkLimitA: string; clerkLimitB: string; clerkLimitC: string;
+-  scoreMid: string; scoreHigh: string };
++  scoreMid: string; scoreHigh: string; scoreLog: string };
+ 
+ /** The value of a dated setting in force on a date (YYYY-MM-DD): the one recorded with the latest from-date on or
+  *  before it, else `start` (the sheet's starting value). */
+diff --git a/src/main/frontend/features/roles/settings.slot.tsx b/src/main/frontend/features/roles/settings.slot.tsx
+index 361bc0db..beac2fd9 100644
+--- a/src/main/frontend/features/roles/settings.slot.tsx
++++ b/src/main/frontend/features/roles/settings.slot.tsx
+@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
+ import { ratesQueryKey } from '../rates/rates';
+ import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+ 
+-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | PermKey;
++type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | PermKey;
+ 
+ /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
+  *  Not dated. */
+@@ -118,6 +118,7 @@ function SheetSettings() {
+     clerkLimitC: settings.data?.clerkLimitC ?? '',
+     scoreMid: settings.data?.scoreMid ?? '',
+     scoreHigh: settings.data?.scoreHigh ?? '',
++    scoreLog: settings.data?.scoreLog ?? '',
+     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
+   };
+   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
+@@ -223,6 +224,10 @@ function SheetSettings() {
+         High score threshold (blank: none):{' '}
+         <span data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</span>
+       </p>
++      <p>
++        Score log (on or blank: off):{' '}
++        <span data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</span>
++      </p>
+       <p>
+         Proof kinds (blank: none):{' '}
+         <span data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</span>
+@@ -451,6 +456,14 @@ function SheetSettings() {
+           onInput={edit('scoreHigh')}
+           onFocus={touch('scoreHigh')}
+         />
++        <input
++          data-testid="setting-score-log"
++          placeholder="Score log, on (blank: off)"
++          value={valueOf('scoreLog')}
++          onChange={edit('scoreLog')}
++          onInput={edit('scoreLog')}
++          onFocus={touch('scoreLog')}
++        />
+         <input
+           data-testid="setting-proof-kinds"
+           placeholder="Proof kinds, e.g. receipt,photo (blank: none)"
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+index 2efdd784..30a1dea5 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+@@ -10,7 +10,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestHeader;
+ 
+-/** When the sheet's today changes, records each person's due-total as it stood on the day being left, before the
++/** When the sheet's today changes, records (first, while the score log is on, each person's score; then) each person's due-total as it stood on the day being left, before the
+  *  change takes effect (so before any period closes and before the change's rollup lines), and keeps it on the
+  *  person as a snapshot of that day (recorded in its history on that day, so the sheet as of it shows it). */
+ public class AuditSnapshot {
+@@ -25,6 +25,9 @@ public class AuditSnapshot {
+             recorder.recordOn(p, sheet.getToday());
+             people.save(p);
+         }));
++        if (sheet.isScoreLog()) {
++            before.scores(sheet.getId(), AuditUser.decode(user)).forEach(audit::record);
++        }
+         before.snapshot(sheet.getId(), AuditUser.decode(user)).forEach(audit::record);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 1b1e38da..c3235403 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rollup;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+@@ -9,6 +10,7 @@ import java.util.Optional;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimFigures;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGrade;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+@@ -29,7 +31,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ public class Rollup {
+ 
+     /** One person's figures. */
+-    public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
++    public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
+     }
+ 
+     private final Map<Long, Figures> people;
+@@ -72,8 +74,16 @@ public class Rollup {
+                         .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c))
+                         .map(figures::due).filter(d -> d != null)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
++                BigDecimal settled = mine.stream()
++                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && c.getStatus() == ClaimStatus.SETTLED)
++                        .map(figures::due).filter(d -> d != null)
++                        .reduce(BigDecimal.ZERO, BigDecimal::add);
++                long overdueCount = mine.stream()
++                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c)).count();
++                String score = settled.movePointLeft(2).subtract(BigDecimal.valueOf(5 * overdueCount))
++                        .setScale(0, RoundingMode.HALF_EVEN).toPlainString();
+                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due,
+-                        overdue.toPlainString()));
++                        overdue.toPlainString(), score));
+                 overdues.add(overdue);
+                 claimedTotal = claimedTotal.add(claimed);
+                 if (!"n/a".equals(due)) {
+@@ -92,6 +102,15 @@ public class Rollup {
+         return kept.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
+     }
+ 
++    /** One SCORE line per person, in list order, with the score as it stands in these figures: their counted SETTLED
++     *  claims' dues divided by 100, minus 5 for each counted overdue claim, rounded half to even to a whole number. */
++    public List<String> scores(String sheetId, String user) {
++        String head = " sheet=" + sheetId.trim() + " by=" + user;
++        List<String> lines = new ArrayList<>();
++        people.values().forEach(f -> lines.add("SCORE" + head + " name=" + f.name() + " score=" + f.score()));
++        return lines;
++    }
++
+     /** One SNAPSHOT line per person, in list order, with the due-total as it stands in these figures. */
+     public List<String> snapshot(String sheetId, String user) {
+         String head = " sheet=" + sheetId.trim() + " by=" + user;
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+index cab1cac0..1fdf49d5 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ApplySettings.java
+@@ -25,7 +25,8 @@ public class ApplySettings {
+                     || Sheet.POT.equals(change.key()) || Sheet.PARENT.equals(change.key())
+                     || Sheet.FISCAL_START_MONTH.equals(change.key())
+                     || Sheet.ALERT_THRESHOLD.equals(change.key())
+-                    || Sheet.SCORE_MID.equals(change.key()) || Sheet.SCORE_HIGH.equals(change.key())) {
++                    || Sheet.SCORE_MID.equals(change.key()) || Sheet.SCORE_HIGH.equals(change.key())
++                    || Sheet.SCORE_LOG.equals(change.key())) {
+                 sheet.record(change.key(), null, change.value());
+             } else if (Sheet.POLICY_DATE.equals(change.key())) {
+                 sheet.setPolicyDate(change.value() == null ? null : LocalDate.parse(change.value()));
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 2c713d9d..bfbe0ae5 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -18,5 +18,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         String fiscalStartMonth, String alertThreshold, String rounding, String roundingFrom,
+         String reviewThreshold, String reviewThresholdFrom, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+         String clerkLimitA, String clerkLimitB, String clerkLimitC,
+-        String clerkLimitAFrom, String clerkLimitBFrom, String clerkLimitCFrom, String scoreMid, String scoreHigh) {
++        String clerkLimitAFrom, String clerkLimitBFrom, String clerkLimitCFrom, String scoreMid, String scoreHigh, String scoreLog) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index d16a42ee..0dea4b3e 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -21,7 +21,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+-        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh) {
++        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog) {
+ 
+     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
+     public record Dated(String from, String value) {
+@@ -59,7 +59,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 String.join(",", sheet.getProofKinds()),
+                 sheet.valueOn(Sheet.DEFAULT_GRADE, sheet.getToday()) == null ? "" : sheet.valueOn(Sheet.DEFAULT_GRADE, sheet.getToday()),
+                 gradeClerkLimit(sheet, "A"), gradeClerkLimit(sheet, "B"), gradeClerkLimit(sheet, "C"),
+-                scoreThreshold(sheet, Sheet.SCORE_MID), scoreThreshold(sheet, Sheet.SCORE_HIGH));
++                scoreThreshold(sheet, Sheet.SCORE_MID), scoreThreshold(sheet, Sheet.SCORE_HIGH),
++                sheet.isScoreLog() ? "on" : "");
+     }
+ 
+     /** A score threshold (score-mid or score-high); "" when blank. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 24f4819f..5cb43713 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -98,6 +98,7 @@ public class ValidateSettings {
+                     "The clerk limit of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
+             wholeNumber(changes, Sheet.SCORE_MID, request.scoreMid(), "The mid score threshold must be a whole number, or blank.");
+             wholeNumber(changes, Sheet.SCORE_HIGH, request.scoreHigh(), "The high score threshold must be a whole number, or blank.");
++            onOrBlank(changes, Sheet.SCORE_LOG, request.scoreLog(), "The score log must be on, or blank.");
+         }
+         body.set(new SettingsInput(changes));
+     }
+@@ -212,6 +213,22 @@ public class ValidateSettings {
+         undatedDays(changes, Sheet.GRACE_DAYS, value, "The grace days must be a whole number of days, 0 or more, or blank.");
+     }
+ 
++    /** Adds an undated switch when the form sets it: on, or blank (off); not dated. */
++    private static void onOrBlank(List<SettingsInput.Change> changes, String key, String value, String message)
++            throws InvalidSettingsException {
++        if (value == null) {
++            return;
++        }
++        String on = null;
++        if (!value.trim().isEmpty()) {
++            if (!"on".equals(value.trim())) {
++                throw new InvalidSettingsException(message);
++            }
++            on = "on";
++        }
++        changes.add(new SettingsInput.Change(key, on, false, null));
++    }
++
+     /** Adds an undated whole-number setting (a score threshold) when the form sets it: a whole number, possibly
+      *  negative, or blank; not dated. */
+     private static void wholeNumber(List<SettingsInput.Change> changes, String key, String value, String message)
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index f793df43..8edef139 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -38,6 +38,9 @@ public class Sheet {
+     public static final String SCORE_MID = "score-mid";
+     public static final String SCORE_HIGH = "score-high";
+ 
++    /** The key of the score log switch: undated, on or blank (null: off). */
++    public static final String SCORE_LOG = "score-log";
++
+     /** The key of the proof kinds: undated, a comma separated list of kinds (null: none). */
+     public static final String PROOF_KINDS = "proof-kinds";
+ 
+@@ -334,6 +337,12 @@ public class Sheet {
+         return days == null ? null : Integer.valueOf(days);
+     }
+ 
++    /** Whether the score log is on: while it is, changing the sheet's today writes each person's score as it stood
++     *  on the day being left. Not dated. */
++    public boolean isScoreLog() {
++        return "on".equals(valueOn(SCORE_LOG, today));
++    }
++
+     /** A score threshold (score-mid or score-high): a whole number, possibly negative. Not dated; null when blank. */
+     public Integer getScoreThreshold(String key) {
+         String value = valueOn(key, today);
