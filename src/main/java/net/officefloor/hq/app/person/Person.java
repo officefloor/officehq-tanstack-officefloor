@@ -221,6 +221,11 @@ public class Person {
         termsChanged = true;
     }
 
+    /** Marks the edit as one that touched their terms, for its audit record, even when the stored value is unchanged. */
+    public void markTermsChanged() {
+        termsChanged = true;
+    }
+
     public boolean isTermsChanged() {
         return termsChanged;
     }

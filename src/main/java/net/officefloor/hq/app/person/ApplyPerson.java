@@ -46,6 +46,8 @@ public class ApplyPerson {
             // Terms left as they are in force on the sheet's today change nothing (their dated history is kept).
             if (!java.util.Objects.equals(request.termsDays(), person.termsOn(sheet.getToday()))) {
                 person.setTerms(request.termsDays());
+                // Terms differing from those in force are an edit of them, even when the undated ones already match.
+                person.markTermsChanged();
             }
         } else {
             person.setTermsFrom(request.termsFromDate(), request.termsDays());
