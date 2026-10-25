@@ -1,6 +1,7 @@
+import { HomeMain } from '../../slots/defs/homeMain';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useSheetToday } from '../session/session';
-import { gradeOn, type Person } from '../people/people';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { gradeOn, usePeople, type Person } from '../people/people';
 import { useSettings, type Settings } from '../roles/roles';
 import { chargedOf, sumDue, useRates, type Rate } from '../rates/rates';
 import { countsLive, holdsOf, isOpen, useClaims, type Claim } from './claims';
@@ -48,7 +49,28 @@ function PersonAged({ person }: { person: Person }) {
   );
 }
 
+// The sheet's aged dues: every person's age buckets added up (not trimmed).
+function SheetAged() {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const people = usePeople();
+  const claims = useClaims();
+  const rates = useRates();
+  const today = useSheetToday();
+  const settings = useSettings();
+  if (!user || !sheet) return null;
+  const aged = (people.data ?? []).map((p) => agedOf(p, claims.data ?? [], rates.data, today, settings.data));
+  return (
+    <p>
+      Due by age: 0–30 days <strong data-testid="rollup-aged-0-30">{sumDue(aged.map((a) => a.upTo30))}</strong>,
+      31–60 days <strong data-testid="rollup-aged-31-60">{sumDue(aged.map((a) => a.upTo60))}</strong>,
+      61+ days <strong data-testid="rollup-aged-61">{sumDue(aged.map((a) => a.over60))}</strong>
+    </p>
+  );
+}
+
 export const contributions = [
+  HomeMain.fill({ order: 30.6, Component: SheetAged }),
   PeopleColumns.fill({ order: 16.2, Component: AgedHeader }),
   PersonCells.fill({ order: 16.2, Component: PersonAged }),
 ];

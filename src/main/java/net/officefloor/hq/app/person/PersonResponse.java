@@ -10,8 +10,8 @@ import net.officefloor.hq.app.statement.Statement;
  *  and their last statement's due-total and date (null with none), and the date they are retired from (null: not
  *  retired), and whether they have any hold, and their holds (earliest first), and the ids of their patrons in the order they were named, and their own terms in days in force on the sheet's today (null: none), and their contact (null: none), and their aliases, sorted ignoring case, and whether
  *  they clash: their name or an alias is in use on another sheet of the sheet's tree, and the sheet they were
- *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, by
- *  the date each was taken as of (in the order they stand on the same date), and their flag's reason while it is in
+ *  transferred from (null: none), and their past retirements (earliest first), and their tags, sorted, and their snapshots, oldest first, and their statements, in
+ *  the order they stand (oldest first), and their flag's reason while it is in
  *  force on the sheet's today (null: none in force). */
 public record PersonResponse(long id, String name, String grade, List<DatedGrade> grades, long version,
         int statementCount, String statedTotal, String statementDate, String retiredFrom, boolean held,
@@ -71,8 +71,7 @@ public record PersonResponse(long id, String name, String grade, List<DatedGrade
                 net.officefloor.hq.app.claim.Tags.list(person.getTags()),
                 person.getSnapshots().stream().map(s -> new Snapshot(s.getTakenOn().toString(), s.getDueTotal()))
                         .toList(),
-                statements.stream().sorted(java.util.Comparator.comparing(Statement::getTakenOn))
-                        .map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList(),
+                statements.stream().map(st -> new StatementLine(st.getTakenOn().toString(), st.getDueTotal())).toList(),
                 person.flaggedOn(today) ? person.getFlagReason() : null);
     }
 }
