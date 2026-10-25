@@ -1,0 +1,59 @@
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/submitOnce';
+import { HomeMain } from '../../slots/defs/homeMain';
+import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { periodsQueryKey, rolloverPath } from './periods';
+
+// The year-end rollover (a steward's): the entry takes the old fiscal year (yyyy); the button generates the next
+// fiscal year's twelve periods as the fiscal year generator does and adds each person's open figure at the end of the
+// old year's last period to their carried figure for the new year's first. How many periods were made shows once
+// done, and is gone while it runs. A bad year, a year with no periods, or anyone but a steward is refused.
+function Rollover() {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const [year, setYear] = useState('');
+  const queryClient = useQueryClient();
+  const rollover = useMutation({
+    mutationFn: (body: { year: string }) => postJson<{ made: number }>(rolloverPath(sheet ?? ''), body, user),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet ?? '') });
+    },
+  });
+  const submit = useSubmitOnce(rollover);
+  if (!user || !sheet) return null;
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit({ year });
+      }}
+    >
+      <h2>Year-end rollover</h2>
+      <input
+        data-testid="rollover-year"
+        placeholder="Fiscal year (yyyy)"
+        inputMode="numeric"
+        value={year}
+        onChange={(e) => { setYear(e.target.value); rollover.reset(); }}
+      />
+      <button type="submit" data-testid="rollover" disabled={rollover.isPending}>
+        Roll the year over
+      </button>
+      {rollover.isSuccess && (
+        <>
+          {' '}Made <span data-testid="rollover-made">{rollover.data.made}</span>
+        </>
+      )}
+      {rollover.isError && (
+        <span data-testid="rollover-error">
+          Nothing was rolled over: only a steward can, and the fiscal year must be a year (yyyy) with periods.
+        </span>
+      )}
+    </form>
+  );
+}
+
+export const contribution = HomeMain.fill({ order: 16.5, Component: Rollover });

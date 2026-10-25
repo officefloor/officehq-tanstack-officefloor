@@ -34,6 +34,9 @@ export const periodsGenerateFyPath = (sheetId: string) => `/api/sheets/${encodeU
 /** Generates a calendar year's four quarters (yyyy-Q1 to yyyy-Q4), as the period form would add each. */
 export const periodsGenerateQuartersPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/generate-quarters`;
 
+/** Rolls a fiscal year over: generates the next one's periods and carries each person's open figure into its first. */
+export const rolloverPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/rollover`;
+
 /** Pastes opening balances: lines of name,period,amount. */
 export const openingsImportPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/import-openings`;
 
