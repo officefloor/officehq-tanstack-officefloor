@@ -62,7 +62,7 @@ const childrenPath = (sheetId: string) => `${sheetPath(sheetId)}/children`;
 export const descendantsQueryKey = (sheetId: string) => ['sheet', sheetId, 'descendants'] as const;
 
 /** A sheet's figures, read from the store as the screen shows it (as of its date, if any). */
-async function figuresOf(id: string): Promise<Figures> {
+export async function figuresOf(id: string): Promise<Figures> {
   const [info, people, claims, rates, settings] = await Promise.all([
     getJson<SheetInfo>(sheetPath(id)),
     getJson<Person[]>(peoplePath(id)),

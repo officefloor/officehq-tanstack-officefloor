@@ -35,7 +35,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * of their claims that count whose due-by falls in a period of the old year and that were OPEN or PENDING at the end
  * of that last period's last day (by the status log), added up, skipping n/a — then generates the next fiscal year's
  * twelve periods exactly as the fiscal year generator does (PERIOD_ADDED each), adds each person's open figure to
- * their opening balance for the new year's first period (OPENING_SET each, in list order) and records
+ * their opening balance for the new year's first period (OPENING_SET each with a figure other than zero, in list
+ * order) and records
  * ROLLOVER fy=FY&lt;old year&gt; periods=&lt;made&gt;.
  */
 public class ApplyRollover {
@@ -92,6 +93,9 @@ public class ApplyRollover {
         if (first != null) {
             for (Person person : listed) {
                 BigDecimal amount = open.get(person.getId()).setScale(2);
+                if (amount.signum() == 0) {
+                    continue;
+                }
                 first.addOpening(person.getId(), amount);
                 records.add("OPENING_SET sheet=" + sheet.getId() + " by=" + by + " name=" + person.getName()
                         + " period=" + first.getName() + " amount=" + amount.toPlainString());
