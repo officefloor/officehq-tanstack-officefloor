@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.sheet;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.BadRequestException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -31,5 +32,21 @@ public class SheetRepository {
 
     public void setToday(String id, LocalDate today) {
         jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", today, id);
+    }
+
+    /** Whether the sheet is archived: then every change to it is refused. A sheet not yet stored is not. */
+    public boolean isArchived(String id) {
+        return jdbc.query("SELECT archived FROM sheet WHERE id = ?", rs -> rs.next() && rs.getBoolean(1), id);
+    }
+
+    /** Refuse a change to the sheet while it is archived. */
+    public void refuseArchived(String id) throws BadRequestException {
+        if (isArchived(id)) {
+            throw new BadRequestException("This sheet is archived");
+        }
+    }
+
+    public void archive(String id) {
+        jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", id);
     }
 }

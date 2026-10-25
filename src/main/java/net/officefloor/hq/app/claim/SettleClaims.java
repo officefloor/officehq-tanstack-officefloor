@@ -29,8 +29,9 @@ public class SettleClaims {
             SheetRepository sheets, PeriodRepository periods, Rollup rollup, Audit audit, ClaimLog log, WatchRepository watches,
             Out<BulkSettleResponse> result) {
         int settled = 0;
-        if (roles.isViewer(sheet.id(), by.name())) {
-            // A viewer's press goes through with nothing done: every selected claim is refused.
+        if (roles.isViewer(sheet.id(), by.name()) || sheets.isArchived(sheet.id())) {
+            // A viewer's press, or one on an archived sheet, goes through with nothing done: every selected claim is
+            // refused.
             result.set(new BulkSettleResponse(0, selected.ids().size()));
             return;
         }

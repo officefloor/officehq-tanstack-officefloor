@@ -6,6 +6,7 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithSheetToday {
     public void respond(@Val SheetResponse sheet, SheetRepository repository,
             ObjectResponse<SheetTodayResponse> response) {
-        response.send(new SheetTodayResponse(sheet.id(), repository.today(sheet.id()).toString()));
+        response.send(new SheetTodayResponse(sheet.id(), repository.today(sheet.id()).toString(),
+                repository.isArchived(sheet.id())));
     }
 }
