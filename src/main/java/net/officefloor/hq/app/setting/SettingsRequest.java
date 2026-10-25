@@ -18,5 +18,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         String fiscalStartMonth, String alertThreshold, String rounding, String roundingFrom,
         String reviewThreshold, String reviewThresholdFrom, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
         String clerkLimitA, String clerkLimitB, String clerkLimitC,
-        String clerkLimitAFrom, String clerkLimitBFrom, String clerkLimitCFrom, String scoreMid, String scoreHigh) {
+        String clerkLimitAFrom, String clerkLimitBFrom, String clerkLimitCFrom, String scoreMid, String scoreHigh, String scoreLog) {
 }

@@ -25,7 +25,8 @@ public class ApplySettings {
                     || Sheet.POT.equals(change.key()) || Sheet.PARENT.equals(change.key())
                     || Sheet.FISCAL_START_MONTH.equals(change.key())
                     || Sheet.ALERT_THRESHOLD.equals(change.key())
-                    || Sheet.SCORE_MID.equals(change.key()) || Sheet.SCORE_HIGH.equals(change.key())) {
+                    || Sheet.SCORE_MID.equals(change.key()) || Sheet.SCORE_HIGH.equals(change.key())
+                    || Sheet.SCORE_LOG.equals(change.key())) {
                 sheet.record(change.key(), null, change.value());
             } else if (Sheet.POLICY_DATE.equals(change.key())) {
                 sheet.setPolicyDate(change.value() == null ? null : LocalDate.parse(change.value()));

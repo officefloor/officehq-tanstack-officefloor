@@ -8,7 +8,7 @@ import { poolsQueryKey } from '../pools/pools';
 import { ratesQueryKey } from '../rates/rates';
 import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
-type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | PermKey;
+type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | PermKey;
 
 /** The permission matrix: for each action, the roles that may take it (comma separated; blank: the standing rule).
  *  Not dated. */
@@ -118,6 +118,7 @@ function SheetSettings() {
     clerkLimitC: settings.data?.clerkLimitC ?? '',
     scoreMid: settings.data?.scoreMid ?? '',
     scoreHigh: settings.data?.scoreHigh ?? '',
+    scoreLog: settings.data?.scoreLog ?? '',
     ...(Object.fromEntries(PERMS.map(({ key }) => [key, settings.data?.[key] ?? ''])) as Record<PermKey, string>),
   };
   const valueOf = (key: Key) => drafts[key] ?? (key in current ? current[key as ValueKey] : '');
@@ -222,6 +223,10 @@ function SheetSettings() {
       <p>
         High score threshold (blank: none):{' '}
         <span data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</span>
+      </p>
+      <p>
+        Score log (on or blank: off):{' '}
+        <span data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</span>
       </p>
       <p>
         Proof kinds (blank: none):{' '}
@@ -450,6 +455,14 @@ function SheetSettings() {
           onChange={edit('scoreHigh')}
           onInput={edit('scoreHigh')}
           onFocus={touch('scoreHigh')}
+        />
+        <input
+          data-testid="setting-score-log"
+          placeholder="Score log, on (blank: off)"
+          value={valueOf('scoreLog')}
+          onChange={edit('scoreLog')}
+          onInput={edit('scoreLog')}
+          onFocus={touch('scoreLog')}
         />
         <input
           data-testid="setting-proof-kinds"

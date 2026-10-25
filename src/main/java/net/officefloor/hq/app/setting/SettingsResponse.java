@@ -21,7 +21,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String graceA, String graceB, String graceC,
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh) {
+        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog) {
 
     /** A value recorded from a date on (null from: the beginning of time; null value: blank). */
     public record Dated(String from, String value) {
@@ -59,7 +59,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 String.join(",", sheet.getProofKinds()),
                 sheet.valueOn(Sheet.DEFAULT_GRADE, sheet.getToday()) == null ? "" : sheet.valueOn(Sheet.DEFAULT_GRADE, sheet.getToday()),
                 gradeClerkLimit(sheet, "A"), gradeClerkLimit(sheet, "B"), gradeClerkLimit(sheet, "C"),
-                scoreThreshold(sheet, Sheet.SCORE_MID), scoreThreshold(sheet, Sheet.SCORE_HIGH));
+                scoreThreshold(sheet, Sheet.SCORE_MID), scoreThreshold(sheet, Sheet.SCORE_HIGH),
+                sheet.isScoreLog() ? "on" : "");
     }
 
     /** A score threshold (score-mid or score-high); "" when blank. */

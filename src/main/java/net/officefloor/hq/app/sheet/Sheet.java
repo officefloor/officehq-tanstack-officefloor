@@ -38,6 +38,9 @@ public class Sheet {
     public static final String SCORE_MID = "score-mid";
     public static final String SCORE_HIGH = "score-high";
 
+    /** The key of the score log switch: undated, on or blank (null: off). */
+    public static final String SCORE_LOG = "score-log";
+
     /** The key of the proof kinds: undated, a comma separated list of kinds (null: none). */
     public static final String PROOF_KINDS = "proof-kinds";
 
@@ -332,6 +335,12 @@ public class Sheet {
     public Integer getReviewSla() {
         String days = valueOn(REVIEW_SLA, today);
         return days == null ? null : Integer.valueOf(days);
+    }
+
+    /** Whether the score log is on: while it is, changing the sheet's today writes each person's score as it stood
+     *  on the day being left. Not dated. */
+    public boolean isScoreLog() {
+        return "on".equals(valueOn(SCORE_LOG, today));
     }
 
     /** A score threshold (score-mid or score-high): a whole number, possibly negative. Not dated; null when blank. */

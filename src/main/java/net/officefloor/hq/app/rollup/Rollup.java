@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Optional;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGrade;
 import net.officefloor.hq.app.person.PersonGradeRepository;
@@ -29,7 +31,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 public class Rollup {
 
     /** One person's figures. */
-    public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
+    public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
     }
 
     private final Map<Long, Figures> people;
@@ -72,8 +74,16 @@ public class Rollup {
                         .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c))
                         .map(figures::due).filter(d -> d != null)
                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+                BigDecimal settled = mine.stream()
+                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && c.getStatus() == ClaimStatus.SETTLED)
+                        .map(figures::due).filter(d -> d != null)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                long overdueCount = mine.stream()
+                        .filter(c -> ClaimFigures.countsLive(c, person, sheet.get().getToday()) && figures.overdue(c)).count();
+                String score = settled.movePointLeft(2).subtract(BigDecimal.valueOf(5 * overdueCount))
+                        .setScale(0, RoundingMode.HALF_EVEN).toPlainString();
                 people.put(person.getId(), new Figures(person.getName(), claimed.toPlainString(), due,
-                        overdue.toPlainString()));
+                        overdue.toPlainString(), score));
                 overdues.add(overdue);
                 claimedTotal = claimedTotal.add(claimed);
                 if (!"n/a".equals(due)) {
@@ -90,6 +100,15 @@ public class Rollup {
         List<BigDecimal> sorted = figures.stream().sorted().toList();
         List<BigDecimal> kept = sorted.size() >= 3 ? sorted.subList(1, sorted.size() - 1) : sorted;
         return kept.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2).toPlainString();
+    }
+
+    /** One SCORE line per person, in list order, with the score as it stands in these figures: their counted SETTLED
+     *  claims' dues divided by 100, minus 5 for each counted overdue claim, rounded half to even to a whole number. */
+    public List<String> scores(String sheetId, String user) {
+        String head = " sheet=" + sheetId.trim() + " by=" + user;
+        List<String> lines = new ArrayList<>();
+        people.values().forEach(f -> lines.add("SCORE" + head + " name=" + f.name() + " score=" + f.score()));
+        return lines;
     }
 
     /** One SNAPSHOT line per person, in list order, with the due-total as it stands in these figures. */

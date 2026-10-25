@@ -98,6 +98,7 @@ public class ValidateSettings {
                     "The clerk limit of grade C must be an amount, 0.00 or more, with up to two decimals, or blank.");
             wholeNumber(changes, Sheet.SCORE_MID, request.scoreMid(), "The mid score threshold must be a whole number, or blank.");
             wholeNumber(changes, Sheet.SCORE_HIGH, request.scoreHigh(), "The high score threshold must be a whole number, or blank.");
+            onOrBlank(changes, Sheet.SCORE_LOG, request.scoreLog(), "The score log must be on, or blank.");
         }
         body.set(new SettingsInput(changes));
     }
@@ -210,6 +211,22 @@ public class ValidateSettings {
     /** Adds the grace days when the form sets them: a whole number of days, or blank (off). Undated. */
     private static void graceDays(List<SettingsInput.Change> changes, String value) throws InvalidSettingsException {
         undatedDays(changes, Sheet.GRACE_DAYS, value, "The grace days must be a whole number of days, 0 or more, or blank.");
+    }
+
+    /** Adds an undated switch when the form sets it: on, or blank (off); not dated. */
+    private static void onOrBlank(List<SettingsInput.Change> changes, String key, String value, String message)
+            throws InvalidSettingsException {
+        if (value == null) {
+            return;
+        }
+        String on = null;
+        if (!value.trim().isEmpty()) {
+            if (!"on".equals(value.trim())) {
+                throw new InvalidSettingsException(message);
+            }
+            on = "on";
+        }
+        changes.add(new SettingsInput.Change(key, on, false, null));
     }
 
     /** Adds an undated whole-number setting (a score threshold) when the form sets it: a whole number, possibly

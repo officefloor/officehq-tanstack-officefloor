@@ -10,7 +10,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/** When the sheet's today changes, records each person's due-total as it stood on the day being left, before the
+/** When the sheet's today changes, records (first, while the score log is on, each person's score; then) each person's due-total as it stood on the day being left, before the
  *  change takes effect (so before any period closes and before the change's rollup lines), and keeps it on the
  *  person as a snapshot of that day (recorded in its history on that day, so the sheet as of it shows it). */
 public class AuditSnapshot {
@@ -25,6 +25,9 @@ public class AuditSnapshot {
             recorder.recordOn(p, sheet.getToday());
             people.save(p);
         }));
+        if (sheet.isScoreLog()) {
+            before.scores(sheet.getId(), AuditUser.decode(user)).forEach(audit::record);
+        }
         before.snapshot(sheet.getId(), AuditUser.decode(user)).forEach(audit::record);
     }
 }
