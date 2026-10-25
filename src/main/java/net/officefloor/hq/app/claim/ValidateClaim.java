@@ -18,6 +18,12 @@ public class ValidateClaim {
     public void validate(@RequestBody ClaimRequest request, Out<ClaimInput> claim,
             Out<ChangedBy> changedBy) throws BadRequestException {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
+        claim.set(parse(request));
+        changedBy.set(by);
+    }
+
+    /** The claim form's fields parsed under its rules; shared with every form that enters a claim's fields. */
+    static ClaimInput parse(ClaimRequest request) throws BadRequestException {
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
         String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
@@ -40,7 +46,6 @@ public class ValidateClaim {
             }
             correctsNumber = corrects.matches("\\d+") ? String.valueOf(Integer.parseInt(corrects)) : corrects;
         }
-        claim.set(new ClaimInput(amount, parsed, note, correctsNumber));
-        changedBy.set(by);
+        return new ClaimInput(amount, parsed, note, correctsNumber);
     }
 }
