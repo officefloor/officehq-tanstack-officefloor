@@ -87,7 +87,48 @@ function BulkOpen({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+type BulkSettleResult = { settled: number; refused: number };
+
+// Settles the selected claims together; the server settles them in list order exactly as settling each alone
+// (a clerk's settle above the limit leaves one PENDING, counted as settled) and leaves any it cannot settle as they
+// are. Shows how many were settled and how many refused; the counts are gone while it runs.
+function BulkSettle({ sheetId }: { sheetId: string; user: string }) {
+  const chosen = useSelected(sheetId);
+  const [user] = useUser();
+  const queryClient = useQueryClient();
+  const settle = useMutation({
+    mutationFn: (ids: number[]) => {
+      if (ids.length === 0) throw new Error('Select the claims to settle');
+      return postJson<BulkSettleResult>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/bulk-settle`, { ids, by: user ?? '' });
+    },
+    onSuccess: async () => {
+      selection.set(sheetId, NONE);
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  return (
+    <section data-testid="bulk-settle-actions">
+      <button type="button" data-testid="bulk-settle" disabled={settle.isPending} onClick={() => settle.mutate([...chosen])}>
+        Settle selected
+      </button>{' '}
+      {settle.isSuccess && (
+        <span>
+          Settled <strong data-testid="bulk-settled">{settle.data.settled}</strong>, refused{' '}
+          <strong data-testid="bulk-settle-refused">{settle.data.refused}</strong>
+        </span>
+      )}
+      {settle.isError && (
+        <span data-testid="bulk-settle-error" role="alert">
+          {settle.error.message}
+        </span>
+      )}
+    </section>
+  );
+}
+
 export const contributions = [
   ClaimCells.fill({ order: 0, Component: ClaimSelect }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),
+  SheetBody.fill({ order: 16, Component: BulkSettle }),
 ];
