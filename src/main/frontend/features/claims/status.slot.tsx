@@ -33,6 +33,7 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
 // A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
 // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
+// An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -133,6 +134,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // An OPEN or PENDING claim is reminded once per sheet-today; it then shows that day as its reminded date.
+  const remind = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/remind`, { by: user ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
@@ -142,6 +149,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     split.reset();
     redate.reset();
     lock.reset();
+    remind.reset();
     setRefused(undefined);
     change.mutate(to);
   };
@@ -154,11 +162,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     split.reset();
     redate.reset();
     lock.reset();
+    remind.reset();
     setRefused(undefined);
   };
   const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
-    || redate.isPending;
-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error;
+    || redate.isPending || remind.isPending;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error;
 
   return (
     <>
@@ -210,6 +219,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           split.reset();
           redate.reset();
           lock.reset();
+          remind.reset();
           setRefused(undefined);
           reassign.mutate(moveTo);
         }}
@@ -228,6 +238,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           split.reset();
           redate.reset();
           lock.reset();
+          remind.reset();
           setRefused(undefined);
           resettle.mutate();
         }}
@@ -257,6 +268,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           split.reset();
           redate.reset();
           lock.reset();
+          remind.reset();
           setRefused(undefined);
           defer.mutate(deferUntil);
         }}
@@ -276,6 +288,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           split.reset();
           redate.reset();
           lock.reset();
+          remind.reset();
           setRefused(undefined);
           proof.mutate();
         }}
@@ -304,6 +317,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           proof.reset();
           redate.reset();
           lock.reset();
+          remind.reset();
           setRefused(undefined);
           split.mutate(splitAmount);
         }}
@@ -331,11 +345,24 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           proof.reset();
           split.reset();
           lock.reset();
+          remind.reset();
           setRefused(undefined);
           redate.mutate(newDate);
         }}
       >
         Re-date
+      </button>{' '}
+      Reminded <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-remind"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          remind.mutate();
+        }}
+      >
+        Remind
       </button>{' '}
       <button
         type="button"

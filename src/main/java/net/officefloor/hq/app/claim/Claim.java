@@ -25,6 +25,7 @@ public class Claim {
     private int proofs;
     private String splitFrom;
     private boolean lateEntry;
+    private LocalDate remindedOn;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -79,6 +80,15 @@ public class Claim {
 
     public void setLateEntry(boolean lateEntry) {
         this.lateEntry = lateEntry;
+    }
+
+    /** The last sheet-today a reminder was written for the claim; null when never reminded. */
+    public LocalDate getRemindedOn() {
+        return remindedOn;
+    }
+
+    public void setRemindedOn(LocalDate remindedOn) {
+        this.remindedOn = remindedOn;
     }
 
     /** Keep {@code amount} of the claim, the rest split off: it loses any figure a statement bound it to. */

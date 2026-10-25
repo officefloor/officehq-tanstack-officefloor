@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -31,6 +31,7 @@ public class ClaimRepository {
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
+        claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -137,6 +138,20 @@ public class ClaimRepository {
     public boolean defer(Claim claim) {
         return jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND status = ?",
                 Date.valueOf(claim.getDeferredUntil()), claim.getId(), ClaimStatus.OPEN.name()) == 1;
+    }
+
+    /**
+     * Remind the claim on {@code today}. Whether it was still in its status and not yet reminded that day: another user
+     * may have changed or reminded it.
+     */
+    public boolean remind(Claim claim, LocalDate today) {
+        boolean reminded = jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND status = ?"
+                + " AND (reminded_on IS NULL OR reminded_on <> ?)", Date.valueOf(today), claim.getId(),
+                claim.getStatus().name(), Date.valueOf(today)) == 1;
+        if (reminded) {
+            claim.setRemindedOn(today);
+        }
+        return reminded;
     }
 
     /**
