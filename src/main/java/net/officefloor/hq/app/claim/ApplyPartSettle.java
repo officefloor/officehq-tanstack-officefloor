@@ -26,9 +26,10 @@ public class ApplyPartSettle {
             throws ClaimStatusException, ClerkLimitException, ProofRequiredException {
         Rollup between = Rollup.of(sheet.getId(), sheets, people, repository, rates, grades);
         Claim made = split.made();
+        String splitNumber = made.getNumber();
         String number = ApplyClaimStatus.run("settle", made, repository, entityManager, people, rates, grades, periods,
                 sheet, roles, log, voidReasons, userHeader, null, null, false, true);
         ClaimRules.log(made, sheet, log, people, rates, grades, AuditUser.decode(userHeader));
-        return new PartSettle(split, between, number);
+        return new PartSettle(split, between, splitNumber, number);
     }
 }

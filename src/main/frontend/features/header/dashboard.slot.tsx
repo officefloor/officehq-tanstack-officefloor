@@ -1,8 +1,10 @@
+import { useQuery } from '@tanstack/react-query';
+import { currentAsOf } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
-import { overdueOf } from '../claims/overdue.slot';
+import { descendantFigures, descendantsQueryKey, figuresFrom } from '../consolidated/consolidated.slot';
 import { useRates } from '../rates/rates';
 import { useDelegations, useRoles, useSettings, type Delegation, type Role } from '../roles/roles';
 
@@ -15,11 +17,12 @@ export function roleOf(roles: Role[], delegations: Delegation[], user: string | 
   return own !== 'steward' && delegated ? 'steward' : own;
 }
 
-// The steward's dashboard: over the sheet, how many claims are PENDING, how many are in REVIEW, and how many claims
+// The steward's dashboard: over the sheet and all its descendants (each read as its own sheet shows it), how many claims are PENDING, how many are in REVIEW, and how many claims
 // that count are overdue (as the rollup counts them). A user who is not a steward (in the role they act in on the
 // sheet's today) sees the three cells blank. In an as-of view every input is as of that date, the role included.
 function StewardDashboard() {
   const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
   const people = usePeople();
   const claims = useClaims();
   const rates = useRates();
@@ -27,14 +30,19 @@ function StewardDashboard() {
   const roles = useRoles();
   const delegations = useDelegations();
   const today = useSheetToday();
+  const asOf = currentAsOf();
+  const descendants = useQuery({
+    queryKey: [...descendantsQueryKey(sheet ?? ''), asOf],
+    queryFn: () => descendantFigures(sheet ?? ''),
+    enabled: !!sheet,
+  });
   const steward = roles.data !== undefined && delegations.data !== undefined
     && roleOf(roles.data, delegations.data, user, today) === 'steward';
-  const allClaims = claims.data ?? [];
-  const pending = steward ? String(allClaims.filter((c) => c.status === 'PENDING').length) : '';
-  const review = steward ? String(allClaims.filter((c) => c.status === 'REVIEW').length) : '';
-  const overdue = steward
-    ? String((people.data ?? []).reduce((n, p) => n + overdueOf(p, allClaims, rates.data, today, settings.data).count, 0))
-    : '';
+  const all = [figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data),
+    ...(descendants.data ?? [])];
+  const pending = steward ? String(all.reduce((n, f) => n + f.statuses.PENDING, 0)) : '';
+  const review = steward ? String(all.reduce((n, f) => n + f.statuses.REVIEW, 0)) : '';
+  const overdue = steward ? String(all.reduce((n, f) => n + f.overdueCount, 0)) : '';
   return (
     <section data-testid="steward-dashboard">
       Pending <strong data-testid="dash-pending-count">{pending}</strong>

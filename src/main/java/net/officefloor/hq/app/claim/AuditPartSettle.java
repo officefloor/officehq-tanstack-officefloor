@@ -25,7 +25,7 @@ public class AuditPartSettle {
         String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
         String by = AuditUser.decode(user);
         Claim made = part.split().made();
-        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + Objects.requireNonNullElse(made.getNumber(), ""));
+        audit.record(ClaimAudit.line("CLAIM_SPLIT", claim, person, by) + " into=" + Objects.requireNonNullElse(part.splitNumber(), ""));
         audit.record(ClaimAudit.line(ClaimStatus.OPEN.event(), made, person, by, null));
         part.between().changesSince(before, claim.getSheetId(), by).forEach(audit::record);
 

@@ -19,24 +19,27 @@ import { STATUSES } from '../summary/summary.slot';
 // date as its today. Per grade, the due-totals of the people not retired on that grade (in force on each sheet's
 // today), added up over the tree (skipping n/a); per status, how many claims over the tree have it.
 
-type Figures = {
+export type Figures = {
   /** Per person, the names they go by (name and aliases), as names are compared. */
   people: string[][];
   /** Per person, their due-total and overdue-total. */
   dues: string[];
   overdues: string[];
+  /** How many of its people's claims are overdue, as the rollup counts them. */
+  overdueCount: number;
   grades: Record<string, string>;
   statuses: Record<string, number>;
 };
 
 /** A sheet's figures, from its people, claims, rates, today and settings. */
-function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+export function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined): Figures {
   const current = people.filter((p) => p.retiredFrom === null);
   return {
     people: people.map((p) => [p.name, ...(p.aliases ?? [])].map(nameKey)),
     dues: people.map((p) => personDue(p, claims, rates, today, settings, people)),
     overdues: people.map((p) => overdueOf(p, claims, rates, today, settings).total),
+    overdueCount: people.reduce((n, p) => n + overdueOf(p, claims, rates, today, settings).count, 0),
     grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
       .map((p) => personDue(p, claims, rates, today, settings, people)))])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
@@ -74,7 +77,7 @@ export async function figuresOf(id: string): Promise<Figures> {
 }
 
 /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
-async function descendantFigures(sheetId: string): Promise<Figures[]> {
+export async function descendantFigures(sheetId: string): Promise<Figures[]> {
   const seen = new Set([sheetId]);
   const ids: string[] = [];
   for (let level = [sheetId]; level.length > 0; ) {
