@@ -14,14 +14,8 @@ public class ValidatePerson {
     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> person,
             Out<ChangedBy> changedBy) throws BadRequestException {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
-        String name = request == null || request.name() == null ? "" : request.name().trim();
+        String name = PersonName.of(request == null ? null : request.name());
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (name.isEmpty()) {
-            throw new BadRequestException("Enter a name");
-        }
-        if (name.length() > 200) {
-            throw new BadRequestException("A name is at most 200 characters");
-        }
         if (!GRADES.contains(grade)) {
             throw new BadRequestException("Choose a grade: A, B or C");
         }

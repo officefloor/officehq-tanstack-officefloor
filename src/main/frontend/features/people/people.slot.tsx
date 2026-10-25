@@ -6,6 +6,7 @@ import { useUser } from '../session/useSession';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+import { claimsKey, type Claim } from '../claims/useClaims';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. */
@@ -129,6 +130,74 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
   );
 }
 
+// The quick-add bar: a name and an amount make a draft claim dated the sheet's today, with an empty
+// note, for the person of that name (case and surrounding spaces ignored) — adding them, grade A,
+// when the name is not on the sheet. The server checks it all as one change, so a refusal adds no one.
+function QuickAddBar({ sheetId }: { sheetId: string }) {
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [user] = useUser();
+  const queryClient = useQueryClient();
+  const add = useMutation({
+    mutationFn: async (body: { name: string; amount: string }) => {
+      if (body.name.trim() === '') throw new Error('Enter a name');
+      // `by` is the signed-in user the change is recorded against.
+      return postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/quick-add`, { ...body, by: user ?? '' });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+      setName('');
+      setAmount('');
+    },
+  });
+
+  const submit = useSubmitOnce(add);
+  return (
+    <form
+      data-testid="quick-add"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit({ name, amount });
+      }}
+    >
+      <label>
+        Quick add: name{' '}
+        <input
+          data-testid="quick-name"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            add.reset();
+          }}
+        />
+      </label>{' '}
+      <label>
+        Amount{' '}
+        <input
+          data-testid="quick-amount"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => {
+            setAmount(e.target.value);
+            add.reset();
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="quick-submit" disabled={add.isPending}>
+        Add draft claim
+      </button>
+      {add.isError && (
+        <p data-testid="quick-error" role="alert">
+          {add.error.message}
+        </p>
+      )}
+    </form>
+  );
+}
+
 // The people on the sheet, in the order they were added, and the form that adds or edits them.
 function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
@@ -139,6 +208,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
     <section data-testid="people-panel">
       <h2>People</h2>
       <PersonForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} editing={editing} />
+      <QuickAddBar sheetId={sheetId} />
       {people.isError && (
         <p data-testid="people-error" role="alert">
           {people.error.message}
