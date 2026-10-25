@@ -22,10 +22,10 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
         return claim.getRoundOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** The claim's late charge on its figure (zero when it is not overdue, or has no figure). */
+    /** The claim's late charge on its figure (zero when it is not overdue, is deferred past today, or has no figure). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (!claim.getStatus().isOpen()) {
+        if (!claim.getStatus().isOpen() || claim.isDeferredOn(today)) {
             return none;
         }
         return onAsOpen(claim, figure);

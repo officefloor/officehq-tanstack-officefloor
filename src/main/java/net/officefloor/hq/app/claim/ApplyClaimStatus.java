@@ -48,6 +48,9 @@ public class ApplyClaimStatus {
             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
                 throw new BadRequestException("The user who opened a claim cannot settle it");
             }
+            if (status == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
+                throw new BadRequestException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+            }
         }
         LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
         BigDecimal due = status == ClaimStatus.SETTLED ? late.due(claim, dueNow(claim, people, rates, settings, late)) : null;

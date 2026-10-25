@@ -20,11 +20,14 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // OPEN or PENDING claim to another person (listed then as that person's newest claim). A change its status does not
 // allow, a settle or approve by the user who opened the claim, or an approve or reject by a non-steward, is refused by the
 // server, and the refusal shows on the claim until its next action (only the last action's error shows). A clerk's settle above the clerk limit leaves it PENDING.
+// An OPEN claim can be deferred to a date after the sheet's today (not in a closed period): until then it counts in no
+// total, is not overdue and cannot be settled; whether it is deferred, and until when, shows on the claim.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState('');
   const [moveTo, setMoveTo] = useState('');
+  const [deferUntil, setDeferUntil] = useState('');
   const people = usePeople(sheetId);
   const change = useMutation({
     mutationFn: (to: Change) =>
@@ -48,14 +51,23 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/resettle`, { by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  const defer = useMutation({
+    mutationFn: (until: string) => {
+      if (until.trim() === '') throw new Error('Enter the date to defer the claim until');
+      return postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/defer`,
+        { until: until.trim(), by: user ?? '' });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
     resettle.reset();
+    defer.reset();
     change.mutate(to);
   };
-  const busy = change.isPending || reassign.isPending || resettle.isPending;
-  const error = change.error ?? reassign.error ?? resettle.error;
+  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending;
+  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error;
 
   return (
     <>
@@ -102,6 +114,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         onClick={() => {
           change.reset();
           resettle.reset();
+          defer.reset();
           reassign.mutate(moveTo);
         }}
       >
@@ -114,10 +127,35 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         onClick={() => {
           change.reset();
           reassign.reset();
+          defer.reset();
           resettle.mutate();
         }}
       >
         Re-settle
+      </button>{' '}
+      Deferred <span data-testid="claim-deferred">{claim.deferred ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="claim-deferred-until">{claim.deferredUntil ?? ''}</span>{' '}
+      <input
+        type="date"
+        data-testid="claim-defer-date"
+        value={deferUntil}
+        onChange={(e) => {
+          setDeferUntil(e.target.value);
+          defer.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-defer"
+        disabled={busy}
+        onClick={() => {
+          change.reset();
+          reassign.reset();
+          resettle.reset();
+          defer.mutate(deferUntil);
+        }}
+      >
+        Defer
       </button>{' '}
       {error && (
         <span data-testid="claim-error" role="alert">

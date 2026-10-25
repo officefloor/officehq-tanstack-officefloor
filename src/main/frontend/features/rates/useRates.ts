@@ -105,10 +105,11 @@ export function isBound(claim: { stated: boolean; status?: string }): boolean {
 }
 
 /** A claim's late charge in cents on its figure: for an OPEN (or PENDING) claim past its due-by (fixed when it was added), the
- *  late percent in force on its date of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction) 0. */
-export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; dueBy: string; corrects?: string | null },
-  figureCents: bigint): bigint {
-  if (late === undefined || !isOpen(claim) || isCorrection(claim)) return 0n;
+ *  late percent in force on its date of the figure for every full 30 days it is overdue, rounded half to even; otherwise (or for a correction,
+ *  or a claim deferred past the sheet's today) 0. */
+export function lateCents(late: Late | undefined, claim: { amount: string; date: string; status: string; dueBy: string; corrects?: string | null;
+  deferred?: boolean }, figureCents: bigint): bigint {
+  if (late === undefined || !isOpen(claim) || isCorrection(claim) || claim.deferred) return 0n;
   const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? BigInt(Math.floor(overdue / 30)) : 0n;
   return periods === 0n ? 0n : dueCents(figureCents * periods, late.pctOn(claim.date), roundsHalfUp(late, claim));
@@ -136,7 +137,7 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
  *  charge is never bound by a statement; a settled claim's due already has it frozen in. Null without a figure. */
 export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
-    dueBy: string; corrects?: string | null },
+    dueBy: string; corrects?: string | null; deferred?: boolean },
   floorOn: (date: string) => bigint, late: Late | undefined): bigint | null {
   const figure = claimFigureCents(rates, grade, claim, floorOn, roundsHalfUp(late, claim));
   return figure == null ? null : figure + lateCents(late, claim, figure);

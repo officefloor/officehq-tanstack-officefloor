@@ -21,6 +21,7 @@ public class Claim {
     private String corrects;
     private LocalDate roundOn;
     private LocalDate dueBy;
+    private LocalDate deferredUntil;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -48,6 +49,21 @@ public class Claim {
 
     public void setDueBy(LocalDate dueBy) {
         this.dueBy = dueBy;
+    }
+
+    /** The date the claim was last deferred until; null when it was never deferred. */
+    public LocalDate getDeferredUntil() {
+        return deferredUntil;
+    }
+
+    public void setDeferredUntil(LocalDate deferredUntil) {
+        this.deferredUntil = deferredUntil;
+    }
+
+    /** Whether the claim is deferred as of {@code today}: OPEN, and deferred until a date after today. Until then it
+     *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+    public boolean isDeferredOn(LocalDate today) {
+        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
     }
 
     /** The date the claim's live figures round by: its own, or for a correction the date of the claim it corrects. */

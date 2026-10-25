@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -27,6 +27,7 @@ public class ClaimRepository {
                 rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"));
         claim.setDueBy(rs.getObject("due_by", LocalDate.class));
+        claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -94,6 +95,12 @@ public class ClaimRepository {
     public void update(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?", claim.getAmount(),
                 Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getId());
+    }
+
+    /** Defer the claim until its deferred-until date. Whether it was still OPEN: another user may have moved it. */
+    public boolean defer(Claim claim) {
+        return jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND status = ?",
+                Date.valueOf(claim.getDeferredUntil()), claim.getId(), ClaimStatus.OPEN.name()) == 1;
     }
 
     /**

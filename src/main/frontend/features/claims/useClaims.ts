@@ -20,11 +20,17 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The date the claim is due by: fixed when it was added (its date plus its grade's terms then), never moved. */
   dueBy: string;
   /** The claim's status log, oldest first: `<STATUS> by <user> on <date> due=<due>`. */
-  log: string[] };
+  log: string[];
+  /** Whether the OPEN claim is deferred past the sheet's today: it then counts in no total, is not overdue and cannot be settled. */
+  deferred: boolean;
+  /** The date it is deferred until, while it is deferred; none otherwise. */
+  deferredUntil: string | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
- *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it. */
-export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean }, held: Holds): boolean {
+ *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
+ *  nor does one deferred past the sheet's today. */
+export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean; deferred?: boolean }, held: Holds): boolean {
+  if (claim.deferred) return false;
   if (claim.status === 'OPEN' || claim.status === 'PENDING') {
     return claim.stated || !(held.get(claim.personId) ?? []).some((h) =>
       (h.from === null || h.from <= claim.date) && (h.to === null || claim.date <= h.to));

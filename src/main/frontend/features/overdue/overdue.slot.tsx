@@ -7,10 +7,10 @@ import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { claimDueCents, isOpen, showHundredths, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 
-/** Whether a claim is overdue: OPEN or PENDING, and its due-by before the sheet's today. */
-function useIsOverdue(sheetId: string): (claim: { status: string; dueBy: string }) => boolean {
+/** Whether a claim is overdue: OPEN or PENDING, not deferred past the sheet's today, and its due-by before the sheet's today. */
+function useIsOverdue(sheetId: string): (claim: { status: string; dueBy: string; deferred?: boolean }) => boolean {
   const today = useSheetToday(sheetId).data?.today;
-  return (claim) => today !== undefined && isOpen(claim) && claim.dueBy < today;
+  return (claim) => today !== undefined && isOpen(claim) && !claim.deferred && claim.dueBy < today;
 }
 
 type Overdue = { count: number; cents: bigint };
@@ -61,7 +61,7 @@ function OverdueCells({ sheetId, personId }: { sheetId: string; user: string; pe
 }
 
 // A claim's due-by (fixed when it was added: its date plus its grade's terms then) and whether it is overdue (OPEN and due-by before the sheet's today).
-function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { status: string; dueBy: string } }) {
+function ClaimOverdue({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { status: string; dueBy: string; deferred?: boolean } }) {
   const isOverdue = useIsOverdue(sheetId);
   return (
     <>
