@@ -1,0 +1,114 @@
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+index 141a76ae..156882b6 100644
+--- a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+@@ -4,7 +4,6 @@ import net.officefloor.hq.app.AuditUser;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.history.AsOf;
+-import net.officefloor.hq.app.pool.PoolCuts;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -29,9 +28,6 @@ public class SoftClosePeriod {
+         if (period.isClosed() || period.isSoftClosed()) {
+             throw new InvalidPeriodException("The period is already closed.");
+         }
+-        period.softClose(ClosePeriod.totals(period, sheet, claims, people, rates, grades, log),
+-                ClosePeriod.carried(period, repository, sheet, claims, people, rates, grades, log));
+-        period.fixPoolCuts(PoolCuts.live(sheet, asOf));
+-        repository.saveAndFlush(period);
++        SoftCloses.fix(period, repository, sheet, claims, people, rates, grades, log, asOf);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftCloses.java b/src/main/java/net/officefloor/hq/app/period/SoftCloses.java
+new file mode 100644
+index 00000000..90ffeb57
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/SoftCloses.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.history.AsOf;
++import net.officefloor.hq.app.person.PersonGradeRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolCuts;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++
++/** Soft-closing a period on its sheet, shared by the soft close and the rollover. */
++public final class SoftCloses {
++    private SoftCloses() {
++    }
++
++    /** Soft-closes the period, fixing each person's due-total and carried figure for it, each pool member's cut for it,
++     *  and its own due-total exactly as closing does, and saves it. */
++    public static void fix(Period period, PeriodRepository repository, Sheet sheet, ClaimRepository claims,
++            PersonRepository people, RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log,
++            AsOf asOf) {
++        period.softClose(ClosePeriod.totals(period, sheet, claims, people, rates, grades, log),
++                ClosePeriod.carried(period, repository, sheet, claims, people, rates, grades, log));
++        period.fixPoolCuts(PoolCuts.live(sheet, asOf));
++        repository.saveAndFlush(period);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/ApplyRollover.java b/src/main/java/net/officefloor/hq/app/rollover/ApplyRollover.java
+index 83afbc85..c6f8ec29 100644
+--- a/src/main/java/net/officefloor/hq/app/rollover/ApplyRollover.java
++++ b/src/main/java/net/officefloor/hq/app/rollover/ApplyRollover.java
+@@ -18,6 +18,8 @@ import net.officefloor.hq.app.period.MonthlyPeriods;
+ import net.officefloor.hq.app.period.GeneratedPeriods;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.period.SoftCloses;
++import net.officefloor.hq.app.history.AsOf;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGrade;
+ import net.officefloor.hq.app.person.PersonGradeRepository;
+@@ -39,12 +41,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
+  * order) and records
+  * ROLLOVER fy=FY&lt;old year&gt; periods=&lt;made&gt;. Keeps what it did as the sheet's last rollover (replacing any
+  * earlier one), so the steward who made it can undo it on the same sheet-today. Rolling over again the year the last
+- * rollover (not undone) was of carries no opening balance a second time.
++ * rollover (not undone) was of carries no opening balance a second time. Then soft-closes each period of the old year
++ * still open, in start-date order, as a soft close does (PERIOD_SOFT_CLOSED each).
+  */
+ public class ApplyRollover {
+     public void apply(@Val RolloverRequest request, @Val Sheet sheet, PeriodRepository periods, ClaimRepository claims,
+             PersonRepository people, RateRepository rates, PersonGradeRepository grades, ClaimLogRepository log,
+-            LastRolloverRepository lastRollovers, @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RolledOver> rolledOut)
++            LastRolloverRepository lastRollovers, AsOf asOf, @RequestHeader(name = "X-User", required = false) String user, Audit audit, Out<RolledOver> rolledOut)
+             throws InvalidRolloverException {
+         String by = AuditUser.decode(user);
+         int year = Integer.parseInt(request.year());
+@@ -116,6 +119,14 @@ public class ApplyRollover {
+                 made.periods().stream().map(Period::getId).toList(), openings));
+         records.add("ROLLOVER sheet=" + sheet.getId() + " by=" + by + " fy=FY" + request.year()
+                 + " periods=" + made.periods().size());
++        for (Period period : oldYear) {
++            if (period.isClosed() || period.isSoftClosed()) {
++                continue;
++            }
++            SoftCloses.fix(period, periods, sheet, claims, people, rates, grades, log, asOf);
++            records.add("PERIOD_SOFT_CLOSED sheet=" + sheet.getId() + " by=" + by + " period=" + period.getName()
++                    + " total=" + period.getClosedTotal().toPlainString());
++        }
+         records.forEach(audit::record);
+         rolledOut.set(new RolledOver(made.periods().size()));
+     }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
+index 262086b5..e6265c5c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
+@@ -3,7 +3,8 @@
+ # does, and adds each person's open figure at the end of the old year's last period (the dues of their claims that
+ # count whose due-by falls in a period of the old year, OPEN or PENDING at that period's end) to their opening balance
+ # for the new year's first period (OPENING_SET each), then records ROLLOVER fy=FY<year> periods=<made>. Refuses a year
+-# that is not four digits, a year with no periods, and anyone but a steward. Responds { "made": n }.
++# that is not four digits, a year with no periods, and anyone but a steward. Then soft-closes each period of the old
++# year still open, in start-date order, as a soft close does (PERIOD_SOFT_CLOSED each). Responds { "made": n }.
+ guard:
+   class: net.officefloor.hq.app.role.GuardViewer
+   next: archived
