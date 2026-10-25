@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { getJson, putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { counts, useClaimTags, useClaims } from '../claims/useClaims';
-import { gradeOn, useHeld, usePeople } from '../people/people.slot';
+import { claimsKey, counts, useClaimTags, useClaims, type Claim } from '../claims/useClaims';
+import { gradeOn, peopleKey, useHeld, usePeople, type Person } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
-import { claimDueCents, isBound, rateOn, ratesKey, showHundredths, toHundredths, trimmedSum, useRates, type Rate } from './useRates';
+import { claimDueCents, isBound, isOpen, rateOn, ratesKey, showHundredths, toHundredths, trimmedSum, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useCapCents, useFloorCents, useLate } from '../access/useAccess';
 
@@ -247,7 +247,108 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
           ))}
         </tbody>
       </table>
+      <RatePreview sheetId={sheetId} />
     </section>
+  );
+}
+
+// The rate preview: how many OPEN and PENDING claims of people on a grade (on the claim's date) would show a different due if a
+// candidate rate applied to that grade on every date, and the sum of new due minus current due. A settled or bound claim keeps
+// its figure, so it never changes. Nothing is saved.
+function RatePreview({ sheetId }: { sheetId: string }) {
+  const floor = useFloorCents(sheetId);
+  const late = useLate(sheetId);
+  const terms = useRef({ floor, late });
+  terms.current = { floor, late };
+  const queryClient = useQueryClient();
+  const [grade, setGrade] = useState<string>('A');
+  const [pct, setPct] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ count: number; diff: bigint } | null>(null);
+
+  const preview = async () => {
+    setResult(null);
+    setError(null);
+    const rate = pct.trim();
+    if (rate === '') return setError('Enter a rate');
+    if (!RATE.test(rate) || Number(rate) > 100) return setError('A rate is a percent, 0.00 to 100.00, with up to two decimals');
+    const base = `/api/sheets/${encodeURIComponent(sheetId)}`;
+    // Re-read what the preview is worked out from, so it reflects the store now; the result is fixed as of this press.
+    const [claims, people, current] = await Promise.all([
+      queryClient.fetchQuery({ queryKey: claimsKey(sheetId), queryFn: () => getJson<Claim[]>(`${base}/claims`), staleTime: 0 }),
+      queryClient.fetchQuery({ queryKey: peopleKey(sheetId), queryFn: () => getJson<Person[]>(`${base}/people`), staleTime: 0 }),
+      queryClient.fetchQuery({ queryKey: ratesKey(sheetId), queryFn: () => getJson<Rate[]>(`${base}/rates`), staleTime: 0 }),
+    ]);
+    const { floor: floorOn, late: lateNow } = terms.current;
+    const candidate: Rate[] = [...current.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null }];
+    let count = 0;
+    let diff = 0n;
+    for (const c of claims) {
+      if (!isOpen(c)) continue;
+      const g = gradeOn(people.find((p) => p.id === c.personId), c.date);
+      if (g !== grade) continue;
+      const was = claimDueCents(current, g, c, floorOn, lateNow);
+      const now = claimDueCents(candidate, g, c, floorOn, lateNow);
+      if (was === now) continue;
+      count++;
+      diff += (now ?? 0n) - (was ?? 0n);
+    }
+    setResult({ count, diff });
+  };
+
+  return (
+    <form
+      data-testid="rate-preview-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void preview();
+      }}
+    >
+      <label>
+        Preview grade{' '}
+        <select
+          data-testid="rate-preview-grade"
+          value={grade}
+          onChange={(e) => {
+            setGrade(e.target.value);
+            setError(null);
+          }}
+        >
+          {GRADES.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>{' '}
+      <label>
+        Candidate rate %{' '}
+        <input
+          data-testid="rate-preview-pct"
+          inputMode="decimal"
+          placeholder="0.00"
+          value={pct}
+          onChange={(e) => {
+            setPct(e.target.value);
+            setError(null);
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="rate-preview">
+        Preview
+      </button>
+      {result !== null && (
+        <span>
+          {' '}Would change: <strong data-testid="rate-preview-count">{result.count}</strong>{' '}
+          Difference: <strong data-testid="rate-preview-diff">{showHundredths(result.diff)}</strong>
+        </span>
+      )}
+      {error !== null && (
+        <p data-testid="rate-preview-error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
