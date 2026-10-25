@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson, putJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
+import { useUser } from '../session/useSession';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 
@@ -30,14 +31,17 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  const [user] = useUser();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
   const save = useMutation({
     mutationFn: async (body: { name: string; grade: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a name');
+      // `by` is the signed-in user the change is recorded against.
+      const sent = { ...body, by: user ?? '' };
       return editing
-        ? putJson<Person>(`${base}/${editing.id}`, body)
-        : postJson<Person>(base, body);
+        ? putJson<Person>(`${base}/${editing.id}`, sent)
+        : postJson<Person>(base, sent);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });

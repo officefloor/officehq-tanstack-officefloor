@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { useUser } from '../session/useSession';
 import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
@@ -16,15 +17,18 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
   const [amount, setAmount] = useState(editing?.amount ?? '');
   const [date, setDate] = useState(editing?.date ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
+  const [user] = useUser();
   const queryClient = useQueryClient();
   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
   const save = useMutation({
     mutationFn: async (body: ClaimBody) => {
       if (body.amount.trim() === '') throw new Error('Enter an amount');
       if (!AMOUNT.test(body.amount.trim())) throw new Error('An amount is a number, 0.00 or more, with up to two decimals');
+      // `by` is the signed-in user the change is recorded against.
+      const sent = { ...body, by: user ?? '' };
       return editing
-        ? putJson<Claim>(`${sheet}/claims/${editing.id}`, body)
-        : postJson<Claim>(`${sheet}/people/${personId}/claims`, body);
+        ? putJson<Claim>(`${sheet}/claims/${editing.id}`, sent)
+        : postJson<Claim>(`${sheet}/people/${personId}/claims`, sent);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
