@@ -1,10 +1,11 @@
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
 import { claimsKey } from '../claims/useClaims';
+import { usePeople } from '../people/people.slot';
 
 // The claims selected for a bulk action. Kept in a small store rather than the URL so a checkbox
 // shows its new state on the same click (a URL update lands a render later). It belongs to one sheet:
@@ -127,8 +128,73 @@ function BulkSettle({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+type BulkReassignResult = { reassigned: number; refused: number };
+
+// Moves the selected claims to the chosen person together; the server moves them in list order exactly as moving
+// each alone and leaves any it cannot move as they are. Shows how many were moved and how many refused; the counts
+// are gone while it runs.
+function BulkReassign({ sheetId }: { sheetId: string; user: string }) {
+  const chosen = useSelected(sheetId);
+  const [user] = useUser();
+  const people = usePeople(sheetId);
+  const [moveTo, setMoveTo] = useState('');
+  const queryClient = useQueryClient();
+  const reassign = useMutation({
+    mutationFn: ({ ids, personId }: { ids: number[]; personId: string }) => {
+      if (ids.length === 0) throw new Error('Select the claims to move');
+      if (personId === '') throw new Error('Choose the person to move the claims to');
+      return postJson<BulkReassignResult>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/bulk-reassign`,
+        { ids, personId: Number(personId), by: user ?? '' });
+    },
+    onSuccess: async () => {
+      selection.set(sheetId, NONE);
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  return (
+    <section data-testid="bulk-reassign-actions">
+      <select
+        data-testid="bulk-reassign-to"
+        value={moveTo}
+        onChange={(e) => {
+          reassign.reset();
+          setMoveTo(e.target.value);
+        }}
+      >
+        <option value="">Move to…</option>
+        {(people.data ?? []).map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="bulk-reassign"
+        disabled={reassign.isPending}
+        onClick={() => reassign.mutate({ ids: [...chosen], personId: moveTo })}
+      >
+        Move selected
+      </button>{' '}
+      {reassign.isSuccess && (
+        <span>
+          Moved <strong data-testid="bulk-reassigned">{reassign.data.reassigned}</strong>, refused{' '}
+          <strong data-testid="bulk-reassign-refused">{reassign.data.refused}</strong>
+        </span>
+      )}
+      {reassign.isError && (
+        <span data-testid="bulk-reassign-error" role="alert">
+          {reassign.error.message}
+        </span>
+      )}
+    </section>
+  );
+}
+
 export const contributions = [
   ClaimCells.fill({ order: 0, Component: ClaimSelect }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),
   SheetBody.fill({ order: 16, Component: BulkSettle }),
+  SheetBody.fill({ order: 16.5, Component: BulkReassign }),
 ];

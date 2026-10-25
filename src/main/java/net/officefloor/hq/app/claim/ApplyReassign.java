@@ -16,6 +16,12 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyReassign {
     public void apply(@Val ReassignTo to, @Val Claim claim, @Val ChangedBy by, ClaimRepository repository,
             PersonRepository people, RoleRepository roles, SettingRepository settings) throws BadRequestException {
+        move(to, claim, by, repository, people, roles, settings, false);
+    }
+
+    /** Moves the claim; in a bulk move ({@code bulk}) one already the person's is moved (relisted) all the same. */
+    void move(ReassignTo to, Claim claim, ChangedBy by, ClaimRepository repository, PersonRepository people,
+            RoleRepository roles, SettingRepository settings, boolean bulk) throws BadRequestException {
         String sheetId = claim.getSheetId();
         String role = roles.roleOf(sheetId, by.name());
         if (!settings.allows(sheetId, "reassign", role)) {
@@ -29,7 +35,7 @@ public class ApplyReassign {
         if (target == null) {
             throw new BadRequestException("No such person on this sheet");
         }
-        if (target.getId() == claim.getPersonId()) {
+        if (!bulk && target.getId() == claim.getPersonId()) {
             throw new BadRequestException("The claim is already that person's");
         }
         RefuseRetiredDate.refuse(target, claim.getDate());
