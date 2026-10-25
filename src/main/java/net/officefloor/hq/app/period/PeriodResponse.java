@@ -5,17 +5,17 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /** A period as the screen shows it: its name, its from and to date (YYYY-MM-DD), whether it is closed, whether it is soft-closed, and the
- *  due-total fixed when it was closed (null while open), and each person's fixed then, by person id (empty while open), and its cap on open claims per person (null for none), and each person's carried figure fixed when it was closed, by person id (empty while open), and each person's opening balance for it, by person id (none: absent). */
+ *  due-total fixed when it was closed (null while open), and each person's fixed then, by person id (empty while open), and its cap on open claims per person (null for none), and each person's carried figure fixed when it was closed, by person id (empty while open), and each person's opening balance for it, by person id (none: absent), and whether a steward has locked it. */
 public record PeriodResponse(long id, String name, String from, String to, boolean closed, boolean softClosed, String closedTotal,
         Map<String, String> personTotals, Integer cap, Map<String, String> personCarried,
-        Map<String, String> personOpening) {
+        Map<String, String> personOpening, boolean locked) {
 
     public static PeriodResponse from(Period period) {
         return new PeriodResponse(period.getId(), period.getName(), period.getFromDate().toString(),
                 period.getToDate().toString(), period.isClosed(), period.isSoftClosed(),
                 period.getClosedTotal() == null ? null : period.getClosedTotal().toPlainString(),
                 byPerson(period.getPersonTotals()), period.getCap(), byPerson(period.getPersonCarried()),
-                byPerson(period.getPersonOpening()));
+                byPerson(period.getPersonOpening()), period.isLocked());
     }
 
     private static Map<String, String> byPerson(Map<Long, BigDecimal> fixed) {

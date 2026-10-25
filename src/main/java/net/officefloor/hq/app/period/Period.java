@@ -47,6 +47,10 @@ public class Period {
     @Column(name = "soft_closed", nullable = false)
     private boolean softClosed;
 
+    /** Whether a steward has locked the period: a locked period cannot be reopened until a steward unlocks it. */
+    @Column(nullable = false)
+    private boolean locked;
+
     /** The due-total fixed when the period was closed (or soft-closed); null while it is open. */
     /** The most OPEN or PENDING claims a person may have in the period (by due-by); null for no cap. */
     @Column(name = "open_cap")
@@ -122,6 +126,14 @@ public class Period {
 
     public boolean isSoftClosed() {
         return softClosed;
+    }
+
+    public boolean isLocked() {
+        return locked;
+    }
+
+    public void setLocked(boolean locked) {
+        this.locked = locked;
     }
 
     public BigDecimal getClosedTotal() {

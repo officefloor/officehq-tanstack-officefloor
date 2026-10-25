@@ -17,6 +17,8 @@ export type Period = {
   personTotals: Record<string, string>; cap: number | null; personCarried: Record<string, string>;
   /** Each person's opening balance for the period (by person id; absent for none), added to their carried figure. */
   personOpening: Record<string, string>;
+  /** Whether a steward has locked the period: a locked period cannot be reopened until a steward unlocks it. */
+  locked: boolean;
 };
 
 export const periodsQueryKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -37,6 +39,10 @@ export const periodClosePath = (sheetId: string, periodId: number) => `${periods
 export const periodSoftClosePath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/soft-close`;
 
 export const periodReopenPath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/reopen`;
+
+export const periodLockPath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/lock`;
+
+export const periodUnlockPath = (sheetId: string, periodId: number) => `${periodsPath(sheetId)}/${periodId}/unlock`;
 
 /** The sheet's periods, by from-date. */
 export function usePeriods() {

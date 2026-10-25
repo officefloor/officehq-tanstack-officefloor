@@ -8,7 +8,7 @@ import { usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
-import { fiscalYearOf, periodClosePath, periodDue, periodsGenerateFyPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
+import { fiscalYearOf, periodClosePath, periodDue, periodLockPath, periodsGenerateFyPath, periodUnlockPath, periodReopenPath, periodSoftClosePath, periodsGeneratePath, periodsPath, periodsQueryKey, usePeriods, type Period } from './periods';
 
 // The sheet's periods, each with its due-total — the dues (with any late charge) of the counted claims whose date falls in it (not a person's unbound OPEN ones dated within a hold of theirs),
 // added up, skipping n/a; for a closed period, the one fixed when it was closed — whether it is closed, the
@@ -75,6 +75,7 @@ function Periods() {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th></th>
           </tr>
         </thead>
@@ -88,6 +89,7 @@ function Periods() {
               <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{fiscalYearOf(p.from, settings.data)}</td>
               <td data-testid="period-cap">{p.cap ?? ''}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 <PeriodActions key={`${sheet}:${p.id}`} sheet={sheet} period={p} />
               </td>
@@ -195,7 +197,8 @@ function Periods() {
 // The buttons that close, soft-close and reopen a period. Closing one already closed, soft-closing one closed or
 // soft-closed (or by a role not allowed to close), or reopening one not closed, or either by
 // a role the permission matrix does not allow (by the standing rule, reopening by anyone but a steward), is refused by the server and shows the period's error, which goes as soon as the next
-// action on the row is taken.
+// action on the row is taken. Locking (one not locked) and unlocking (one locked) are a steward's only; a locked period
+// cannot be reopened.
 function PeriodActions({ sheet, period }: { sheet: string; period: Period }) {
   const [user] = useCurrentUser();
   const queryClient = useQueryClient();
@@ -212,27 +215,48 @@ function PeriodActions({ sheet, period }: { sheet: string; period: Period }) {
     mutationFn: () => putJson<Period>(periodReopenPath(sheet, period.id), undefined, user),
     onSuccess,
   });
+  const lock = useMutation({
+    mutationFn: () => putJson<Period>(periodLockPath(sheet, period.id), undefined, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet) }),
+  });
+  const unlock = useMutation({
+    mutationFn: () => putJson<Period>(periodUnlockPath(sheet, period.id), undefined, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsQueryKey(sheet) }),
+  });
   const submitClose = useSubmitOnce(close);
   const submitSoftClose = useSubmitOnce(softClose);
   const submitReopen = useSubmitOnce(reopen);
-  const pending = close.isPending || softClose.isPending || reopen.isPending;
+  const submitLock = useSubmitOnce(lock);
+  const submitUnlock = useSubmitOnce(unlock);
+  const pending = close.isPending || softClose.isPending || reopen.isPending || lock.isPending || unlock.isPending;
+  const resetAll = () => { close.reset(); softClose.reset(); reopen.reset(); lock.reset(); unlock.reset(); };
   return (
     <>
       <button type="button" data-testid="period-close" disabled={pending}
-        onClick={() => { softClose.reset(); reopen.reset(); submitClose(); }}>
+        onClick={() => { resetAll(); submitClose(); }}>
         Close
       </button>
       <button type="button" data-testid="period-soft-close" disabled={pending}
-        onClick={() => { close.reset(); reopen.reset(); submitSoftClose(); }}>
+        onClick={() => { resetAll(); submitSoftClose(); }}>
         Soft close
       </button>
       <button type="button" data-testid="period-reopen" disabled={pending}
-        onClick={() => { close.reset(); softClose.reset(); submitReopen(); }}>
+        onClick={() => { resetAll(); submitReopen(); }}>
         Reopen
+      </button>
+      <button type="button" data-testid="period-lock" disabled={pending}
+        onClick={() => { resetAll(); submitLock(); }}>
+        Lock
+      </button>
+      <button type="button" data-testid="period-unlock" disabled={pending}
+        onClick={() => { resetAll(); submitUnlock(); }}>
+        Unlock
       </button>
       {close.isError && <span data-testid="period-error">This period cannot be closed: it is already closed, or your role is not allowed to close one.</span>}
       {softClose.isError && <span data-testid="period-error">This period cannot be soft-closed: it is already closed or soft-closed, or your role is not allowed to close one.</span>}
-      {reopen.isError && <span data-testid="period-error">This period cannot be reopened: it is not closed or soft-closed, or your role is not allowed to reopen one.</span>}
+      {reopen.isError && <span data-testid="period-error">This period cannot be reopened: it is not closed or soft-closed, it is locked, or your role is not allowed to reopen one.</span>}
+      {lock.isError && <span data-testid="period-error">This period cannot be locked: it is already locked, or you are not a steward.</span>}
+      {unlock.isError && <span data-testid="period-error">This period cannot be unlocked: it is not locked, or you are not a steward.</span>}
     </>
   );
 }
