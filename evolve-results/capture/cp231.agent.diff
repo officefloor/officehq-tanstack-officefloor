@@ -1,0 +1,230 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 2fb51001..4c329a01 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -169,7 +169,7 @@ const ACTIONS = [
+ // bound by no statement; anyone else, or any other status, shows the claim's error. An OPEN claim is deferred until
+ // a date after the sheet's today (typed beside the defer button); any other status, a date not after today, or a claim
+ // whose due-by is in a closed period shows the claim's error. A deferred claim cannot be settled. The proof button raises the claim's
+-// proofs count by one, of the kind chosen beside it (receipt when none is chosen); on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
++// proofs count by one, of the kind chosen beside it (when none is chosen, a receipt while the sheet has proof kinds, else of no kind); on a SETTLED or VOID claim it shows the claim's error. A claim whose due is above the proof
+ // threshold in force on its date cannot be settled or approved while it has no proof, nor while it lacks a proof of each of the sheet's proof kinds: that shows the claim's error.
+ // An OPEN claim splits off an amount (typed beside the split button; more than 0.00 and less than its amount) into a
+ // new OPEN claim; any other status, a deferred claim, a claim whose due-by is in a closed period or an amount out of range shows the
+@@ -250,7 +250,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     },
+   });
+   const submitRedate = useSubmitOnce(redate);
+-  // The kind of the next proof: '' when none is chosen (the proof is a receipt, and no kind is recorded).
++  // The kind of the next proof: '' when none is chosen (a receipt while the sheet has proof kinds, else no kind is recorded).
+   const [proofKind, setProofKind] = useState('');
+   const proof = useMutation({
+     mutationFn: (kind: string) =>
+diff --git a/src/main/frontend/features/periods/export.slot.tsx b/src/main/frontend/features/periods/export.slot.tsx
+new file mode 100644
+index 00000000..737fe6fd
+--- /dev/null
++++ b/src/main/frontend/features/periods/export.slot.tsx
+@@ -0,0 +1,58 @@
++import { useQueryClient } from '@tanstack/react-query';
++import { figureToday } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
++import { peoplePath, peopleQueryKey, type Person } from '../people/people';
++import { csvValue, readFresh, sheetInfoPath } from '../people/export.slot';
++import { ratesPath, ratesQueryKey, type Rate } from '../rates/rates';
++import { settingsPath, settingsQueryKey, type Settings } from '../roles/roles';
++import { claimsPath, claimsQueryKey, type Claim } from '../claims/claims';
++import { personPeriodCarried, personPeriodDue, periodsPath, periodsQueryKey, type Period } from './periods';
++
++// The period export button: downloads the period figures as CSV — person, period, figure (the person's due-total
++// for it) and carried, as the person's row shows them — one line per person and period, people in list order
++// (retired people included, shown or not) and periods in the order added. Quoting and line ends as the people
++// export; its inputs are re-read from the store when pressed, as the people export's.
++function ExportPeriods() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++  if (!user || !sheet) return null;
++  const download = async () => {
++    const [info, people, claims, rates, periods, settings] = await Promise.all([
++      readFresh<SheetInfo>(queryClient, sheetQueryKey(sheet), sheetInfoPath(sheet)),
++      readFresh<Person[]>(queryClient, peopleQueryKey(sheet), peoplePath(sheet)),
++      readFresh<Claim[]>(queryClient, claimsQueryKey(sheet), claimsPath(sheet)),
++      readFresh<Rate[]>(queryClient, ratesQueryKey(sheet), ratesPath(sheet)),
++      readFresh<Period[]>(queryClient, periodsQueryKey(sheet), periodsPath(sheet)),
++      readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
++    ]);
++    const today = figureToday(info.today);
++    // The sheet's periods come by from-date; ids are assigned in the order they were added.
++    const added = [...periods].sort((a, b) => a.id - b.id);
++    const lines = [['person', 'period', 'figure', 'carried']];
++    for (const p of people) {
++      for (const q of added) {
++        lines.push([p.name, q.name,
++          personPeriodDue(q, p, people, claims, rates, settings, today),
++          personPeriodCarried(q, periods, p, people, claims, rates, settings, today)]);
++      }
++    }
++    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `periods-${sheet}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  };
++  return (
++    <button type="button" data-testid="export-periods" onClick={() => { void download(); }}>
++      Export periods (CSV)
++    </button>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 19.05, Component: ExportPeriods });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+index b9f900a3..3f96b21a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+@@ -1,12 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Raises the claim's proofs count by one, of the kind chosen (receipt or photo; receipt when none is chosen); a
++/** Raises the claim's proofs count by one, of the kind chosen (receipt or photo; when none is chosen, a receipt while the
++ *  sheet has proof kinds, else of no kind — neither a receipt nor a photo); a
+  *  SETTLED or VOID claim, or an unknown kind, is refused. */
+ public class ApplyProof {
+-    public void apply(@Val Claim claim, ClaimRepository repository,
++    public void apply(@Val Claim claim, @Val Sheet sheet, ClaimRepository repository,
+             @RequestParam(name = "kind", required = false) String kind) throws ClaimStatusException {
+         String chosen = kind == null || kind.isBlank() ? null : kind.trim();
+         if (chosen != null && !ProofKind.ALL.contains(chosen)) {
+@@ -15,7 +17,7 @@ public class ApplyProof {
+         if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
+             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot gain a proof.");
+         }
+-        claim.addProof(chosen == null ? ProofKind.RECEIPT : chosen);
++        claim.addProof(chosen != null ? chosen : sheet.getProofKinds().isEmpty() ? null : ProofKind.RECEIPT);
+         repository.saveAndFlush(claim);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 6e1adbd1..ad35c74c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -134,10 +134,14 @@ public class Claim {
+     @Column(nullable = false)
+     private int proofs;
+ 
+-    /** How many of the claim's proofs are photos; the rest are receipts. 0 for a new claim. */
++    /** How many of the claim's proofs are photos. 0 for a new claim. */
+     @Column(name = "proofs_photo", nullable = false)
+     private int proofsPhoto;
+ 
++    /** How many of the claim's proofs are receipts; a proof of no kind is neither. 0 for a new claim. */
++    @Column(name = "proofs_receipt", nullable = false)
++    private int proofsReceipt;
++
+     /** The number of the claim this one was split off from; null for a claim not made by a split. */
+     @Column(name = "split_from")
+     private String splitFrom;
+@@ -420,7 +424,7 @@ public class Claim {
+ 
+     /** How many of the claim's proofs are receipts. */
+     public int getProofsReceipt() {
+-        return proofs - proofsPhoto;
++        return proofsReceipt;
+     }
+ 
+     /** How many of the claim's proofs are photos. */
+@@ -433,11 +437,13 @@ public class Claim {
+         return ProofKind.PHOTO.equals(kind) ? getProofsPhoto() : ProofKind.RECEIPT.equals(kind) ? getProofsReceipt() : 0;
+     }
+ 
+-    /** Raises the claim's proofs count by one, of a kind (receipt or photo). */
++    /** Raises the claim's proofs count by one, of a kind (receipt or photo; null for none). */
+     public void addProof(String kind) {
+         proofs++;
+         if (ProofKind.PHOTO.equals(kind)) {
+             proofsPhoto++;
++        } else if (ProofKind.RECEIPT.equals(kind)) {
++            proofsReceipt++;
+         }
+     }
+ 
+@@ -488,6 +494,7 @@ public class Claim {
+         then.reviewAssigned = reviewAssigned;
+         then.proofs = proofs;
+         then.proofsPhoto = proofsPhoto;
++        then.proofsReceipt = proofsReceipt;
+         then.splitFrom = splitFrom;
+         then.lateEntry = lateEntry;
+         then.ref = ref;
+@@ -522,6 +529,7 @@ public class Claim {
+         moved.reviewAssigned = reviewAssigned;
+         moved.proofs = proofs;
+         moved.proofsPhoto = proofsPhoto;
++        moved.proofsReceipt = proofsReceipt;
+         moved.lateEntry = lateEntry;
+         moved.tags = tags;
+         moved.tagsUsed = tagsUsed;
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java b/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
+index 43238705..e7330ead 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyMerge.java
+@@ -30,10 +30,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
+ /**
+  * Merges the person into another of the sheet; only a steward may, and not into themselves, nor when either of them is
+  * retired. Their claims move to the other, keeping their numbers and dates, listed after the other's claims in the
+- * order they were added, each keeping any figure a statement bound it to. Their name and aliases become aliases of the
++ * order they were added, each keeping any figure a statement bound it to and released when held. Their name and aliases become aliases of the
+  * other. Their patrons are added to the other's (not the other themselves, no repeats); anyone naming them as patron
+  * names the other instead (not themselves, no repeats). Their pool memberships move to the other (shares added when the
+- * other is already a member). The crews they lead are led by the other (who leaves those crews' members), and their crew
++ * other is already a member). The crews they lead are left without a lead, and their crew
+  * memberships move to the other (dropped where the other already leads or is in the crew). Their plans become the other's. Their statements become the other's, standing before the other's own, so the other's
+  * last statement stays theirs (or, having none, becomes their last). Their holds, dated grades, watchers and contact
+  * are dropped, and they leave the sheet.
+@@ -64,12 +64,13 @@ public class ApplyMerge {
+         Long from = person.getId();
+         Long to = into.getId();
+ 
+-        // Claims: moved in the order they were added, each listed as the other's newest.
++        // Claims: moved in the order they were added, each listed as the other's newest and released when held.
+         List<Claim> moved = new ArrayList<>(claims.findBySheetIdOrderByIdDesc(sheetId).stream()
+                 .filter(c -> from.equals(c.getPersonId())).toList());
+         moved.sort(Comparator.comparing(Claim::getId));
+         for (Claim claim : moved) {
+             claim.setPersonId(to);
++            claim.setHeld(false);
+             claims.saveAndFlush(claim);
+             claims.relist(claim.getId());
+         }
+@@ -119,9 +120,9 @@ public class ApplyMerge {
+             }
+         }
+ 
+-        // Crews they lead are led by the other; their crew memberships move to the other where not already there.
++        // Crews they lead are left without a lead; their crew memberships move to the other where not already there.
+         for (Crew crew : crews.findByLeadIdOrderByIdAsc(from)) {
+-            crew.setLeadId(to);
++            crew.setLeadId(null);
+             crews.saveAndFlush(crew);
+         }
+         for (CrewMember member : crewMembers.findByPersonIdOrderByIdAsc(from)) {
+diff --git a/src/main/resources/db/migration/V104__claim_proof_receipts.sql b/src/main/resources/db/migration/V104__claim_proof_receipts.sql
+new file mode 100644
+index 00000000..416e1a58
+--- /dev/null
++++ b/src/main/resources/db/migration/V104__claim_proof_receipts.sql
+@@ -0,0 +1,4 @@
++-- How many of a claim's proofs are receipts: a proof added with no kind chosen while the sheet has no proof kinds
++-- records no kind, so it is neither a receipt nor a photo (every proof added before this is a receipt or a photo).
++ALTER TABLE claim ADD COLUMN proofs_receipt INT DEFAULT 0 NOT NULL;
++UPDATE claim SET proofs_receipt = proofs - proofs_photo;
