@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
 import { poolsQueryKey } from '../pools/pools';
 import { useColumnShown } from './columns';
@@ -20,7 +20,7 @@ function PersonRetired({ person }: { person: Person }) {
   const shown = useColumnShown('retired');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const today = useSheetToday();
+  const today = useRealToday();
   const [date, setDate] = useState('');
   const queryClient = useQueryClient();
   const retire = useMutation({

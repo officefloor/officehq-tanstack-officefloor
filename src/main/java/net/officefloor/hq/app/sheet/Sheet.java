@@ -481,4 +481,23 @@ public class Sheet {
     public int getLastSettleBatch() {
         return lastSettleBatch;
     }
+
+    /** The sheet as a preview shows it: every setting as recorded now, with the date standing in for its today. A
+     *  detached copy, never saved; the sheet itself is untouched. */
+    public Sheet previewedOn(LocalDate date) {
+        Sheet view = new Sheet(id);
+        view.today = date;
+        for (SheetSetting s : settings) {
+            view.settings.add(new SheetSetting(view, s.getKey(), s.getFromDate(), s.getValue()));
+        }
+        view.policyDate = policyDate;
+        view.periodNumberingFrom = periodNumberingFrom;
+        view.entryDate = entryDate;
+        view.clonedFrom = clonedFrom;
+        view.archived = archived;
+        view.archivedOn = archivedOn;
+        view.lastSettleBatch = lastSettleBatch;
+        view.departedTags = departedTags;
+        return view;
+    }
 }

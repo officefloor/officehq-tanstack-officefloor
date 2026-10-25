@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
 
 // A steward's flag on a person: the reason it shows while the sheet's today is on or before its until-date
@@ -18,7 +18,7 @@ function FlagHeader() {
 function PersonFlag({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const today = useSheetToday();
+  const today = useRealToday();
   const [reason, setReason] = useState('');
   const [until, setUntil] = useState('');
   const queryClient = useQueryClient();

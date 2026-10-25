@@ -4,7 +4,7 @@ import { putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
 import { peoplePath, peopleQueryKey, type Person } from './people';
 import { useColumnShown } from './columns';
 
@@ -19,7 +19,7 @@ function PersonHold({ person }: { person: Person }) {
   const shown = useColumnShown('hold');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const today = useSheetToday();
+  const today = useRealToday();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const queryClient = useQueryClient();

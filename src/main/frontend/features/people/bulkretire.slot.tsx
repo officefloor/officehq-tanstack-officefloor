@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getJson, putJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
 import { poolsQueryKey } from '../pools/pools';
 import { peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
@@ -14,7 +14,7 @@ import { peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Per
 function BulkRetire() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const today = useSheetToday();
+  const today = useRealToday();
   const [showRetired] = useShowRetired();
   const { selected, clear } = useSelectedPeople();
   const queryClient = useQueryClient();

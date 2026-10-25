@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { currentAsOf, getJson, getJsonLive } from '../../api/http';
+import { currentAsOf, currentPreview, figureToday, getJson, getJsonLive } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday, type SheetInfo } from '../session/session';
 import { GRADES, gradeOn, nameKey, peoplePath, usePeople, type Person } from '../people/people';
@@ -75,7 +75,7 @@ export async function figuresOf(id: string): Promise<Figures> {
     getJson<Settings>(settingsPath(id)),
     getJson<Pool[]>(poolsPath(id)),
   ]);
-  return figuresFrom(people, claims, rates, info.today, settings, pools);
+  return figuresFrom(people, claims, rates, figureToday(info.today), settings, pools);
 }
 
 /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
@@ -101,7 +101,7 @@ function ConsolidatedFigures() {
   const today = useSheetToday();
   const asOf = currentAsOf();
   const descendants = useQuery({
-    queryKey: [...descendantsQueryKey(sheet ?? ''), asOf],
+    queryKey: [...descendantsQueryKey(sheet ?? ''), asOf, currentPreview()],
     queryFn: () => descendantFigures(sheet ?? ''),
     enabled: !!sheet,
   });

@@ -1,5 +1,5 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { figureToday, getJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
 import { claimsPath, claimsQueryKey, type Claim } from '../claims/claims';
@@ -38,7 +38,7 @@ function ExportPeople() {
       readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
       readFresh<Pool[]>(queryClient, poolsQueryKey(sheet), poolsPath(sheet)),
     ]);
-    const today = info.today;
+    const today = figureToday(info.today);
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       lines.push([p.name, gradeOn(p, today), p.retiredFrom ?? '', personDue(p, claims, rates, today, settings, people, pools)]);

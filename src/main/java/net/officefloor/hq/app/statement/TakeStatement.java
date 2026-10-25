@@ -14,11 +14,13 @@ import net.officefloor.hq.app.claim.ClaimFigures;
 import net.officefloor.hq.app.claim.ClaimLog;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShares;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.InvalidPersonException;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonGradeRepository;
 import net.officefloor.hq.app.person.PersonGrades;
+import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateLogRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.sheet.SettingLogRepository;
@@ -42,7 +44,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class TakeStatement {
     public void take(@Val Sheet sheet, @Val Person person, ClaimRepository claims, RateRepository rates, PersonGradeRepository grades,
             StatementRepository statements, BindingLogRepository bindings, ClaimLogRepository logs,
-            RateLogRepository rateLogs, SettingLogRepository settingLogs, EntityManager entityManager,
+            RateLogRepository rateLogs, SettingLogRepository settingLogs, PersonRepository people, EntityManager entityManager,
             @RequestParam(name = "asOf", required = false) String asOfParam, Out<Statement> statementOut)
             throws InvalidPersonException {
         LocalDate asOf = parseAsOf(asOfParam, sheet, person);
@@ -55,7 +57,8 @@ public class TakeStatement {
         if (asOf == null) {
             ClaimFigures figures = new ClaimFigures(rates.findInChain(sheet.getId()),
                     grades.gradesOf(person), sheet);
-            dueTotal = figures.dueTotal(mine, sheet.getToday(), person);
+            dueTotal = figures.dueTotal(mine, sheet.getToday(), person,
+                    heldBy(person, sheet, claims, rates, grades, people));
             for (Claim claim : mine) {
                 if (ClaimFigures.countsLive(claim, person, sheet.getToday())) {
                     BigDecimal figure = figures.due(claim);
@@ -99,6 +102,37 @@ public class TakeStatement {
         bindings.saveAndFlush(binding);
         statementOut.set(statements.save(
                 new Statement(sheet.getId(), person.getId(), dueTotal, sheet.getToday(), asOf, counted)));
+    }
+
+    /** The person's parts of the counted claims of others shared with them, each at its live due as its own person's
+     *  figures give it (as the rollup counts them); null when they hold no share of a counted claim. */
+    private static BigDecimal heldBy(Person person, Sheet sheet, ClaimRepository claims, RateRepository rates,
+            PersonGradeRepository grades, PersonRepository people) {
+        BigDecimal held = null;
+        var sheetRates = rates.findInChain(sheet.getId());
+        Map<Long, List<Claim>> shared = claims.findBySheetIdOrderByIdDesc(sheet.getId()).stream()
+                .filter(c -> c.getShares() != null && ClaimShares.of(c).stream().anyMatch(sh -> person.getId().equals(sh.personId())))
+                .collect(Collectors.groupingBy(Claim::getPersonId));
+        for (Person owner : people.findListed(sheet.getId())) {
+            List<Claim> owned = shared.getOrDefault(owner.getId(), List.of());
+            if (owned.isEmpty()) {
+                continue;
+            }
+            ClaimFigures ownerFigures = new ClaimFigures(sheetRates, grades.gradesOf(owner), sheet);
+            for (Claim c : owned) {
+                BigDecimal claimDue = ClaimFigures.countsLive(c, owner, sheet.getToday()) ? ownerFigures.due(c) : null;
+                if (claimDue == null) {
+                    continue;
+                }
+                for (var sh : ClaimShares.of(c)) {
+                    if (person.getId().equals(sh.personId())) {
+                        BigDecimal part = ClaimShares.part(claimDue, sh.share());
+                        held = held == null ? part : held.add(part);
+                    }
+                }
+            }
+        }
+        return held;
     }
 
     /** The date the statement is taken as of: null when none is given; refuses one that is not a calendar date, one

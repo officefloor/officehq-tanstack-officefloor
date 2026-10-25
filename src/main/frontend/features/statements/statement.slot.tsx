@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { figureToday, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
 import { claimsQueryKey } from '../claims/claims';
 import { peoplePath, peopleQueryKey, type Person } from '../people/people';
 import { useColumnShown } from '../people/columns';
@@ -32,7 +32,7 @@ function PersonStatement({ person }: { person: Person }) {
   const dateShown = useColumnShown('statement-date');
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const today = useSheetToday();
+  const today = useRealToday();
   const [asOf, setAsOf] = useState('');
   const queryClient = useQueryClient();
   const take = useMutation({
@@ -73,7 +73,7 @@ function PersonStatement({ person }: { person: Person }) {
     const lines = [['number', 'date', 'amount', 'figure', 'status']];
     // The sheet's claims come newest first.
     for (const c of claims.filter((x) => x.personId === p.id && x.stated).reverse()) {
-      lines.push([c.number ?? '', c.date, c.amount, chargedOf(c, rates, gradeOn(p, c.date), settings, info.today), c.status]);
+      lines.push([c.number ?? '', c.date, c.amount, chargedOf(c, rates, gradeOn(p, c.date), settings, figureToday(info.today)), c.status]);
     }
     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

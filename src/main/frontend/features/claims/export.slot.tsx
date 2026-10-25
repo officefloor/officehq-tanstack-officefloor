@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { figureToday } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { sheetQueryKey, useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
 import { gradeOn, peoplePath, peopleQueryKey, type Person } from '../people/people';
@@ -26,7 +27,7 @@ function ExportClaims() {
       readFresh<Period[]>(queryClient, periodsQueryKey(sheet), periodsPath(sheet)),
       readFresh<Settings>(queryClient, settingsQueryKey(sheet), settingsPath(sheet)),
     ]);
-    const today = info.today;
+    const today = figureToday(info.today);
     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
     for (const p of people) {
       // The sheet's claims come newest first.

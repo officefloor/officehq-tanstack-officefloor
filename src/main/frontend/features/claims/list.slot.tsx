@@ -3,7 +3,7 @@ import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-quer
 import { getJson, HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
-import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
+import { useCurrentSheet, useCurrentUser, useRealToday, useSheetToday } from '../session/session';
 import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/people';
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
@@ -228,7 +228,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
     ]),
   });
   const submitMove = useSubmitOnce(move);
-  const today = useSheetToday();
+  const today = useRealToday();
   const [deferTo, setDeferTo] = useState('');
   const defer = useMutation({
     mutationFn: (until: string) =>
@@ -914,7 +914,7 @@ function ClaimForm({ sheet, person, claim, onSubmitted }: {
 }) {
   const [user] = useCurrentUser();
   const [, setEditing] = useEditingClaim();
-  const today = useSheetToday();
+  const today = useRealToday();
   const [amount, setAmount] = useState(claim?.amount ?? '');
   const [date, setDate] = useState(claim?.date ?? '');
   const [note, setNote] = useState(claim?.note ?? '');

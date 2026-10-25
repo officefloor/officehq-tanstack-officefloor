@@ -25,6 +25,31 @@ export function currentAsOf(): string {
 
 const isSheetLoad = (path: string) => /^\/api\/sheets\/[^/?]+$/.test(path);
 
+// The preview: while the screen's `preview` search param holds a date (and no as-of date is set), every read of
+// a sheet's records asks for them with that date standing in for the sheet's today, and the screen works out its
+// figures on it (session.ts). The sheet itself (GET /api/sheets/<id>) is read as it is, so the sheet's today and
+// every default date of a change stay the real ones; changes are sent as usual and use the sheet's real today.
+export const PREVIEW_PARAM = 'preview';
+
+/** The date the screen previews the sheet's today as (YYYY-MM-DD), or '' while it shows the sheet's own today. */
+export function currentPreview(): string {
+  if (currentAsOf()) return '';
+  const raw = new URLSearchParams(window.location.search).get(PREVIEW_PARAM) ?? '';
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed : raw;
+  } catch {
+    return raw;
+  }
+}
+
+/** The date a figure is worked out on: the preview date while one is set, else the sheet's today. */
+export function figureToday(today: string): string;
+export function figureToday(today: string | undefined): string | undefined;
+export function figureToday(today: string | undefined): string | undefined {
+  return currentPreview() || today;
+}
+
 async function send<T>(path: string, init?: RequestInit, live = false): Promise<T> {
   const asOf = live ? '' : currentAsOf();
   if (asOf && init?.method && init.method !== 'GET' && !isSheetLoad(path)) {
@@ -32,6 +57,10 @@ async function send<T>(path: string, init?: RequestInit, live = false): Promise<
   }
   if (asOf && !init?.method && path.startsWith('/api/sheets/')) {
     path += `${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
+  }
+  const preview = live ? '' : currentPreview();
+  if (preview && !init?.method && path.startsWith('/api/sheets/') && !isSheetLoad(path)) {
+    path += `${path.includes('?') ? '&' : '?'}preview=${encodeURIComponent(preview)}`;
   }
   const res = await fetch(path, init);
   if (!res.ok) {
