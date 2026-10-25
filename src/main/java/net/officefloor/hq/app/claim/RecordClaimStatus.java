@@ -32,6 +32,9 @@ public class RecordClaimStatus {
         if (claim.getStatus() == ClaimStatus.OPEN && review.asked()) {
             line += " reason=" + review.reason();
         }
+        if (claim.getStatus() == ClaimStatus.VOID && claim.getVoidReason() != null) {
+            line += " reason=" + claim.getVoidReason();
+        }
         audit.record(line);
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             ClaimNotify.watchers(claim, person, number.value(), by, watches, audit);

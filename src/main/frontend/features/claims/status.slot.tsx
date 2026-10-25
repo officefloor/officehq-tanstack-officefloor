@@ -6,13 +6,14 @@ import { usePeople } from '../people/people.slot';
 import { periodOn, usePeriods } from '../periods/periods.slot';
 import { useRoles } from '../access/useAccess';
 import { useUser } from '../session/useSession';
+import { useVoidReasons } from '../voidreasons/voidReasons.slot';
 import { HttpError } from '../../api/http';
 import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, type ClaimStatus } from './useClaims';
 
 // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
-type Change = { status: ClaimStatus; review?: boolean; reason?: string };
+type Change = { status: ClaimStatus; review?: boolean; reason?: string; voidReason?: string };
 
 const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
   { action: 'open', change: { status: 'OPEN' }, label: 'Open' },
@@ -41,6 +42,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [user] = useUser();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const voidReasons = useVoidReasons(sheetId);
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
@@ -93,6 +96,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, { ...to, by: user ?? '' }),
     onSuccess: () => {
       setReason('');
+      setVoidReason('');
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
@@ -201,11 +205,26 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           type="button"
           data-testid={`claim-${a.action}`}
           disabled={busy}
-          onClick={() => changeTo(a.change)}
+          onClick={() => changeTo(a.action === 'void' ? { ...a.change, voidReason } : a.change)}
         >
           {a.label}
         </button>
       ))}{' '}
+      <select
+        data-testid="claim-void-reason"
+        value={voidReason}
+        onChange={(e) => {
+          setVoidReason(e.target.value);
+          change.reset();
+        }}
+      >
+        <option value="">Void reason…</option>
+        {(voidReasons.data ?? []).map((r) => (
+          <option key={r.reason} value={r.reason}>
+            {r.reason}
+          </option>
+        ))}
+      </select>{' '}
       <input
         data-testid="claim-reject-reason"
         placeholder="Reject reason"

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** The status asked for: OPEN, SETTLED or VOID. Publishes it with the user making the change and whether it is a review. */
 public class ValidateClaimStatus {
     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatus> status,
-            Out<ChangedBy> changedBy, Out<ClaimReview> review) throws BadRequestException {
+            Out<ChangedBy> changedBy, Out<ClaimReview> review, Out<VoidChoice> voidChoice) throws BadRequestException {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
         String asked = request == null || request.status() == null ? "" : request.status().trim();
         ClaimStatus parsed;
@@ -30,6 +30,8 @@ public class ValidateClaimStatus {
         if (reviewing && parsed == ClaimStatus.OPEN && reason.isEmpty()) {
             throw new BadRequestException("A rejection needs a reason");
         }
+        String voidReason = request == null || request.voidReason() == null ? "" : request.voidReason().trim();
+        voidChoice.set(new VoidChoice(parsed == ClaimStatus.VOID && !voidReason.isEmpty() ? voidReason : null));
         review.set(reviewing ? new ClaimReview(true, parsed == ClaimStatus.OPEN ? reason : null) : ClaimReview.NONE);
     }
 }

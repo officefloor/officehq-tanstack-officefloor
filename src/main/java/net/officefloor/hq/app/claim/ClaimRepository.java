@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -39,6 +39,7 @@ public class ClaimRepository {
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
+        claim.setVoidReason(rs.getString("void_reason"));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -239,8 +240,8 @@ public class ClaimRepository {
      * the row is locked by the first of two users changing it, so the other one finds it moved.
      */
     public boolean updateStatus(Claim claim, ClaimStatus from) {
-        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ? AND status = ?",
-                claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getId(), from.name()) == 1;
+        return jdbc.update("UPDATE claim SET status = ?, claim_number = ?, settled_due = ?, opened_by = ?, void_reason = ? WHERE id = ? AND status = ?",
+                claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getVoidReason(), claim.getId(), from.name()) == 1;
     }
 
     /**

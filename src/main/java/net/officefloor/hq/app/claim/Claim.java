@@ -30,6 +30,7 @@ public class Claim {
     private LocalDate remindedOn;
     private String ref;
     private String tags;
+    private String voidReason;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy,
@@ -132,6 +133,15 @@ public class Claim {
 
     public void setTags(String tags) {
         this.tags = tags;
+    }
+
+    /** The reason the claim was voided with, from the sheet's list; null when none was given. */
+    public String getVoidReason() {
+        return voidReason;
+    }
+
+    public void setVoidReason(String voidReason) {
+        this.voidReason = voidReason;
     }
 
     /** Keep {@code amount} of the claim, the rest split off: it loses any figure a statement bound it to. */

@@ -36,7 +36,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The claim's external reference, used at most once on the sheet (case aside); none when it has none. */
   ref: string | null;
   /** The claim's tags, sorted; empty when it has none. */
-  tags: string[] };
+  tags: string[];
+  /** The reason the claim was voided with, from the sheet's list; none when none was given. */
+  voidReason: string | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;

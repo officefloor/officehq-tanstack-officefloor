@@ -13,6 +13,7 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -25,14 +26,16 @@ import net.officefloor.plugin.variable.Val;
  * above the sheet's proof threshold in force on the claim's date is refused (a due of n/a is within any limit; a steward settles anything). A review of a
  * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it), rejecting
  * returns it to OPEN, bound again by its last statement if that bound it. A steward may void a SETTLED claim within
- * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. Opening records who opened it; a voided claim keeps its number. Settling
+ * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. While the sheet has void reasons,
+ * a void needs one of them, kept on the claim. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
-            PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, Out<ClaimNumber> audited) throws BadRequestException {
+            PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, @Val VoidChoice voidChoice, VoidReasonRepository voidReasons,
+            Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         String role = roles.roleOf(claim.getSheetId(), by.name());
         boolean steward = Role.STEWARD.equals(role);
@@ -65,6 +68,15 @@ public class ApplyClaimStatus {
                             + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement");
                 }
             }
+            if (status == ClaimStatus.VOID) {
+                java.util.List<String> reasons = voidReasons.list(claim.getSheetId());
+                if (!reasons.isEmpty() && voidChoice.reason() == null) {
+                    throw new BadRequestException("Choose a void reason from the sheet's list");
+                }
+                if (voidChoice.reason() != null && !reasons.contains(voidChoice.reason())) {
+                    throw new BadRequestException("That void reason is not on the sheet's list");
+                }
+            }
             if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
                 throw new BadRequestException("The user who opened a claim cannot settle it");
             }
@@ -95,6 +107,9 @@ public class ApplyClaimStatus {
             }
         }
         claim.setStatus(to);
+        if (to == ClaimStatus.VOID) {
+            claim.setVoidReason(voidChoice.reason());
+        }
         boolean opening = to == ClaimStatus.OPEN && !review.asked();
         if (opening) {
             claim.setOpenedBy(by.name());
