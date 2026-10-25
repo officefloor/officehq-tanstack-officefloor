@@ -10,6 +10,8 @@ import { HttpError } from '../../api/http';
 import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, type ClaimStatus } from './useClaims';
 
 // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
+const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+
 type Change = { status: ClaimStatus; review?: boolean; reason?: string };
 
 const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
@@ -34,6 +36,7 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
 // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
 // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
+// A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -42,6 +45,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [deferUntil, setDeferUntil] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
   const [newDate, setNewDate] = useState('');
+  const [inlineAmount, setInlineAmount] = useState('');
   const people = usePeople(sheetId);
   const [editingId, setEditing] = useEditingClaim();
   const periods = usePeriods(sheetId);
@@ -140,6 +144,21 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/remind`, { by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // A DRAFT's amount changed in the row: the claim form's edit, under its rules, keeping the claim's date, note and corrects.
+  const inline = useMutation({
+    mutationFn: (amount: string) => {
+      const why = refusal();
+      if (why !== undefined) throw new Error(why);
+      if (amount.trim() === '') throw new Error('Enter an amount');
+      if (!AMOUNT.test(amount.trim())) throw new Error('An amount is a number with up to two decimals');
+      return putJson<Claim>(`${base}/${claim.id}`, { amount: amount.trim(), date: claim.date, note: claim.note,
+        corrects: claim.corrects ?? '', by: user ?? '' });
+    },
+    onSuccess: () => {
+      setInlineAmount('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
   // Each action on the claim clears the other's refusal, so one error shows: the last action's.
   const changeTo = (to: Change) => {
     reassign.reset();
@@ -150,6 +169,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     redate.reset();
     lock.reset();
     remind.reset();
+    inline.reset();
     setRefused(undefined);
     change.mutate(to);
   };
@@ -163,11 +183,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     redate.reset();
     lock.reset();
     remind.reset();
+    inline.reset();
     setRefused(undefined);
   };
   const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
-    || redate.isPending || remind.isPending;
-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error;
+    || redate.isPending || remind.isPending || inline.isPending;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? inline.error;
 
   return (
     <>
@@ -220,6 +241,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           redate.reset();
           lock.reset();
           remind.reset();
+          inline.reset();
           setRefused(undefined);
           reassign.mutate(moveTo);
         }}
@@ -239,6 +261,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           redate.reset();
           lock.reset();
           remind.reset();
+          inline.reset();
           setRefused(undefined);
           resettle.mutate();
         }}
@@ -269,6 +292,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           redate.reset();
           lock.reset();
           remind.reset();
+          inline.reset();
           setRefused(undefined);
           defer.mutate(deferUntil);
         }}
@@ -289,6 +313,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           redate.reset();
           lock.reset();
           remind.reset();
+          inline.reset();
           setRefused(undefined);
           proof.mutate();
         }}
@@ -318,6 +343,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           redate.reset();
           lock.reset();
           remind.reset();
+          inline.reset();
           setRefused(undefined);
           split.mutate(splitAmount);
         }}
@@ -346,6 +372,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           split.reset();
           lock.reset();
           remind.reset();
+          inline.reset();
           setRefused(undefined);
           redate.mutate(newDate);
         }}
@@ -379,6 +406,27 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         }}
       >
         Edit
+      </button>{' '}
+      <input
+        data-testid="claim-inline-amount"
+        placeholder="Amount"
+        inputMode="decimal"
+        value={inlineAmount}
+        onChange={(e) => {
+          setInlineAmount(e.target.value);
+          inline.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-inline-save"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          inline.mutate(inlineAmount);
+        }}
+      >
+        Save amount
       </button>
       {editingId === claim.id && (
         <button
