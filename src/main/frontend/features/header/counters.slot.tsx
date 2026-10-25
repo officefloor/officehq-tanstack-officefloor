@@ -32,7 +32,7 @@ export function personNamed(people: Person[], user: string | undefined): Person 
 
 // The header counters, shown at all times: how many people the sheet has (retired ones included), how many of its
 // claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
-// figures them); and the signed-in user's own due-total and overdue-total, when a person on the sheet goes by their
+// figures them); and the signed-in user's own due-total (as their row shows it, "n/a" included) and overdue-total, when a person on the sheet goes by their
 // name (blank when none does), with their crew total: the due-totals of the crews that person leads, added up (blank
 // when they lead none).
 function HeaderCounters() {
@@ -47,7 +47,10 @@ function HeaderCounters() {
   const { due, overdue } = sheetTotals(allPeople, allClaims, rates.data, today, settings.data);
   const [user] = useCurrentUser();
   const me = personNamed(allPeople, user);
-  const mine = me ? sheetTotals([me], allClaims, rates.data, today, settings.data) : { due: '', overdue: '' };
+  const mine = me
+    ? { due: personDue(me, allClaims, rates.data, today, settings.data),
+        overdue: sheetTotals([me], allClaims, rates.data, today, settings.data).overdue }
+    : { due: '', overdue: '' };
   const led = me ? (crews.data ?? []).filter((c) => c.lead?.id === me.id) : [];
   const myCrewDue = led.length > 0
     ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))

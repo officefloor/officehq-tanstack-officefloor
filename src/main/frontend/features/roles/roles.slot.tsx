@@ -7,7 +7,8 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { rolesPath, rolesQueryKey, useRoles, type Role } from './roles';
 
 // The sheet's roles: each user name given one, and the form that gives a name a role — clerk (what any
-// name is by default), steward, or viewer (sees everything, changes nothing — the server refuses each change).
+// name is by default), steward, viewer (sees everything, changes nothing — the server refuses each change), or restricted (sees on the
+// people list only the people of the crews they lead or belong to, and themselves; every other figure is over everyone).
 function Roles() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -60,7 +61,7 @@ function Roles() {
         />
         <input
           data-testid="role-form-role"
-          placeholder="Role (clerk, steward or viewer)"
+          placeholder="Role (clerk, steward, viewer or restricted)"
           value={role}
           onChange={(e) => { setRole(e.target.value); save.reset(); }}
         />
@@ -68,7 +69,7 @@ function Roles() {
           Set role
         </button>
         {save.isError && (
-          <span data-testid="role-form-error">The user name must not be blank, and the role must be clerk, steward or viewer, and a viewer cannot set roles.</span>
+          <span data-testid="role-form-error">The user name must not be blank, and the role must be clerk, steward, viewer or restricted, and a viewer cannot set roles.</span>
         )}
       </form>
     </section>

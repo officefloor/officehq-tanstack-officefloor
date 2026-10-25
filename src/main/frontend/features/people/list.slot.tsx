@@ -5,14 +5,38 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
 import { useClaims } from '../claims/claims';
 import { personDue } from '../rates/due.slot';
 import { useRates } from '../rates/rates';
-import { useSettings } from '../roles/roles';
+import { useDelegations, useRoles, useSettings, type Delegation, type Role } from '../roles/roles';
+import { useCrews, type Crew } from '../crews/crews';
+import { roleOf } from '../header/dashboard.slot';
+import { personNamed } from '../header/counters.slot';
 import {
   gradeOn, nameKey, shownName, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
   type Person,
 } from './people';
 
+/** Whether the user sees a person on the people list: anyone, unless they act as restricted — then only the person
+ *  going by their name and the leads and members of the crews that person leads or belongs to (no one while the
+ *  roles, delegations or crews are not yet read). */
+function visibleTo(people: Person[], roles: Role[] | undefined, delegations: Delegation[] | undefined,
+  crews: Crew[] | undefined, user: string, today: string | undefined): (p: Person) => boolean {
+  if (roles === undefined || delegations === undefined) return () => false;
+  if (roleOf(roles, delegations, user, today) !== 'restricted') return () => true;
+  const me = personNamed(people, user);
+  if (!me || crews === undefined) return () => false;
+  const ids = new Set<number>([me.id]);
+  for (const c of crews) {
+    if (c.lead?.id === me.id || c.members.some((m) => m.id === me.id)) {
+      if (c.lead) ids.add(c.lead.id);
+      c.members.forEach((m) => ids.add(m.id));
+    }
+  }
+  return (p) => ids.has(p.id);
+}
+
 // The sheet's people in list order — or as the sort select shows them — — retired people only while show-retired is on — each with their name (shown as <name> (<grade>)), grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
-// features add their own columns through PeopleColumns / PersonCells.
+// features add their own columns through PeopleColumns / PersonCells. A restricted user (in the role they act in)
+// sees only the person going by their name and the people of the crews that person leads or belongs to (none until
+// the roles and crews are read); every other figure stays over everyone.
 function PeopleList() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -24,10 +48,14 @@ function PeopleList() {
   const claims = useClaims();
   const rates = useRates();
   const settings = useSettings();
+  const roles = useRoles();
+  const delegations = useDelegations();
+  const crews = useCrews();
   const saving = useIsMutating({ mutationKey: personSaveKey }) > 0;
   const reading = useIsFetching({ queryKey: peopleQueryKey(sheet ?? '') }) > 0;
   if (!user || !sheet) return null;
-  const listed = (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null);
+  const visible = visibleTo(people.data ?? [], roles.data, delegations.data, crews.data, user, today);
+  const listed = (people.data ?? []).filter((p) => visible(p) && (showRetired || p.retiredFrom === null));
   const due = (p: Person) => {
     const d = personDue(p, claims.data ?? [], rates.data, today, settings.data);
     return d === 'n/a' ? null : Number(d);
