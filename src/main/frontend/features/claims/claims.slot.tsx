@@ -1,12 +1,12 @@
 import { useState, type ChangeEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
 import { useHeld } from '../people/people.slot';
-import { claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
+import { claimLockKey, claimSaveKey, claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
@@ -25,6 +25,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
   const queryClient = useQueryClient();
   const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
   const save = useMutation({
+    mutationKey: claimSaveKey(sheetId),
     mutationFn: async (body: ClaimBody) => {
       if (body.amount.trim() === '') throw new Error('Enter an amount');
       if (!AMOUNT.test(body.amount.trim())) throw new Error('An amount is a number with up to two decimals');
@@ -51,6 +52,8 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
     save.reset();
   };
 
+  // While a claim's editor is being opened, the form may be about to become its editor: it waits.
+  const locking = useIsMutating({ mutationKey: claimLockKey(sheetId) }) > 0;
   const submit = useSubmitOnce(save);
   return (
     <form
@@ -64,7 +67,7 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
       <input data-testid="claim-form-date" type="date" value={date} onChange={field(setDate)} />{' '}
       <input data-testid="claim-form-note" placeholder="Note" value={note} onChange={field(setNote)} />{' '}
       <input data-testid="claim-form-corrects" placeholder="Corrects no." value={corrects} onChange={field(setCorrects)} />{' '}
-      <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+      <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || locking}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
       {save.isError && (
@@ -85,10 +88,11 @@ function ClaimsHead() {
   );
 }
 
-// A person's claimed total, and their claims, newest first, under the form that adds or edits them.
+// A person's claimed total, and their claims, newest first, under the form that adds or edits them. A claim's edit and
+// cancel buttons are in its status cell, with its locking.
 function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
   const claims = useClaims(sheetId);
-  const [editingId, setEditing] = useEditingClaim();
+  const [editingId] = useEditingClaim();
   const held = useHeld(sheetId);
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   const editing = mine.find((c) => c.id === editingId);
@@ -106,15 +110,6 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <ClaimCells.Slot sheetId={sheetId} user={user} personId={personId} claim={c} />
-              {editing?.id === c.id ? (
-                <button type="button" data-testid="claim-cancel" onClick={() => setEditing(undefined)}>
-                  Cancel
-                </button>
-              ) : (
-                <button type="button" data-testid="claim-edit" onClick={() => setEditing(c.id)}>
-                  Edit
-                </button>
-              )}
             </li>
           ))}
         </ul>

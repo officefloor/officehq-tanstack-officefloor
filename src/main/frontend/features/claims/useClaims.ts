@@ -45,6 +45,12 @@ export function counts(claim: { status: ClaimStatus; personId: number; date: str
 /** The key every feature reads the sheet's claims under. */
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
+/** The key of a claim editor's lock request: a claim form waits for it before it submits. */
+export const claimLockKey = (sheetId: string) => ['sheet', sheetId, 'claim-lock'] as const;
+
+/** The key of a claim form's save: saving a claim's editor clears the claim's lock refusal. */
+export const claimSaveKey = (sheetId: string) => ['sheet', sheetId, 'claim-save'] as const;
+
 /** Every claim on the sheet, newest first. */
 export function useClaims(sheetId: string) {
   return useQuery({

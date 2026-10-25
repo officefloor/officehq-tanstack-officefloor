@@ -1,10 +1,13 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { postJson, putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { usePeople } from '../people/people.slot';
+import { periodOn, usePeriods } from '../periods/periods.slot';
+import { useRoles } from '../access/useAccess';
 import { useUser } from '../session/useSession';
-import { claimsKey, type Claim, type ClaimStatus } from './useClaims';
+import { HttpError } from '../../api/http';
+import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, type ClaimStatus } from './useClaims';
 
 // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
 type Change = { status: ClaimStatus; review?: boolean; reason?: string };
@@ -40,6 +43,45 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [splitAmount, setSplitAmount] = useState('');
   const [newDate, setNewDate] = useState('');
   const people = usePeople(sheetId);
+  const [editingId, setEditing] = useEditingClaim();
+  const periods = usePeriods(sheetId);
+  const roles = useRoles(sheetId);
+  // An edit the screen can already tell is refused shows its refusal at once, before any request: the claim form must
+  // not be taken for its editor. The server refuses the same edits (and any it alone can tell).
+  const [refused, setRefused] = useState<string>();
+  const refusal = (): string | undefined => {
+    if ((roles.data ?? []).some((r) => r.user === user && r.role === 'viewer')) return 'A viewer may not change anything on this sheet';
+    if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';
+    if (periodOn(periods.data ?? [], claim.date)?.closed) return "That claim's date is in a closed period";
+    return undefined;
+  };
+  const base = `/api/sheets/${encodeURIComponent(sheetId)}/claims`;
+  // Opening the claim's editor takes its lock. A claim that cannot be edited is refused and its editor stays shut; one
+  // whose lock another user holds (409) is refused too, but its editor opens, to be saved once that user lets it go.
+  // Opening another claim's editor lets go of the one open before.
+  const lock = useMutation({
+    mutationKey: claimLockKey(sheetId),
+    mutationFn: () => postJson<Claim>(`${base}/${claim.id}/lock`, { by: user ?? '' }),
+    onSuccess: () => openEditor(),
+    onError: (e) => {
+      if (e instanceof HttpError && e.status === 409) openEditor();
+    },
+  });
+  // A save of the claim's open editor is its next action: the lock's refusal goes.
+  const saving = useIsMutating({ mutationKey: claimSaveKey(sheetId) }) > 0 && editingId === claim.id;
+  const resetLock = lock.reset;
+  useEffect(() => {
+    if (saving) resetLock();
+  }, [saving, resetLock]);
+  const openEditor = () => {
+    if (editingId !== undefined && editingId !== claim.id) unlock(editingId);
+    setEditing(claim.id);
+  };
+  const unlock = (id: number) => {
+    void postJson(`${base}/${id}/unlock`, { by: user ?? '' }).catch(() => {
+      // a lock not let go of is dropped when the sheet's today changes
+    });
+  };
   const change = useMutation({
     mutationFn: (to: Change) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status`, { ...to, by: user ?? '' }),
@@ -98,11 +140,24 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     proof.reset();
     split.reset();
     redate.reset();
+    lock.reset();
+    setRefused(undefined);
     change.mutate(to);
   };
-  const busy = change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
+  const resetAll = () => {
+    change.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    lock.reset();
+    setRefused(undefined);
+  };
+  const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
     || redate.isPending;
-  const error = change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error;
 
   return (
     <>
@@ -153,6 +208,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           proof.reset();
           split.reset();
           redate.reset();
+          lock.reset();
+          setRefused(undefined);
           reassign.mutate(moveTo);
         }}
       >
@@ -169,6 +226,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           proof.reset();
           split.reset();
           redate.reset();
+          lock.reset();
+          setRefused(undefined);
           resettle.mutate();
         }}
       >
@@ -196,6 +255,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           proof.reset();
           split.reset();
           redate.reset();
+          lock.reset();
+          setRefused(undefined);
           defer.mutate(deferUntil);
         }}
       >
@@ -213,6 +274,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           split.reset();
           redate.reset();
+          lock.reset();
+          setRefused(undefined);
           proof.mutate();
         }}
       >
@@ -239,6 +302,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           redate.reset();
+          lock.reset();
+          setRefused(undefined);
           split.mutate(splitAmount);
         }}
       >
@@ -264,11 +329,39 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           split.reset();
+          lock.reset();
+          setRefused(undefined);
           redate.mutate(newDate);
         }}
       >
         Re-date
       </button>{' '}
+      <button
+        type="button"
+        data-testid="claim-edit"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          const why = refusal();
+          if (why === undefined) lock.mutate();
+          else setRefused(why);
+        }}
+      >
+        Edit
+      </button>
+      {editingId === claim.id && (
+        <button
+          type="button"
+          data-testid="claim-cancel"
+          onClick={() => {
+            resetAll();
+            unlock(claim.id);
+            setEditing(undefined);
+          }}
+        >
+          Cancel
+        </button>
+      )}{' '}
       {error && (
         <span data-testid="claim-error" role="alert">
           {error.message}
