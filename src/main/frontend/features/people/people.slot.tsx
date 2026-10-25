@@ -7,8 +7,10 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
-/** `version` counts the person's saves; an edit sends the one its form loaded. */
-export type Person = { id: number; name: string; grade: string; version: number };
+/** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
+ *  none) and `statementDate` are the last statement's, none before the first. */
+export type Person = { id: number; name: string; grade: string; version: number;
+  statementCount: number; statedTotal: string | null; statementDate: string | null };
 
 const GRADES = ['A', 'B', 'C'] as const;
 

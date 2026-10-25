@@ -13,7 +13,8 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow,
  * and refusing to let the user who opened it settle it. Opening records who opened it. Settling
- * fixes the claim's due at its person's grade's rate in force on the claim's date; without a rate its due stays live.
+ * fixes the claim's due at its person's grade's rate in force on the claim's date — or, while a statement binds it, at
+ * the figure it was bound to; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
@@ -47,8 +48,11 @@ public class ApplyClaimStatus {
         audited.set(new ClaimNumber(status == ClaimStatus.VOID ? had : claim.getNumber()));
     }
 
-    /** The claim's amount times its person's grade's rate on the claim's date, rounded half to even; null when there is no rate. */
+    /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even; null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates) {
+        if (claim.isStated()) {
+            return claim.getStatedDue();
+        }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
         return rate == null ? null

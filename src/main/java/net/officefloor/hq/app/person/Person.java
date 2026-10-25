@@ -8,6 +8,7 @@ public class Person {
     private String name;
     private String grade;
     private long version;
+    private Statements statements = Statements.NONE;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -47,5 +48,14 @@ public class Person {
 
     public void setVersion(long version) {
         this.version = version;
+    }
+
+    /** The person's statements: how many, and the last one's due-total and date. */
+    public Statements getStatements() {
+        return statements;
+    }
+
+    public void setStatements(Statements statements) {
+        this.statements = statements;
     }
 }

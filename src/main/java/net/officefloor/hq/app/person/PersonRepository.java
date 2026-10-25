@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -11,8 +12,19 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+    /** A person's columns, with their statement count and their last statement's due-total and date. */
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version,"
+            + " (SELECT COUNT(*) FROM statement s WHERE s.person_id = p.id) AS statement_count,"
+            + " (SELECT s.due_total FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS stated_total,"
+            + " (SELECT s.taken_on FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS statement_date";
+
+    private static final RowMapper<Person> ROW = (rs, n) -> {
+        Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+                rs.getString("grade"), rs.getLong("version"));
+        person.setStatements(new Statements(rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
+                rs.getObject("statement_date", LocalDate.class)));
+        return person;
+    };
 
     static final String CHANGED = "Someone else has saved this person since you opened it; the form now shows their changes";
 
@@ -26,11 +38,11 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        return jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
+        return jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND p.id = ?", ROW, sheetId, id)
                 .stream().findFirst().orElse(null);
     }
 

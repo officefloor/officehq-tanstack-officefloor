@@ -9,5 +9,5 @@ export const ClaimCells = defineSlot<{
   user: string;
   personId: number;
   claim: { id: number; personId: number; amount: string; date: string; note: string; status: 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
-    settledDue: string | null; openedBy: string | null };
+    settledDue: string | null; openedBy: string | null; stated: boolean; statedDue: string | null };
 }>('claim.cells');

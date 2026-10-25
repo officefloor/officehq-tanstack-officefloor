@@ -14,18 +14,29 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
 
     private final JdbcTemplate jdbc;
 
     public ClaimRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+    }
+
+    /** The person's claims, newest first. */
+    public List<Claim> listOf(String sheetId, long personId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC", ROW,
+                sheetId, personId);
+    }
+
+    /** Bind the claim to a figure (null: n/a), or unbind it when not {@code stated}. */
+    public void bind(long id, boolean stated, BigDecimal statedDue) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE id = ?", stated, statedDue, id);
     }
 
     /** The sheet's claims, newest first. */
@@ -51,7 +62,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
     }
 
     public void update(Claim claim) {

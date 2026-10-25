@@ -10,7 +10,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The due fixed when the claim was settled; none while live (not settled, or settled without a rate). */
   settledDue: string | null;
   /** The signed-in user who opened the claim; none when it was never opened. They cannot settle it. */
-  openedBy: string | null };
+  openedBy: string | null;
+  /** Whether the person's last statement bound the claim: it then shows and totals `statedDue` (none: n/a). */
+  stated: boolean;
+  statedDue: string | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN and SETTLED claims do. */
 export function counts(claim: { status: ClaimStatus }): boolean {
