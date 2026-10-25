@@ -1,0 +1,494 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index fd70a767..74652820 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -72,6 +72,8 @@ export type Claim = {
+   settleBatch: number | null;
+   /** The people it is shared with, in the order added: each person's id and share (two decimals). */
+   shares: { personId: number; share: string }[];
++  /** The user its review is assigned to (null when none). */
++  reviewAssigned: string | null;
+ };
+ 
+ /** Whether a claim is open: OPEN or PENDING (it goes overdue, and a hold takes it out of the live totals). */
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 3a2d0607..e0369d2c 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -302,9 +302,19 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+     },
+   });
+   const submitShare = useSubmitOnce(share);
++  const [assignTo, setAssignTo] = useState('');
++  const assign = useMutation({
++    mutationFn: (to: string) =>
++      putJson<Claim>(`${claimsPath(sheet)}/${claim.id}/review/assign?user=${encodeURIComponent(to)}`, undefined, user),
++    onSuccess: () => {
++      setAssignTo('');
++      return queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
++    },
++  });
++  const submitAssign = useSubmitOnce(assign);
+   const resetAllButShare = () => {
+     change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset();
+-    remind.reset(); waive.reset(); hold.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset();
++    remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); setEditRefused(false); lock.reset(); inline.reset();
+     line.reset();
+   };
+   const [lineLabel, setLineLabel] = useState('');
+@@ -365,7 +375,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+   const submitLock = useSubmitOnce(lock);
+   // Submitting the claim's editor is the next action on it: a refused lock's error goes.
+   useEffect(() => {
+-    if (editorSubmits > 0) lock.reset(); inline.reset(); line.reset();
++    if (editorSubmits > 0) lock.reset(); inline.reset(); line.reset(); assign.reset();
+   }, [editorSubmits]);
+   const action = change.variables?.action;
+   const periods = usePeriods();
+@@ -378,12 +388,12 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-reject-reason"
+         placeholder="Reason to reject"
+         value={reason}
+-        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <select
+         data-testid="claim-void-reason"
+         value={voidReason}
+-        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setVoidReason(e.target.value); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         <option value="">(no void reason)</option>
+         {(voidReasons.data ?? []).map((r) => (
+@@ -410,7 +420,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+             setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+             move.reset();
+             defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-            proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++            proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+             submitChange(action === 'reject' ? { action, reason }
+               : action === 'void' && voidReason !== '' ? { action, reason: voidReason }
+               : action === 'settle' && settleOn.trim() !== '' ? { action, on: settleOn.trim() } : { action });
+@@ -423,7 +433,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+       <select
+         data-testid="claim-reassign-to"
+         value={target ? String(target.id) : ''}
+-        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setMoveTo(e.target.value); move.reset(); change.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       >
+         {others.map((p) => (
+           <option key={p.id} value={String(p.id)}>{p.name}</option>
+@@ -436,7 +446,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           if (target) submitMove(target.id);
+         }}
+@@ -447,7 +457,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-defer-date"
+         placeholder="Defer until YYYY-MM-DD"
+         value={deferTo}
+-        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setDeferTo(e.target.value); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -456,7 +466,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         onClick={() => {
+           change.reset();
+           move.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+           split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitDefer(deferTo);
+@@ -468,7 +478,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-date-new"
+         placeholder="Re-date to YYYY-MM-DD"
+         value={redateTo}
+-        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setRedateTo(e.target.value); redate.reset(); defer.reset(); split.reset(); partSettle.reset(); change.reset(); move.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -478,7 +488,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+           split.reset(); partSettle.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRedate(redateTo);
+@@ -517,7 +527,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); comment.reset(); share.reset(); waive.reset(); hold.reset();
++          proof.reset(); comment.reset(); share.reset(); waive.reset(); hold.reset(); assign.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitRemind(undefined);
+         }}
+@@ -532,7 +542,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); comment.reset(); share.reset(); hold.reset();
++          proof.reset(); remind.reset(); comment.reset(); share.reset(); hold.reset(); assign.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitWaive(undefined);
+         }}
+@@ -547,18 +557,36 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); comment.reset(); share.reset(); assign.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitHold(undefined);
+         }}
+       >
+         {claim.held ? 'Release' : 'Hold'}
+       </button>{' '}
++      <span data-testid="claim-review-assigned">{claim.reviewAssigned ?? ''}</span>{' '}
++      <input
++        data-testid="claim-review-user"
++        placeholder="Assign review to"
++        value={assignTo}
++        onChange={(e) => { setAssignTo(e.target.value); assign.reset(); resetAllButShare(); share.reset(); }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="claim-review-assign"
++        disabled={assign.isPending}
++        onClick={() => {
++          resetAllButShare(); share.reset();
++          submitAssign(assignTo);
++        }}
++      >
++        Assign review
++      </button>{' '}
+       <input
+         data-testid="claim-comment-text"
+         placeholder="Comment"
+         value={commentText}
+-        onChange={(e) => { setCommentText(e.target.value); comment.reset(); share.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setCommentText(e.target.value); comment.reset(); share.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -568,7 +596,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitComment(commentText);
+         }}
+@@ -606,21 +634,21 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         data-testid="claim-line-label"
+         placeholder="Line label"
+         value={lineLabel}
+-        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineLabel(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-qty"
+         placeholder="Qty"
+         inputMode="numeric"
+         value={lineQty}
+-        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineQty(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <input
+         data-testid="claim-line-unit"
+         placeholder="Unit amount"
+         inputMode="decimal"
+         value={lineUnit}
+-        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
++        onChange={(e) => { setLineUnit(e.target.value); line.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -630,7 +658,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset(); partSettle.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset();
+           submitLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
+         }}
+@@ -642,7 +670,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to split off"
+         inputMode="decimal"
+         value={splitAmount}
+-        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setSplitAmount(e.target.value); split.reset(); partSettle.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -652,7 +680,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           partSettle.reset();
+           submitSplit(splitAmount);
+@@ -665,7 +693,7 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         placeholder="Amount to settle"
+         inputMode="decimal"
+         value={partAmount}
+-        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
++        onChange={(e) => { setPartAmount(e.target.value); partSettle.reset(); split.reset(); change.reset(); move.reset(); defer.reset(); redate.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}
+       />{' '}
+       <button
+         type="button"
+@@ -675,14 +703,14 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+           change.reset();
+           move.reset();
+           defer.reset(); redate.reset(); split.reset();
+-          proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset();
++          proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset();
+           setEditRefused(false); lock.reset(); inline.reset(); line.reset();
+           submitPartSettle(partAmount);
+         }}
+       >
+         Settle part
+       </button>{' '}
+-      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
++      <span onClickCapture={() => { change.reset(); move.reset(); defer.reset(); redate.reset(); split.reset(); partSettle.reset(); proof.reset(); remind.reset(); waive.reset(); hold.reset(); assign.reset(); comment.reset(); share.reset(); setEditRefused(false); lock.reset(); inline.reset(); line.reset(); }}>
+         <input
+           data-testid="claim-inline-amount"
+           placeholder="Amount"
+@@ -716,9 +744,17 @@ function ClaimStatusActions({ sheet, claim, onEdit, editorSubmits, children }: {
+         </button>
+         {children}
+       </span>
+-      {(change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || share.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
++      {(assign.isError || change.isError || move.isError || defer.isError || redate.isError || proof.isError || remind.isError || waive.isError || hold.isError || comment.isError || share.isError || line.isError || split.isError || partSettle.isError || editRefused || lock.isError || inline.isError) && (
+         <span data-testid="claim-error">
+-          {share.isError
++          {assign.isError
++            ? assign.error instanceof HttpError && assign.error.status === 403
++              ? 'A viewer cannot assign a review, and no review on an archived sheet can be assigned.'
++              : claim.status !== 'REVIEW'
++              ? `Only a claim in review can have its review assigned; this one is ${claim.status}.`
++              : (assign.variables ?? '').trim() === ''
++              ? 'Name the user to assign the review to.'
++              : 'Only a steward can assign a review.'
++            : share.isError
+             ? share.error instanceof HttpError && share.error.status === 403
+               ? 'A viewer cannot share a claim, and no claim on an archived sheet can be shared.'
+               : claim.status === 'SETTLED' || claim.status === 'VOID' || claim.status === 'DELETED'
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index acbaffb8..4ff64567 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -34,7 +34,7 @@ export function personNamed(people: Person[], user: string | undefined): Person
+ // claims have each status (as the summary counts them), and the sheet's due-total and overdue-total (as the rollup
+ // figures them); and the signed-in user's own due-total (as their row shows it, "n/a" included) and overdue-total, when a person on the sheet goes by their
+ // name (blank when none does), with their crew total: the due-totals of the crews that person leads, added up (blank
+-// when they lead none).
++// when they lead none); and how many REVIEW claims are assigned to the signed-in user.
+ function HeaderCounters() {
+   const people = usePeople();
+   const claims = useClaims();
+@@ -55,6 +55,7 @@ function HeaderCounters() {
+   const myCrewDue = led.length > 0
+     ? sumDue(led.map((c) => crewDue(c, allPeople, allClaims, rates.data, today, settings.data)))
+     : '';
++  const myReviews = allClaims.filter((c) => c.status === 'REVIEW' && !!user && c.reviewAssigned === user).length;
+   return (
+     <section data-testid="header-counters">
+       People <strong data-testid="header-people-count">{allPeople.length}</strong>
+@@ -68,6 +69,7 @@ function HeaderCounters() {
+       {' · '}My due <strong data-testid="my-due-total">{mine.due}</strong>
+       {' · '}My overdue <strong data-testid="my-overdue-total">{mine.overdue}</strong>
+       {' · '}My crew due <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
++      {' · '}My reviews <strong data-testid="my-reviews-count">{myReviews}</strong>
+     </section>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReviewAssign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReviewAssign.java
+new file mode 100644
+index 00000000..a3fb00a4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReviewAssign.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Assigns a REVIEW claim's review to a user name; only a steward may. A blank name or a claim in any other status is
++ *  refused. */
++public class ApplyReviewAssign {
++    public void apply(@Val Claim claim, ClaimRepository repository, RoleRepository roles,
++            @RequestHeader(name = "X-User", required = false) String userHeader,
++            @RequestParam(name = "user", required = false) String userParam) throws ClaimStatusException {
++        String user = AuditUser.decode(userHeader);
++        if (!Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), user))) {
++            throw new ClaimStatusException("Only a steward can assign a review.");
++        }
++        String assignee = userParam == null ? "" : userParam.trim();
++        if (assignee.isEmpty()) {
++            throw new ClaimStatusException("A review must be assigned to a user.");
++        }
++        if (claim.getStatus() != ClaimStatus.REVIEW) {
++            throw new ClaimStatusException("A " + claim.getStatus() + " claim has no review to assign.");
++        }
++        claim.setReviewAssigned(assignee);
++        repository.saveAndFlush(claim);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditReviewAssigned.java b/src/main/java/net/officefloor/hq/app/claim/AuditReviewAssigned.java
+new file mode 100644
+index 00000000..9c68dcca
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditReviewAssigned.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.AuditUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestHeader;
++
++/** Records the review assignment, once it is saved: the claim's line, then the user it is assigned to. */
++public class AuditReviewAssigned {
++    public void audit(@Val Claim claim, PersonRepository people,
++            @RequestHeader(name = "X-User", required = false) String user, Audit audit) {
++        String person = people.findById(claim.getPersonId()).map(Person::getName).orElse("");
++        audit.record(ClaimAudit.line("REVIEW_ASSIGNED", claim, person, AuditUser.decode(user))
++                + " user=" + claim.getReviewAssigned());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 2f96fe7d..3d174f65 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -122,6 +122,10 @@ public class Claim {
+     @Column(name = "review_on")
+     private LocalDate reviewOn;
+ 
++    /** The user name a steward assigned the claim's review to; null while never assigned. */
++    @Column(name = "review_assigned")
++    private String reviewAssigned;
++
+     /** How many proofs the claim has: raised by one at a time; 0 for a new claim. */
+     @Column(nullable = false)
+     private int proofs;
+@@ -360,6 +364,14 @@ public class Claim {
+         this.reviewOn = reviewOn;
+     }
+ 
++    public String getReviewAssigned() {
++        return reviewAssigned;
++    }
++
++    public void setReviewAssigned(String reviewAssigned) {
++        this.reviewAssigned = reviewAssigned;
++    }
++
+     public boolean isEscalated() {
+         return escalated;
+     }
+@@ -460,6 +472,7 @@ public class Claim {
+         then.waived = waived;
+         then.held = held;
+         then.reviewOn = reviewOn;
++        then.reviewAssigned = reviewAssigned;
+         then.proofs = proofs;
+         then.proofsPhoto = proofsPhoto;
+         then.splitFrom = splitFrom;
+@@ -492,6 +505,7 @@ public class Claim {
+         moved.waived = waived;
+         moved.held = held;
+         moved.reviewOn = reviewOn;
++        moved.reviewAssigned = reviewAssigned;
+         moved.proofs = proofs;
+         moved.proofsPhoto = proofsPhoto;
+         moved.lateEntry = lateEntry;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index c562673e..3ee18d7e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -7,14 +7,14 @@ import java.util.List;
+  * whether its person's last statement binds it, and the figure it binds it to (null: none, or n/a); the number of the
+  * claim it corrects (null when it is not a correction); and the date its rounding goes by (YYYY-MM-DD: a correction's is
+  * the date of the claim it corrects, else its own); and its due-by (YYYY-MM-DD), fixed when it was created; and its status log, oldest first
+- * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held; and the people it is shared with, in the order added (their id and share). */
++ * (<STATUS> by <user> on <date> due=<due>); and the date it is deferred until (YYYY-MM-DD; null when never deferred); and its proofs count, and how many of them are receipts and how many photos; and the number of the claim it was split off from (null when not made by a split); and whether it was added while its period was soft-closed; and the last day it was reminded (YYYY-MM-DD; null when never reminded); and its external reference (null when none); and its tags, sorted (empty when none), and every tag it has ever carried, sorted; and the reason it was voided with (null when none); and its comments, oldest first (<user> on <date>: <text>); and who last edited it (null when never edited); and the number of the bulk settle batch that settled it (null when none); and its lines, in the order added (<label> <qty> x <unit>); and the sheet's today when it last went to REVIEW (YYYY-MM-DD; null when never); and whether its late charge was waived; and whether it is held; and the people it is shared with, in the order added (their id and share); and the user its review is assigned to (null when none). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy,
+         boolean stated, String statedDue, String corrects, String roundsOn, String dueBy,
+         List<String> log, String deferredUntil, int proofs, int proofsReceipt, int proofsPhoto, String splitFrom, boolean lateEntry, String remindedOn, String ref,
+         List<String> tags, List<String> tagsUsed, String voidReason, List<String> comments, String editedBy,
+         Integer settleBatch, List<String> lines, String reviewOn, boolean waived, boolean held,
+-        List<ShareLine> shares) {
++        List<ShareLine> shares, String reviewAssigned) {
+ 
+     /** One holder's share of the claim: the person's id and their share with two decimals. */
+     public record ShareLine(long personId, String share) {
+@@ -35,6 +35,7 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getSettleBatch(), lines, claim.getReviewOn() == null ? null : claim.getReviewOn().toString(),
+                 claim.isWaived(), claim.isHeld(),
+                 ClaimShares.of(claim).stream()
+-                        .map(sh -> new ShareLine(sh.personId(), sh.share().toPlainString())).toList());
++                        .map(sh -> new ShareLine(sh.personId(), sh.share().toPlainString())).toList(),
++                claim.getReviewAssigned());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V99__claim_review_assigned.sql b/src/main/resources/db/migration/V99__claim_review_assigned.sql
+new file mode 100644
+index 00000000..0951bac7
+--- /dev/null
++++ b/src/main/resources/db/migration/V99__claim_review_assigned.sql
+@@ -0,0 +1,2 @@
++-- The user name a steward assigned the claim's review to (null: never assigned).
++ALTER TABLE claim ADD COLUMN review_assigned VARCHAR(255);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review/assign.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review/assign.PUT.yml
+new file mode 100644
+index 00000000..1051d1ed
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review/assign.PUT.yml
+@@ -0,0 +1,26 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/review/assign?user=<name> — assign a REVIEW claim's review to a user (a steward only).
++guard:
++  class: net.officefloor.hq.app.role.GuardViewer
++  next: archived
++archived:
++  class: net.officefloor.hq.app.sheet.GuardArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadOrCreateSheet
++  govern: [ transaction ]
++  next: claim
++claim:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyReviewAssign
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditReviewAssigned
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
