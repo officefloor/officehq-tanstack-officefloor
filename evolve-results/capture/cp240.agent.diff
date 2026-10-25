@@ -1,0 +1,315 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index deceb3e4..8f9aa82f 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -4,7 +4,7 @@ import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/sessi
+ import { gradeOn, usePeople, type Person } from '../people/people';
+ import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
+ import { useSettings, type Settings } from '../roles/roles';
+-import { chargedOf, formatCents, hundredths, rateOn, sharePart, sumDue, trimmedSum, useRates, type Rate } from './rates';
++import { chargedOf, formatCents, holderPart, hundredths, rateOn, roundsHalfUp, sumDue, trimmedSum, useRates, type Rate } from './rates';
+ import { useColumnShown } from '../people/columns';
+ import { cutTotalOf, usePools, type Pool } from '../pools/pools';
+ 
+@@ -16,9 +16,11 @@ import { cutTotalOf, usePools, type Pool } from '../pools/pools';
+ // on or before the sheet's today at a rate that has ended since: then it is the sum of the figures there are. It is at most
+ // the sheet's cap less their cut total (their cuts across every pool; not below 0.00): above it, it shows that and
+ // their excess the difference (n/a is not capped). Their unbound OPEN claims dated within a hold of theirs do not count. The sheet's due-total is everyone's added up, skipping n/a and, with three or more figures, the highest and the lowest.
+-// A claim shared with other people gives each holder their part of its due (its due times their share divided by
+-// 100, rounded half to even): it counts in their due-total (theirs is just their parts when they would otherwise
+-// have none, n/a), and its own person's counts its due less the holders' parts — before the cap.
++// A claim shared with other people gives each holder their part of it (its amount times their share divided by 100,
++// times the rate of the grade they had on its date in force then divided by 100, rounded like the claim; 0.00 when
++// that grade has no rate; a settled claim's frozen part: its frozen due times their share divided by 100, rounded
++// half to even): it counts in their due-total (theirs is just their parts when they would otherwise have none, n/a,
++// and they hold a part at a rate), and its own person's counts its due less the holders' parts — before the cap.
+ export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+   settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
+   return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).due;
+@@ -47,10 +49,16 @@ function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined,
+     if (!owner || !countsLive(c, holdsOf([owner]), today)) continue;
+     const due = chargedOf(c, rates, gradeOn(owner, c.date), settings, today);
+     if (due === 'n/a') continue;
++    const halfUp = roundsHalfUp(c, settings, today);
++    const partOf = (s: { personId: number; share: string }) => {
++      const holder = s.personId === person.id ? person : (people ?? []).find((p) => p.id === s.personId);
++      return holder ? holderPart(c, s.share, gradeOn(holder, c.date), rates, halfUp) : null;
++    };
+     if (mineToGive) {
+-      for (const s of c.shares) given += sharePart(due, s.share);
++      for (const s of c.shares) given += partOf(s) ?? 0n;
+     } else if (share) {
+-      held = (held ?? 0n) + sharePart(due, share.share);
++      const part = partOf(share);
++      if (part !== null) held = (held ?? 0n) + part;
+     }
+   }
+   if (sum === 'n/a') return held === null ? sum : formatCents(held);
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index b050cc1a..5b5b68bb 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -164,7 +164,25 @@ export function trimmedSum(dues: string[]): string {
+   return formatCents(kept.reduce((n, d) => n + d, 0n));
+ }
+ 
+-/** A holder's part of a due, in hundredths: the due times their share divided by 100, rounded half to even. */
++/** A holder's part of a claim, in hundredths: a settled claim's frozen part ({@link sharePart} of its frozen due);
++ *  else its amount times their share divided by 100, times the rate in force on its date (of those that apply to it)
++ *  of the grade the holder had on its date divided by 100, rounded like the claim; 0 when that grade has no rate
++ *  then (null: no rate). */
++export function holderPart(c: Claim, share: string, holderGrade: string, rates: Rate[] | undefined, halfUp: boolean): bigint | null {
++  if (c.due !== null) return sharePart(c.due, share);
++  const pct = rateOn(ratesForClaim(rates, c.id), holderGrade, c.date);
++  if (pct === undefined) return null;
++  const n = hundredths(c.amount) * hundredths(share) * hundredths(pct);
++  const neg = n < 0n;
++  const abs = neg ? -n : n;
++  let q = abs / 100_000_000n;
++  const r = abs % 100_000_000n;
++  if (r * 2n > 100_000_000n || (r * 2n === 100_000_000n && (halfUp || q % 2n === 1n))) q += 1n;
++  return neg ? -q : q;
++}
++
++/** A holder's frozen part of a settled claim's due, in hundredths: the due times their share divided by 100, rounded
++ *  half to even. */
+ export function sharePart(due: string, share: string): bigint {
+   const n = hundredths(due) * hundredths(share);
+   const neg = n < 0n;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+index 2d7f0522..402cec15 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigures.java
+@@ -8,6 +8,7 @@ import java.util.ArrayList;
+ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Optional;
++import java.util.function.Function;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonGrades;
+ import net.officefloor.hq.app.rate.Rate;
+@@ -41,6 +42,8 @@ public class ClaimFigures {
+ 
+     private final BigDecimal cap;
+ 
++    private Function<Long, PersonGrades> holders = id -> null;
++
+     /** @param rates the sheet's rates.
+      *  @param grades the person's grades over time.
+      *  @param sheet the sheet: its floor on a claim's date (a live due is at least it), and its late percent on each
+@@ -54,6 +57,37 @@ public class ClaimFigures {
+         this.cap = sheet.getCap();
+     }
+ 
++    /** Gives the grades over time of a holder of a share, by their person id (null: not known — no rate applies
++     *  to them), for the holders' parts; returns these figures. */
++    public ClaimFigures withHolders(Function<Long, PersonGrades> holders) {
++        this.holders = holders;
++        return this;
++    }
++
++    /** A holder's part of a claim whose due is given: a settled claim's frozen part, its frozen due times their share
++     *  divided by 100, rounded half to even; else its amount times their share divided by 100, times the rate in force
++     *  on its date of the grade the holder had on its date divided by 100, rounded like the claim; null when that
++     *  grade has no rate then (the part counts as 0.00). */
++    public BigDecimal part(Claim claim, BigDecimal due, ClaimShares.Share share) {
++        if (claim.getDue() != null) {
++            return ClaimShares.part(due, share.share());
++        }
++        PersonGrades holder = holders.apply(share.personId());
++        if (holder == null) {
++            return null;
++        }
++        return rateOn(holder.on(claim.getDate()), claim)
++                .map(pct -> claim.getAmount().multiply(share.share()).multiply(pct).movePointLeft(4)
++                        .setScale(2, rounding(claim)))
++                .orElse(null);
++    }
++
++    /** The holders' parts of a claim whose due is given, added up (0.00 with none). */
++    public BigDecimal parts(Claim claim, BigDecimal due) {
++        return ClaimShares.of(claim).stream().map(s -> part(claim, due, s)).filter(p -> p != null)
++                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
++    }
++
+     /** How the claim's live figures round: by the sheet's rounding mode in force on the date it rounds by, when one
+      *  is; else half up when that date is before the policy date, else half to even. */
+     public RoundingMode rounding(Claim claim) {
+@@ -237,11 +271,11 @@ public class ClaimFigures {
+                 .orElse(null);
+     }
+ 
+-    /** The claim's due less its holders' parts (each its due times their share divided by 100, rounded half to
+-     *  even): what its own person's due-total counts of it; null when it has none (n/a). */
++    /** The claim's due less its holders' parts ({@link #part}): what its own person's due-total counts of it; null
++     *  when it has none (n/a). */
+     public BigDecimal ownDue(Claim claim) {
+         BigDecimal due = due(claim);
+-        return due == null ? null : due.subtract(ClaimShares.parts(claim, due));
++        return due == null ? null : due.subtract(parts(claim, due));
+     }
+ 
+     /** The person's due-total: their counted claims' dues (with any late charge) added up, 0.00 with none; n/a when their grade
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java b/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java
+index e01f3c24..31974120 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimShares.java
+@@ -6,7 +6,7 @@ import java.util.ArrayList;
+ import java.util.List;
+ 
+ /** The people a claim is shared with, as its shares column holds them (<person id>:<share>, comma separated, in the
+- *  order added), and each holder's part of its due. */
++ *  order added), and each holder's frozen part of a settled claim's due. */
+ public final class ClaimShares {
+ 
+     /** One holder's share of a claim: the person and their percent (two decimals). */
+@@ -42,13 +42,9 @@ public final class ClaimShares {
+         return shares.stream().map(Share::share).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+     }
+ 
+-    /** A holder's part of a due: the due times their share divided by 100, rounded half to even. */
++    /** A holder's frozen part of a settled claim's due: the due times their share divided by 100, rounded half to
++     *  even (a live part is worked out by {@link ClaimFigures#part}). */
+     public static BigDecimal part(BigDecimal due, BigDecimal share) {
+         return due.multiply(share).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+     }
+-
+-    /** The holders' parts of a due added up (0.00 with no holders). */
+-    public static BigDecimal parts(Claim claim, BigDecimal due) {
+-        return of(claim).stream().map(s -> part(due, s.share())).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+-    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 6fa7661f..7a0298d3 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -69,15 +69,22 @@ public class Rollup {
+             List<Person> listed = persons.findListed(id);
+             Map<Long, BigDecimal> held = new LinkedHashMap<>();
+             Map<Long, BigDecimal> cuts = PoolCuts.totalsByPerson(sheet.get(), asOf);
++            Map<Long, PersonGrades> gradesById = new LinkedHashMap<>();
++            listed.forEach(p -> gradesById.put(p.getId(),
++                    new PersonGrades(p.getGrade(), dated.getOrDefault(p.getId(), List.of()))));
+             for (Person owner : listed) {
+-                ClaimFigures ownerFigures = new ClaimFigures(sheetRates,
+-                        new PersonGrades(owner.getGrade(), dated.getOrDefault(owner.getId(), List.of())), sheet.get());
++                ClaimFigures ownerFigures = new ClaimFigures(sheetRates, gradesById.get(owner.getId()), sheet.get())
++                        .withHolders(gradesById::get);
+                 all.stream().filter(c -> owner.getId().equals(c.getPersonId()) && c.getShares() != null
+                         && ClaimFigures.countsLive(c, owner, sheet.get().getToday())).forEach(c -> {
+                             BigDecimal claimDue = ownerFigures.due(c);
+                             if (claimDue != null) {
+-                                ClaimShares.of(c).forEach(s -> held.merge(s.personId(),
+-                                        ClaimShares.part(claimDue, s.share()), BigDecimal::add));
++                                ClaimShares.of(c).forEach(s -> {
++                                    BigDecimal part = ownerFigures.part(c, claimDue, s);
++                                    if (part != null) {
++                                        held.merge(s.personId(), part, BigDecimal::add);
++                                    }
++                                });
+                             }
+                         });
+             }
+@@ -86,8 +93,8 @@ public class Rollup {
+                 BigDecimal claimed = mine.stream()
+                         .filter(c -> c.getCorrects() == null && ClaimFigures.countsClaimed(c, person, sheet.get().getToday())).map(Claim::getAmount)
+                         .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+-                ClaimFigures figures = new ClaimFigures(sheetRates,
+-                        new PersonGrades(person.getGrade(), dated.getOrDefault(person.getId(), List.of())), sheet.get());
++                ClaimFigures figures = new ClaimFigures(sheetRates, gradesById.get(person.getId()), sheet.get())
++                        .withHolders(gradesById::get);
+                 String due = figures.dueTotal(mine, sheet.get().getToday(), person, held.get(person.getId()),
+                         cuts.get(person.getId()));
+                 BigDecimal overdue = mine.stream()
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index dbd7ff45..6817a9a2 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -6,8 +6,10 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
++import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimFigures;
+@@ -56,7 +58,7 @@ public class TakeStatement {
+         int counted = 0;
+         if (asOf == null) {
+             ClaimFigures figures = new ClaimFigures(rates.findInChain(sheet.getId()),
+-                    grades.gradesOf(person), sheet);
++                    grades.gradesOf(person), sheet).withHolders(holders(sheet, people, grades));
+             dueTotal = figures.dueTotal(mine, sheet.getToday(), person,
+                     heldBy(person, sheet, claims, rates, grades, people));
+             for (Claim claim : mine) {
+@@ -73,8 +75,13 @@ public class TakeStatement {
+             Sheet then = settingLogs.sheetAsOf(sheet, asOf);
+             Person personThen = person.asOf(asOf);
+             PersonGrades gradesThen = grades.gradesOf(person).asOf(asOf);
++            Function<Long, PersonGrades> holders = holders(sheet, people, grades);
+             ClaimFigures figures = new ClaimFigures(rates.chainOf(sheet.getId()).stream()
+-                    .flatMap(id -> rateLogs.ratesAsOf(id, asOf).stream()).toList(), gradesThen, then);
++                    .flatMap(id -> rateLogs.ratesAsOf(id, asOf).stream()).toList(), gradesThen, then)
++                    .withHolders(id -> {
++                        PersonGrades holder = holders.apply(id);
++                        return holder == null ? null : holder.asOf(asOf);
++                    });
+             Map<Long, BigDecimal> boundThen = bindings.boundAsOf(person.getId(), asOf);
+             Map<Long, List<ClaimLog>> logged = logs.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
+                     .collect(Collectors.groupingBy(ClaimLog::getClaimId));
+@@ -104,12 +111,13 @@ public class TakeStatement {
+                 new Statement(sheet.getId(), person.getId(), dueTotal, sheet.getToday(), asOf, counted)));
+     }
+ 
+-    /** The person's parts of the counted claims of others shared with them, each at its live due as its own person's
+-     *  figures give it (as the rollup counts them); null when they hold no share of a counted claim. */
++    /** The person's parts of the counted claims of others shared with them, each as its own person's figures give it
++     *  (as the rollup counts them); null when they hold no part at a rate of a counted claim. */
+     private static BigDecimal heldBy(Person person, Sheet sheet, ClaimRepository claims, RateRepository rates,
+             PersonGradeRepository grades, PersonRepository people) {
+         BigDecimal held = null;
+         var sheetRates = rates.findInChain(sheet.getId());
++        Function<Long, PersonGrades> holders = holders(sheet, people, grades);
+         Map<Long, List<Claim>> shared = claims.findBySheetIdOrderByIdDesc(sheet.getId()).stream()
+                 .filter(c -> c.getShares() != null && ClaimShares.of(c).stream().anyMatch(sh -> person.getId().equals(sh.personId())))
+                 .collect(Collectors.groupingBy(Claim::getPersonId));
+@@ -118,7 +126,8 @@ public class TakeStatement {
+             if (owned.isEmpty()) {
+                 continue;
+             }
+-            ClaimFigures ownerFigures = new ClaimFigures(sheetRates, grades.gradesOf(owner), sheet);
++            ClaimFigures ownerFigures = new ClaimFigures(sheetRates, grades.gradesOf(owner), sheet)
++                    .withHolders(holders);
+             for (Claim c : owned) {
+                 BigDecimal claimDue = ClaimFigures.countsLive(c, owner, sheet.getToday()) ? ownerFigures.due(c) : null;
+                 if (claimDue == null) {
+@@ -126,8 +135,10 @@ public class TakeStatement {
+                 }
+                 for (var sh : ClaimShares.of(c)) {
+                     if (person.getId().equals(sh.personId())) {
+-                        BigDecimal part = ClaimShares.part(claimDue, sh.share());
+-                        held = held == null ? part : held.add(part);
++                        BigDecimal part = ownerFigures.part(c, claimDue, sh);
++                        if (part != null) {
++                            held = held == null ? part : held.add(part);
++                        }
+                     }
+                 }
+             }
+@@ -135,6 +146,13 @@ public class TakeStatement {
+         return held;
+     }
+ 
++    /** The grades over time of each person on the sheet, by person id (null: not on it), for the holders' parts. */
++    private static Function<Long, PersonGrades> holders(Sheet sheet, PersonRepository people, PersonGradeRepository grades) {
++        Map<Long, PersonGrades> byId = new HashMap<>();
++        people.findListed(sheet.getId()).forEach(p -> byId.put(p.getId(), grades.gradesOf(p)));
++        return byId::get;
++    }
++
+     /** The date the statement is taken as of: null when none is given; refuses one that is not a calendar date, one
+      *  after the sheet's today, and one before the person was added. */
+     private static LocalDate parseAsOf(String asOfParam, Sheet sheet, Person person) throws InvalidPersonException {
