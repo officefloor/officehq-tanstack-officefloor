@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * instead), when its due-by (as it stands before the edit) is in a closed period, when its date moves to one whose due-by
  * (its person's terms on that date, counted in business days) would be in a closed period, and when it would move after its
  * person's retirement date, an amount other than its lines' total when it has lines, a correction that does not name a settled claim of its person, and a reference another claim on the sheet has. Saving records who
- * last edited it and closes the claim's editor: it releases the claim's lock. Its due-by keeps counting from the date and
- * terms fixed when it was created ({@link Claim#getDueFrom}). */
+ * last edited it and closes the claim's editor: it releases the claim's lock. Its due-by counts from its date as saved,
+ * with the terms fixed when it was created ({@link Claim#getDueTerms}); a due-by a steward set stays as set. */
 public class ApplyClaim {
     public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, ClaimRepository repository,
             PeriodRepository periods, PersonRepository people, PersonGradeRepository grades, HolidayRepository holidays,
@@ -50,6 +50,9 @@ public class ApplyClaim {
         claim.setCorrects(input.corrects());
         claim.setCorrectsDate(correctsDate);
         claim.setDate(date);
+        if (!date.equals(claim.getDueFrom())) {
+            claim.fixDue(date, claim.getDueTerms(), holidays.datesOf(sheet.getId()));
+        }
         claim.setNote(input.note());
         claim.setRef(input.ref());
         claim.setTags(input.tags());
