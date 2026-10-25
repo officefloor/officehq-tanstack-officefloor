@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -32,6 +32,7 @@ public class ClaimRepository {
                 rs.getString("corrects"));
         claim.setDueFrom(rs.getObject("due_from", LocalDate.class));
         claim.setTerms(rs.getInt("terms"));
+        claim.setDueBy(rs.getObject("due_by", LocalDate.class));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
@@ -57,10 +58,16 @@ public class ClaimRepository {
         this.holidays = new HolidayRepository(jdbc);
     }
 
-    /** Work out each claim's due-by from the date it counts from, its terms and its sheet's holidays as they stand now. */
+    /**
+     * Work out the due-by of each claim not yet fixed (added before due-bys were stored) from the date it counts from,
+     * its terms and its sheet's holidays as they stand now.
+     */
     private List<Claim> due(List<Claim> claims) {
         Map<String, Set<LocalDate>> bySheet = new HashMap<>();
         for (Claim claim : claims) {
+            if (claim.getDueBy() != null) {
+                continue;
+            }
             Set<LocalDate> off = bySheet.computeIfAbsent(claim.getSheetId(), holidays::set);
             claim.setDueBy(HolidayRepository.businessDay(claim.getDueFrom(), claim.getTerms(), off));
         }
@@ -116,10 +123,11 @@ public class ClaimRepository {
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             String ref, String tags, int terms) {
         long listed = nextListed(sheetId);
+        LocalDate dueBy = holidays.dueBy(sheetId, date, terms);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -132,16 +140,34 @@ public class ClaimRepository {
             ps.setInt(9, terms);
             ps.setString(10, ref);
             ps.setString(11, tags);
+            ps.setDate(12, Date.valueOf(dueBy));
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
         claim.setDueFrom(date);
         claim.setTerms(terms);
+        claim.setDueBy(dueBy);
         claim.setRef(ref);
         claim.setTags(tags);
         used(sheetId, tags);
-        due(List.of(claim));
         return claim;
+    }
+
+    /**
+     * Re-fix, for a holiday just added on {@code holiday}, the due-by of every claim on the sheet that is neither SETTLED
+     * nor VOID and is due on or after it: each is worked out again from the claim's date with the terms it was fixed
+     * with, over the sheet's holidays as they stand now.
+     */
+    public void refix(String sheetId, LocalDate holiday) {
+        Set<LocalDate> off = holidays.set(sheetId);
+        for (Claim claim : list(sheetId)) {
+            if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID
+                    || claim.getDueBy().isBefore(holiday)) {
+                continue;
+            }
+            LocalDate dueBy = HolidayRepository.businessDay(claim.getDate(), claim.getTerms(), off);
+            jdbc.update("UPDATE claim SET due_by = ? WHERE id = ?", Date.valueOf(dueBy), claim.getId());
+        }
     }
 
     /** Mark the claim, just added, a late entry: its period was soft-closed when it was added. */
