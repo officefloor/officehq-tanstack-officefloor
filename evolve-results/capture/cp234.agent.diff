@@ -1,0 +1,64 @@
+diff --git a/src/main/frontend/features/people/treeexport.slot.tsx b/src/main/frontend/features/people/treeexport.slot.tsx
+new file mode 100644
+index 00000000..dc63aab7
+--- /dev/null
++++ b/src/main/frontend/features/people/treeexport.slot.tsx
+@@ -0,0 +1,58 @@
++import { figureToday, getJson } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser, type SheetInfo } from '../session/session';
++import { claimsPath, type Claim } from '../claims/claims';
++import { settingsPath, type Settings } from '../roles/roles';
++import { ratesPath, type Rate } from '../rates/rates';
++import { personDue } from '../rates/due.slot';
++import { poolsPath, type Pool } from '../pools/pools';
++import { gradeOn, peoplePath, type Person } from './people';
++import { csvValue, sheetInfoPath } from './export.slot';
++
++// The tree export button: downloads the people of the sheet's whole tree (the sheet, its ancestors and its
++// descendants) as CSV — sheet, name, grade in force on their sheet's today and due-total as their sheet shows it. This
++// sheet's people come first in list order, then the other sheets' by sheet id. Every sheet is re-read from the store
++// when pressed (as of the screen's as-of date, when one is set). Quoting and line ends as the people export.
++
++const treePath = (sheetId: string) => `${sheetInfoPath(sheetId)}/tree`;
++
++/** The lines for one sheet's people, in list order. */
++async function linesOf(sheetId: string): Promise<string[][]> {
++  const [info, people, claims, rates, settings, pools] = await Promise.all([
++    getJson<SheetInfo>(sheetInfoPath(sheetId)),
++    getJson<Person[]>(peoplePath(sheetId)),
++    getJson<Claim[]>(claimsPath(sheetId)),
++    getJson<Rate[]>(ratesPath(sheetId)),
++    getJson<Settings>(settingsPath(sheetId)),
++    getJson<Pool[]>(poolsPath(sheetId)),
++  ]);
++  const today = figureToday(info.today);
++  return people.map((p) => [sheetId, p.name, gradeOn(p, today), personDue(p, claims, rates, today, settings, people, pools)]);
++}
++
++function ExportTree() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  if (!user || !sheet) return null;
++  const download = async () => {
++    const others = await getJson<string[]>(treePath(sheet));
++    const sheets = (await Promise.all([sheet, ...others].map(linesOf))).flat();
++    const lines = [['sheet', 'name', 'grade', 'due-total'], ...sheets];
++    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `tree-${sheet}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  };
++  return (
++    <button type="button" data-testid="export-tree" onClick={() => { void download(); }}>
++      Export tree people (CSV)
++    </button>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 19.15, Component: ExportTree });
