@@ -1,0 +1,89 @@
+import { useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { getJson, putJson } from '../../api/http';
+import { HomeMain } from '../../slots/defs/homeMain';
+import { useCurrentSheet, useCurrentUser, useRealToday } from '../session/session';
+import { claimsQueryKey } from '../claims/claims';
+import { peoplePath, peopleQueryKey, useSelectedPeople, useShowRetired, type Person } from './people';
+
+// Holds every selected person from a from-date (blank: the sheet's today) to a to-date (blank: open-ended) with one
+// button, in list order. Each is held exactly as the row's hold does, so the server writes the same PERSON_HELD
+// lines; one it refuses is left as it is. The count of people held shows once all are done, and is gone while it
+// runs; the selection is cleared.
+function BulkHold() {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const today = useRealToday();
+  const [showRetired] = useShowRetired();
+  const { selected, clear } = useSelectedPeople();
+  const queryClient = useQueryClient();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [result, setResult] = useState<{ held: number; refused: number } | null>(null);
+  const busy = useRef(false);
+  if (!user || !sheet) return null;
+
+  const run = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setResult(null);
+    try {
+      let held = 0;
+      let refused = 0;
+      try {
+        const people = await queryClient.fetchQuery({
+          queryKey: peopleQueryKey(sheet),
+          queryFn: () => getJson<Person[]>(peoplePath(sheet)),
+          staleTime: 0,
+        });
+        const order = people.filter((p) => (showRetired || p.retiredFrom === null) && selected.has(p.id));
+        for (const p of order) {
+          try {
+            await putJson<Person>(`${peoplePath(sheet)}/${p.id}/hold`, { from, to }, user);
+            held++;
+          } catch {
+            refused++;
+          }
+        }
+      } catch {
+        refused++;
+      }
+      await queryClient.invalidateQueries({ queryKey: peopleQueryKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: claimsQueryKey(sheet) });
+      clear();
+      setResult({ held, refused });
+    } finally {
+      busy.current = false;
+    }
+  };
+
+  return (
+    <div>
+      <input
+        data-testid="bulk-hold-from"
+        placeholder={today ?? 'Hold from (YYYY-MM-DD)'}
+        value={from}
+        onChange={(e) => { setFrom(e.target.value); setResult(null); }}
+      />{' '}
+      <input
+        data-testid="bulk-hold-to"
+        placeholder="Hold to (open)"
+        value={to}
+        onChange={(e) => { setTo(e.target.value); setResult(null); }}
+      />{' '}
+      <button type="button" data-testid="bulk-hold" onClick={() => void run()}>
+        Hold selected people
+      </button>
+      {result && (
+        <>
+          {' '}Held <span data-testid="bulk-held">{result.held}</span>
+          {result.held === 0 && result.refused > 0 && (
+            <>{' '}<span data-testid="person-error">The people could not be held.</span></>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export const contribution = HomeMain.fill({ order: 20.7, Component: BulkHold });
