@@ -16,6 +16,7 @@ public class Person {
     private LocalDate retiredFrom;
     private List<HoldSpan> holds = List.of();
     private List<String> patrons = List.of();
+    private Integer terms;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -71,6 +72,15 @@ public class Person {
             }
         }
         return found == null ? grade : found.grade();
+    }
+
+    /** The person's own terms in days; null when they have none. */
+    public Integer getTerms() {
+        return terms;
+    }
+
+    public void setTerms(Integer terms) {
+        this.terms = terms;
     }
 
     public long getVersion() {

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.access;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.person.Person;
 
 /**
  * A sheet's dated settings: each key's value in force on a date is the one with the latest from-date on or before it;
@@ -35,6 +36,14 @@ public record DatedSettings(List<DatedValue> values) {
     public int terms(String grade, LocalDate date) {
         String value = grade == null ? null : on(Setting.TERMS_OF_GRADE + grade, date);
         return Integer.parseInt(value == null ? orStarting(Setting.TERMS, date) : value);
+    }
+
+    /** The terms in force on the date for the person: their own, else their grade's on that date, else the sheet's. */
+    public int terms(Person person, LocalDate date) {
+        if (person != null && person.getTerms() != null) {
+            return person.getTerms();
+        }
+        return terms(person == null ? null : person.gradeOn(date), date);
     }
 
     /** The clerk limit in force on the date; null when there is none. */

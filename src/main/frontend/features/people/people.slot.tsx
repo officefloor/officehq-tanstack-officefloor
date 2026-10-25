@@ -13,11 +13,12 @@ import { claimsKey, type Claim } from '../claims/useClaims';
  *  is retired from; set at all, they count as retired. `held`: whether they have any hold; `holds`: their holds, in the order
  *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
- *  the beginning of time). */
+ *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
+ *  is due by its date plus these, else their grade's terms, else the sheet's. */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   holds: HoldSpan[];
-  patrons: string[] };
+  patrons: string[]; terms: number | null };
 
 export type GradeFrom = { grade: string; from: string | null };
 
@@ -65,20 +66,24 @@ export function useEditingPerson() {
 // The person form: adds a person, or — with a person's editor open — saves their changes. It is
 // re-mounted for each person opened (see PeoplePanel), so it starts filled with their values and
 // remembers the version it loaded. When someone else has saved the person since, the save is
-// refused: the form then shows the person's current values and version, so saving again works.
-function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person }) {
+// refused: the form then shows the person's current values and version, so saving again works. Any other refused
+// edit closes the editor, nothing saved, and the add form shows the refusal (`refused`) until it is changed or submitted.
+function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string; editing?: Person;
+  refused?: string; onRefused: (message: string | undefined) => void }) {
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
   // The date the grade is given from; blank is the sheet's today (an added person's grade applies
   // from the beginning of time).
   const [gradeFrom, setGradeFrom] = useState('');
+  // The person's own terms in days; blank for none.
+  const [terms, setTerms] = useState(editing?.terms == null ? '' : String(editing.terms));
   const [version, setVersion] = useState(editing?.version);
   const [user] = useUser();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
   const save = useMutation({
-    mutationFn: async (body: { name: string; grade: string; gradeFrom: string }) => {
+    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a name');
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
@@ -87,39 +92,53 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
         : postJson<Person>(base, sent);
     },
     onSuccess: async () => {
-      // A grade change can move the dues of the person's claims.
+      // A grade or terms change can move the dues of the person's claims.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
       ]);
       if (editing) {
+        onRefused(undefined);
         setEditing(undefined);
       } else {
         setName('');
         setGrade('A');
         setGradeFrom('');
+        setTerms('');
       }
     },
     onError: async (error) => {
-      if (!editing || !(error instanceof HttpError) || error.status !== 409) return;
+      if (!editing) return;
+      if (!(error instanceof HttpError) || error.status !== 409) {
+        onRefused(error.message);
+        setEditing(undefined);
+        return;
+      }
       // Someone else saved this person: re-read the sheet's people and show their current values.
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       const now = queryClient.getQueryData<Person[]>(peopleKey(sheetId))?.find((p) => p.id === editing.id);
       if (now) {
         setName(now.name);
         setGrade(now.grade);
+        setTerms(now.terms == null ? '' : String(now.terms));
         setVersion(now.version);
       }
     },
   });
 
   const submit = useSubmitOnce(save);
+  const carried = editing ? undefined : refused;
+  const reset = () => {
+    save.reset();
+    onRefused(undefined);
+  };
   return (
     <form
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ name, grade, gradeFrom });
+        onRefused(undefined);
+        submit({ name, grade, gradeFrom, terms });
       }}
     >
       <label>
@@ -129,7 +148,7 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
           value={name}
           onChange={(e) => {
             setName(e.target.value);
-            save.reset();
+            reset();
           }}
         />
       </label>{' '}
@@ -140,7 +159,7 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
           value={grade}
           onChange={(e) => {
             setGrade(e.target.value);
-            save.reset();
+            reset();
           }}
         >
           {GRADES.map((g) => (
@@ -158,7 +177,19 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
           value={gradeFrom}
           onChange={(e) => {
             setGradeFrom(e.target.value);
-            save.reset();
+            reset();
+          }}
+        />
+      </label>{' '}
+      <label>
+        Terms (days){' '}
+        <input
+          data-testid="person-form-terms"
+          inputMode="numeric"
+          value={terms}
+          onChange={(e) => {
+            setTerms(e.target.value);
+            reset();
           }}
         />
       </label>{' '}
@@ -168,14 +199,14 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
       {editing && (
         <>
           {' '}
-          <button type="button" data-testid="person-form-cancel" onClick={() => setEditing(undefined)}>
+          <button type="button" data-testid="person-form-cancel" onClick={() => { onRefused(undefined); setEditing(undefined); }}>
             Cancel
           </button>
         </>
       )}
-      {save.isError && (
+      {(save.isError || carried !== undefined) && (
         <p data-testid="person-form-error" role="alert">
-          {save.error.message}
+          {save.error?.message ?? carried}
         </p>
       )}
     </form>
@@ -263,11 +294,14 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const [showRetired, setShowRetired] = useShowRetired();
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => p.id === editingId);
+  // A refused edit's message, shown on the add form once the editor closes.
+  const [refused, setRefused] = useState<string>();
 
   return (
     <section data-testid="people-panel">
       <h2>People</h2>
-      <PersonForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} editing={editing} />
+      <PersonForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} editing={editing}
+        refused={refused} onRefused={setRefused} />
       <QuickAddBar sheetId={sheetId} />
       {people.isError && (
         <p data-testid="people-error" role="alert">
@@ -288,6 +322,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Terms</th>
             <PersonHeads.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
@@ -297,9 +332,10 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-terms">{p.terms ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} user={user} personId={p.id} />
               <td>
-                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
+                <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => { setRefused(undefined); setEditing(p.id); }}>
                   Edit
                 </button>
               </td>

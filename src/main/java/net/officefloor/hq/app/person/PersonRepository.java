@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -30,6 +30,7 @@ public class PersonRepository {
         person.setStatements(new Statements(rs.getInt("statement_count"), rs.getBigDecimal("stated_total"),
                 rs.getObject("statement_date", LocalDate.class)));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
+        person.setTerms(rs.getObject("terms", Integer.class));
         return person;
     };
 
@@ -75,18 +76,25 @@ public class PersonRepository {
 
     /** Add the person, their grade in force from the beginning of time. */
     public Person insert(String sheetId, String name, String grade) {
+        return insert(sheetId, name, grade, null);
+    }
+
+    /** Add the person with their own terms (null for none), their grade in force from the beginning of time. */
+    public Person insert(String sheetId, String name, String grade, Integer terms) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name) VALUES (?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, terms) VALUES (?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
+            ps.setObject(3, terms, java.sql.Types.INTEGER);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) VALUES (?, ?, NULL)", id, grade);
         Person person = new Person(id, sheetId, name, grade, 0);
         person.setGrades(List.of(new GradeFrom(grade, null)));
+        person.setTerms(terms);
         return person;
     }
 
@@ -105,8 +113,8 @@ public class PersonRepository {
     /** Saves the person if it is still at the version it was loaded at, moving it to the next
      *  version; false (nothing written) when someone else saved it in the meantime. */
     public boolean update(Person person) {
-        int n = jdbc.update("UPDATE person SET name = ?, version = version + 1 WHERE id = ? AND version = ?",
-                person.getName(), person.getId(), person.getVersion());
+        int n = jdbc.update("UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }

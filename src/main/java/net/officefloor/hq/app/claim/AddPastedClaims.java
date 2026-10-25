@@ -56,7 +56,7 @@ public class AddPastedClaims {
             Person person = persons.get(i);
             ClaimInput input = pasted.lines().get(i).input();
             LocalDate date = input.date() != null ? input.date() : today;
-            LocalDate dueBy = date.plusDays(settings.dated(sheet.id()).terms(person.gradeOn(date), date));
+            LocalDate dueBy = date.plusDays(settings.dated(sheet.id()).terms(person, date));
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
                     input.corrects(), dueBy);
             audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));
