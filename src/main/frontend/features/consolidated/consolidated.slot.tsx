@@ -2,19 +2,41 @@ import { useQuery } from '@tanstack/react-query';
 import { currentAsOf, getJson, getJsonLive } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday, type SheetInfo } from '../session/session';
-import { peoplePath, usePeople, type Person } from '../people/people';
+import { GRADES, gradeOn, peoplePath, usePeople, type Person } from '../people/people';
 import { claimsPath, useClaims, type Claim } from '../claims/claims';
 import { ratesPath, sumDue, useRates, type Rate } from '../rates/rates';
 import { settingsPath, useSettings, type Settings } from '../roles/roles';
 import { sheetTotals } from '../header/counters.slot';
+import { personDue } from '../rates/due.slot';
+import { STATUSES } from '../summary/summary.slot';
 
 // The consolidated figures: over the sheet and all its descendants (its children are the sheets naming it as their
 // parent, and so on down), the number of people, the due-total and the overdue-total — each sheet's as that sheet
 // shows it (its own today, rates, settings), added up. A sheet with no children shows its own figures. While the
 // screen shows the sheet as of a date, every sheet of the tree is read as it stood at the end of that date, with that
-// date as its today.
+// date as its today. Per grade, the due-totals of the people not retired on that grade (in force on each sheet's
+// today), added up over the tree (skipping n/a); per status, how many claims over the tree have it.
 
-type Figures = { people: number; due: string; overdue: string };
+type Figures = {
+  people: number;
+  due: string;
+  overdue: string;
+  grades: Record<string, string>;
+  statuses: Record<string, number>;
+};
+
+/** A sheet's figures, from its people, claims, rates, today and settings. */
+function figuresFrom(people: Person[], claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
+  settings: Settings | undefined): Figures {
+  const current = people.filter((p) => p.retiredFrom === null);
+  return {
+    people: people.length,
+    ...sheetTotals(people, claims, rates, today, settings),
+    grades: Object.fromEntries(GRADES.map((g) => [g, sumDue(current.filter((p) => gradeOn(p, today) === g)
+      .map((p) => personDue(p, claims, rates, today, settings)))])),
+    statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+  };
+}
 
 const sheetPath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 const childrenPath = (sheetId: string) => `${sheetPath(sheetId)}/children`;
@@ -30,7 +52,7 @@ async function figuresOf(id: string): Promise<Figures> {
     getJson<Rate[]>(ratesPath(id)),
     getJson<Settings>(settingsPath(id)),
   ]);
-  return { people: people.length, ...sheetTotals(people, claims, rates, info.today, settings) };
+  return figuresFrom(people, claims, rates, info.today, settings);
 }
 
 /** Each descendant sheet's figures, read from the store as the screen shows it (a sheet reached twice counts once). */
@@ -60,14 +82,29 @@ function ConsolidatedFigures() {
     enabled: !!sheet,
   });
   if (!user || !sheet) return null;
-  const allPeople = people.data ?? [];
-  const own = { people: allPeople.length, ...sheetTotals(allPeople, claims.data ?? [], rates.data, today, settings.data) };
+  const own = figuresFrom(people.data ?? [], claims.data ?? [], rates.data, today, settings.data);
   const all = [own, ...(descendants.data ?? [])];
   return (
     <section data-testid="consolidated">
       Consolidated: People <strong data-testid="consolidated-people-count">{all.reduce((n, f) => n + f.people, 0)}</strong>
       {' · '}Due <strong data-testid="consolidated-due-total">{sumDue(all.map((f) => f.due))}</strong>
       {' · '}Overdue <strong data-testid="consolidated-overdue-total">{sumDue(all.map((f) => f.overdue))}</strong>
+      <div>
+        {GRADES.map((g) => (
+          <span key={g}>
+            {' · '}Grade {g} due{' '}
+            <strong data-testid={`consolidated-grade-${g}-due-total`}>{sumDue(all.map((f) => f.grades[g]))}</strong>
+          </span>
+        ))}
+      </div>
+      <div>
+        {STATUSES.map((s) => (
+          <span key={s}>
+            {' · '}{s}{' '}
+            <strong data-testid={`consolidated-status-${s}-count`}>{all.reduce((n, f) => n + f.statuses[s], 0)}</strong>
+          </span>
+        ))}
+      </div>
     </section>
   );
 }
