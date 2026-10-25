@@ -46,7 +46,7 @@ public class Sheet {
     public static final String ALERT_THRESHOLD = "alert-threshold";
 
     /** The key of the parent sheet: undated, a sheet's id (null: none). A grade with no rate in force on a date on
-     *  this sheet takes the parent's, then the parent's parent's, up to three levels up. */
+     *  this sheet takes the parent's, then the parent's parent's, up to three levels up (then, on a clone, those of the sheet it was cloned from). */
     public static final String PARENT = "parent";
 
     /** The key of the fiscal year start month: undated, a month 1 to 12 (null: 1). */
@@ -95,6 +95,10 @@ public class Sheet {
      *  for off. */
     @Column(name = "entry_date")
     private LocalDate entryDate;
+
+    /** The sheet this one was cloned from; null when it is not a clone. */
+    @Column(name = "cloned_from")
+    private String clonedFrom;
 
     /** Whether the sheet is archived: everything on it stays visible and every change is refused. */
     @Column(nullable = false)
@@ -405,6 +409,14 @@ public class Sheet {
 
     public void setEntryDate(LocalDate entryDate) {
         this.entryDate = entryDate;
+    }
+
+    public String getClonedFrom() {
+        return clonedFrom;
+    }
+
+    public void setClonedFrom(String clonedFrom) {
+        this.clonedFrom = clonedFrom;
     }
 
     /** The default date of a new claim: the entry date while it is set, else the sheet's today. */

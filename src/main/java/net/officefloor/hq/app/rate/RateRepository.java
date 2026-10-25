@@ -39,17 +39,26 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
     @Query("select s.value from SheetSetting s where s.sheet.id = :sheetId and s.key = 'parent'")
     List<String> parentsOf(@Param("sheetId") String sheetId);
 
-    /** The sheet's id, then its parent's, then its parent's parent, up to three levels up. */
+    /** The sheet a sheet was cloned from; empty (or a null value) when it is not a clone. */
+    @Query("select s.clonedFrom from Sheet s where s.id = :sheetId")
+    List<String> sourcesOf(@Param("sheetId") String sheetId);
+
+    /** The sheet's id, then its parent's, then its parent's parent, up to three levels up; then, when the sheet was
+     *  cloned, the chain of the sheet it was cloned from (its id, its parents, its own source's chain), and so on. */
     default List<String> chainOf(String sheetId) {
-        List<String> chain = new ArrayList<>(List.of(sheetId));
-        String id = sheetId;
-        for (int level = 0; level < CHAIN_LEVELS; level++) {
-            String parent = parentsOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
-            if (parent == null || chain.contains(parent)) {
-                break;
+        List<String> chain = new ArrayList<>();
+        for (String from = sheetId; from != null && !chain.contains(from); ) {
+            chain.add(from);
+            String id = from;
+            for (int level = 0; level < CHAIN_LEVELS; level++) {
+                String parent = parentsOf(id).stream().filter(p -> p != null).findFirst().orElse(null);
+                if (parent == null || chain.contains(parent)) {
+                    break;
+                }
+                chain.add(parent);
+                id = parent;
             }
-            chain.add(parent);
-            id = parent;
+            from = sourcesOf(from).stream().filter(p -> p != null).findFirst().orElse(null);
         }
         return chain;
     }
@@ -59,7 +68,7 @@ public interface RateRepository extends JpaRepository<Rate, Long> {
     List<RateLog> logsOf(@Param("sheetId") String sheetId);
 
     /** The sheet's rates (as {@link #findBySheetIdOrderByGradeAscFromDateAscIdAsc}), then those of each sheet up its
-     *  chain ({@link #chainOf}) in turn, each with its log lines ({@link Rate#forClaim}): a grade with no rate in force on a date on a sheet takes the next one's. */
+     *  chain ({@link #chainOf}: its parents, then its clone source's) in turn, each with its log lines ({@link Rate#forClaim}): a grade with no rate in force on a date on a sheet takes the next one's. */
     default List<Rate> findInChain(String sheetId) {
         List<Rate> rates = new ArrayList<>();
         for (String id : chainOf(sheetId)) {

@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * members, crews with their leads and members, periods (all open) and claims, each person's in the order listed, with their status, frozen figures,
  * dates, notes, tags, references, status logs, comments and lines. Each claim that had a number takes the clone's next one,
  * in the order they were opened (by the sheet's today when each was opened, then by the order they were added to the
- * clone). Statements are not copied, so no figure is bound there; nor are watchers, delegations or the as-of history.
+ * clone). The clone remembers the sheet it was cloned from, whose rates it falls back to. Statements are not copied, so no figure is bound there; nor are watchers, delegations or the as-of history.
  */
 public class ApplyClone {
     public void apply(@Val CloneInput input, @Val Sheet sheet, SheetRepository sheets, RoleRepository roles,
@@ -60,6 +60,7 @@ public class ApplyClone {
         clone.setPolicyDate(sheet.getPolicyDate());
         clone.setPeriodNumberingFrom(sheet.getPeriodNumberingFrom());
         clone.setEntryDate(sheet.getEntryDate());
+        clone.setClonedFrom(from);
         clone = sheets.saveAndFlush(clone);
         copyRows(entityManager, from, to, "sheet_setting", "setting_key, from_date, setting_value");
         copyRows(entityManager, from, to, "setting_log", "setting_key, from_date, setting_value, made_on");
