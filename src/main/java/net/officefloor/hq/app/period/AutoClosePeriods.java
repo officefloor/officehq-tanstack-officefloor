@@ -11,7 +11,7 @@ import net.officefloor.hq.app.sheet.SheetResponse;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Once the sheet's today is set: with grace days on, closes every open period whose to-date plus the grace days is
+ * Once the sheet's today is set: with grace days on, closes every open period (neither closed nor soft-closed) whose to-date plus the grace days is
  * before the new today, in order of their to-dates, as a close by hand would — whoever set the today, the sheet's
  * close permission governs only a close by hand — each writing PERIOD_CLOSED with auto=yes.
  */
@@ -23,7 +23,7 @@ public class AutoClosePeriods {
             return;
         }
         for (Period period : repository.list(sheet.id()).stream()
-                .filter(p -> !p.closed() && p.to().plusDays(grace).isBefore(today))
+                .filter(p -> !p.closed() && !p.soft() && p.to().plusDays(grace).isBefore(today))
                 .sorted(Comparator.comparing(Period::to).thenComparing(Period::id)).toList()) {
             Period closed = ClosePeriod.fix(period, repository, rollup);
             if (closed != null) {

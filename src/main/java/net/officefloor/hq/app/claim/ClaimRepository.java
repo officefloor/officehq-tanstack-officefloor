@@ -55,6 +55,12 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE id = ?", stated, statedDue, id);
     }
 
+    /** Unbind every claim of the person from its statement figure, so each is live again. */
+    public void unbindAllOf(String sheetId, long personId) {
+        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND person_id = ?",
+                sheetId, personId);
+    }
+
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC", ROW, sheetId);
