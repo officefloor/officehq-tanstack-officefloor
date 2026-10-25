@@ -3,6 +3,9 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.access.Role;
+import net.officefloor.hq.app.access.RoleRepository;
+import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -12,13 +15,15 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow,
- * and refusing to let the user who opened it settle it. Opening records who opened it; a voided claim keeps its number. Settling
+ * refusing to let the user who opened it settle it, and refusing a clerk a settle whose due is above the sheet's
+ * clerk limit (a due of n/a is within any limit; a steward settles anything). Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at its person's grade's rate in force on the claim's date — or, while a statement binds it, at
  * the figure it was bound to; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
-            PersonRepository people, RateRepository rates, @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
+            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings,
+            @Val ChangedBy by, Out<ClaimNumber> audited) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         if (!from.canBecome(status)) {
             throw new BadRequestException("A " + from + " claim cannot become " + status);
@@ -26,12 +31,21 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
             throw new BadRequestException("The user who opened a claim cannot settle it");
         }
+        BigDecimal due = status == ClaimStatus.SETTLED ? dueNow(claim, people, rates) : null;
+        if (status == ClaimStatus.SETTLED && due != null
+                && !Role.STEWARD.equals(roles.roleOf(claim.getSheetId(), by.name()))) {
+            BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+            if (limit != null && due.compareTo(limit) > 0) {
+                throw new BadRequestException("A clerk can settle a claim only when its due is at or below the clerk limit ("
+                        + limit.toPlainString() + ")");
+            }
+        }
         claim.setStatus(status);
         if (status == ClaimStatus.OPEN) {
             claim.setOpenedBy(by.name());
         }
         if (status == ClaimStatus.SETTLED) {
-            claim.setSettledDue(dueNow(claim, people, rates));
+            claim.setSettledDue(due);
         }
         if (!repository.updateStatus(claim, from)) {
             throw new BadRequestException("The claim was changed by someone else; reload the sheet");
