@@ -1,0 +1,81 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 1af7eac6..a15c2483 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Moves the claim to the asked status, refusing a change its current status does not allow,
+- * and refusing to let the user who opened it settle it. Opening records who opened it. Settling
++ * and refusing to let the user who opened it settle it. Opening records who opened it; a voided claim keeps its number. Settling
+  * fixes the claim's due at its person's grade's rate in force on the claim's date — or, while a statement binds it, at
+  * the figure it was bound to; without a figure its due stays live.
+  */
+@@ -26,11 +26,7 @@ public class ApplyClaimStatus {
+         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
+             throw new BadRequestException("The user who opened a claim cannot settle it");
+         }
+-        Integer had = claim.getNumber();
+         claim.setStatus(status);
+-        if (status == ClaimStatus.VOID) {
+-            claim.setNumber(null);
+-        }
+         if (status == ClaimStatus.OPEN) {
+             claim.setOpenedBy(by.name());
+         }
+@@ -45,7 +41,7 @@ public class ApplyClaimStatus {
+             claim.setNumber(repository.nextNumber(claim.getSheetId()));
+             repository.updateStatus(claim, status);
+         }
+-        audited.set(new ClaimNumber(status == ClaimStatus.VOID ? had : claim.getNumber()));
++        audited.set(new ClaimNumber(claim.getNumber()));
+     }
+ 
+     /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even; null when there is no rate. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 6e7fe961..2bc1cc89 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -80,7 +80,7 @@ public class Claim {
+         this.status = status;
+     }
+ 
+-    /** The number given when the claim was opened; null for a draft or a void claim. */
++    /** The number given when the claim was opened; null for a draft (or a claim voided as a draft); a voided claim keeps its number, never reused. */
+     public Integer getNumber() {
+         return number;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftEdit.java b/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftEdit.java
+new file mode 100644
+index 00000000..fc6aac4e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftEdit.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Val;
++
++/** Only a DRAFT claim may be edited; to change an open claim, void it and add a new one. */
++public class RefuseNonDraftEdit {
++    public void check(@Val Claim claim) throws BadRequestException {
++        if (claim.getStatus() != ClaimStatus.DRAFT) {
++            throw new BadRequestException("Only a DRAFT claim can be edited; void it and add a new one instead");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index c2157621..0a6a6f36 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -8,6 +8,10 @@ claim:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: draft
++draft:
++  class: net.officefloor.hq.app.claim.RefuseNonDraftEdit
++  govern: [ transaction ]
+   next: closed
+ closed:
+   class: net.officefloor.hq.app.claim.RefuseClosedClaim
