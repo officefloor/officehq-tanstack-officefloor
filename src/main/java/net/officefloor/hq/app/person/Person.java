@@ -10,6 +10,7 @@ public class Person {
     private final String sheetId;
     private String name;
     private String grade;
+    private List<GradeFrom> grades = List.of();
     private long version;
     private Statements statements = Statements.NONE;
     private LocalDate retiredFrom;
@@ -40,12 +41,36 @@ public class Person {
         this.name = name;
     }
 
+    /** The grade in force on the sheet's today. */
     public String getGrade() {
         return grade;
     }
 
     public void setGrade(String grade) {
         this.grade = grade;
+    }
+
+    /** The grades the person was given, each from its from-date (the first from the beginning of time). */
+    public List<GradeFrom> getGrades() {
+        return grades;
+    }
+
+    public void setGrades(List<GradeFrom> grades) {
+        this.grades = grades;
+    }
+
+    /** The grade in force on the date: the one with the latest from-date on or before it, none counting as the earliest. */
+    public String gradeOn(LocalDate on) {
+        GradeFrom found = null;
+        for (GradeFrom g : grades) {
+            if (g.from() != null && g.from().isAfter(on)) {
+                continue;
+            }
+            if (found == null || (g.from() != null && (found.from() == null || g.from().isAfter(found.from())))) {
+                found = g;
+            }
+        }
+        return found == null ? grade : found.grade();
     }
 
     public long getVersion() {

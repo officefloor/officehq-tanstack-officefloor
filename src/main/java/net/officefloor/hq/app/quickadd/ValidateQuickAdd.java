@@ -22,7 +22,7 @@ public class ValidateQuickAdd {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
         String name = PersonName.of(request == null ? null : request.name());
         claim.set(new ClaimInput(ClaimAmount.of(request == null ? null : request.amount()), null, ""));
-        person.set(new PersonRequest(name, GRADE, by.name(), null));
+        person.set(new PersonRequest(name, GRADE, by.name(), null, null));
         changedBy.set(by);
     }
 }

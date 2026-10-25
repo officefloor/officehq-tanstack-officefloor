@@ -3,7 +3,7 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useFloorCents, useLate, useTermsDays } from '../access/useAccess';
 import { counts, useClaims } from '../claims/useClaims';
-import { useHeld, usePeople } from '../people/people.slot';
+import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { addDays, claimDueCents, showHundredths, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
 
@@ -38,7 +38,7 @@ function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; sheet: O
     for (const c of claims.data ?? []) {
       if (c.personId !== p.id || !counts(c, held) || !isOverdue(c)) continue;
       mine.count += 1;
-      mine.cents += claimDueCents(rates.data ?? [], p.grade, c, floor, late) ?? 0n;
+      mine.cents += claimDueCents(rates.data ?? [], gradeOn(p, c.date), c, floor, late) ?? 0n;
     }
     byPerson.set(p.id, mine);
     sheet.count += mine.count;

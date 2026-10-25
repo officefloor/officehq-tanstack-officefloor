@@ -11,10 +11,26 @@ import { claimsKey, type Claim } from '../claims/useClaims';
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
  *  is retired from; set at all, they count as retired. `held`: whether they are on hold, when their OPEN claims
- *  count in no live total. `patrons`: the names of the people they have named as patrons, sorted. */
-export type Person = { id: number; name: string; grade: string; version: number;
+ *  count in no live total. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
+ *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
+ *  the beginning of time). */
+export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   patrons: string[] };
+
+export type GradeFrom = { grade: string; from: string | null };
+
+/** The person's grade in force on a date (yyyy-mm-dd): the one with the latest from-date on or before it, none
+ *  counting as the earliest. Undefined without a person. */
+export function gradeOn(person: Person | undefined, date: string): string | undefined {
+  if (person === undefined) return undefined;
+  let found: GradeFrom | undefined;
+  for (const g of person.grades) {
+    if (g.from !== null && g.from > date) continue;
+    if (found === undefined || (g.from ?? '') > (found.from ?? '')) found = g;
+  }
+  return found?.grade ?? person.grade;
+}
 
 const GRADES = ['A', 'B', 'C'] as const;
 
@@ -47,12 +63,15 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
   const [, setEditing] = useEditingPerson();
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? 'A');
+  // The date the grade is given from; blank is the sheet's today (an added person's grade applies
+  // from the beginning of time).
+  const [gradeFrom, setGradeFrom] = useState('');
   const [version, setVersion] = useState(editing?.version);
   const [user] = useUser();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
   const save = useMutation({
-    mutationFn: async (body: { name: string; grade: string }) => {
+    mutationFn: async (body: { name: string; grade: string; gradeFrom: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a name');
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
@@ -61,12 +80,17 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
         : postJson<Person>(base, sent);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      // A grade change can move the dues of the person's claims.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
       if (editing) {
         setEditing(undefined);
       } else {
         setName('');
         setGrade('A');
+        setGradeFrom('');
       }
     },
     onError: async (error) => {
@@ -88,7 +112,7 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ name, grade });
+        submit({ name, grade, gradeFrom });
       }}
     >
       <label>
@@ -118,6 +142,18 @@ function PersonForm({ sheetId, editing }: { sheetId: string; editing?: Person })
             </option>
           ))}
         </select>
+      </label>{' '}
+      <label>
+        from{' '}
+        <input
+          data-testid="person-form-grade-from"
+          type="date"
+          value={gradeFrom}
+          onChange={(e) => {
+            setGradeFrom(e.target.value);
+            save.reset();
+          }}
+        />
       </label>{' '}
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing ? 'Save' : 'Add person'}

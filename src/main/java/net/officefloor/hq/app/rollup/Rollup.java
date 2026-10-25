@@ -24,9 +24,9 @@ import org.springframework.stereotype.Service;
 /**
  * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
- * bound it to, else its amount times the grade's rate in force on its date, rounded half to even and at least the sheet's floor;
- * none without a rate) with its late charge added on top while it is overdue, n/a when their grade has no rate on the sheet's today and no counting claim keeps a settled or bound
- * figure. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
+ * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half to even and at least the sheet's floor;
+ * none without a rate) with its late charge added on top while it is overdue, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
+ * figure or one at another grade. After a change, records one ROLLUP line per person whose figures it moved, then a TOTALS line when the
  * sheet's totals moved. A held person's OPEN claims count in none of these; their SETTLED claims still do.
  */
 @Service
@@ -70,7 +70,10 @@ public class Rollup {
                 }
                 claimed = claimed.add(c.getAmount().setScale(2));
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
-                BigDecimal figure = late.due(c, figure(c, p.getGrade(), sheetRates, floor));
+                String grade = p.gradeOn(c.getDate());
+                BigDecimal figure = late.due(c, figure(c, grade, sheetRates, floor));
+                // A figure at a grade other than today's does not hang on today's grade having a rate.
+                kept |= figure != null && !grade.equals(p.getGrade());
                 if (figure != null) {
                     due = due.add(figure);
                 }
@@ -103,7 +106,7 @@ public class Rollup {
             if (p == null || !counts(c, p.isHeld()) || c.getDate().isBefore(from) || c.getDate().isAfter(to)) {
                 continue;
             }
-            BigDecimal figure = late.due(c, figure(c, p.getGrade(), sheetRates, floor));
+            BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, floor));
             if (figure != null) {
                 total = total.add(figure);
             }

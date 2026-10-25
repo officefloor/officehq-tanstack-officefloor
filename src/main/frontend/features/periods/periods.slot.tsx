@@ -4,7 +4,7 @@ import { getJson, postJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/useClaims';
-import { useHeld, usePeople } from '../people/people.slot';
+import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
@@ -71,12 +71,12 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
     save.reset();
   };
 
-  const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
+  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
   const dueTotal = (p: Period): bigint => {
     let sum = 0n;
     for (const c of claims.data ?? []) {
       if (!counts(c, held) || c.date < p.from || c.date > p.to) continue;
-      sum += claimDueCents(rates.data ?? [], gradeOf.get(c.personId), c, floor, late) ?? 0n;
+      sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
     return sum;
   };

@@ -5,7 +5,7 @@ import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/useClaims';
-import { useHeld, usePeople } from '../people/people.slot';
+import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, rateOn, ratesKey, showHundredths, toHundredths, useRates, type Rate } from './useRates';
@@ -30,8 +30,8 @@ function useRateByGrade(sheetId: string): Map<string, bigint> {
 }
 
 /** A person's due-total in cents: their counted claims' already-rounded figures added up (0 with none). Null when
- *  their grade has no rate on the sheet's today, unless a counted settled or stated claim keeps a figure: then the figures
- *  there are, added up. */
+ *  their grade has no rate on the sheet's today, unless a counted settled or stated claim keeps a figure, or a claim has
+ *  one at a grade other than today's (from its own date): then the figures there are, added up. */
 export function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -43,13 +43,15 @@ export function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const totals = new Map<number, bigint | null>();
   for (const p of people.data ?? []) {
     const counted = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
-    if (!today.has(p.grade) && !counted.some((c) => c.settledDue != null || (c.stated && c.statedDue != null))) {
-      totals.set(p.id, null);
-      continue;
-    }
     let sum = 0n;
-    for (const c of counted) sum += claimDueCents(rates.data ?? [], p.grade, c, floor, late) ?? 0n;
-    totals.set(p.id, sum);
+    let kept = false;
+    for (const c of counted) {
+      const grade = gradeOn(p, c.date);
+      const due = claimDueCents(rates.data ?? [], grade, c, floor, late);
+      kept ||= c.settledDue != null || (c.stated && c.statedDue != null) || (due != null && grade !== p.grade);
+      sum += due ?? 0n;
+    }
+    totals.set(p.id, today.has(p.grade) || kept ? sum : null);
   }
   return totals;
 }
@@ -200,15 +202,15 @@ function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; pe
   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
 }
 
-// A claim's due: fixed when it was settled; the bound figure while a statement binds it; otherwise its amount times its person's grade's rate in
-// force on the claim's date (at least the sheet's floor); with its late charge on top while it is overdue; n/a when no rate of the grade applies then.
+// A claim's due: fixed when it was settled; the bound figure while a statement binds it; otherwise its amount times the rate in force on the claim's
+// date of its person's grade on that date (at least the sheet's floor); with its late charge on top while it is overdue; n/a when no rate of the grade applies then.
 function ClaimDue({ sheetId, personId, claim }: { sheetId: string; user: string; personId: number;
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null } }) {
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
   const floor = useFloorCents(sheetId);
   const late = useLate(sheetId);
-  const grade = people.data?.find((p) => p.id === personId)?.grade;
+  const grade = gradeOn(people.data?.find((p) => p.id === personId), claim.date);
   const due = claimDueCents(rates.data ?? [], grade, claim, floor, late);
   return <span data-testid="claim-due">{due == null ? NA : showHundredths(due)}</span>;
 }

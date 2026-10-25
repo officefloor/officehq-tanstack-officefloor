@@ -19,8 +19,8 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes the person's statement on the sheet's today: records their due-total, binds each of their counting claims
  * to the figure it has now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
- * figure its last statement bound it to, else its amount times its person's grade's rate in force on the claim's
- * date (rounded half to even, and at least the sheet's floor; none without a rate). The due-total is the counting claims' figures
+ * figure its last statement bound it to, else its amount times the rate in force on the claim's date of its
+ * person's grade in force on that date (rounded half to even, and at least the sheet's floor; none without a rate). The due-total is the counting claims' figures
  * added up, each with its late charge on top while it is overdue (the charge is never bound); n/a
  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure.
  */
@@ -44,6 +44,8 @@ public class TakeStatement {
             counted++;
             kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
             BigDecimal figure = figure(c, person, rates, floor);
+            // A figure at a grade other than today's does not hang on today's grade having a rate.
+            kept |= figure != null && !person.gradeOn(c.getDate()).equals(person.getGrade());
             if (figure != null) {
                 sum = sum.add(late.due(c, figure));
             }
@@ -62,7 +64,7 @@ public class TakeStatement {
         if (claim.isStated()) {
             return claim.getStatedDue();
         }
-        BigDecimal rate = rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
+        BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         return rate == null ? null
                 : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN).max(floor);
     }

@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
  * Moves the claim to the asked status, refusing a change its current status does not allow,
  * refusing to let the user who opened it settle it, and refusing a clerk a settle whose due is above the sheet's
  * clerk limit (a due of n/a is within any limit; a steward settles anything). Opening records who opened it; a voided claim keeps its number. Settling
- * fixes the claim's due at its person's grade's rate in force on the claim's date (at least the sheet's floor) — or, while a statement binds it, at
+ * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date (at least the sheet's floor) — or, while a statement binds it, at
  * the figure it was bound to — with its late charge as of the sheet's today frozen in on top; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
@@ -67,7 +67,7 @@ public class ApplyClaimStatus {
             return claim.getStatedDue();
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
+        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         return rate == null ? null
                 : claim.getAmount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN)
                         .max(settings.floor(claim.getSheetId()));

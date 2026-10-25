@@ -15,8 +15,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    /** A person's columns, with their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version, p.retired_from, p.held,"
+    /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.held,"
+            + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
+            + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
+            + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
             + " (SELECT COUNT(*) FROM statement s WHERE s.person_id = p.id) AS statement_count,"
             + " (SELECT s.due_total FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS stated_total,"
             + " (SELECT s.taken_on FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS statement_date";
@@ -30,6 +33,9 @@ public class PersonRepository {
         person.setHeld(rs.getBoolean("held"));
         return person;
     };
+
+    private static final RowMapper<GradeFrom> GRADE = (rs, n) -> new GradeFrom(rs.getString("grade"),
+            rs.getObject("from_date", LocalDate.class));
 
     static final String CHANGED = "Someone else has saved this person since you opened it; the form now shows their changes";
 
@@ -68,24 +74,40 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
+    /** Add the person, their grade in force from the beginning of time. */
     public Person insert(String sheetId, String name, String grade) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name) VALUES (?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
-            ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) VALUES (?, ?, NULL)", id, grade);
+        Person person = new Person(id, sheetId, name, grade, 0);
+        person.setGrades(List.of(new GradeFrom(grade, null)));
+        return person;
+    }
+
+    /** Give the person the grade from the date, replacing one given from that same date and keeping the rest;
+     *  the person's grades are then re-read, and their grade set to the one in force on {@code today}. */
+    public void giveGrade(Person person, String grade, LocalDate from, LocalDate today) {
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ? AND from_date = ?", person.getId(),
+                java.sql.Date.valueOf(from));
+        jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) VALUES (?, ?, ?)", person.getId(), grade,
+                java.sql.Date.valueOf(from));
+        person.setGrades(jdbc.query("SELECT grade, from_date FROM person_grade WHERE person_id = ?", GRADE,
+                person.getId()));
+        person.setGrade(person.gradeOn(today));
     }
 
     /** Saves the person if it is still at the version it was loaded at, moving it to the next
      *  version; false (nothing written) when someone else saved it in the meantime. */
     public boolean update(Person person) {
-        int n = jdbc.update("UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND version = ?",
-                person.getName(), person.getGrade(), person.getId(), person.getVersion());
+        int n = jdbc.update("UPDATE person SET name = ?, version = version + 1 WHERE id = ? AND version = ?",
+                person.getName(), person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }
@@ -115,10 +137,19 @@ public class PersonRepository {
         }
     }
 
-    /** Sets each person's patrons' names, sorted. */
+    /** Sets each person's patrons' names, sorted, and their grades. */
     private List<Person> withPatrons(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return people;
+        }
+        Map<Long, List<GradeFrom>> grades = jdbc.query(
+                "SELECT g.person_id, g.grade, g.from_date FROM person_grade g JOIN person q ON q.id = g.person_id"
+                        + " WHERE q.sheet_id = ?",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), GRADE.mapRow(rs, n)), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setGrades(grades.getOrDefault(person.getId(), List.of()));
         }
         Map<Long, List<String>> patrons = jdbc.query(
                 "SELECT pp.person_id, q.name FROM person_patron pp JOIN person q ON q.id = pp.patron_id"
