@@ -12,7 +12,8 @@ import { claimsPath, claimsQueryKey, dueByOf, type Claim } from './claims';
 // The claims export button: downloads every claim on the sheet as CSV — people in list order (retired people
 // included, shown or not), each person's claims oldest first — with person, number, date, amount, due, status and
 // period as the claim's row shows them. Quoting and line ends as the people export. Its inputs are re-read from the
-// store when pressed, as the people export's, so in an as-of view it has the claims and figures as of that date.
+// store when pressed, as the people export's, so in an as-of view it has the claims and figures as of that date,
+// and while a preview date is set its dues are the preview's.
 function ExportClaims() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

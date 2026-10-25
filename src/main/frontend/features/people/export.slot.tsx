@@ -13,6 +13,7 @@ import { poolsPath, poolsQueryKey, type Pool } from '../pools/pools';
 // name, grade in force on the sheet's today, retired-from date (blank when not retired) and due-total as shown.
 // Its inputs are re-read from the store when pressed, so in an as-of view they are the as-of figures (the as-of
 // date standing in for today) even while the screen is still re-reading them after the as-of date was changed.
+// While a preview date is set the figures are the preview's: worked out with that date standing in for today.
 export function csvValue(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
