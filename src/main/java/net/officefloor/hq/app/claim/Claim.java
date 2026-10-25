@@ -80,7 +80,7 @@ public class Claim {
         this.status = status;
     }
 
-    /** The number given when the claim was opened; null for a draft or a void claim. */
+    /** The number given when the claim was opened; null for a draft (or a claim voided as a draft); a voided claim keeps its number, never reused. */
     public Integer getNumber() {
         return number;
     }

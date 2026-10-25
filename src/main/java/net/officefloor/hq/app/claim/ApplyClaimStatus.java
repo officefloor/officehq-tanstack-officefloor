@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow,
- * and refusing to let the user who opened it settle it. Opening records who opened it. Settling
+ * and refusing to let the user who opened it settle it. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at its person's grade's rate in force on the claim's date — or, while a statement binds it, at
  * the figure it was bound to; without a figure its due stays live.
  */
@@ -26,11 +26,7 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
             throw new BadRequestException("The user who opened a claim cannot settle it");
         }
-        Integer had = claim.getNumber();
         claim.setStatus(status);
-        if (status == ClaimStatus.VOID) {
-            claim.setNumber(null);
-        }
         if (status == ClaimStatus.OPEN) {
             claim.setOpenedBy(by.name());
         }
@@ -45,7 +41,7 @@ public class ApplyClaimStatus {
             claim.setNumber(repository.nextNumber(claim.getSheetId()));
             repository.updateStatus(claim, status);
         }
-        audited.set(new ClaimNumber(status == ClaimStatus.VOID ? had : claim.getNumber()));
+        audited.set(new ClaimNumber(claim.getNumber()));
     }
 
     /** The figure a statement bound the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded half to even; null when there is no rate. */
