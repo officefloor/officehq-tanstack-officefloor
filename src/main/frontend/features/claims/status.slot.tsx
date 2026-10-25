@@ -31,9 +31,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
 // An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
 // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
-// A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor in or into a closed
-// period): its due-by and any statement figure stay, its period follows the new date, and when numbering by period it
-// takes the next number of its new period when the period changes.
+// A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
+// period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -54,7 +53,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const refusal = (): string | undefined => {
     if (viewer()) return 'A viewer may not change anything on this sheet';
     if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';
-    if (periodOn(periods.data ?? [], claim.date)?.closed) return "That claim's date is in a closed period";
+    if (periodOn(periods.data ?? [], claim.dueBy)?.closed) return "That claim's date is in a closed period";
     return undefined;
   };
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/claims`;
@@ -125,7 +124,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         { amount: amount.trim(), by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
-  // A steward's re-date of an OPEN or PENDING claim: its due-by and any statement figure stay; its period follows.
+  // A steward's re-date of an OPEN or PENDING claim: its due-by and any statement figure stay, and with them its period.
   const redate = useMutation({
     mutationFn: (date: string) => {
       if (date.trim() === '') throw new Error("Enter the claim's new date");

@@ -116,7 +116,7 @@ public class ApplyClaimStatus {
 
     /**
      * The number an opened claim takes: while the sheet numbers by period and its today is on or after that setting's
-     * date, the next within the claim's period (by its date) as {@code <period name>-<n>}, or {@code X-<n>} in no period;
+     * date, the next within the claim's period (by its due-by) as {@code <period name>-<n>}, or {@code X-<n>} in no period;
      * otherwise the sheet's next.
      */
     static String number(Claim claim, ClaimRepository repository, SettingRepository settings,
@@ -126,7 +126,7 @@ public class ApplyClaimStatus {
         if (from == null || sheets.today(sheetId).isBefore(from)) {
             return String.valueOf(repository.nextNumber(sheetId));
         }
-        Period period = periods.on(sheetId, claim.getDate());
+        Period period = periods.on(sheetId, claim.getDueBy());
         return period == null ? "X-" + repository.nextNumber(sheetId, "X")
                 : period.name() + "-" + repository.nextNumber(sheetId, String.valueOf(period.id()));
     }

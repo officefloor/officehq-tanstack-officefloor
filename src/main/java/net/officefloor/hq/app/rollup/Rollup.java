@@ -123,7 +123,7 @@ public class Rollup {
 
     /**
      * Each person's due-total for the dates from..to (inclusive), by person id, every person on the sheet included
-     * (0.00 when none of their counting claims falls there): their counting claims' figures (with late charge) added up.
+     * (0.00 when none of their counting claims is due by a date there: a claim belongs to the period of its due-by): their counting claims' figures (with late charge) added up.
      * A claim counts by the status its log records at the end of {@code to} (one added after it does not count); its
      * figure is the one it shows now, and a deferred or held claim is left out as the live totals leave it out.
      */
@@ -141,8 +141,8 @@ public class Rollup {
         for (Claim c : claims.list(sheetId)) {
             Person p = byId.get(c.getPersonId());
             ClaimStatus then = asOf.get(c.getId());
-            if (p == null || then == null || !countsAs(c, then, p, today) || c.getDate().isBefore(from)
-                    || c.getDate().isAfter(to)) {
+            if (p == null || then == null || !countsAs(c, then, p, today) || c.getDueBy().isBefore(from)
+                    || c.getDueBy().isAfter(to)) {
                 continue;
             }
             BigDecimal figure = late.due(c, figure(c, p.gradeOn(c.getDate()), sheetRates, late));

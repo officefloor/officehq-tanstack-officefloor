@@ -41,9 +41,7 @@ public class AddPastedClaims {
             LocalDate date = input.date() != null ? input.date() : today;
             try {
                 RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), claims);
-                if (periods.closedOn(sheet.id(), date)) {
-                    throw new BadRequestException(RefuseClosedDate.CLOSED);
-                }
+                RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings), periods);
                 RefuseRetiredDate.refuse(person, date);
             } catch (BadRequestException e) {
                 throw new BadRequestException("Line " + n + ": " + e.getMessage());
@@ -56,10 +54,10 @@ public class AddPastedClaims {
             Person person = persons.get(i);
             ClaimInput input = pasted.lines().get(i).input();
             LocalDate date = input.date() != null ? input.date() : today;
-            LocalDate dueBy = date.plusDays(settings.dated(sheet.id()).terms(person, date));
+            LocalDate dueBy = BuildClaim.dueBy(person, date, settings);
             Claim claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
                     input.corrects(), dueBy);
-            if (periods.softClosedOn(sheet.id(), date)) {
+            if (periods.softClosedOn(sheet.id(), dueBy)) {
                 claims.markLate(claim);
             }
             audit.record(ClaimAudit.line("CLAIM_ADDED", claim, by, person.getName()));

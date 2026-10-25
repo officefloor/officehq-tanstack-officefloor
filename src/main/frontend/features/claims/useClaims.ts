@@ -29,7 +29,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   proofs: number;
   /** The number of the claim this one was split off; none when it was not split off one. */
   splitFrom: string | null;
-  /** Whether it was added while the period containing its date was soft-closed. */
+  /** Whether it was added while the period containing its due-by was soft-closed. */
   lateEntry: boolean };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN

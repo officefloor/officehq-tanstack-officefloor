@@ -50,7 +50,7 @@ export function statusAsOf(log: readonly string[] | undefined, day: string): Cla
   return status;
 }
 
-/** A person's live due-total for a period in cents: the due figures (as shown now) of their claims whose date falls
+/** A person's live due-total for a period in cents: the due figures (as shown now) of their claims whose due-by falls
  *  in it and that count by the status they had at the end of its last day, added up — a claim added after then does
  *  not count; a deferred or held one is left out as in the live totals. With no person given, every person's
  *  together: the period's own due-total. */
@@ -66,7 +66,7 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
     let sum = 0n;
     for (const c of claims.data ?? []) {
       if (personId !== undefined && c.personId !== personId) continue;
-      if (c.date < p.from || c.date > p.to) continue;
+      if (c.dueBy < p.from || c.dueBy > p.to) continue;
       const then = statusAsOf(c.log, p.to);
       // Counted by its status then, but held (or deferred) as the live totals leave it out: by its status now.
       const live = c.status === 'OPEN' || c.status === 'PENDING';
@@ -351,13 +351,13 @@ function PersonPeriodCells({ sheetId, personId }: { sheetId: string; user: strin
   );
 }
 
-// The period a claim belongs to: the one whose dates contain its date; blank when none does.
-function ClaimPeriod({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { date: string } }) {
+// The period a claim belongs to: the one whose dates contain its due-by (as fixed when it was added); blank when none does.
+function ClaimPeriod({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: { dueBy: string } }) {
   const periods = usePeriods(sheetId);
-  return <span data-testid="claim-period">{periodOn(periods.data ?? [], claim.date)?.name ?? ''}</span>;
+  return <span data-testid="claim-period">{periodOn(periods.data ?? [], claim.dueBy)?.name ?? ''}</span>;
 }
 
-// Whether the claim was added while its period was soft-closed: a late entry, for good.
+// Whether the claim was added while its period (by its due-by) was soft-closed: a late entry, for good.
 function ClaimLateEntry({ claim }: { sheetId: string; user: string; personId: number; claim: { lateEntry?: boolean } }) {
   return <span data-testid="claim-late-entry">{claim.lateEntry ? 'yes' : 'no'}</span>;
 }
