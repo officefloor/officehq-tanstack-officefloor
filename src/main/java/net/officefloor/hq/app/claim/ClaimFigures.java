@@ -40,21 +40,18 @@ public class ClaimFigures {
 
     private final LocalDate policyDate;
 
-    private final BigDecimal cap;
-
     private Function<Long, PersonGrades> holders = id -> null;
 
     /** @param rates the sheet's rates.
      *  @param grades the person's grades over time.
      *  @param sheet the sheet: its floor on a claim's date (a live due is at least it), and its late percent on each
-     *  30-day boundary of a claim's due-by up to its today (the late charge), and its cap in force on its today. */
+     *  30-day boundary of a claim's due-by up to its today (the late charge), and its cap in force on the date of a person's latest claim that counts. */
     public ClaimFigures(List<Rate> rates, PersonGrades grades, Sheet sheet) {
         this.rates = rates;
         this.grades = grades;
         this.sheet = sheet;
         this.today = sheet.getToday();
         this.policyDate = sheet.policyDateInForce();
-        this.cap = sheet.getCap();
     }
 
     /** Gives the grades over time of a holder of a share, by their person id (null: not known — no rate applies
@@ -299,9 +296,12 @@ public class ClaimFigures {
     }
 
     /** The person's live due-total, as {@link #dueTotal(List, LocalDate, Person, BigDecimal)}, with the cap covering
-     *  it plus their cut total (null: none): it is held to the cap less their cut total, not below 0.00. */
+     *  it plus their cut total (null: none): it is held to the cap less their cut total, not below 0.00. Their cap is
+     *  the one in force on the date of their latest claim that counts (the sheet's today when none counts). */
     public String dueTotal(List<Claim> claims, LocalDate today, Person person, BigDecimal held, BigDecimal cut) {
         String sum = uncappedDueTotal(claims, today, person);
+        BigDecimal cap = sheet.capOn(claims.stream().filter(c -> countsLive(c, person, today)).map(Claim::getDate)
+                .max(Comparator.naturalOrder()).orElse(today));
         if (held != null) {
             sum = ("n/a".equals(sum) ? held : new BigDecimal(sum).add(held)).setScale(2).toPlainString();
         }

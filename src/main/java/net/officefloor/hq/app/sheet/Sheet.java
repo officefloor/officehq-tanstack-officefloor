@@ -211,11 +211,11 @@ public class Sheet {
         return grade == null ? null : amountOn(clerkLimitKey(grade), on);
     }
 
-    /** The clerk limit in force for a claim of a grade: the grade's own in force on the sheet's today when one is
-     *  set, else the sheet's; null when there is none. */
-    public BigDecimal clerkLimitFor(String grade) {
-        BigDecimal own = gradeClerkLimitOn(grade, today);
-        return own != null ? own : getClerkLimit();
+    /** The clerk limit in force for a claim of a grade on its date: the grade's own in force then when one is
+     *  set, else the sheet's in force then; null when there is none. */
+    public BigDecimal clerkLimitFor(String grade, LocalDate on) {
+        BigDecimal own = gradeClerkLimitOn(grade, on);
+        return own != null ? own : amountOn(CLERK_LIMIT, on);
     }
 
     /** The floor in force on a date; the starting 1.00 before every from-date. */
@@ -268,8 +268,16 @@ public class Sheet {
 
     /** The cap in force on the sheet's today; null when there is none. */
     public BigDecimal getCap() {
-        return amountOn(CAP, today);
+        return capOn(today);
     }
+
+    /** The cap in force on a date; null when there is none. */
+    public BigDecimal capOn(LocalDate on) {
+        return amountOn(CAP, on);
+    }
+
+    /** The settings that make up the policy: each change to one of them is a new policy version. */
+    public static final List<String> POLICY_KEYS = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
 
     /** The proof threshold in force on a date; null when there is none. */
     public BigDecimal proofThresholdOn(LocalDate on) {

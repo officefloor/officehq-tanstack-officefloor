@@ -3,7 +3,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { gradeOn, usePeople, type Person } from '../people/people';
 import { countsLive, holdsOf, isBound, useClaims, type Claim } from '../claims/claims';
-import { useSettings, type Settings } from '../roles/roles';
+import { settingOn, useSettings, type Settings } from '../roles/roles';
 import { chargedOf, formatCents, holderPart, hundredths, rateOn, roundsHalfUp, sumDue, trimmedSum, useRates, type Rate } from './rates';
 import { useColumnShown } from '../people/columns';
 import { cutTotalOf, usePools, type Pool } from '../pools/pools';
@@ -23,14 +23,14 @@ import { cutTotalOf, usePools, type Pool } from '../pools/pools';
 // and they hold a part at a rate), and its own person's counts its due less the holders' parts — before the cap.
 export function personDue(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
-  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).due;
+  return capped(withShares(person, claims, rates, today, settings, people), capOf(person, claims, today, settings), cutTotalOf(pools ?? [], person.id)).due;
 }
 
 /** A person's excess: how much the sum of their figures plus their cut total is above the sheet's cap; 0.00 when
  *  it is not (or n/a). */
 export function personExcess(person: Person, claims: Claim[], rates: Rate[] | undefined, today: string | undefined,
   settings: Settings | undefined, people: Person[] | undefined, pools: Pool[] | undefined): string {
-  return capped(withShares(person, claims, rates, today, settings, people), settings, cutTotalOf(pools ?? [], person.id)).excess;
+  return capped(withShares(person, claims, rates, today, settings, people), capOf(person, claims, today, settings), cutTotalOf(pools ?? [], person.id)).excess;
 }
 
 /** The sum of a person's figures with the shares: their own claims' holders' parts taken off, and their parts of
@@ -65,10 +65,19 @@ function withShares(person: Person, claims: Claim[], rates: Rate[] | undefined, 
   return formatCents(hundredths(sum) - given + (held ?? 0n));
 }
 
-/** A sum of figures held to the sheet's cap ("" for none) less the cut total (not below 0.00), and how much it was
- *  above that; n/a is not capped. */
-function capped(sum: string, settings: Settings | undefined, cut: string): { due: string; excess: string } {
-  const cap = settings?.cap ?? '';
+/** A person's cap: the sheet's in force on the date of their latest claim that counts (on the sheet's today when
+ *  none does); "" for none. */
+function capOf(person: Person, claims: Claim[], today: string | undefined, settings: Settings | undefined): string {
+  if (!settings) return '';
+  const dates = claims.filter((c) => c.personId === person.id && countsLive(c, holdsOf([person]), today)).map((c) => c.date);
+  const latest = dates.reduce<string | undefined>((a, d) => (a === undefined || d > a ? d : a), undefined);
+  const on = latest ?? today;
+  return on === undefined ? settings.cap : settingOn(settings, 'cap', on, '');
+}
+
+/** A sum of figures held to a cap ("" for none) less the cut total (not below 0.00), and how much it was above
+ *  that; n/a is not capped. */
+function capped(sum: string, cap: string, cut: string): { due: string; excess: string } {
   if (sum === 'n/a' || cap === '') return { due: sum, excess: '0.00' };
   const diff = subtract(cap, cut);
   const limit = diff.startsWith('-') ? '0.00' : diff;

@@ -252,7 +252,7 @@ public class ApplyClaimStatus {
                 if (dryRun) {
                     return claim.getNumber();
                 }
-                BigDecimal limit = sheet.clerkLimitFor(personGrades == null ? null : personGrades.on(sheet.getToday()));
+                BigDecimal limit = sheet.clerkLimitFor(personGrades == null ? null : personGrades.on(claim.getDate()), claim.getDate());
                 if ("settle".equals(action) && limit != null && due != null && due.compareTo(limit) > 0 && !steward) {
                     next = ClaimStatus.PENDING;
                 } else {

@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser, useRealToday, useSheetToday } from '..
 import { gradeOn, peopleQueryKey, usePeople, type Person } from '../people/people';
 import { chargedOf, useRates } from '../rates/rates';
 import { periodOn, usePeriods } from '../periods/periods';
-import { useSettings } from '../roles/roles';
+import { policyVersionOn, useSettings } from '../roles/roles';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { templateClaimsPath, useTemplates } from '../templates/templates';
 import { claimsPath, claimsQueryKey, dueByOf, isDeferred, isOverdue, isPendingLate, isReviewLate, personClaimsPath, useClaims, useEditingClaim, useSelectedClaims, type Claim } from './claims';
@@ -58,6 +58,7 @@ function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>{c.note}</span>{' '}
             <span data-testid="claim-period">{periodOn(periods.data, dueByOf(c))?.name ?? ''}</span>{' '}
             <span data-testid="claim-due">{chargedOf(c, rates.data, gradeOn(person, c.date), settings.data, today)}</span>{' '}
+            <span data-testid="claim-policy">{policyVersionOn(settings.data, c.date)}</span>{' '}
             <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
             <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
             <span data-testid="claim-due-by">{dueByOf(c)}</span>{' '}

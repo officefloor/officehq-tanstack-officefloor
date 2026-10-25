@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { poolsQueryKey } from '../pools/pools';
 import { ratesQueryKey } from '../rates/rates';
-import { settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
+import { policyVersion, settingsPath, settingsQueryKey, useSettings, type Settings } from './roles';
 
 type ValueKey = 'clerkLimit' | 'floor' | 'terms' | 'latePct' | 'policyDate' | 'periodNumberingFrom' | 'termsA' | 'termsB' | 'termsC' | 'cap' | 'proofThreshold' | 'graceDays' | 'noteThreshold' | 'entryDate' | 'graceA' | 'graceB' | 'graceC' | 'proofThresholdA' | 'proofThresholdB' | 'proofThresholdC' | 'pot' | 'parent' | 'fiscalStartMonth' | 'alertThreshold' | 'rounding' | 'reviewThreshold' | 'escalateAfter' | 'reviewSla' | 'proofKinds' | 'defaultGrade' | 'clerkLimitA' | 'clerkLimitB' | 'clerkLimitC' | 'scoreMid' | 'scoreHigh' | 'scoreLog' | 'maxOpen' | 'pendingSla' | PermKey;
 
@@ -190,6 +190,9 @@ function SheetSettings() {
           <span data-testid={`setting-terms-${grade}-current`}>{settings.data?.[key] ?? ''}</span>
         </p>
       ))}
+      <p>
+        Policy version: <span data-testid="policy-version">{policyVersion(settings.data)}</span>
+      </p>
       <p>
         Cap: <span data-testid="setting-cap-current">{settings.data?.cap ?? ''}</span>
       </p>
