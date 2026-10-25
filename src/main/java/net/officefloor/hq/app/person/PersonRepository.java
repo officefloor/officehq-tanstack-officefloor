@@ -14,6 +14,8 @@ public class PersonRepository {
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
 
+    static final String NAME_TAKEN = "That name is already in use on this sheet";
+
     private final JdbcTemplate jdbc;
 
     public PersonRepository(JdbcTemplate jdbc) {
@@ -28,6 +30,14 @@ public class PersonRepository {
     public Person find(String sheetId, long id) {
         return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id)
                 .stream().findFirst().orElse(null);
+    }
+
+    /** Whether another person on the sheet has this name, ignoring case and surrounding spaces. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
+                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
     }
 
     public Person insert(String sheetId, String name, String grade) {
