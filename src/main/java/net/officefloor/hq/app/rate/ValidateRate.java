@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * A rate's fields: a grade (A, B or C), a percent with up to two decimals, 0.00 to 100.00, and an
- * optional from-date (yyyy-mm-dd; blank for none).
+ * optional from-date and to-date (yyyy-mm-dd; blank for none); a to-date is not before the from-date.
  */
 public class ValidateRate {
 
@@ -47,7 +47,19 @@ public class ValidateRate {
                 throw new BadRequestException("Enter a from-date as yyyy-mm-dd, or leave it blank");
             }
         }
-        rate.set(new RateInput(grade, value, from));
+        String toText = request.to() == null ? "" : request.to().trim();
+        LocalDate to = null;
+        if (!toText.isEmpty()) {
+            try {
+                to = LocalDate.parse(toText);
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("Enter a to-date as yyyy-mm-dd, or leave it blank");
+            }
+            if (from != null && to.isBefore(from)) {
+                throw new BadRequestException("A rate's to-date cannot be before its from-date");
+            }
+        }
+        rate.set(new RateInput(grade, value, from, to));
         changedBy.set(by);
     }
 }

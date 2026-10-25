@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A grade's rate, in force from its from-date (yyyy-mm-dd); null applies from the beginning of time. */
-export type Rate = { grade: string; rate: string; from: string | null };
+/** A grade's rate, in force from its from-date (yyyy-mm-dd; null applies from the beginning of time) through its
+ *  to-date (null: with no end). */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null };
 
 /** The key every feature reads the sheet's rates under. */
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
@@ -17,7 +18,8 @@ export function useRates(sheetId: string) {
 
 /**
  * The grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or
- * before it, a rate without a from-date counting as the earliest. Undefined when none applies.
+ * before it, a rate without a from-date counting as the earliest. Undefined when none applies, or the date is
+ * after that one's to-date.
  */
 export function rateOn(rates: readonly Rate[], grade: string, date: string): Rate | undefined {
   let found: Rate | undefined;
@@ -26,7 +28,7 @@ export function rateOn(rates: readonly Rate[], grade: string, date: string): Rat
     // ISO dates compare as text; no from-date ('') sorts before every date.
     if (found === undefined || (r.from ?? '') > (found.from ?? '')) found = r;
   }
-  return found;
+  return found !== undefined && found.to != null && found.to < date ? undefined : found;
 }
 
 /** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n, "-1.03" -> -103n), exactly. */

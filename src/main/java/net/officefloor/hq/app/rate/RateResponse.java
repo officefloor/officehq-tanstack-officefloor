@@ -1,8 +1,9 @@
 package net.officefloor.hq.app.rate;
 
-public record RateResponse(String grade, String rate, String from) {
+public record RateResponse(String grade, String rate, String from, String to) {
     public static RateResponse from(Rate rate) {
         return new RateResponse(rate.grade(), rate.rate().toPlainString(),
-                rate.from() == null ? null : rate.from().toString());
+                rate.from() == null ? null : rate.from().toString(),
+                rate.to() == null ? null : rate.to().toString());
     }
 }

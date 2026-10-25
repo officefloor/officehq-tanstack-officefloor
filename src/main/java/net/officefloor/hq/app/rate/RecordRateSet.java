@@ -7,6 +7,7 @@ import net.officefloor.plugin.variable.Val;
 public class RecordRateSet {
     public void record(@Val Rate rate, @Val ChangedBy by, Audit audit) {
         audit.record("RATE_SET sheet=" + rate.sheetId() + " by=" + by.name() + " grade=" + rate.grade() + " rate="
-                + rate.rate().toPlainString() + (rate.from() == null ? "" : " from=" + rate.from()));
+                + rate.rate().toPlainString() + (rate.from() == null ? "" : " from=" + rate.from())
+                + (rate.to() == null ? "" : " to=" + rate.to()));
     }
 }

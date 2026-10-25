@@ -71,8 +71,9 @@ public class Rollup {
                 kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
                 String grade = p.gradeOn(c.getDate());
                 BigDecimal figure = late.due(c, figure(c, grade, sheetRates, floor, late));
-                // A figure at a grade other than today's does not hang on today's grade having a rate.
-                kept |= figure != null && !grade.equals(p.getGrade());
+                // A figure at a grade other than today's does not hang on today's grade having a rate; nor does one
+                // dated on or before today, whose rate may have ended since.
+                kept |= figure != null && (!grade.equals(p.getGrade()) || !c.getDate().isAfter(today));
                 if (figure != null) {
                     due = due.add(figure);
                 }
@@ -170,7 +171,10 @@ public class Rollup {
         return claim.figureAt(rate, floor, late.rounding(claim));
     }
 
-    /** The grade's rate in force on the date: the latest from-date on or before it, none counting as the earliest. */
+    /**
+     * The grade's rate in force on the date: the latest from-date on or before it, none counting as the earliest; none
+     * when the date is after that rate's to-date.
+     */
     private static BigDecimal rateOn(List<Rate> sheetRates, String grade, LocalDate on) {
         Rate found = null;
         for (Rate r : sheetRates) {
@@ -181,6 +185,6 @@ public class Rollup {
                 found = r;
             }
         }
-        return found == null ? null : found.rate();
+        return found == null || (found.to() != null && found.to().isBefore(on)) ? null : found.rate();
     }
 }

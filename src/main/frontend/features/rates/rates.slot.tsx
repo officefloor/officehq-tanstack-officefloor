@@ -31,12 +31,13 @@ function useRateByGrade(sheetId: string): Map<string, bigint> {
 
 /** A person's due-total in cents: their counted claims' already-rounded figures added up (0 with none). Null when
  *  their grade has no rate on the sheet's today, unless a counted settled or stated claim keeps a figure, or a claim has
- *  one at a grade other than today's (from its own date): then the figures there are, added up. */
+ *  one at a grade other than today's or dated on or before today (from its own date): then the figures there are, added up. */
 export function useDueTotals(sheetId: string): Map<number, bigint | null> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
   const today = useRateByGrade(sheetId);
+  const todayDate = useSheetToday(sheetId).data?.today;
   const held = useHeld(sheetId);
   const floor = useFloorCents(sheetId);
   const late = useLate(sheetId);
@@ -48,7 +49,9 @@ export function useDueTotals(sheetId: string): Map<number, bigint | null> {
     for (const c of counted) {
       const grade = gradeOn(p, c.date);
       const due = claimDueCents(rates.data ?? [], grade, c, floor, late);
-      kept ||= c.settledDue != null || (isBound(c) && c.statedDue != null) || (due != null && grade !== p.grade);
+      // A figure dated on or before today stands even if its rate has ended since.
+      kept ||= c.settledDue != null || (isBound(c) && c.statedDue != null)
+        || (due != null && (grade !== p.grade || (todayDate !== undefined && c.date <= todayDate)));
       sum += due ?? 0n;
     }
     totals.set(p.id, today.has(p.grade) || kept ? sum : null);
@@ -56,7 +59,8 @@ export function useDueTotals(sheetId: string): Map<number, bigint | null> {
   return totals;
 }
 
-// The rate form: sets a grade's rate from a date (blank: from the beginning of time), replacing one
+// The rate form: sets a grade's rate from a date (blank: from the beginning of time) through a to-date
+// (blank: with no end; never before the from-date), replacing one
 // already set for that grade and date. Every rate is listed under it, with each grade's rate in
 // force on the sheet's today.
 function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
@@ -64,22 +68,24 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const today = useSheetToday(sheetId).data?.today;
   const [user] = useUser();
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: async (body: { grade: string; rate: string; from: string }) => {
+    mutationFn: async (body: { grade: string; rate: string; from: string; to: string }) => {
       if (body.rate.trim() === '') throw new Error('Enter a rate');
       if (!RATE.test(body.rate.trim()) || Number(body.rate) > 100) {
         throw new Error('A rate is a percent, 0.00 to 100.00, with up to two decimals');
       }
       // `by` is the signed-in user the change is recorded against.
-      return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, from: body.from.trim(), by: user ?? '' });
+      return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, from: body.from.trim(), to: body.to.trim(), by: user ?? '' });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
       setPct('');
       setFrom('');
+      setTo('');
     },
   });
 
@@ -91,7 +97,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ grade, rate: pct, from });
+          submit({ grade, rate: pct, from, to });
         }}
       >
         <label>
@@ -136,6 +142,18 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            type="date"
+            data-testid="rate-form-to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -174,6 +192,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -182,6 +201,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{showHundredths(toHundredths(r.rate))}</td>
             </tr>
           ))}

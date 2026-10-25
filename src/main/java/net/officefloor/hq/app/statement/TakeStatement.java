@@ -43,8 +43,9 @@ public class TakeStatement {
             counted++;
             kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
             BigDecimal figure = figure(c, person, rates, floor, late);
-            // A figure at a grade other than today's does not hang on today's grade having a rate.
-            kept |= figure != null && !person.gradeOn(c.getDate()).equals(person.getGrade());
+            // A figure at a grade other than today's does not hang on today's grade having a rate; nor does one
+            // dated on or before today, whose rate may have ended since.
+            kept |= figure != null && (!person.gradeOn(c.getDate()).equals(person.getGrade()) || !c.getDate().isAfter(today));
             if (figure != null) {
                 sum = sum.add(late.due(c, figure));
             }
