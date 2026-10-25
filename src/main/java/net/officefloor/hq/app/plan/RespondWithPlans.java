@@ -7,9 +7,9 @@ import net.officefloor.web.ObjectResponse;
 
 /** The sheet's plans, in the order they were added. */
 public class RespondWithPlans {
-    public void respond(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made,
+    public void respond(@Val Sheet sheet, PlanRepository plans, PlanClaimRepository made, PlanPauseRepository pauses,
             ObjectResponse<List<PlanResponse>> response) {
         response.send(plans.findBySheetIdOrderByIdAsc(sheet.getId()).stream()
-                .map(p -> PlanResponse.of(p, sheet.getToday(), made)).toList());
+                .map(p -> PlanResponse.of(p, sheet.getToday(), made, pauses)).toList());
     }
 }

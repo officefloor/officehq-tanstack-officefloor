@@ -62,6 +62,7 @@ public class ApplyTransfer {
             WatchRepository watches, PersonGradeRepository grades, RoleRepository roles, SheetRepository sheets,
             RateRepository rates, PeriodRepository periods, CrewRepository crews, CrewMemberRepository crewMembers,
             net.officefloor.hq.app.plan.PlanRepository plans, net.officefloor.hq.app.plan.PlanClaimRepository planClaims,
+            net.officefloor.hq.app.plan.PlanPauseRepository planPauses,
             EntityManager entityManager,
             @RequestHeader(name = "X-User", required = false) String userHeader, Out<PersonTransferred> transferred)
             throws InvalidPersonException, ClerkLimitException {
@@ -209,7 +210,7 @@ public class ApplyTransfer {
             theirs.forEach(c -> here.addDepartedTags(c.getTagsUsed()));
             sheets.save(here);
         }
-        // Plans go with them, each keeping the claims it made (now their copies).
+        // Plans go with them, each keeping the claims it made (now their copies) and its pauses.
         Map<Long, Long> copyIds = new HashMap<>();
         copies.forEach((claim, copy) -> copyIds.put(claim.getId(), copy.getId()));
         for (net.officefloor.hq.app.plan.Plan plan : plans.findBySheetIdOrderByIdAsc(sheetId)) {
@@ -227,6 +228,13 @@ public class ApplyTransfer {
             }
             planClaims.deleteAll(made);
             planClaims.flush();
+            List<net.officefloor.hq.app.plan.PlanPause> paused = planPauses.findByPlanIdOrderByIdAsc(plan.getId());
+            for (net.officefloor.hq.app.plan.PlanPause p : paused) {
+                planPauses.save(new net.officefloor.hq.app.plan.PlanPause(moved.getId(), p.getPausedOn(),
+                        p.getResumedOn()));
+            }
+            planPauses.deleteAll(paused);
+            planPauses.flush();
             plans.delete(plan);
             plans.flush();
         }

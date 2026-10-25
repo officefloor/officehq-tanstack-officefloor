@@ -4,7 +4,9 @@ import { useCurrentSheet } from '../session/session';
 
 /** A person's plan as the store holds it: an amount (two decimals), a start date, either every N days (at least 1) or
  *  a day of the month (1 to 31), the other null, an end date (not before the start), and how many claims it has made
- *  so far, and its next dates: the first five plan dates after the sheet's today and on or before its end. */
+ *  so far, its next dates: the first five plan dates after the sheet's today and on or before its end that no pause
+ *  skips, and whether it is paused (a date on or after the day it was paused and before the day it was resumed is
+ *  skipped, not postponed). */
 export type Plan = {
   id: number;
   personId: number;
@@ -15,6 +17,7 @@ export type Plan = {
   end: string;
   generated: number;
   nextDates: string[];
+  paused: boolean;
 };
 
 export const plansQueryKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;

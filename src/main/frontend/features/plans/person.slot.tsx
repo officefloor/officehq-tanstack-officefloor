@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { useRowAction } from '../../api/rowAction';
 import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
@@ -9,13 +9,57 @@ import { peoplePath, type Person } from '../people/people';
 import { plansQueryKey, usePlans, type Plan } from './plans';
 
 // A person's plans — each an amount, a start, every N days or monthly on a day of the month, and an end, with how many
-// claims it has made so far and its next five dates after the sheet's today — and the form that adds another. A bad
-// amount, interval or day, both an interval and a day, or an end before the start, is refused.
+// claims it has made so far, its next five dates after the sheet's today and whether it is paused — and the form
+// that adds another. A bad amount, interval or day, both an interval and a day, or an end before the start, is
+// refused.
 function PlansHeader() {
   return <th>Plans</th>;
 }
 
 const blank = { amount: '', start: '', every: '', day: '', end: '' };
+
+// One plan, with its pause and resume buttons: pausing on the sheet's today skips its dates from then until it is
+// resumed. Pausing a paused plan, or resuming a running one, is refused.
+function PlanRow({ person, plan: p }: { person: Person; plan: Plan }) {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      putJson<Plan[]>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/plans/${p.id}/${action}`, {}, user),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(plansQueryKey(sheet ?? ''), saved);
+    },
+  });
+  const submit = useSubmitOnce(toggle);
+  const rowAction = useRowAction(`person-${person.id}`);
+  const take = (action: 'pause' | 'resume') => { rowAction.take(); submit(action); };
+  return (
+    <li data-testid={`plan-row-${p.id}`}>
+      <span data-testid="plan-amount">{p.amount}</span> from <span data-testid="plan-start">{p.start}</span>{' '}
+      {p.day != null ? (
+        <>monthly on day <span data-testid="plan-day">{p.day}</span></>
+      ) : (
+        <>every <span data-testid="plan-every">{p.every}</span> days</>
+      )}{' '}
+      to <span data-testid="plan-end">{p.end}</span>;
+      made <span data-testid="plan-generated">{p.generated}</span>;
+      next <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>;
+      paused <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => take('pause')}>
+        Pause
+      </button>
+      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => take('resume')}>
+        Resume
+      </button>
+      {toggle.isError && rowAction.isLatest && (
+        <span data-testid="plan-error">
+          {toggle.variables === 'pause' ? 'The plan is already paused.' : 'The plan is not paused.'}
+        </span>
+      )}
+    </li>
+  );
+}
 
 function PersonPlans({ person }: { person: Person }) {
   const [user] = useCurrentUser();
@@ -41,19 +85,7 @@ function PersonPlans({ person }: { person: Person }) {
   return (
     <td>
       <ul>
-        {mine.map((p) => (
-          <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            <span data-testid="plan-amount">{p.amount}</span> from <span data-testid="plan-start">{p.start}</span>{' '}
-            {p.day != null ? (
-              <>monthly on day <span data-testid="plan-day">{p.day}</span></>
-            ) : (
-              <>every <span data-testid="plan-every">{p.every}</span> days</>
-            )}{' '}
-            to <span data-testid="plan-end">{p.end}</span>;
-            made <span data-testid="plan-generated">{p.generated}</span>;
-            next <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
-          </li>
-        ))}
+        {mine.map((p) => <PlanRow key={p.id} person={person} plan={p} />)}
       </ul>
       <input data-testid="plan-form-amount" placeholder="Amount" {...field('amount')} />
       <input data-testid="plan-form-start" placeholder="Start YYYY-MM-DD" {...field('start')} />

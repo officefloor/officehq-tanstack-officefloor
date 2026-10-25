@@ -4,15 +4,18 @@ import java.time.LocalDate;
 import java.util.List;
 
 /** A plan as the screen shows it: its person, amount (two decimals), start, every N days or day of the month (the other
- *  null), end, how many claims it has made so far, and its next dates: the first five plan dates after the sheet's
- *  today and on or before its end. */
+ *  null), end, how many claims it has made so far, its next dates: the first five plan dates after the sheet's today
+ *  and on or before its end that no pause skips (while paused, none until it is resumed), and whether it is paused. */
 public record PlanResponse(Long id, Long personId, String amount, String start, Integer every, Integer day, String end,
-        long generated, List<String> nextDates) {
+        long generated, List<String> nextDates, boolean paused) {
 
-    public static PlanResponse of(Plan plan, LocalDate today, PlanClaimRepository made) {
+    public static PlanResponse of(Plan plan, LocalDate today, PlanClaimRepository made, PlanPauseRepository pauses) {
+        List<PlanPause> taken = pauses.findByPlanIdOrderByIdAsc(plan.getId());
         return new PlanResponse(plan.getId(), plan.getPersonId(), plan.getAmount().setScale(2).toPlainString(),
                 plan.getStart().toString(), plan.getEvery(), plan.getDay(),
                 plan.getEnd().toString(), made.countByPlanId(plan.getId()),
-                plan.nextDatesAfter(today, 5).stream().map(LocalDate::toString).toList());
+                plan.nextDatesAfter(today, 5, d -> taken.stream().anyMatch(p -> p.skips(d))).stream()
+                        .map(LocalDate::toString).toList(),
+                taken.stream().anyMatch(PlanPause::isOpen));
     }
 }

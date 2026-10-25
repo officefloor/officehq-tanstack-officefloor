@@ -14,10 +14,8 @@ function GeneratePlans() {
   const generate = useMutation({
     mutationFn: () =>
       postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheet ?? '')}/generate-plans`, {}, user),
-    // Not awaited: the count shows before the new rows do.
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['sheet', sheet ?? ''] });
-    },
+    // Awaited: the count shows once the new rows do.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheet ?? ''] }),
   });
   const submit = useSubmitOnce(generate);
   if (!user || !sheet) return null;

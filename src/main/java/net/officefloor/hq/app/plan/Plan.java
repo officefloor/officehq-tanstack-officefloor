@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /** A person's plan: an amount, a start date, either every N days (at least 1) or monthly on a day of the month (1 to
  *  31), and an end date (not before the start). */
@@ -78,9 +79,11 @@ public class Plan {
         return dates;
     }
 
-    /** The plan's next dates: the first given number of its dates after the given day and on or before its end. */
-    public List<LocalDate> nextDatesAfter(LocalDate today, int limit) {
-        return datesUpTo(null).stream().filter(d -> today == null || d.isAfter(today)).limit(limit).toList();
+    /** The plan's next dates: the first given number of its dates after the given day and on or before its end, those
+     *  skipped left out. */
+    public List<LocalDate> nextDatesAfter(LocalDate today, int limit, Predicate<LocalDate> skipped) {
+        return datesUpTo(null).stream().filter(d -> today == null || d.isAfter(today)).filter(skipped.negate())
+                .limit(limit).toList();
     }
 
     public Long getId() {
