@@ -7,7 +7,7 @@ import { PeopleColumns, PersonCells } from '../../slots/defs/peopleColumns';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
 import { useClaims, type Claim } from '../claims/claims';
 import { formatCents, sumDue } from '../rates/rates';
-import { peoplePath, peopleQueryKey, usePeople, type Person } from './people';
+import { peoplePath, peopleQueryKey, shownName, usePeople, type Person } from './people';
 import { useColumnShown } from './columns';
 
 /** How many days back from the sheet's today (today included) a patron's settled claim counts toward backing. */
@@ -95,9 +95,9 @@ function PersonPatrons({ person }: { person: Person }) {
     .map((id) => everyone.find((p) => p.id === id))
     .filter((p): p is Person => p !== undefined);
   const shares = sharesOf(patrons.length);
-  const names = patrons.map((p, i) => ({ name: p.name, share: formatCents(shares[i]) }))
+  const names = patrons.map((p, i) => ({ name: p.name, shown: shownName(p, today), share: formatCents(shares[i]) }))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map((p) => `${p.name} ${p.share}`);
+    .map((p) => `${p.shown} ${p.share}`);
   const backing = backingOf(patrons, claims.data ?? [], today);
   return (
     <>

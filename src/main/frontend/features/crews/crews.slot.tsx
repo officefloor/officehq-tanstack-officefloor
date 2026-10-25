@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/submitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser, useSheetToday } from '../session/session';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useSettings } from '../roles/roles';
 import { sumDue, useRates } from '../rates/rates';
@@ -112,10 +112,12 @@ function CrewRow({ crew }: { crew: Crew }) {
     },
   });
   const submit = useSubmitOnce(add);
+  const leadPerson = (people.data ?? []).find((p) => p.id === crew.lead?.id);
+  const leadShown = crew.lead === null ? '' : leadPerson ? shownName(leadPerson, today) : crew.lead.name;
   return (
     <tr data-testid={`crew-row-${crew.name}`}>
       <td data-testid="crew-name">{crew.name}</td>
-      <td data-testid="crew-lead">{crew.lead?.name ?? ''}</td>
+      <td data-testid="crew-lead">{leadShown}</td>
       <td>
         <ul>
           {crew.members.map((m) => (

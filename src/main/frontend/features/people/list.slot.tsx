@@ -7,11 +7,11 @@ import { personDue } from '../rates/due.slot';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../roles/roles';
 import {
-  gradeOn, nameKey, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
+  gradeOn, nameKey, shownName, peopleQueryKey, personSaveKey, sortedBy, usePeople, useEditingPerson, useShowRetired, useSortPeople,
   type Person,
 } from './people';
 
-// The sheet's people in list order — or as the sort select shows them — — retired people only while show-retired is on — each with their name, grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
+// The sheet's people in list order — or as the sort select shows them — — retired people only while show-retired is on — each with their name (shown as <name> (<grade>)), grade in force on the sheet's today and an edit button (disabled while a person save is on its way, or the people are being read again);
 // features add their own columns through PeopleColumns / PersonCells.
 function PeopleList() {
   const [user] = useCurrentUser();
@@ -49,7 +49,7 @@ function PeopleList() {
       <tbody>
         {shown.map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
-            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{shownName(p, today)}</td>
             <td data-testid="person-grade">{gradeOn(p, today)}</td>
             <td>
               <button type="button" data-testid={`person-edit-${p.id}`} disabled={saving || reading}

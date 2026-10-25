@@ -84,6 +84,11 @@ export function gradeOn(person: Person, date: string | undefined): string {
   return found;
 }
 
+/** A person's name as the screen shows it: `<name> (<grade in force on the date>)`. */
+export function shownName(person: Person, date: string | undefined): string {
+  return `${person.name} (${gradeOn(person, date)})`;
+}
+
 export const peopleQueryKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
 export const peoplePath = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}/people`;

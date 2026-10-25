@@ -8,11 +8,11 @@ import { claimsPath, type Claim } from '../claims/claims';
 import { personDue } from '../rates/due.slot';
 import { ratesPath, type Rate } from '../rates/rates';
 import { settingsPath, type Settings } from '../roles/roles';
-import { peoplePath, type Person } from './people';
+import { peoplePath, shownName, type Person } from './people';
 
 // The tree search: over the sheet and every other sheet of its tree (its ancestors and descendants), every person —
 // retired ones too — whose name or an alias contains the typed text, case ignored (blank: everyone), one line each:
-// the sheet id, their name and their due-total as their sheet shows it. The sheet's own people come first in list
+// the sheet id, their name with the grade in force on their sheet's today and their due-total as their sheet shows it. The sheet's own people come first in list
 // order, then the other sheets' by sheet id. Read from the store as it is now; the count shows once done, and is
 // gone while it runs.
 
@@ -30,7 +30,7 @@ async function linesOf(sheetId: string, text: string): Promise<string[]> {
   const key = text.toLowerCase();
   return people
     .filter((p) => [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(key)))
-    .map((p) => `${sheetId} ${p.name} ${personDue(p, claims, rates, info.today, settings)}`);
+    .map((p) => `${sheetId} ${shownName(p, info.today)} ${personDue(p, claims, rates, info.today, settings)}`);
 }
 
 async function searchTree(sheetId: string, text: string): Promise<string[]> {
