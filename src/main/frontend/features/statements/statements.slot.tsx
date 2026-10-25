@@ -35,8 +35,9 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string; 
         by: user ?? '',
         asOf: date.trim(),
       }),
+    // The date typed is used once: a refused one never carries into the next statement.
+    onSettled: () => setAsOf(''),
     onSuccess: async () => {
-      setAsOf('');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),

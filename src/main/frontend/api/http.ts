@@ -7,8 +7,22 @@ export class HttpError extends Error {
   }
 }
 
+// The date the signed-in user's screen shows the sheet as of (none: as it stands now). Every request carries
+// it as `asof`: a read answers as the sheet stood at the end of that date, and a change is refused while it is set.
+// It belongs to this screen only, so it is kept here and in the URL (search param `asof`), never in the store.
+let viewAsOf = new URLSearchParams(window.location.search).get('asof') ?? '';
+
+export function getViewAsOf(): string {
+  return viewAsOf;
+}
+
+export function setViewAsOf(date: string): void {
+  viewAsOf = date;
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const url = viewAsOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asof=${encodeURIComponent(viewAsOf)}`;
+  const res = await fetch(url, init);
   if (!res.ok) {
     // A refusal carries {"error": "<why>"}; show that, else the status line.
     const body = (await res.json().catch(() => null)) as { error?: string } | null;

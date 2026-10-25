@@ -2,6 +2,8 @@ package net.officefloor.hq.app.history;
 
 import java.sql.Connection;
 import java.sql.Date;
+import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.function.Function;
@@ -20,9 +22,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SheetHistory {
 
-    /** The tables a statement's figures read, parents before children. */
+    /** The tables the screen reads (a statement's figures among them), parents before children. */
     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold",
-            "person_patron", "statement", "claim", "rate", "sheet_setting", "sheet_setting_from");
+            "person_patron", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
+            "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation");
 
     private final JdbcTemplate jdbc;
 
@@ -80,6 +83,61 @@ public class SheetHistory {
         }
     }
 
+    /**
+     * Read the sheet as the signed-in user's screen shows it: live when {@code on} is null, else as it stood at the end
+     * of that date, the date standing in for the sheet's today. {@code reader} is given a JdbcTemplate over the sheet
+     * laid out as the live tables (schema asof), for the app's repositories to read it as they read the live sheet. A
+     * date on or after the sheet's today reads every change made; a date before the earliest snapshot reads none.
+     * The layout is rolled back once read (to a savepoint inside the request's transaction), so no other request sees it.
+     */
+    public <T> T view(String sheetId, LocalDate on, Function<JdbcTemplate, T> reader) {
+        if (on == null) {
+            return reader.apply(jdbc);
+        }
+        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+        Long snapshot = today == null || !on.isBefore(today) ? null : snapshotAsOf(sheetId, on);
+        Connection con = DataSourceUtils.getConnection(dataSource);
+        try {
+            boolean autoCommit = con.getAutoCommit();
+            String schema = con.getSchema();
+            Savepoint before = autoCommit ? null : con.setSavepoint();
+            con.setAutoCommit(false);
+            try {
+                JdbcTemplate asOf = new JdbcTemplate(new SingleConnectionDataSource(con, true));
+                for (String table : TABLES) {
+                    String columns = columns(asOf, table);
+                    if (snapshot != null) {
+                        asOf.update("INSERT INTO asof." + table + " (" + columns + ") SELECT " + columns + " FROM hist."
+                                + table + " WHERE snapshot_id = ?", snapshot);
+                    } else if (today != null && (!on.isBefore(today) || table.equals("sheet"))) {
+                        // On or after its today: every change counts. Before its earliest snapshot: none does.
+                        asOf.update("INSERT INTO asof." + table + " (" + columns + ") SELECT " + columns + " FROM public."
+                                + table + " WHERE " + ofSheet(table, "public"), sheetId);
+                    }
+                }
+                if (snapshot == null && today != null && on.isBefore(today)) {
+                    asOf.update("UPDATE asof.sheet SET archived = FALSE WHERE id = ?", sheetId);
+                }
+                asOf.update("UPDATE asof.sheet SET today = ? WHERE id = ?", Date.valueOf(on), sheetId);
+                con.setSchema("ASOF");
+                return reader.apply(asOf);
+            } finally {
+                con.setSchema(schema);
+                if (before == null) {
+                    con.rollback();
+                    con.setAutoCommit(true);
+                } else {
+                    con.rollback(before);
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot read the sheet as of " + on, e);
+        } finally {
+            DataSourceUtils.releaseConnection(con, dataSource);
+        }
+    }
+
     /** The table's columns, as the live table lists them. */
     private static String columns(JdbcTemplate jdbc, String table) {
         return String.join(", ", jdbc.queryForList("SELECT column_name FROM information_schema.columns"
@@ -91,8 +149,9 @@ public class SheetHistory {
     private static String ofSheet(String table, String schema) {
         return switch (table) {
             case "sheet" -> "id = ?";
-            case "person_grade", "person_hold", "person_patron" ->
+            case "person_grade", "person_hold", "person_patron", "person_watch" ->
                 "person_id IN (SELECT id FROM " + schema + ".person WHERE sheet_id = ?)";
+            case "period_person_total" -> "period_id IN (SELECT id FROM " + schema + ".period WHERE sheet_id = ?)";
             default -> "sheet_id = ?";
         };
     }
