@@ -9,10 +9,11 @@ import { claimsKey } from '../claims/useClaims';
 type PasteResult = { added: number };
 
 // The paste box: lines of name,amount,date,note (the note may hold commas; a blank date is the sheet's today;
-// the note may be absent) add a DRAFT claim per line, in order, for the named person. The server checks every
-// line with the claim form's rules first, so a refusal adds nothing. A note ending " #<reference>" gives the claim
+// the note may be absent) add a claim per line, in order, for the named person, and open it as the open button
+// would; a line matching one of the person's DRAFT claims by date and note updates that one instead. Any refusal
+// (a line's check, or an open the open button would refuse) refuses the whole paste and changes nothing. A note ending " #<reference>" gives the claim
 // that reference instead (a reference already on the sheet, or repeated in the paste, refuses it all).
-// Shows how many were added; the count is gone while it runs, and shows before the new rows do.
+// Shows how many lines went through; the count is gone while it runs, and shows before the new rows do.
 function PasteClaims({ sheetId }: { sheetId: string; user: string }) {
   const [lines, setLines] = useState('');
   const [added, setAdded] = useState<number | null>(null);
@@ -58,11 +59,11 @@ function PasteClaims({ sheetId }: { sheetId: string; user: string }) {
       </label>
       <br />
       <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-        Add draft claims
+        Add and open claims
       </button>{' '}
       {added !== null && !paste.isError && (
         <span>
-          Added <strong data-testid="paste-added">{added}</strong>
+          Went through <strong data-testid="paste-added">{added}</strong>
         </span>
       )}
       {paste.isError && (
