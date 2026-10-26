@@ -1,5 +1,6 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
+import type { Claim } from '../claims/claimsQuery';
 import type { Grade } from '../people/peopleQuery';
 
 /**
@@ -49,4 +50,14 @@ export function due(amount: string, rate: string | undefined): string {
 /** Due figures added up, skipping n/a. */
 export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
+}
+
+/**
+ * A claim's figure: a settled claim's frozen due, otherwise the figure its person's last statement bound
+ * it to, otherwise its amount times its person's grade's rate on the claim's date.
+ */
+export function figure(claim: Claim, rates: Rate[], grade: Grade | undefined): string {
+  if (claim.settledDue !== null) return claim.settledDue;
+  if (claim.stated) return claim.statedDue ?? 'n/a';
+  return due(claim.amount, rateFor(rates, grade, claim.date));
 }

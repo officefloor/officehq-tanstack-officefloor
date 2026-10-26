@@ -7,18 +7,8 @@ import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { Person } from '../people/peopleQuery';
-import { due, rateFor, ratesQuery, sumDue } from './ratesQuery';
+import { figure, rateFor, ratesQuery, sumDue } from './ratesQuery';
 import type { Rate } from './ratesQuery';
-
-/**
- * A claim's figure: a settled claim's frozen due, otherwise the figure its person's last statement bound
- * it to, otherwise its amount times its person's grade's rate on the claim's date.
- */
-function figure(claim: Claim, rates: Rate[], grade: Person['grade'] | undefined): string {
-  if (claim.settledDue !== null) return claim.settledDue;
-  if (claim.stated) return claim.statedDue ?? 'n/a';
-  return due(claim.amount, rateFor(rates, grade, claim.date));
-}
 
 /**
  * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
