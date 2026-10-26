@@ -10,13 +10,19 @@ public record PoolResponse(String name, List<Member> members, String totalShare,
 
     /**
      * A member: a person (their id) or another pool (personId null, {@code pool} its name), its name, its share (two
-     * decimals), whether the person is retired, and its cut of the pool's pot (two decimals; null while the pool is
+     * decimals), whether the person is retired, whether they have a hold in force on the sheet's today, and its cut of the pool's pot (two decimals; null while the pool is
      * unbalanced or has no pot).
      */
-    public record Member(Long personId, String pool, String name, String share, boolean retired, String cut) {
+    public record Member(Long personId, String pool, String name, String share, boolean retired, boolean held,
+            String cut) {
 
         Member withCut(String cut) {
-            return new Member(personId, pool, name, share, retired, cut);
+            return new Member(personId, pool, name, share, retired, held, cut);
+        }
+
+        /** Whether the member takes a cut of the pool's pot: neither retired nor held. */
+        boolean hasCut() {
+            return !retired && !held;
         }
     }
 }
