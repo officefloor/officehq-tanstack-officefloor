@@ -9,6 +9,8 @@ import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -37,7 +39,7 @@ public class Settings {
     public static final String GRACE_DAYS = "grace-days";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
-            gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD);
+            gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD, NOTE_THRESHOLD, gradeGraceKey("A"), gradeGraceKey("B"), gradeGraceKey("C"));
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
     /** A role that sees everything and may change nothing; never one the permission matrix allows an action to. */
@@ -51,12 +53,14 @@ public class Settings {
     private final Sheets sheets;
     private final Claims claims;
     private final Delegations delegations;
+    private final People people;
 
-    public Settings(JdbcTemplate jdbc, Sheets sheets, Claims claims, Delegations delegations) {
+    public Settings(JdbcTemplate jdbc, Sheets sheets, Claims claims, Delegations delegations, People people) {
         this.jdbc = jdbc;
         this.sheets = sheets;
         this.claims = claims;
         this.delegations = delegations;
+        this.people = people;
     }
 
     /** The setting's value; "" when it was never set. */
@@ -153,6 +157,33 @@ public class Settings {
         return value.isEmpty() ? terms(sheetId, date) : Integer.parseInt(value);
     }
 
+    /** The key a grade's grace days are kept under: grace-<grade>. */
+    public static String gradeGraceKey(String grade) {
+        return "grace-" + grade;
+    }
+
+    /** The grace days of the grade in force on the date: days past a claim's due-by before it is overdue; 0 when none are (blank is none). */
+    public int grace(String sheetId, String grade, LocalDate date) {
+        String value = grade == null ? "" : on(sheetId, gradeGraceKey(grade), date);
+        return value.isEmpty() ? 0 : Integer.parseInt(value);
+    }
+
+    /**
+     * The date the claim's overdue count runs from: its due-by plus the grace days, in force on its date, of the grade its person
+     * had on its date. It is overdue once this is before the sheet's today, and its late charge's 30-day boundaries count from it.
+     */
+    public LocalDate overdueFrom(Claim claim) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        String grade = person == null ? null : person.gradeOn(claim.date());
+        return claim.dueBy().plusDays(grace(claim.sheetId(), grade, claim.date()));
+    }
+
+    /** Whether the claim is overdue on {@code today}: open (OPEN or PENDING), not deferred, and its {@link #overdueFrom} is before it. */
+    public boolean overdue(Claim claim, LocalDate today) {
+        return claim.status().isOpen() && !claim.deferredOn(today) && claim.dueBy() != null && today != null
+                && overdueFrom(claim).isBefore(today);
+    }
+
     /** The late percent in force on the date, with two decimals: what an overdue claim gains per full 30 days; 0.00 when none is. */
     public BigDecimal latePct(String sheetId, LocalDate date) {
         String value = on(sheetId, LATE_PCT, date);
@@ -205,8 +236,9 @@ public class Settings {
 
     /**
      * A claim's live due from its rate figure (or the figure a statement bound): the figure with its late charge added on top, then raised
-     * to the floor in force on the claim's date ({@link #floored}). An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
-     * before {@code today} gains, for every full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days)
+     * to the floor in force on the claim's date ({@link #floored}). An open (OPEN or PENDING) claim whose due-by (fixed when it was made) plus
+     * its grade's grace ({@link #overdueFrom}) is before {@code today} gains, for every full 30 days it is overdue, the late percent in force on
+     * that boundary date (the due-by plus the grace plus 30, 60, 90 ... days)
      * of the figure, each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge and no floor, and a deferred claim no late charge (it is not overdue until the sheet's today reaches its date).
@@ -220,7 +252,7 @@ public class Settings {
         if (figure == null || !claim.status().isOpen() || claim.isCorrection() || claim.deferredOn(today)) {
             return figure;
         }
-        LocalDate dueBy = claim.dueBy();
+        LocalDate dueBy = overdueFrom(claim);
         if (!dueBy.isBefore(today)) {
             return figure;
         }

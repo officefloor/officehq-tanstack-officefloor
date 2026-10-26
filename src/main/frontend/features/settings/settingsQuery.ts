@@ -4,6 +4,7 @@ import { sheetKey } from '../sheet/sheetQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { Late } from '../rates/ratesQuery';
 import { claimsQuery } from '../claims/claimsQuery';
+import { GRADES, peopleQuery } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
 import { valueOn } from './dated';
 import type { DatedValue } from './dated';
@@ -13,7 +14,7 @@ import type { DatedValue } from './dated';
  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
  *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none; `graceDays` is a whole number of days (not dated), or "" when closing periods by today is off; `entryDate` is yyyy-mm-dd, or "" when it is off (a new claim left undated takes the sheet's today).
  *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
- *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, note-threshold; a blank clerk limit, cap, proof threshold or note threshold is none).
+ *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold, note-threshold, grace-<grade>; a blank grace is none; a blank clerk limit, cap, proof threshold or note threshold is none).
  *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
  *  by clerk and steward; reassign and reopen by steward). */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; graceDays: string; entryDate: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
@@ -34,6 +35,8 @@ export type SettingsChange = {
   periodNumberingFrom?: string;
   entryDate?: string;
   gradeTerms?: Partial<Record<Grade, string>>;
+  /** A grade's grace days (days past a claim's due-by before it is overdue), by grade: left out is left as it is, blank is none. */
+  gradeGrace?: Partial<Record<Grade, string>>;
   cap?: string;
   proofThreshold?: string;
   noteThreshold?: string;
@@ -87,7 +90,10 @@ export function usePolicyDate(sheetId: string): string {
 
 /** What a claim's late charge and its rounding depend on, as the sheet has it now. */
 export function useLate(sheetId: string): Late {
+  const dated = useQuery(settingsQuery(sheetId)).data?.dated;
   return {
+    grace: Object.fromEntries(GRADES.map((g) => [g, dated?.[`grace-${g}`] ?? []])),
+    people: useQuery(peopleQuery(sheetId)).data ?? [],
     today: useSheetToday(sheetId),
     pct: useLatePct(sheetId),
     policy: usePolicyDate(sheetId),

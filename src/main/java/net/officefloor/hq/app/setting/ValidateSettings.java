@@ -25,6 +25,7 @@ public class ValidateSettings {
     // A missing policy date is left as it is; a blank one is none (the sheet's today is); otherwise it must be a yyyy-MM-dd date.
     // A grade's own terms are like the terms: blank is left as it is, otherwise a whole number of days, 0 or more,
     // and only a grade (A, B or C) may have them.
+    // A grade's grace days are dated like its terms: blank is none, otherwise a whole number of days, 0 or more, and only for a grade (A, B or C).
     // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
     // The cap is missing: left as it is, blank: none, otherwise an amount of 0.00 or more with up to two decimals.
     // The proof threshold is like the cap: missing is left as it is, blank is none, otherwise an amount of 0.00 or more with up to two decimals.
@@ -62,6 +63,23 @@ public class ValidateSettings {
                     throw new InvalidSettingException("The terms of grade " + grade + " must be a whole number of days, 0 or more.");
                 }
                 gradeTerms.put(grade, Integer.toString(Integer.parseInt(days)));
+            }
+        }
+        SortedMap<String, String> gradeGrace = new TreeMap<>();
+        if (body != null && body.gradeGrace() != null) {
+            for (Map.Entry<String, String> entry : body.gradeGrace().entrySet()) {
+                String grade = entry.getKey() == null ? "" : entry.getKey().trim();
+                if (entry.getValue() == null) {
+                    continue;
+                }
+                String days = entry.getValue().trim();
+                if (!Settings.GRADES.contains(grade)) {
+                    throw new InvalidSettingException("Grace days can be set only for grade A, B or C.");
+                }
+                if (!days.isEmpty() && !DAYS.matcher(days).matches()) {
+                    throw new InvalidSettingException("The grace days of grade " + grade + " must be a whole number of days, 0 or more.");
+                }
+                gradeGrace.put(grade, days.isEmpty() ? "" : Integer.toString(Integer.parseInt(days)));
             }
         }
         String latePct = body == null || body.latePct() == null ? "" : body.latePct().trim();
@@ -165,7 +183,7 @@ public class ValidateSettings {
                 perms.put(action, String.join(",", roles));
             }
         }
-        boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !latePct.isEmpty() || policyDate != null
+        boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !gradeGrace.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null || threshold != null || noteThreshold != null || grace != null || entryDate != null || !perms.isEmpty();
         if (typed == null && !others) {
             typed = "";
@@ -174,7 +192,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, from, perms));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, threshold, grace, noteThreshold, entryDate, gradeTerms, gradeGrace, from, perms));
     }
 
     private static String twoDecimals(String amount) {

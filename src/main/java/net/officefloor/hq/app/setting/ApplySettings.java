@@ -39,6 +39,7 @@ public class ApplySettings {
         if (settings.graceDays() != null) {
             store.set(settings.sheetId(), Settings.GRACE_DAYS, settings.graceDays());
         }
+        settings.gradeGrace().forEach((grade, days) -> dated(settings, store, today, Settings.gradeGraceKey(grade), days));
         if (settings.entryDate() != null) {
             store.set(settings.sheetId(), Settings.ENTRY_DATE, settings.entryDate());
         }

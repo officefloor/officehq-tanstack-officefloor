@@ -5,7 +5,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 
 public class AuditSettingChanged {
-    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then the note threshold, then the grace days, then the entry date, then each action's permitted roles, in the matrix's order. A dated setting saved with a from-date ends with from=<date>.
+    // One line per setting saved: the clerk limit, then the floor, then the terms, then each grade's own terms by grade, then the late percent, then the policy date, then the period numbering from-date, then the cap, then the proof threshold, then the note threshold, then the grace days, then each grade's grace days by grade, then the entry date, then each action's permitted roles, in the matrix's order. A dated setting saved with a from-date ends with from=<date>.
     public void audit(@Val SheetSettings settings, ServerHttpConnection connection, Audit audit) {
         if (settings.clerkLimit() != null) {
             audit.record(dated(settings, connection,
@@ -49,6 +49,8 @@ public class AuditSettingChanged {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.GRACE_DAYS, "value=" + settings.graceDays()));
         }
+        settings.gradeGrace().forEach((grade, days) -> audit.record(dated(settings, connection,
+                "key=" + Settings.gradeGraceKey(grade), "value=" + days, from(settings, Settings.gradeGraceKey(grade)))));
         if (settings.entryDate() != null) {
             audit.record(Audit.line("SETTING_CHANGED", settings.sheetId(), Audit.user(connection),
                     "key=" + Settings.ENTRY_DATE, "value=" + settings.entryDate()));

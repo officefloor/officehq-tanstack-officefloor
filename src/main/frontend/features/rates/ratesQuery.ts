@@ -76,9 +76,10 @@ export function trimmedSum(dues: string[]): string {
 
 /**
  * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percents
- * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
+ * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects),
+ * each grade's grace days by from-date (by grade; a blank value is none) and its people (to find the grade a claim's person had on its date).
  */
-export type Late = { today: string; pct: DatedValue[]; policy: string; claims: Claim[] };
+export type Late = { today: string; pct: DatedValue[]; policy: string; claims: Claim[]; grace: Partial<Record<Grade, DatedValue[]>>; people: Person[] };
 
 /**
  * Whether the claim's live figures round half up: it is dated before the policy date (on or after it, they round half
@@ -91,14 +92,22 @@ export function roundsHalfUp(claim: Claim, { policy, claims }: Late): boolean {
   return (corrected ?? claim).date < policy;
 }
 
-/** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) is before the sheet's today. */
-export const isOverdue = (claim: Claim, today: string) =>
-  isOpen(claim) && !isDeferred(claim, today) && today !== '' && claim.dueBy < today;
+/** The date (yyyy-mm-dd) the claim's overdue count runs from: its due-by plus the grace days, in force on its date, of the grade its person had on its date (none: its due-by). */
+export function overdueFrom(claim: Claim, late: Late): string {
+  const person = late.people.find((p) => p.id === claim.personId);
+  const grade = gradeOn(person, claim.date);
+  const grace = grade ? valueOn(late.grace[grade], claim.date) ?? '' : '';
+  return grace === '' ? claim.dueBy : addDays(claim.dueBy, Number(grace));
+}
 
-/** The full 30 days the claim has been overdue on the sheet's today (0 when it is not overdue). */
-function lateMonths(claim: Claim, { today }: Late): bigint {
-  if (!isOverdue(claim, today)) return 0n;
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${claim.dueBy}T00:00:00Z`)) / 86_400_000;
+/** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) plus its grade's grace is before the sheet's today. */
+export const isOverdue = (claim: Claim, late: Late) =>
+  isOpen(claim) && !isDeferred(claim, late.today) && late.today !== '' && overdueFrom(claim, late) < late.today;
+
+/** The full 30 days the claim has been overdue on the sheet's today, counted from its due-by plus the grace (0 when it is not overdue). */
+function lateMonths(claim: Claim, late: Late): bigint {
+  if (!isOverdue(claim, late)) return 0n;
+  const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${overdueFrom(claim, late)}T00:00:00Z`)) / 86_400_000;
   return BigInt(Math.floor(days / 30));
 }
 
@@ -111,7 +120,7 @@ function addDays(date: string, days: number): string {
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise its rate figure — the one its
  * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
  * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`). An overdue claim's late charge — for every full 30 days overdue, the late
- * percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of that rate figure, each rounded like the claim, added up — is added on top: a statement
+ * percent in force on that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of that rate figure, each rounded like the claim, added up — is added on top: a statement
  * never binds it, so it follows the sheet's today. Last, the sum is raised to the sheet's `floor` in force on the claim's date (two decimals).
  * A correction has neither floor nor late charge.
  */
@@ -123,9 +132,10 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, 
     : due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
   if (isCorrection(claim) || bound === 'n/a') return bound;
   const months = lateMonths(claim, late);
+  const from = overdueFrom(claim, late);
   let total = hundredths(bound);
   for (let n = 1n; n <= months; n++) {
-    total += dueCents(bound, valueOn(late.pct, addDays(claim.dueBy, Number(n) * 30)) ?? DEFAULT_LATE_PCT, halfUp);
+    total += dueCents(bound, valueOn(late.pct, addDays(from, Number(n) * 30)) ?? DEFAULT_LATE_PCT, halfUp);
   }
   return floored(show(total), valueOn(floor, claim.date) ?? DEFAULT_FLOOR);
 }

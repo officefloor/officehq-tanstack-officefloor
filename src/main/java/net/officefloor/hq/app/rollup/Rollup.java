@@ -58,7 +58,7 @@ public class Rollup {
                 if (figure != null) {
                     due = due.add(figure);
                     anyFigure = true;
-                    if (overdue(claim, today)) {
+                    if (settings.overdue(claim, today)) {
                         overdue = overdue.add(figure);
                     }
                 }
@@ -84,11 +84,6 @@ public class Rollup {
         List<BigDecimal> sorted = figures.stream().sorted().toList();
         List<BigDecimal> kept = sorted.size() >= 3 ? sorted.subList(1, sorted.size() - 1) : sorted;
         return kept.stream().reduce(ZERO, BigDecimal::add);
-    }
-
-    /** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) is before {@code today}. */
-    private static boolean overdue(Claim claim, LocalDate today) {
-        return claim.status().isOpen() && !claim.deferredOn(today) && claim.dueBy() != null && today != null && claim.dueBy().isBefore(today);
     }
 
     /**

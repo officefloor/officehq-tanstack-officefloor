@@ -26,18 +26,18 @@ type OverdueData = ReturnType<typeof useOverdueData>;
 /** The overdue claims that count (a held person's OPEN claims do not), of one person or of the sheet, with their figures, late charges included. */
 function overdue({ people, claims, rates, today, floor, late }: OverdueData, person?: Person) {
   const overdueClaims = claims.filter(
-    (c) => (!person || c.personId === person.id) && counts(c, people, today) && isOverdue(c, today),
+    (c) => (!person || c.personId === person.id) && counts(c, people, today) && isOverdue(c, late),
   );
   const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late));
   return { count: overdueClaims.length, total: sumDue(figures) };
 }
 
 function ClaimDueBy({ sheetId, claim }: { sheetId: string; claim: Claim }) {
-  const today = useSheetToday(sheetId);
+  const late = useLate(sheetId);
   return (
     <>
       <td data-testid="claim-due-by">{claim.dueBy}</td>
-      <td data-testid="claim-overdue">{isOverdue(claim, today) ? 'yes' : 'no'}</td>
+      <td data-testid="claim-overdue">{isOverdue(claim, late) ? 'yes' : 'no'}</td>
     </>
   );
 }
