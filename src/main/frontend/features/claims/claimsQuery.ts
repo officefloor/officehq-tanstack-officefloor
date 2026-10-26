@@ -2,13 +2,16 @@ import { getJson } from '../../api/http';
 import type { Person } from '../people/peopleQuery';
 import { sheetKey } from '../sheet/sheetQuery';
 
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+
+/** An open claim: OPEN, or PENDING (settled by a clerk above the clerk limit, awaiting a steward), handled like OPEN in every total. */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
 /**
  * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening and kept when voided (null for a draft);
  * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date);
  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
- * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then);
+ * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim is not bound while PENDING;
  * a negative `amount` is a correction, and `corrects` is the number of the settled claim it corrects (null for any other claim).
  */
 export type Claim = {
@@ -30,11 +33,11 @@ export type Claim = {
 export const isCorrection = (c: Claim) => Number(c.amount) < 0;
 
 /**
- * Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not,
- * nor do the OPEN claims of a person on hold.
+ * Only open (OPEN or PENDING) and SETTLED claims count toward claimed, due and every total; drafts and voided
+ * ones do not, nor do the open claims of a person on hold.
  */
 export const counts = (c: Claim, people: Person[]) =>
-  c.status === 'SETTLED' || (c.status === 'OPEN' && !people.find((p) => p.id === c.personId)?.held);
+  c.status === 'SETTLED' || (isOpen(c) && !people.find((p) => p.id === c.personId)?.held);
 
 /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;

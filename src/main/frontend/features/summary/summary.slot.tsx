@@ -8,7 +8,7 @@ import { personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 
-const STATUSES: Array<ClaimStatus | 'PENDING'> = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
 
 /**
  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it

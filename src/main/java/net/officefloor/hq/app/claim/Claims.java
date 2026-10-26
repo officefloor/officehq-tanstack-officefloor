@@ -73,7 +73,7 @@ public class Claims {
      * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
      * it has since changed. Opening gives it the next number of {@code scope} (null: the sheet-wide sequence; a
      * period's name, or "" for no period, while the sheet numbers by period), which it keeps
-     * (voided too: a number is never reused). Settling
+     * (voided or rejected back to OPEN too: a number is never reused). Settling
      * stores {@code due} as its fixed due (null keeps it live). Opening records {@code user} as its opener.
      */
     public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due, String user, String scope) {
@@ -82,12 +82,12 @@ public class Claims {
             return null;
         }
         String number = switch (next) {
-            case OPEN -> scope == null ? Long.toString(nextNumber(claim.sheetId()))
+            case OPEN -> claim.status() != ClaimStatus.DRAFT ? claim.number() : scope == null ? Long.toString(nextNumber(claim.sheetId()))
                     : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
             default -> claim.number();
         };
         BigDecimal settledDue = next == ClaimStatus.SETTLED ? due : claim.settledDue();
-        String openedBy = next == ClaimStatus.OPEN ? user : claim.openedBy();
+        String openedBy = next == ClaimStatus.OPEN && claim.status() == ClaimStatus.DRAFT ? user : claim.openedBy();
         jdbc.update("UPDATE claim SET claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ?", number,
                 settledDue, openedBy, claim.id());
         return claim.withStatus(next, number, settledDue, openedBy);

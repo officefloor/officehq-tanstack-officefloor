@@ -38,7 +38,7 @@ public class Rollup {
     public Figures figures(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> counting = claims.list(sheetId).stream()
-                .filter(c -> c.status() == ClaimStatus.OPEN || c.status() == ClaimStatus.SETTLED).toList();
+                .filter(c -> c.status().counts()).toList();
         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = ZERO;
         BigDecimal dueTotal = ZERO;
@@ -74,7 +74,7 @@ public class Rollup {
         LocalDate today = sheets.today(sheetId);
         BigDecimal total = ZERO;
         for (Claim claim : claims.list(sheetId)) {
-            if ((claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.SETTLED)
+            if (!claim.status().counts()
                     || claim.date().isBefore(from) || claim.date().isAfter(to)) {
                 continue;
             }
@@ -90,9 +90,9 @@ public class Rollup {
         return total;
     }
 
-    /** Whether the (OPEN or SETTLED) claim counts: a held person's OPEN claims count in no live total. */
+    /** Whether the (OPEN, PENDING or SETTLED) claim counts: a held person's open claims count in no live total. */
     private static boolean counts(Claim claim, Person person) {
-        return !(person.held() && claim.status() == ClaimStatus.OPEN);
+        return !(person.held() && claim.status().isOpen());
     }
 
     /**
@@ -107,9 +107,12 @@ public class Rollup {
         return settings.withLate(claim, bound(claim, person), today);
     }
 
-    /** The claim's figure before any late charge: the one its person's last statement bound, else its floored live figure. */
+    /**
+     * The claim's figure before any late charge: the one its person's last statement bound, else its floored live figure.
+     * A PENDING claim is not bound: it shows its live figure until approved or rejected.
+     */
     private BigDecimal bound(Claim claim, Person person) {
-        if (claim.stated()) {
+        if (claim.stated() && claim.status() != ClaimStatus.PENDING) {
             return claim.statedDue();
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());

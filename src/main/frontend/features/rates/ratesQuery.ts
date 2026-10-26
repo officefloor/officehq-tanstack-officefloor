@@ -1,6 +1,6 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
-import { counts, isCorrection } from '../claims/claimsQuery';
+import { counts, isCorrection, isOpen } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { gradeOn } from '../people/peopleQuery';
 import type { Grade, Person } from '../people/peopleQuery';
@@ -84,9 +84,9 @@ export function dueBy(claim: Claim, terms: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** An OPEN claim whose due-by is before the sheet's today. */
+/** An open (OPEN or PENDING) claim whose due-by is before the sheet's today. */
 export const isOverdue = (claim: Claim, terms: number, today: string) =>
-  claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+  isOpen(claim) && today !== '' && dueBy(claim, terms) < today;
 
 /** The full 30 days the claim has been overdue on the sheet's today (0 when it is not overdue). */
 function lateMonths(claim: Claim, { today, terms }: Late): bigint {
@@ -97,7 +97,7 @@ function lateMonths(claim: Claim, { today, terms }: Late): bigint {
 
 /**
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
- * person's last statement bound it to, otherwise its amount times the rate, on the claim's date, of
+ * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
  * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
  * percent of that figure for every full 30 days overdue — is added on top: a statement
  * never binds it, so it follows the sheet's today. A correction has neither floor nor late charge.
@@ -106,7 +106,7 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, 
   if (claim.settledDue !== null) return claim.settledDue;
   const halfUp = roundsHalfUp(claim, late);
   const live = due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
-  const bound = claim.stated ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, floor);
+  const bound = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, floor);
   const months = isCorrection(claim) ? 0n : lateMonths(claim, late);
   if (bound === 'n/a' || months === 0n) return bound;
   return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct, halfUp));

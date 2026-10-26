@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 
 public class AuditClaimStatus {
-    public void audit(@Val Claim loaded, @Val ClaimResponse changed, People people,
+    public void audit(@Val Claim loaded, @Val ClaimResponse changed, @Val ClaimStatusRequest request, People people,
             ServerHttpConnection connection, Audit audit) {
         Person person = people.find(loaded.sheetId(), loaded.personId());
         List<String> fields = new ArrayList<>(List.of("person=" + (person == null ? "" : person.name()),
@@ -19,11 +19,16 @@ public class AuditClaimStatus {
         if (number != null) {
             fields.add("number=" + number);
         }
-        // A settled claim's line carries the due it was fixed at.
-        if (ClaimStatus.valueOf(changed.status()) == ClaimStatus.SETTLED) {
+        ClaimStatus status = ClaimStatus.valueOf(changed.status());
+        // A settled (or approved) claim's line carries the due it was fixed at.
+        if (status == ClaimStatus.SETTLED) {
             fields.add("due=" + (changed.settledDue() == null ? "n/a" : changed.settledDue()));
         }
-        audit.record(Audit.line(ClaimStatus.valueOf(changed.status()).event(), loaded.sheetId(),
+        // A rejected claim's line carries the steward's reason.
+        if (loaded.status() == ClaimStatus.PENDING && status == ClaimStatus.OPEN) {
+            fields.add("reason=" + request.reason());
+        }
+        audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(),
                 Audit.user(connection), fields.toArray(String[]::new)));
     }
 }

@@ -7,41 +7,58 @@ import { useUser } from '../session/useUser';
 import { claimsKey } from './claimsQuery';
 import type { Claim, ClaimStatus } from './claimsQuery';
 
-const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string }> = [
+type Decision = 'approve' | 'reject';
+
+const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?: Decision }> = [
   { action: 'open', to: 'OPEN', label: 'Open' },
   { action: 'settle', to: 'SETTLED', label: 'Settle' },
   { action: 'void', to: 'VOID', label: 'Void' },
+  { action: 'approve', to: 'SETTLED', label: 'Approve', decision: 'approve' },
 ];
 
 /**
  * A claim's status and the buttons that change it. Every button is offered; the server refuses a
  * change the status does not allow, a settle by the user who opened the claim, a clerk's settle of a claim
  * whose due is above the sheet's clerk limit, or any change to a claim dated in a closed period, and the refusal
- * shows on the claim until its next action.
+ * shows on the claim until its next action. A clerk's settle above the clerk limit makes the claim PENDING: a
+ * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN).
  */
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [error, setError] = useState('');
+  const [reason, setReason] = useState('');
   const once = useSubmitOnce();
   const change = useMutation({
-    mutationFn: (to: ClaimStatus) =>
-      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`, {}, user),
+    mutationFn: ({ to, decision, reason }: { to: ClaimStatus; decision?: Decision; reason?: string }) =>
+      putJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`,
+        { action: decision, reason },
+        user,
+      ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-    onError: (e, to) =>
+    onError: (e, { to, decision, reason }) =>
       setError(
         e instanceof RefusedError
           ? e.message
-          : to === 'SETTLED' && claim.status === 'OPEN' && claim.openedBy === user
-            ? 'The user who opened a claim cannot settle it.'
-            : `A ${claim.status} claim cannot become ${to}.`,
+          : (decision !== undefined) !== (claim.status === 'PENDING') && to !== 'VOID'
+            ? decision !== undefined
+              ? `Only a PENDING claim can be ${decision === 'approve' ? 'approved' : 'rejected'}.`
+              : 'A PENDING claim is approved or rejected by a steward, or voided.'
+            : to === 'SETTLED' && claim.openedBy === user
+              ? `The user who opened a claim cannot ${decision === 'approve' ? 'approve' : 'settle'} it.`
+              : decision === 'reject' && !reason?.trim()
+                ? 'Give a reason to reject the claim.'
+                : decision !== undefined
+                  ? 'Only a steward can approve or reject a pending claim.'
+                  : `A ${claim.status} claim cannot become ${to}.`,
       ),
   });
 
   return (
     <td>
       <span data-testid="claim-status">{claim.status}</span>{' '}
-      {ACTIONS.map(({ action, to, label }) => (
+      {ACTIONS.map(({ action, to, label, decision }) => (
         <button
           key={action}
           type="button"
@@ -49,12 +66,32 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
           disabled={change.isPending}
           onClick={() => {
             setError('');
-            once(() => change.mutateAsync(to));
+            once(() => change.mutateAsync({ to, decision }));
           }}
         >
           {label}
         </button>
       ))}
+      <input
+        data-testid="claim-reject-reason"
+        placeholder="Reason"
+        value={reason}
+        onChange={(e) => {
+          setReason(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-reject"
+        disabled={change.isPending}
+        onClick={() => {
+          setError('');
+          once(() => change.mutateAsync({ to: 'OPEN', decision: 'reject', reason }).then(() => setReason('')));
+        }}
+      >
+        Reject
+      </button>
       {error && <span data-testid="claim-error">{error}</span>}
     </td>
   );
