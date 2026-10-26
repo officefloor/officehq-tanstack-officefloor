@@ -15,7 +15,7 @@ public class People {
 
     private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-            rs.getObject("retired_from", LocalDate.class));
+            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"));
 
     private final JdbcTemplate jdbc;
 
@@ -57,7 +57,7 @@ public class People {
             ps.setString(3, request.grade());
             return ps;
         }, key);
-        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null);
+        return new Person(key.getKey().longValue(), sheetId, request.name(), request.grade(), 0, null, false);
     }
 
     /**
@@ -72,5 +72,10 @@ public class People {
     /** Retire the person from the date (replacing any date they were retired from before). */
     public void retire(long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", from, id);
+    }
+
+    /** Put the person on hold (true) or take them off it (false). */
+    public void hold(long id, boolean held) {
+        jdbc.update("UPDATE person SET held = ? WHERE id = ?", held, id);
     }
 }

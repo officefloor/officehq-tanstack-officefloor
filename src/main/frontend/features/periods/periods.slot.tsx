@@ -118,7 +118,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     period.closedTotal ??
     sumDue(
       claims
-        .filter((c) => counts(c) && period.from <= c.date && c.date <= period.to)
+        .filter((c) => counts(c, people) && period.from <= c.date && c.date <= period.to)
         .map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade)),
     );
 

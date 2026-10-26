@@ -45,7 +45,7 @@ public class Rollup {
             BigDecimal due = ZERO;
             boolean anyFigure = false;
             for (Claim claim : counting) {
-                if (claim.personId() != person.id()) {
+                if (claim.personId() != person.id() || !counts(claim, person)) {
                     continue;
                 }
                 claimed = claimed.add(claim.amount());
@@ -76,12 +76,20 @@ public class Rollup {
                 continue;
             }
             Person person = people.find(sheetId, claim.personId());
+            if (person != null && !counts(claim, person)) {
+                continue;
+            }
             BigDecimal figure = person == null ? claim.settledDue() : figure(claim, person);
             if (figure != null) {
                 total = total.add(figure);
             }
         }
         return total;
+    }
+
+    /** Whether the (OPEN or SETTLED) claim counts: a held person's OPEN claims count in no live total. */
+    private static boolean counts(Claim claim, Person person) {
+        return !(person.held() && claim.status() == ClaimStatus.OPEN);
     }
 
     /**

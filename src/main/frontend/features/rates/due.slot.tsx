@@ -13,11 +13,11 @@ import type { Rate } from './ratesQuery';
 /**
  * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
-function personDue(person: Person | undefined, claims: Claim[], rates: Rate[], today: string): string {
+function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, person.grade, today);
   const figures = claims
-    .filter((c) => c.personId === person.id && counts(c))
+    .filter((c) => c.personId === person.id && counts(c, people))
     .map((c) => figure(c, rates, person.grade))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
@@ -40,14 +40,14 @@ function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
   const { people, claims, rates, today } = useSheetData(sheetId);
-  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), claims, rates, today)}</td>;
+  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today)}</td>;
 }
 
 function DueTotal({ sheetId }: { sheetId: string }) {
   const { people, claims, rates, today } = useSheetData(sheetId);
   return (
     <p data-testid="rollup-due">
-      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, claims, rates, today)))}</strong>
+      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today)))}</strong>
     </p>
   );
 }

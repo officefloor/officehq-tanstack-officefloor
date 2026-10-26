@@ -1,4 +1,5 @@
 import { getJson } from '../../api/http';
+import type { Person } from '../people/peopleQuery';
 import { sheetKey } from '../sheet/sheetQuery';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
@@ -23,8 +24,12 @@ export type Claim = {
   statedDue: string | null;
 };
 
-/** Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/**
+ * Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not,
+ * nor do the OPEN claims of a person on hold.
+ */
+export const counts = (c: Claim, people: Person[]) =>
+  c.status === 'SETTLED' || (c.status === 'OPEN' && !people.find((p) => p.id === c.personId)?.held);
 
 /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;
