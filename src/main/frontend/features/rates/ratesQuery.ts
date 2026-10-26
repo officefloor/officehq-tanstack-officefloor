@@ -1,6 +1,6 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
-import { counts, isCorrection, isOpen } from '../claims/claimsQuery';
+import { counts, isCorrection, isDeferred, isOpen } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { gradeOn } from '../people/peopleQuery';
 import type { Grade, Person } from '../people/peopleQuery';
@@ -84,8 +84,9 @@ export function roundsHalfUp(claim: Claim, { policy, claims }: Late): boolean {
   return (corrected ?? claim).date < policy;
 }
 
-/** An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is before the sheet's today. */
-export const isOverdue = (claim: Claim, today: string) => isOpen(claim) && today !== '' && claim.dueBy < today;
+/** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) is before the sheet's today. */
+export const isOverdue = (claim: Claim, today: string) =>
+  isOpen(claim) && !isDeferred(claim, today) && today !== '' && claim.dueBy < today;
 
 /** The full 30 days the claim has been overdue on the sheet's today (0 when it is not overdue). */
 function lateMonths(claim: Claim, { today }: Late): bigint {
@@ -122,7 +123,7 @@ export function personSum(person: Person | undefined, people: Person[], claims: 
   if (!person) return 'n/a';
   const rate = rateFor(rates, gradeOn(person, today), today);
   const figures = claims
-    .filter((c) => c.personId === person.id && counts(c, people))
+    .filter((c) => c.personId === person.id && counts(c, people, today))
     .map((c) => figure(c, rates, person, floor, late))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);

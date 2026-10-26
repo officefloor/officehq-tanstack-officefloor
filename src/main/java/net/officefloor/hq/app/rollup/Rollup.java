@@ -49,7 +49,7 @@ public class Rollup {
             BigDecimal overdue = ZERO;
             boolean anyFigure = false;
             for (Claim claim : counting) {
-                if (claim.personId() != person.id() || !counts(claim, person)) {
+                if (claim.personId() != person.id() || !counts(claim, person, today)) {
                     continue;
                 }
                 claimed = claimed.add(claim.amount());
@@ -78,9 +78,9 @@ public class Rollup {
                 overdueTotal.toPlainString());
     }
 
-    /** An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is before {@code today}. */
+    /** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) is before {@code today}. */
     private static boolean overdue(Claim claim, LocalDate today) {
-        return claim.status().isOpen() && claim.dueBy() != null && today != null && claim.dueBy().isBefore(today);
+        return claim.status().isOpen() && !claim.deferredOn(today) && claim.dueBy() != null && today != null && claim.dueBy().isBefore(today);
     }
 
     /**
@@ -95,7 +95,7 @@ public class Rollup {
         for (Person person : people.list(sheetId)) {
             BigDecimal total = ZERO;
             for (Claim claim : dated) {
-                if (claim.personId() != person.id() || !counts(claim, person)) {
+                if (claim.personId() != person.id() || !counts(claim, person, today)) {
                     continue;
                 }
                 BigDecimal figure = figure(claim, person, today);
@@ -116,9 +116,12 @@ public class Rollup {
 
     /**
      * Whether the (OPEN, PENDING or SETTLED) claim counts: a person's open claims dated within one of their holds
-     * count in no live total, unless a statement bound them.
+     * count in no live total, unless a statement bound them; nor does an OPEN claim deferred on {@code today}.
      */
-    public static boolean counts(Claim claim, Person person) {
+    public static boolean counts(Claim claim, Person person, LocalDate today) {
+        if (claim.deferredOn(today)) {
+            return false;
+        }
         boolean bound = claim.stated() && claim.status() != ClaimStatus.PENDING;
         return !(claim.status().isOpen() && !bound && person.heldOn(claim.date()));
     }

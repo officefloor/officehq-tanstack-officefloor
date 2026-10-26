@@ -21,7 +21,8 @@ public class Claims {
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
+            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
+            rs.getObject("deferred_until", LocalDate.class));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -69,7 +70,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy);
+                false, null, corrects, dueBy, null);
     }
 
     public void save(Claim claim) {
@@ -113,6 +114,15 @@ public class Claims {
         jdbc.update("UPDATE claim SET claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ?", number,
                 settledDue, openedBy, claim.id());
         return claim.withStatus(next, number, settledDue, openedBy);
+    }
+
+    /** Defers the claim to {@code until} if it is still OPEN, and returns it as deferred; null when it has since changed. */
+    public Claim defer(Claim claim, LocalDate until) {
+        if (jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND status = ?", Date.valueOf(until), claim.id(),
+                ClaimStatus.OPEN.name()) != 1) {
+            return null;
+        }
+        return claim.withDeferredUntil(until);
     }
 
     /**

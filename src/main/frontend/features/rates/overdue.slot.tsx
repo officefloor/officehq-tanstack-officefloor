@@ -26,7 +26,7 @@ type OverdueData = ReturnType<typeof useOverdueData>;
 /** The overdue claims that count (a held person's OPEN claims do not), of one person or of the sheet, with their figures, late charges included. */
 function overdue({ people, claims, rates, today, floor, late }: OverdueData, person?: Person) {
   const overdueClaims = claims.filter(
-    (c) => (!person || c.personId === person.id) && counts(c, people) && isOverdue(c, today),
+    (c) => (!person || c.personId === person.id) && counts(c, people, today) && isOverdue(c, today),
   );
   const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late));
   return { count: overdueClaims.length, total: sumDue(figures) };

@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 public class TakeStatement {
-    // Records the person's due-total now (held to the sheet's cap) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
+    // Records the person's due-total now (a deferred claim counts in none and is left unbound) (held to the sheet's cap) and binds each of their counting claims (their open claims within a hold and not bound do not count) to its figure now;
     // the rest of their claims are left unbound. The late charge is never bound: the due-total includes it,
     // but each claim is bound to the figure under it.
     public void take(@Val Person person, Claims claims, Rates rates, Settings settings, Sheets sheets, Statements statements,
@@ -28,7 +28,7 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : claims.list(person.sheetId())) {
             if (claim.personId() == person.id()
-                    && (claim.status() == ClaimStatus.SETTLED || (claim.status().isOpen() && Rollup.counts(claim, person)))) {
+                    && (claim.status() == ClaimStatus.SETTLED || (claim.status().isOpen() && Rollup.counts(claim, person, today)))) {
                 BigDecimal figure = figure(claim, person, rates, settings);
                 figures.put(claim.id(), figure);
                 BigDecimal due = claim.settledDue() != null ? figure : settings.withLate(claim, figure, today);

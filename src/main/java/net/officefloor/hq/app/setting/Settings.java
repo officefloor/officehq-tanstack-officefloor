@@ -169,10 +169,10 @@ public class Settings {
      * A claim's figure with its late charge added on top: an open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
      * before {@code today} gains the late percent in force on the claim's date of the figure for every full 30 days it is overdue, rounded by {@link #rounding}.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
-     * A correction has no late charge.
+     * A correction has no late charge, nor has a deferred claim (it is not overdue until the sheet's today reaches its date).
      */
     public BigDecimal withLate(Claim claim, BigDecimal figure, LocalDate today) {
-        if (figure == null || !claim.status().isOpen() || claim.isCorrection()) {
+        if (figure == null || !claim.status().isOpen() || claim.isCorrection() || claim.deferredOn(today)) {
             return figure;
         }
         LocalDate dueBy = claim.dueBy();

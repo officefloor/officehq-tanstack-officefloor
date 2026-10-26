@@ -51,7 +51,7 @@ export function personPeriodDue(
   if (period.closed) return period.personTotals[String(person.id)] ?? '0.00';
   return sumDue(
     claims
-      .filter((c) => c.personId === person.id && counts(c, people) && period.from <= c.date && c.date <= period.to)
+      .filter((c) => c.personId === person.id && counts(c, people, late.today) && period.from <= c.date && c.date <= period.to)
       .map((c) => figure(c, rates, person, floor, late)),
   );
 }
