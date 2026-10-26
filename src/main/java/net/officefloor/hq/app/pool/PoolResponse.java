@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * A pool: its name, its members in the order added, the total of their shares (two decimals; a retired member's share
- * counts as 0.00, and one out of its membership dates is left out) and whether that total is exactly 100.00.
+ * counts as given, and one out of its membership dates is left out) and whether that total is exactly 100.00.
  */
 public record PoolResponse(String name, List<Member> members, String totalShare, boolean balanced) {
 

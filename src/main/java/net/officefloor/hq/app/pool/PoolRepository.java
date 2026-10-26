@@ -97,14 +97,14 @@ public class PoolRepository {
 
     /**
      * The sheet's pools, in the order added, each with its members in the order added, the total of their shares (a
-     * member with a retirement date set, whatever the date, counts as 0.00) and whether it is exactly 100.00. A member
+     * retired member's share counted as given) and whether it is exactly 100.00. A member
      * whose membership dates do not include the sheet's today is left out entirely: not in the total share, nor the
      * balance, and no cut (not even 0.00). A pool that is a member of none has the sheet's pot; a member pool's pot is
      * its cut in the pool above (none while that has no cuts). Each member of a balanced pool with a pot has a cut: 0.00
      * when retired or held (a hold in force on the sheet's today), else the pot times their share over the shares of
      * the members with a cut added up, half to even to two decimals, and the remainder to the member with a cut with the
-     * largest share (the earliest added on a tie), so the cuts total the pot. A hold leaves the pool's total share and
-     * balance as they are.
+     * largest share (the earliest added on a tie), so the cuts total the pot. A hold or a retirement leaves the pool's
+     * total share and balance as they are. A pool whose every member (in its dates) is retired has no cuts.
      */
     public List<PoolResponse> list(String sheetId) {
         Map<Long, String> names = new LinkedHashMap<>();
@@ -153,7 +153,7 @@ public class PoolRepository {
         names.keySet().forEach(id -> {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolResponse.Member m : members.get(id)) {
-                if (!m.retired() && !m.out()) {
+                if (!m.out()) {
                     total = total.add(new BigDecimal(m.share()));
                 }
             }
@@ -191,9 +191,24 @@ public class PoolRepository {
                 pot = cut == null ? null : new BigDecimal(cut);
             }
         }
-        List<PoolResponse.Member> of = balanced.get(id) && pot != null ? cut(members.get(id), pot) : members.get(id);
+        List<PoolResponse.Member> of = balanced.get(id) && pot != null && !allRetired(members.get(id))
+                ? cut(members.get(id), pot) : members.get(id);
         cutOf.put(id, of);
         return of;
+    }
+
+    /** Whether the pool has members in their dates and every one of them is retired. */
+    private static boolean allRetired(List<PoolResponse.Member> members) {
+        boolean any = false;
+        for (PoolResponse.Member m : members) {
+            if (!m.out()) {
+                if (!m.retired()) {
+                    return false;
+                }
+                any = true;
+            }
+        }
+        return any;
     }
 
     /**
