@@ -22,7 +22,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
 /**
- * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
+ * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up, leaving out corrections;
  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
  * bound it to, else its amount times the rate in force on its date of the grade in force on its date (the sheet's own, else its parent's, up to three levels up), rounded half up when the claim rounds by a date before the sheet's policy date, else half to even;
  * none without a rate) with its late charge added on top while it is overdue, and then — unless it is settled or a correction — at least the sheet's floor in force on its date, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
@@ -76,7 +76,9 @@ public class Rollup {
                 if (c.getPersonId() != p.getId() || !counts(c, p, today)) {
                     continue;
                 }
-                claimed = claimed.add(c.getAmount().setScale(2));
+                if (c.getCorrects() == null) {
+                    claimed = claimed.add(c.getAmount().setScale(2));
+                }
                 kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
                 String grade = p.gradeOn(c.getDate());
                 BigDecimal figure = late.due(c, figure(c, grade, sheetRates, late));

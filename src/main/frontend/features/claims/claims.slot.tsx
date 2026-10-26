@@ -176,7 +176,7 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
   );
 }
 
-// The sheet's claimed-total: everyone's counted claims added up.
+// The sheet's claimed-total: everyone's counted claims, corrections left out, added up.
 function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
   const claims = useClaims(sheetId);
   const held = useHeld(sheetId);

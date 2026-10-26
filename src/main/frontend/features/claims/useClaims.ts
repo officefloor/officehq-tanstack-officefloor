@@ -97,8 +97,8 @@ export function useEditingClaim() {
   return useSearchParam('editClaim', asNumber);
 }
 
-/** The counted claims' amounts added up exactly, in cents, shown with two decimals. */
+/** The counted claims' amounts, corrections left out, added up exactly, in cents, shown with two decimals. */
 export function sumAmounts(claims: Claim[], held: Holds): string {
-  const cents = claims.filter((c) => counts(c, held)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => counts(c, held) && c.corrects == null).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
