@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/claims/bulkOpen.slot.tsx b/src/main/frontend/features/claims/bulkOpen.slot.tsx
+new file mode 100644
+index 00000000..478ec93d
+--- /dev/null
++++ b/src/main/frontend/features/claims/bulkOpen.slot.tsx
+@@ -0,0 +1,75 @@
++import { useState } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { peopleQuery } from '../people/peopleQuery';
++import { claimsKey, claimsQuery } from './claimsQuery';
++import type { Claim } from './claimsQuery';
++import { useSelectedClaims } from './useSelectedClaims';
++
++type Result = { opened: number; refused: number };
++
++/**
++ * Opens every ticked claim, one at a time in list order (people in their list order, newest claim
++ * first within a person), so each is numbered in that order. A claim the server refuses to open is
++ * left as it is and counted as refused.
++ */
++function BulkOpen({ user, sheetId }: { user: string; sheetId: string }) {
++  const queryClient = useQueryClient();
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const [selected, setSelected] = useSelectedClaims();
++  const [result, setResult] = useState<Result | undefined>();
++  const once = useSubmitOnce();
++
++  const ordered = people.flatMap((p) => claims.filter((c) => c.personId === p.id && selected.includes(c.id)));
++
++  const open = useMutation({
++    mutationFn: async (targets: Claim[]): Promise<Result> => {
++      let opened = 0;
++      for (const c of targets) {
++        try {
++          await putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${c.id}/status/OPEN`, {}, user);
++          opened++;
++        } catch {
++          // refused: left as it is
++        }
++      }
++      return { opened, refused: targets.length - opened };
++    },
++    onSuccess: async (r) => {
++      setSelected([]);
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++      setResult(r);
++    },
++  });
++
++  return (
++    <section data-testid="bulk-open-panel">
++      <button
++        type="button"
++        data-testid="bulk-open"
++        disabled={open.isPending}
++        onClick={() => {
++          setResult(undefined);
++          once(() => open.mutateAsync(ordered));
++        }}
++      >
++        Open selected
++      </button>
++      {result && (
++        <>
++          {' '}
++          Opened <span data-testid="bulk-opened">{result.opened}</span>, refused{' '}
++          <span data-testid="bulk-refused">{result.refused}</span>
++        </>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetPanel.fill({
++  order: 21,
++  Component: ({ user, sheetId }) => <BulkOpen key={sheetId} user={user} sheetId={sheetId} />,
++});
+diff --git a/src/main/frontend/features/claims/select.slot.tsx b/src/main/frontend/features/claims/select.slot.tsx
+new file mode 100644
+index 00000000..e5552829
+--- /dev/null
++++ b/src/main/frontend/features/claims/select.slot.tsx
+@@ -0,0 +1,23 @@
++import { ClaimCells } from '../../slots/defs/claimColumns';
++import type { Claim } from './claimsQuery';
++import { useSelectedClaims } from './useSelectedClaims';
++
++/** The checkbox that ticks a claim for a bulk action. */
++function ClaimSelect({ claim }: { sheetId: string; claim: Claim }) {
++  const [selected, setSelected] = useSelectedClaims();
++  const checked = selected.includes(claim.id);
++  return (
++    <td>
++      <input
++        type="checkbox"
++        data-testid="claim-select"
++        checked={checked}
++        onChange={(e) =>
++          setSelected(e.target.checked ? [...selected, claim.id] : selected.filter((id) => id !== claim.id))
++        }
++      />
++    </td>
++  );
++}
++
++export const contribution = ClaimCells.fill({ order: 0, Component: ClaimSelect });
+diff --git a/src/main/frontend/features/claims/useSelectedClaims.ts b/src/main/frontend/features/claims/useSelectedClaims.ts
+new file mode 100644
+index 00000000..ebc6cabf
+--- /dev/null
++++ b/src/main/frontend/features/claims/useSelectedClaims.ts
+@@ -0,0 +1,10 @@
++import { useSearchParam } from '../../url/useSearchParam';
++
++const asIds = (raw: unknown): number[] =>
++  (Array.isArray(raw) ? raw : []).map(Number).filter((n) => Number.isInteger(n));
++
++/** The ids of the claims ticked for a bulk action, kept in the URL. */
++export function useSelectedClaims(): [number[], (ids: number[]) => void] {
++  const [ids, setIds] = useSearchParam('selectedClaims', asIds);
++  return [ids, (next) => setIds(next.length ? next : undefined)];
++}
