@@ -33,6 +33,11 @@ public record Claim(long id, String sheetId, long personId, BigDecimal amount, L
         return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs, splitFrom);
     }
 
+    /** The claim re-dated to {@code date}, numbered {@code number}. */
+    public Claim withDate(LocalDate date, String number) {
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom);
+    }
+
     /** The claim deferred to {@code until}. */
     public Claim withDeferredUntil(LocalDate until) {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, until, proofs, splitFrom);

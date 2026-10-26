@@ -155,6 +155,24 @@ public class Claims {
                 ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number());
     }
 
+    /**
+     * Re-dates the claim to {@code date} if it still has its loaded status and date, and returns it as re-dated; null
+     * when it has since changed. Its due-by and statement figure stay. A {@code scope} (a period's name, or "" for no
+     * period) gives it the next number of that sequence, as {@link #changeStatus}; null keeps its number.
+     */
+    public Claim redate(Claim claim, LocalDate date, String scope) {
+        if (jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND status = ? AND claim_date = ?", Date.valueOf(date),
+                claim.id(), claim.status().name(), Date.valueOf(claim.date())) != 1) {
+            return null;
+        }
+        String number = scope == null ? claim.number()
+                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+        if (scope != null) {
+            jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
+        }
+        return claim.withDate(date, number);
+    }
+
     /** Defers the claim to {@code until} if it is still OPEN, and returns it as deferred; null when it has since changed. */
     public Claim defer(Claim claim, LocalDate until) {
         if (jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND status = ?", Date.valueOf(until), claim.id(),
