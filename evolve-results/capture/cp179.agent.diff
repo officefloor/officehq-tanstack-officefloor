@@ -1,0 +1,462 @@
+diff --git a/src/main/frontend/features/flag/flag.slot.tsx b/src/main/frontend/features/flag/flag.slot.tsx
+new file mode 100644
+index 00000000..4668a40c
+--- /dev/null
++++ b/src/main/frontend/features/flag/flag.slot.tsx
+@@ -0,0 +1,81 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
++import { peopleKey, usePeople, type Person } from '../people/people.slot';
++import { personActionKey, useLastPersonAction } from '../people/personAction';
++import { useUser } from '../session/useSession';
++
++function FlagHeads(_: { sheetId: string; user: string }) {
++  return (
++    <>
++      <th>Flag</th>
++      <th />
++    </>
++  );
++}
++
++// The reason of the person's flag while the sheet's today is on or before its until date (blank otherwise), and the
++// reason, until date and button that flag them; only a steward may. While the flag holds, only a steward may open the
++// person's claims. A refusal shows on the person until the next action on their row.
++function FlagCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
++  const person = usePeople(sheetId).data?.find((p) => p.id === personId);
++  const [reason, setReason] = useState('');
++  const [until, setUntil] = useState('');
++  const [user] = useUser();
++  const queryClient = useQueryClient();
++  const flag = useMutation({
++    mutationKey: personActionKey(sheetId, personId),
++    mutationFn: (f: { reason: string; until: string }) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/flag`, {
++        reason: f.reason.trim(),
++        until: f.until.trim(),
++        by: user ?? '',
++      }),
++    onSuccess: async () => {
++      setReason('');
++      setUntil('');
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++    },
++  });
++  const last = useLastPersonAction(sheetId, personId, flag.submittedAt);
++
++  return (
++    <>
++      <td data-testid="person-flag-shown">{person?.flagShown ?? ''}</td>
++      <td>
++        <input
++          type="text"
++          data-testid="person-flag-reason"
++          value={reason}
++          onChange={(e) => {
++            setReason(e.target.value);
++            flag.reset();
++          }}
++        />{' '}
++        <input
++          type="date"
++          data-testid="person-flag-until"
++          value={until}
++          onChange={(e) => {
++            setUntil(e.target.value);
++            flag.reset();
++          }}
++        />{' '}
++        <button type="button" data-testid="person-flag" disabled={flag.isPending} onClick={() => flag.mutate({ reason, until })}>
++          Flag
++        </button>
++        {flag.isError && last && (
++          <span data-testid="person-error" role="alert">
++            {flag.error.message}
++          </span>
++        )}
++      </td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonHeads.fill({ order: 46, Component: FlagHeads }),
++  PersonCells.fill({ order: 46, Component: FlagCells }),
++];
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 96b2235d..2bf09ea5 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -37,7 +37,7 @@ export type Person = { id: number; name: string; grade: string; grades: GradeFro
+   holds: HoldSpan[];
+   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; tags: string[]; aliases: string[];
+   clashing: boolean; origin: string | null; snapshots: string[];
+-  statementLines: string[]; ownTerms: number | null; datedTerms: TermsFrom[] };
++  statementLines: string[]; ownTerms: number | null; datedTerms: TermsFrom[]; flagShown: string | null };
+ 
+ export type TermsFrom = { terms: number | null; from: string };
+ 
+@@ -109,8 +109,8 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
+   // The date the grade is given from; blank is the sheet's today (an added person's grade applies
+   // from the beginning of time).
+   const [gradeFrom, setGradeFrom] = useState('');
+-  // The person's own terms in days; blank for none. An editor starts with those from the beginning of time.
+-  const [terms, setTerms] = useState(editing?.ownTerms == null ? '' : String(editing.ownTerms));
++  // The person's own terms in days; blank for none. An editor starts with those in force on the sheet's today.
++  const [terms, setTerms] = useState(editing?.terms == null ? '' : String(editing.terms));
+   // The date the terms are given from; blank is from the beginning of time.
+   const [termsFrom, setTermsFrom] = useState('');
+   // The person's contact; blank for none.
+@@ -176,7 +176,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
+       if (now) {
+         setName(now.name);
+         setGrade(now.grade);
+-        setTerms(now.ownTerms == null ? '' : String(now.ownTerms));
++        setTerms(now.terms == null ? '' : String(now.terms));
+         setContact(now.contact ?? '');
+         setTags(now.tags.join(', '));
+         setVersion(now.version);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 6db642e4..7f340027 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -32,6 +32,7 @@ import net.officefloor.plugin.variable.Val;
+  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
+  * An open whose due (as open) is above the review threshold in force on the claim's date leaves it in REVIEW instead,
+  * recording who opened it but giving no number; a steward's review then opens it with its number (anyone else is refused).
++ * While a steward's flag on the claim's person holds on the sheet's today, only a steward may open it.
+  */
+ public class ApplyClaimStatus {
+     // A DRAFT claim may be deleted, and a DELETED one restored to DRAFT only on the sheet-today it was deleted.
+@@ -95,6 +96,13 @@ public class ApplyClaimStatus {
+             if (!settings.allows(claim.getSheetId(), action, role)) {
+                 throw new BadRequestException("A " + role + " may not " + action + " a claim on this sheet");
+             }
++            if (status == ClaimStatus.OPEN && !steward) {
++                Person owner = people.find(claim.getSheetId(), claim.getPersonId());
++                if (owner != null && owner.isFlaggedOn(sheets.today(claim.getSheetId()))) {
++                    throw new BadRequestException("This person is flagged (" + owner.getFlagReason()
++                            + "); only a steward may open their claims until " + owner.getFlagUntil());
++                }
++            }
+             if (status == ClaimStatus.VOID && from == ClaimStatus.SETTLED) {
+                 if (!steward) {
+                     throw new BadRequestException("Only a steward voids a SETTLED claim");
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index b3038329..d1d68279 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -11,15 +11,14 @@ import net.officefloor.plugin.variable.Val;
+  *  the form loaded it. The grade is given from the request's from-date (the sheet's today when blank; nothing is given when blank and it is the
+  *  grade already in force on today), keeping the grades already given; the person then shows the grade in force on the sheet's today. Their own terms are given
+  *  from the request's terms from-date (replacing those from that same date, keeping the rest), or when blank replace
+- *  those from the beginning of time, publishing whether any changed, and likewise their contact; their tags are replaced too. */
++ *  those from the beginning of time, publishing whether the terms entered differ from those in force on the sheet's today before the save, and likewise their contact; their tags are replaced too. */
+ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, PersonRepository repository,
+             SheetRepository sheets, Out<TermsEdit> termsEdit, Out<ContactEdit> contactEdit) throws ConflictException {
+         if (request.version() == null || request.version() != person.getVersion()) {
+             throw new ConflictException(PersonRepository.CHANGED);
+         }
+-        Integer before = person.getTerms();
+-        java.util.Set<TermsFrom> datedBefore = java.util.Set.copyOf(person.getDatedTerms());
++        Integer before = person.getTermsToday();
+         LocalDate termsFrom = request.termsFromDate();
+         person.setName(request.name());
+         if (termsFrom == null) {
+@@ -43,7 +42,6 @@ public class ApplyPerson {
+             repository.giveTerms(person, request.termsDays(), termsFrom);
+         }
+         person.setToday(today);
+-        termsEdit.set(new TermsEdit(!Objects.equals(before, person.getTerms())
+-                || !datedBefore.equals(java.util.Set.copyOf(person.getDatedTerms()))));
++        termsEdit.set(new TermsEdit(!Objects.equals(before, request.termsDays())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/FlagInput.java b/src/main/java/net/officefloor/hq/app/person/FlagInput.java
+new file mode 100644
+index 00000000..ff2d3818
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/FlagInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++
++/** A validated flag: its trimmed reason and the date it holds until (inclusive). */
++public record FlagInput(String reason, LocalDate until) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/FlagPerson.java b/src/main/java/net/officefloor/hq/app/person/FlagPerson.java
+new file mode 100644
+index 00000000..491b5c98
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/FlagPerson.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.Role;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** Flags the person with the reason until the date; only a steward may. */
++public class FlagPerson {
++    public void flag(@Val FlagInput input, @Val Person person, @Val ChangedBy by, RoleRepository roles,
++            PersonRepository repository) throws BadRequestException {
++        if (!Role.STEWARD.equals(roles.roleOf(person.getSheetId(), by.name()))) {
++            throw new BadRequestException("Only a steward may flag a person");
++        }
++        repository.flag(person.getId(), input.reason(), input.until());
++        person.setFlagReason(input.reason());
++        person.setFlagUntil(input.until());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/FlagRequest.java b/src/main/java/net/officefloor/hq/app/person/FlagRequest.java
+new file mode 100644
+index 00000000..105bf994
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/FlagRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A flag to set on a person: its reason, the date it holds until, and the signed-in user (`by`) setting it. */
++public record FlagRequest(String reason, String until, String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 74d08309..d88fd77d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -30,6 +30,9 @@ public class Person {
+     private String contact;
+     private String tags;
+ 
++    private String flagReason;
++    private LocalDate flagUntil;
++
+     private String origin;
+     private LocalDate arrivedOn;
+ 
+@@ -98,6 +101,34 @@ public class Person {
+         this.datedTerms = datedTerms;
+     }
+ 
++    /** A steward's flag's reason; null when never flagged. */
++    public String getFlagReason() {
++        return flagReason;
++    }
++
++    public void setFlagReason(String flagReason) {
++        this.flagReason = flagReason;
++    }
++
++    /** The date a steward's flag holds until (inclusive); null when never flagged. */
++    public LocalDate getFlagUntil() {
++        return flagUntil;
++    }
++
++    public void setFlagUntil(LocalDate flagUntil) {
++        this.flagUntil = flagUntil;
++    }
++
++    /** Whether a steward's flag holds on the date: it is on or before the flag's until date. */
++    public boolean isFlaggedOn(LocalDate on) {
++        return flagReason != null && flagUntil != null && on != null && !on.isAfter(flagUntil);
++    }
++
++    /** The flag's reason while it holds on the sheet's today; null otherwise. */
++    public String getFlagShown() {
++        return isFlaggedOn(today) ? flagReason : null;
++    }
++
+     /** The sheet's today, as the person was read; null when not known. */
+     public LocalDate getToday() {
+         return today;
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 35d7a2a9..0257ed7a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
+ public class PersonRepository {
+ 
+     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
+-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin, p.arrived_on,"
++    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin, p.arrived_on, p.flag_reason, p.flag_until,"
+             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
+             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
+             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
+@@ -39,6 +39,8 @@ public class PersonRepository {
+         person.setTags(rs.getString("tags"));
+         person.setOrigin(rs.getString("origin"));
+         person.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
++        person.setFlagReason(rs.getString("flag_reason"));
++        person.setFlagUntil(rs.getObject("flag_until", LocalDate.class));
+         return person;
+     };
+ 
+@@ -283,6 +285,11 @@ public class PersonRepository {
+         return true;
+     }
+ 
++    /** Flag the person with the reason until the date, replacing any flag they had. */
++    public void flag(long id, String reason, LocalDate until) {
++        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", reason, java.sql.Date.valueOf(until), id);
++    }
++
+     /** Retire the person from the date; false (nothing written) when they were retired already. */
+     public boolean retire(long id, LocalDate from) {
+         return jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND retired_from IS NULL",
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 966baccf..4e8fb5ae 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -3,12 +3,12 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ 
+ /** A person, with the grade in force on the sheet's today and every grade they were given (each from its from-date), their statement count and their last statement's due-total ("n/a" when it had none) and date
+- *  (both null before their first statement), the date they are retired from (null: not retired), their past retirements (in the order kept), whether they have any hold and their holds (in the order added), their patrons' names, sorted, their patrons with their shares of 100.00, sorted by name, their own terms in force on the sheet's today (null: none), their contact (null: none), their tags, sorted (empty: none), their aliases, sorted as names are compared, whether they clash (their name or an alias used on another sheet of their tree) the sheet they were transferred from (null: none) their snapshot lines, oldest first, and their statement lines, one per statement still standing, oldest first, their own terms from the beginning of time (null: none) and the own terms they were given from a date, oldest from-date first. */
++ *  (both null before their first statement), the date they are retired from (null: not retired), their past retirements (in the order kept), whether they have any hold and their holds (in the order added), their patrons' names, sorted, their patrons with their shares of 100.00, sorted by name, their own terms in force on the sheet's today (null: none), their contact (null: none), their tags, sorted (empty: none), their aliases, sorted as names are compared, whether they clash (their name or an alias used on another sheet of their tree) the sheet they were transferred from (null: none) their snapshot lines, oldest first, and their statement lines, one per statement still standing, oldest first, their own terms from the beginning of time (null: none) and the own terms they were given from a date, oldest from-date first, and their flag's reason while it holds on the sheet's today (null: none). */
+ public record PersonResponse(long id, String name, String grade, List<GradeResponse> grades, long version, int statementCount, String statedTotal,
+         String statementDate, String retiredFrom, List<RetirementResponse> retirements, boolean held, List<HoldResponse> holds,
+         List<String> patrons, List<PatronShareResponse> patronShares, Integer terms, String contact, List<String> tags, List<String> aliases,
+         boolean clashing, String origin, List<String> snapshots,
+-        List<String> statementLines, Integer ownTerms, List<TermsResponse> datedTerms) {
++        List<String> statementLines, Integer ownTerms, List<TermsResponse> datedTerms, String flagShown) {
+     public static PersonResponse from(Person person) {
+         Statements s = person.getStatements();
+         return new PersonResponse(person.getId(), person.getName(), person.getGrade(),
+@@ -24,6 +24,6 @@ public record PersonResponse(long id, String name, String grade, List<GradeRespo
+                 person.getOrigin(), person.getSnapshots().stream().map(SnapshotLine::line).toList(),
+                 person.getStatementLines().stream().map(StatementLine::line).toList(), person.getTerms(),
+                 person.getDatedTerms().stream().sorted(java.util.Comparator.comparing(TermsFrom::from))
+-                        .map(TermsResponse::from).toList());
++                        .map(TermsResponse::from).toList(), person.getFlagShown());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonFlagged.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonFlagged.java
+new file mode 100644
+index 00000000..2f840f3b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonFlagged.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++public class RecordPersonFlagged {
++    public void record(@Val Person person, @Val FlagInput flag, @Val ChangedBy by, Audit audit) {
++        audit.record("PERSON_FLAGGED sheet=" + person.getSheetId() + " by=" + by.name() + " name=" + person.getName()
++                + " reason=" + flag.reason() + " until=" + flag.until());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TermsEdit.java b/src/main/java/net/officefloor/hq/app/person/TermsEdit.java
+index b2926234..330d4361 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TermsEdit.java
++++ b/src/main/java/net/officefloor/hq/app/person/TermsEdit.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** Whether an edit changed the person's own terms from what they were before the save. */
++/** Whether the terms an edit entered differ from the own terms in force on the sheet's today before the save. */
+ public record TermsEdit(boolean changed) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateFlag.java b/src/main/java/net/officefloor/hq/app/person/ValidateFlag.java
+new file mode 100644
+index 00000000..82ac0cf9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateFlag.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A flag's reason (not blank) and until date. Publishes them parsed, with the user making the change. */
++public class ValidateFlag {
++    public void validate(@RequestBody FlagRequest request, Out<FlagInput> flag, Out<ChangedBy> changedBy)
++            throws BadRequestException {
++        ChangedBy by = ChangedBy.of(request == null ? null : request.by());
++        String reason = request == null || request.reason() == null ? "" : request.reason().trim();
++        if (reason.isEmpty()) {
++            throw new BadRequestException("Enter a reason for the flag");
++        }
++        String until = request.until() == null ? "" : request.until().trim();
++        if (until.isEmpty()) {
++            throw new BadRequestException("Enter the date the flag holds until");
++        }
++        try {
++            flag.set(new FlagInput(reason, LocalDate.parse(until)));
++        } catch (DateTimeParseException e) {
++            throw new BadRequestException("Enter a date as YYYY-MM-DD");
++        }
++        changedBy.set(by);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index a315e711..a07f5196 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -49,8 +49,8 @@ public class SheetCloneRepository {
+         Map<Long, Long> people = new HashMap<>();
+         for (Long id : ids("SELECT id FROM person WHERE sheet_id = ? ORDER BY id", from)) {
+             long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO person (sheet_id, name, version,"
+-                    + " retired_from, terms, contact, tags, list_position, origin) SELECT ?, name, 0, retired_from, terms,"
+-                    + " contact, tags, list_position, origin FROM person WHERE id = ?)", Long.class, to, id);
++                    + " retired_from, terms, contact, tags, list_position, origin, flag_reason, flag_until) SELECT ?, name, 0, retired_from, terms,"
++                    + " contact, tags, list_position, origin, flag_reason, flag_until FROM person WHERE id = ?)", Long.class, to, id);
+             people.put(id, copy);
+             jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date"
+                     + " FROM person_grade WHERE person_id = ?", copy, id);
+diff --git a/src/main/resources/db/migration/V85__person_flag.sql b/src/main/resources/db/migration/V85__person_flag.sql
+new file mode 100644
+index 00000000..71a2cf1f
+--- /dev/null
++++ b/src/main/resources/db/migration/V85__person_flag.sql
+@@ -0,0 +1,8 @@
++-- A steward's flag on a person: its reason and the date it holds until (inclusive). While the sheet's today is on or
++-- before that date the person's row shows the reason and only a steward may open their claims; null: never flagged.
++ALTER TABLE person ADD COLUMN flag_reason VARCHAR(255);
++ALTER TABLE person ADD COLUMN flag_until DATE;
++ALTER TABLE hist.person ADD COLUMN flag_reason VARCHAR(255);
++ALTER TABLE hist.person ADD COLUMN flag_until DATE;
++ALTER TABLE asof.person ADD COLUMN flag_reason VARCHAR(255);
++ALTER TABLE asof.person ADD COLUMN flag_until DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/flag.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/flag.POST.yml
+new file mode 100644
+index 00000000..5688422a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/flag.POST.yml
+@@ -0,0 +1,25 @@
++# Flag a person with a reason until a date; only a steward may. Validate the body before touching the store, so a refusal writes nothing.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: flag
++flag:
++  class: net.officefloor.hq.app.person.ValidateFlag
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.FlagPerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonFlagged
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
