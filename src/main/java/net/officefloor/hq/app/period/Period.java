@@ -27,4 +27,8 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
     public Period closedAt(BigDecimal total) {
         return new Period(sheetId, name, from, to, true, total);
     }
+
+    public Period reopened() {
+        return new Period(sheetId, name, from, to, false, null);
+    }
 }

@@ -1,0 +1,25 @@
+package net.officefloor.hq.app.period;
+
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.plugin.variable.Out;
+import net.officefloor.server.http.ServerHttpConnection;
+import org.springframework.web.bind.annotation.PathVariable;
+
+public class ReopenPeriod {
+    // Only a steward reopens a closed period; its due-total is then live again.
+    public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("name") String name, Periods periods,
+            Settings settings, ServerHttpConnection connection, Out<Period> periodOut) throws PeriodRefusedException {
+        Period period = periods.find(sheetId.trim(), name.trim());
+        if (period == null) {
+            throw new PeriodRefusedException("No period " + name + " on this sheet.");
+        }
+        if (!Settings.STEWARD.equals(settings.role(period.sheetId(), Audit.user(connection).trim()))) {
+            throw new PeriodRefusedException("Only a steward can reopen a period.");
+        }
+        if (!period.closed() || !periods.reopen(period)) {
+            throw new PeriodRefusedException("The period " + period.name() + " is not closed.");
+        }
+        periodOut.set(period.reopened());
+    }
+}

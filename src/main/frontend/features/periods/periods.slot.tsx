@@ -21,7 +21,8 @@ function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   return <td data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</td>;
 }
 
-/** A period's closed flag and the button that closes it. A refusal shows on the period until its next action. */
+/** A period's closed flag and the buttons that close and reopen it (reopening is a steward's). A refusal
+ *  shows on the period until its next action. */
 function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
@@ -37,6 +38,17 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
     onError: () => setError(`The period ${period.name} could not be closed: it is already closed.`),
   });
+  const reopen = useMutation({
+    mutationFn: () =>
+      putJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/reopen`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+    onError: () =>
+      setError(`The period ${period.name} could not be reopened: it is not closed, or you are not a steward.`),
+  });
 
   return (
     <td>
@@ -51,6 +63,17 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
         }}
       >
         Close
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="period-reopen"
+        disabled={reopen.isPending}
+        onClick={() => {
+          setError('');
+          once(() => reopen.mutateAsync());
+        }}
+      >
+        Reopen
       </button>
       {error && <span data-testid="period-error">{error}</span>}
     </td>
@@ -58,7 +81,7 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
 }
 
 /** The sheet's periods, each with its due-total — the figures of the counting claims dated in it, fixed
- *  when the period was closed — and the form a period is added through. */
+ *  while the period is closed and live again once it is reopened — and the form a period is added through. */
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery(periodsQuery(sheetId));
