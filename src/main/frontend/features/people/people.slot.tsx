@@ -91,6 +91,16 @@ export function useHeld(sheetId: string): Holds {
       ? [...(p.holds ?? []), { from: null, to: null }] : p.holds ?? []])), [people.data, today]);
 }
 
+/** Each person's retirement as a hold over all their dates, once its date is reached: unlike a hold, it takes their
+ *  OPEN and PENDING claims (unless a statement binds them) out of claimed too. */
+export function useRetiredHolds(sheetId: string): Holds {
+  const people = usePeople(sheetId);
+  const today = useSheetToday(sheetId).data?.today;
+  return useMemo(() => new Map((people.data ?? []).map((p) => [p.id,
+    p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today ? [{ from: null, to: null }] : []])),
+    [people.data, today]);
+}
+
 /** Which person's editor is open (search param `editPerson`); none means the form adds. */
 export function useEditingPerson() {
   return useSearchParam('editPerson', asNumber);

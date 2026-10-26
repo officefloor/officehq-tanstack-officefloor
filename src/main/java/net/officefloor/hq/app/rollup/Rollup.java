@@ -29,8 +29,8 @@ import org.springframework.stereotype.Service;
  * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
  * those of their claims that are OPEN or PENDING and past their due-by plus their grade's grace on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
  * then a TOTALS line when any of the sheet's three totals moved, then — while the sheet's alert threshold is set — an ALERT line, in list order, per person whose due-total went from at or below it (or none) to above it. The sheet's due-total and overdue-total leave out the
- * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
- * binds them; their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
+ * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims held themselves or dated within one of their holds count, unless a statement
+ * binds them, in none of these but claimed (and so the claimed-total); their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
  * after it), do none of a retired person's OPEN and PENDING claims, unless a statement binds them.
  */
 @Service
@@ -73,11 +73,15 @@ public class Rollup {
             BigDecimal overdue = ZERO;
             boolean kept = false;
             for (Claim c : sheetClaims) {
-                if (c.getPersonId() != p.getId() || !counts(c, p, today)) {
+                if (c.getPersonId() != p.getId() || !claims(c, p, today)) {
                     continue;
                 }
                 if (c.getCorrects() == null) {
                     claimed = claimed.add(c.getAmount().setScale(2));
+                }
+                // A held claim still counts in claimed; only its due leaves the totals.
+                if (!counts(c, p, today)) {
+                    continue;
                 }
                 kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
                 String grade = p.gradeOn(c.getDate());
@@ -248,6 +252,13 @@ public class Rollup {
      *  unless a statement binds them, nor does a claim deferred past the sheet's today; their other ones do. */
     private static boolean counts(Claim claim, Person person, LocalDate today) {
         return claim.getStatus().counts() && !held(claim, person, today) && !claim.isDeferredOn(today);
+    }
+
+    /** Whether the claim counts in claimed: as in the live totals, except that a hold (the person's or the claim's)
+     *  does not take it out; a retirement still does. */
+    private static boolean claims(Claim claim, Person person, LocalDate today) {
+        boolean retired = claim.getStatus().isOpen() && !claim.isBound() && person.retiredOn(today);
+        return claim.getStatus().counts() && !retired && !claim.isDeferredOn(today);
     }
 
     /** Whether the claim counts as it would in the live totals were its status {@code then}. */

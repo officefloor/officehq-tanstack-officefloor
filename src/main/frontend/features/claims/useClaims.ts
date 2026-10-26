@@ -59,7 +59,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The sheet's today when the REVIEW claim went to REVIEW; none for a claim in any other status. */
   reviewDay?: string | null };
 
-/** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
+/** Whether a claim counts toward due and every due total (claimed: see sumAmounts): only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one held itself or dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
  *  nor does one deferred past the sheet's today. */
 export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean; deferred?: boolean; held?: boolean }, held: Holds): boolean {
@@ -110,8 +110,9 @@ export function useEditingClaim() {
   return useSearchParam('editClaim', asNumber);
 }
 
-/** The counted claims' amounts, corrections left out, added up exactly, in cents, shown with two decimals. */
-export function sumAmounts(claims: Claim[], held: Holds): string {
-  const cents = claims.filter((c) => counts(c, held) && c.corrects == null).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+/** The claimed claims' amounts, corrections left out, added up exactly, in cents, shown with two decimals. A hold does
+ *  not take a claim out of claimed: only the retirements (`retired`, see useRetiredHolds) and the rest of `counts` do. */
+export function sumAmounts(claims: Claim[], retired: Holds): string {
+  const cents = claims.filter((c) => counts({ ...c, held: false }, retired) && c.corrects == null).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

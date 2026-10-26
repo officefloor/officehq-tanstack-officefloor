@@ -5,7 +5,7 @@ import { ClaimCells } from '../../slots/defs/claimRow';
 import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/useSession';
-import { useHeld } from '../people/people.slot';
+import { useRetiredHolds } from '../people/people.slot';
 import { claimLockKey, claimSaveKey, claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useTemplates } from '../templates/templates.slot';
@@ -153,14 +153,14 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
   const shown = useColumnShown(sheetId);
   const claims = useClaims(sheetId);
   const [editingId] = useEditingClaim();
-  const held = useHeld(sheetId);
+  const retired = useRetiredHolds(sheetId);
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   // Only a DRAFT can be edited: once the claim being edited is no longer one (another user opened it), its form adds.
   const editing = mine.find((c) => c.id === editingId && c.status === 'DRAFT');
 
   return (
     <>
-      {shown('claimed') && <td data-testid="person-claimed">{sumAmounts(mine, held)}</td>}
+      {shown('claimed') && <td data-testid="person-claimed">{sumAmounts(mine, retired)}</td>}
       <td>
         <ClaimForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} personId={personId} editing={editing} />
         <ul data-testid="claim-list">
@@ -184,11 +184,11 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
 // The sheet's claimed-total: everyone's counted claims, corrections left out, added up.
 function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
   const claims = useClaims(sheetId);
-  const held = useHeld(sheetId);
+  const retired = useRetiredHolds(sheetId);
   return (
     <section data-testid="claims-rollup">
       <p>
-        Claimed total: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], held)}</strong>
+        Claimed total: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], retired)}</strong>
       </p>
       {claims.isError && (
         <p data-testid="claims-error" role="alert">
