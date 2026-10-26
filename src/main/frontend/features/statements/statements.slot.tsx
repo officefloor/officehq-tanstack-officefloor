@@ -16,6 +16,7 @@ function StatementHeads({ sheetId }: { sheetId: string; user: string }) {
       {shown('statement-count') && <th>Statements</th>}
       {shown('stated-total') && <th>Last stated total</th>}
       {shown('statement-date') && <th>Last statement</th>}
+      <th>Statement lines</th>
       <th />
     </>
   );
@@ -67,6 +68,14 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string; 
       {shown('statement-count') && <td data-testid="person-statement-count">{person?.statementCount ?? 0}</td>}
       {shown('stated-total') && <td data-testid="person-stated-total">{person?.statedTotal ?? ''}</td>}
       {shown('statement-date') && <td data-testid="person-statement-date">{person?.statementDate ?? ''}</td>}
+      {/* One line per statement still standing, oldest first (those a merge or transfer brought over among them, by date). */}
+      <td>
+        {(person?.statementLines ?? []).map((line, i) => (
+          <div key={i} data-testid="person-statement-line-line">
+            {line}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="date"

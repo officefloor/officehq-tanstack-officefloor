@@ -549,6 +549,16 @@ public class PersonRepository {
         for (Person person : people) {
             person.setSnapshots(snapshots.getOrDefault(person.getId(), List.of()));
         }
+        // Oldest first by date, so statements a merge or transfer brought over show among the person's own.
+        Map<Long, List<StatementLine>> statementLines = jdbc.query(
+                "SELECT s.person_id, s.taken_on, s.due_total FROM statement s WHERE s.sheet_id = ? ORDER BY s.taken_on, s.id",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), new StatementLine(rs.getObject("taken_on", LocalDate.class),
+                        rs.getBigDecimal("due_total"))), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setStatementLines(statementLines.getOrDefault(person.getId(), List.of()));
+        }
         return people;
     }
 }

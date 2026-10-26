@@ -23,6 +23,7 @@ public class Person {
     private List<String> patrons = List.of();
     private List<String> aliases = List.of();
     private List<SnapshotLine> snapshots = List.of();
+    private List<StatementLine> statementLines = List.of();
     private Integer terms;
     private String contact;
     private String tags;
@@ -254,5 +255,14 @@ public class Person {
 
     public void setSnapshots(List<SnapshotLine> snapshots) {
         this.snapshots = snapshots;
+    }
+
+    /** The person's statement lines, one per statement still standing, oldest first. */
+    public List<StatementLine> getStatementLines() {
+        return statementLines;
+    }
+
+    public void setStatementLines(List<StatementLine> statementLines) {
+        this.statementLines = statementLines;
     }
 }
