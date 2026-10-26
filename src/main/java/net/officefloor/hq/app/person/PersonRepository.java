@@ -369,6 +369,37 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
                 + " WHERE person_id = ?", t, f);
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
+        moveClaims(from, toSheet, t, numbers);
+        dropRest(f);
+        return t;
+    }
+
+    /**
+     * Transfer the person to the other sheet merging them into a person there ({@code into}, still at the version they
+     * were loaded at), as {@link #merge} does: their claims move to the other as {@link #transfer} moves them, listed
+     * after the other's claims; their name and aliases become the other's aliases; everything else of theirs is
+     * dropped with them (grades, terms and contact too). False (nothing written) when the other was saved by someone
+     * else in the meantime.
+     */
+    public boolean transferInto(Person from, Person into, Map<Long, String> numbers) {
+        long f = from.getId();
+        long t = into.getId();
+        String toSheet = into.getSheetId();
+        if (jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND version = ?", t,
+                into.getVersion()) == 0) {
+            return false;
+        }
+        jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", toSheet, t,
+                from.getName());
+        moveClaims(from, toSheet, t, numbers);
+        dropRest(f);
+        return true;
+    }
+
+    /** Move the person's claims to the other sheet's person {@code t}, as {@link #transfer} describes. */
+    private void moveClaims(Person from, String toSheet, long t, Map<Long, String> numbers) {
+        long f = from.getId();
         List<Map<String, Object>> claims = jdbc.queryForList(
                 "SELECT id, claim_number, corrects, split_from, tags FROM claim WHERE person_id = ? ORDER BY listed", f);
         Map<String, String> renumbered = new java.util.HashMap<>();
@@ -395,6 +426,10 @@ public class PersonRepository {
                 }
             }
         }
+    }
+
+    /** Drop everything else of the person's here, and the person. */
+    private void dropRest(long f) {
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
@@ -404,7 +439,6 @@ public class PersonRepository {
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE id = ?", f);
-        return t;
     }
 
     /** Sets each person's patrons' names, in the order named, their grades, their holds and their past retirements. */
