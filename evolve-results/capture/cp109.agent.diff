@@ -1,0 +1,547 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 40bd1266..00ef7b46 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -5,12 +5,15 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useUser } from '../session/useSession';
+ import { poolsKey } from '../pools/pools.slot';
++import { ratesKey } from '../rates/useRates';
++import { sheetTodayKey } from '../today/today.slot';
+ import { delegationsKey, rolesKey, settingsKey, useDelegations, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Delegation, type Role, type Setting } from './useAccess';
+ 
+ const ROLES = ['clerk', 'steward', 'viewer'];
+ const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
+ const DAYS = /^\d{1,5}$/;
+ const DATE = /^\d{4}-\d{2}-\d{2}$/;
++const SHEET_ID = /^.{1,200}$/;
+ const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
+ 
+ // The role form: assigns a user name a role, clerk, steward or viewer (any name not listed is a clerk; a viewer
+@@ -196,7 +199,7 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
+ // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
+ // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
+ // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
+-// roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from, the entry date, the grace days and the permissions is dated: saving it records
++// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the parent and the permissions is dated: saving it records
+ // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
+ // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
+ type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
+@@ -236,6 +239,8 @@ const SETTINGS: readonly SettingField[] = [
+     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
+   { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
++  { key: 'parent', label: 'Parent sheet', placeholder: 'none', blank: true, valid: SHEET_ID, inputMode: 'text',
++    invalid: 'A parent is a sheet id, or blank for none', dated: false },
+   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
+     ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
+     key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',
+@@ -272,6 +277,9 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
+       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
+       // The pot changes each pool member's cut.
+       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
++      // The parent's rates stand in for the sheet's missing ones; the parent shows with the sheet's today.
++      await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
++      await queryClient.invalidateQueries({ queryKey: sheetTodayKey(sheetId) });
+     },
+   });
+   const submit = useSubmitOnce(save);
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index a1ac271a..a69ca99d 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -237,7 +237,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
+           </tr>
+         </thead>
+         <tbody>
+-          {(rates.data ?? []).map((r) => (
++          {(rates.data ?? []).filter((r) => (r.level ?? 0) === 0).map((r) => (
+             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+               <td>{r.grade}</td>
+               <td data-testid="rate-from">{r.from ?? ''}</td>
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 22b7565e..b050efe7 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -2,13 +2,14 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+ /** A grade's rate, in force from its from-date (yyyy-mm-dd; null applies from the beginning of time) through its
+- *  to-date (null: with no end). */
+-export type Rate = { grade: string; rate: string; from: string | null; to: string | null };
++ *  to-date (null: with no end). Its level is how far up the sheet's parents it is from: 0 (or none) the sheet's own,
++ *  1 its parent's, and so on, up to three. */
++export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number };
+ 
+ /** The key every feature reads the sheet's rates under. */
+ export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
+ 
+-/** The sheet's rates: each grade may have several, with different from-dates. */
++/** The sheet's rates: each grade may have several, with different from-dates; then its parents', each at its level. */
+ export function useRates(sheetId: string) {
+   return useQuery({
+     queryKey: ratesKey(sheetId),
+@@ -19,16 +20,21 @@ export function useRates(sheetId: string) {
+ /**
+  * The grade's rate in force on a date (yyyy-mm-dd): the one whose from-date is the latest on or
+  * before it, a rate without a from-date counting as the earliest. Undefined when none applies, or the date is
+- * after that one's to-date.
++ * after that one's to-date. Without one in force on the sheet's own level, its parent's is used, then the parent's
++ * parent's, and so on up.
+  */
+ export function rateOn(rates: readonly Rate[], grade: string, date: string): Rate | undefined {
+-  let found: Rate | undefined;
+-  for (const r of rates) {
+-    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+-    // ISO dates compare as text; no from-date ('') sorts before every date.
+-    if (found === undefined || (r.from ?? '') > (found.from ?? '')) found = r;
++  const top = rates.reduce((m, r) => Math.max(m, r.level ?? 0), 0);
++  for (let level = 0; level <= top; level++) {
++    let found: Rate | undefined;
++    for (const r of rates) {
++      if ((r.level ?? 0) !== level || r.grade !== grade || (r.from !== null && r.from > date)) continue;
++      // ISO dates compare as text; no from-date ('') sorts before every date.
++      if (found === undefined || (r.from ?? '') > (found.from ?? '')) found = r;
++    }
++    if (found !== undefined && !(found.to != null && found.to < date)) return found;
+   }
+-  return found !== undefined && found.to != null && found.to < date ? undefined : found;
++  return undefined;
+ }
+ 
+ /** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n, "-1.03" -> -103n), exactly. */
+diff --git a/src/main/frontend/features/today/today.slot.tsx b/src/main/frontend/features/today/today.slot.tsx
+index 9c61822a..a44676c8 100644
+--- a/src/main/frontend/features/today/today.slot.tsx
++++ b/src/main/frontend/features/today/today.slot.tsx
+@@ -5,7 +5,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useUser } from '../session/useSession';
+ 
+-type SheetToday = { id: string; today: string; archived: boolean };
++type SheetToday = { id: string; today: string; archived: boolean; parent?: string | null };
+ 
+ /** The key every feature reads the sheet's today under: date decisions and default dates use it, never the real clock. */
+ export const sheetTodayKey = (sheetId: string) => ['sheet', sheetId, 'today'] as const;
+@@ -73,6 +73,7 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
+         </button>
+       </form>
+       <p>
++        Parent sheet: <strong data-testid="sheet-parent">{today.data?.parent ?? ''}</strong>{' '}
+         Archived:{' '}
+         <strong data-testid="sheet-archived">{today.data === undefined ? '' : today.data.archived ? 'yes' : 'no'}</strong>{' '}
+         <button
+diff --git a/src/main/java/net/officefloor/hq/app/access/RefuseBadParent.java b/src/main/java/net/officefloor/hq/app/access/RefuseBadParent.java
+new file mode 100644
+index 00000000..8a0ba482
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/access/RefuseBadParent.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.access;
++
++import java.util.HashSet;
++import java.util.Set;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.sheet.SheetResponse;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses a parent that is the sheet itself, a sheet never loaded, or one that has this sheet as an ancestor. */
++public class RefuseBadParent {
++    public void refuse(@Val SheetResponse sheet, @Val SettingInput input, SheetRepository sheets, RateRepository rates)
++            throws BadRequestException {
++        if (!Setting.PARENT.equals(input.key()) || input.value() == null) {
++            return;
++        }
++        String parent = input.value();
++        if (parent.equals(sheet.id())) {
++            throw new BadRequestException("A sheet cannot be its own parent");
++        }
++        if (!sheets.exists(parent)) {
++            throw new BadRequestException("No sheet " + parent + " has been loaded");
++        }
++        Set<String> seen = new HashSet<>();
++        for (String at = parent; at != null && seen.add(at); at = rates.parentOf(at)) {
++            if (at.equals(sheet.id())) {
++                throw new BadRequestException("Sheet " + parent + " has this sheet as an ancestor");
++            }
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index ada189cc..dc368ab9 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
+ /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
+ public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
+ 
+-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the pot and the permissions). */
++    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the pot, the parent and the permissions). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
++        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
+     }
+ 
+     /** Whether the key is one of the permission matrix's (perm-<action>). */
+@@ -38,6 +38,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The most a person's due-total may be; an amount with two decimals, blank for none. */
+     public static final String CAP = "cap";
+ 
++    /** The sheet's parent: the id of a sheet whose rates (then its parent's, up to three levels up) stand in for a grade without a rate in force on a date; blank for none. */
++    public static final String PARENT = "parent";
++
+     /** The sheet's pot, cut among each balanced pool's members by their shares; an amount with two decimals, blank for none. */
+     public static final String POT = "pot";
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index 73798f32..32f87c7e 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -178,6 +178,14 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.PARENT.equals(key)) {
++            if (text.length() > 200) {
++                throw new BadRequestException("A parent is a sheet id, or blank for none");
++            }
++            setting.set(new SettingInput(key, text.isEmpty() ? null : text, from));
++            changedBy.set(by);
++            return;
++        }
+         if (Setting.isPermission(key)) {
+             String value = null;
+             if (!text.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index 33944af5..a3bdf018 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -4,6 +4,40 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ 
+ /** A grade's rate on a sheet: a percent with two decimals, in force from a date (null: from the beginning of time)
+- * through a to-date (null: with no end). */
+-public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
++ * through a to-date (null: with no end). Its level is how far up the sheet's parents it was found: 0 on the sheet itself,
++ * 1 on its parent, and so on. */
++public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int level) {
++
++    public Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
++        this(sheetId, grade, rate, from, to, 0);
++    }
++
++    /** The rate as found the given number of levels up. */
++    public Rate at(int level) {
++        return new Rate(sheetId, grade, rate, from, to, level);
++    }
++
++    /**
++     * The grade's rate in force on the date among rates of several levels: the sheet's own, else (no rate of its own in
++     * force then) its parent's, and so on up. On each level, the latest from-date on or before it, none counting as the
++     * earliest; none when the date is after that rate's to-date.
++     */
++    public static BigDecimal on(java.util.List<Rate> rates, String grade, LocalDate on) {
++        int top = rates.stream().mapToInt(Rate::level).max().orElse(0);
++        for (int level = 0; level <= top; level++) {
++            Rate found = null;
++            for (Rate r : rates) {
++                if (r.level() != level || !r.grade().equals(grade) || (r.from() != null && r.from().isAfter(on))) {
++                    continue;
++                }
++                if (found == null || (r.from() != null && (found.from() == null || r.from().isAfter(found.from())))) {
++                    found = r;
++                }
++            }
++            if (found != null && (found.to() == null || !found.to().isBefore(on))) {
++                return found.rate();
++            }
++        }
++        return null;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 7df1ddcb..54826854 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -11,7 +11,8 @@ import org.springframework.stereotype.Repository;
+ /**
+  * The rates for each grade on each sheet, each in force from its from-date (null: from the beginning
+  * of time), through its to-date (null: with no end). A grade without one in force on a date has no rate on
+- * that date.
++ * that date on the sheet itself; then its parent's rate on that date is used, then the parent's parent's, up to
++ * three levels up (see {@link #chain}).
+  */
+ @Repository
+ public class RateRepository {
+@@ -23,6 +24,9 @@ public class RateRepository {
+                 from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate());
+     };
+ 
++    /** How many levels of parents a sheet takes rates from. */
++    public static final int PARENT_LEVELS = 3;
++
+     private final JdbcTemplate jdbc;
+ 
+     public RateRepository(JdbcTemplate jdbc) {
+@@ -35,11 +39,57 @@ public class RateRepository {
+                 + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+     }
+ 
++    /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
++    public List<String> ancestry(String sheetId) {
++        List<String> found = new java.util.ArrayList<>(List.of(sheetId));
++        String at = sheetId;
++        while (found.size() <= PARENT_LEVELS) {
++            String parent = parentOf(at);
++            if (parent == null || found.contains(parent)) {
++                break;
++            }
++            found.add(parent);
++            at = parent;
++        }
++        return found;
++    }
++
++    /** The sheet's parent; null when it has none. */
++    public String parentOf(String sheetId) {
++        return jdbc.query("SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = 'parent'",
++                (rs, n) -> rs.getString(1), sheetId).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
++    }
++
++    /** The sheet's own rates (level 0), then each of its parents' (see {@link #ancestry}), each at its level up. */
++    public List<Rate> chain(String sheetId) {
++        List<String> sheets = ancestry(sheetId);
++        List<Rate> found = new java.util.ArrayList<>();
++        for (int level = 0; level < sheets.size(); level++) {
++            int at = level;
++            list(sheets.get(level)).forEach(r -> found.add(r.at(at)));
++        }
++        return found;
++    }
++
+     /**
+-     * The grade's rate in force on the date: the one with the latest from-date on or before it, a rate
+-     * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
++     * The grade's rate in force on the date, on the sheet or else (none in force there) up its parents (see
++     * {@link #ancestry}); null when none has one.
+      */
+     public BigDecimal find(String sheetId, String grade, LocalDate on) {
++        for (String sheet : ancestry(sheetId)) {
++            BigDecimal rate = findOwn(sheet, grade, on);
++            if (rate != null) {
++                return rate;
++            }
++        }
++        return null;
++    }
++
++    /**
++     * The grade's rate in force on the date on the sheet itself: the one with the latest from-date on or before it, a rate
++     * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
++     */
++    public BigDecimal findOwn(String sheetId, String grade, LocalDate on) {
+         return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date FROM rate WHERE sheet_id = ? AND grade = ?"
+                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", ROW,
+                 sheetId, grade, Date.valueOf(on)).stream().findFirst()
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index e531396b..208a26f4 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,9 +1,10 @@
+ package net.officefloor.hq.app.rate;
+ 
+-public record RateResponse(String grade, String rate, String from, String to) {
++/** A rate as the screen shows it; level 0 is the sheet's own, 1 its parent's, and so on up. */
++public record RateResponse(String grade, String rate, String from, String to, int level) {
+     public static RateResponse from(Rate rate) {
+         return new RateResponse(rate.grade(), rate.rate().toPlainString(),
+                 rate.from() == null ? null : rate.from().toString(),
+-                rate.to() == null ? null : rate.to().toString());
++                rate.to() == null ? null : rate.to().toString(), rate.level());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index f1dafe34..438d3d1a 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -10,7 +10,7 @@ import net.officefloor.web.ObjectResponse;
+ public class RespondWithRates {
+     public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+             ObjectResponse<List<RateResponse>> response) {
+-        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new RateRepository(jdbc).list(sheet.id()).stream()
++        response.send(history.view(sheet.id(), asOf.on(), jdbc -> new RateRepository(jdbc).chain(sheet.id()).stream()
+                 .map(RateResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 8be43d24..62bcfce6 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
+ /**
+  * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
+  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
+- * bound it to, else its amount times the rate in force on its date of the grade in force on its date, rounded half up when the claim rounds by a date before the sheet's policy date, else half to even;
++ * bound it to, else its amount times the rate in force on its date of the grade in force on its date (the sheet's own, else its parent's, up to three levels up), rounded half up when the claim rounds by a date before the sheet's policy date, else half to even;
+  * none without a rate) with its late charge added on top while it is overdue, and then — unless it is settled or a correction — at least the sheet's floor in force on its date, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
+  * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
+  * those of their claims that are OPEN or PENDING and past their due-by plus their grade's grace on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
+@@ -59,7 +59,7 @@ public class Rollup {
+ 
+     public RollupSnapshot snapshot(String sheetId) {
+         LocalDate today = sheets.today(sheetId);
+-        List<Rate> sheetRates = rates.list(sheetId);
++        List<Rate> sheetRates = rates.chain(sheetId);
+         List<Claim> sheetClaims = claims.list(sheetId);
+         LateCharge late = settings.lateCharge(sheetId, today);
+         BigDecimal cap = late.settings().cap(today);
+@@ -128,7 +128,7 @@ public class Rollup {
+      * figure is the one it shows now, and a deferred or held claim is left out as the live totals leave it out.
+      */
+     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
+-        List<Rate> sheetRates = rates.list(sheetId);
++        List<Rate> sheetRates = rates.chain(sheetId);
+         LocalDate today = sheets.today(sheetId);
+         LateCharge late = settings.lateCharge(sheetId, today);
+         Map<Long, Person> byId = new LinkedHashMap<>();
+@@ -161,7 +161,7 @@ public class Rollup {
+             return null;
+         }
+         LateCharge late = settings.lateCharge(sheetId, sheets.today(sheetId));
+-        return late.due(claim, figure(claim, p.gradeOn(claim.getDate()), rates.list(sheetId), late));
++        return late.due(claim, figure(claim, p.gradeOn(claim.getDate()), rates.chain(sheetId), late));
+     }
+ 
+     /** Record the figures the change moved, from {@code before} to the sheet's figures now. */
+@@ -221,20 +221,8 @@ public class Rollup {
+         return claim.figureAt(rate, late.rounding(claim));
+     }
+ 
+-    /**
+-     * The grade's rate in force on the date: the latest from-date on or before it, none counting as the earliest; none
+-     * when the date is after that rate's to-date.
+-     */
++    /** The grade's rate in force on the date, on the sheet or else up its parents (see {@link Rate#on}). */
+     private static BigDecimal rateOn(List<Rate> sheetRates, String grade, LocalDate on) {
+-        Rate found = null;
+-        for (Rate r : sheetRates) {
+-            if (!r.grade().equals(grade) || (r.from() != null && r.from().isAfter(on))) {
+-                continue;
+-            }
+-            if (found == null || (r.from() != null && (found.from() == null || r.from().isAfter(found.from())))) {
+-                found = r;
+-            }
+-        }
+-        return found == null || (found.to() != null && found.to().isBefore(on)) ? null : found.rate();
++        return Rate.on(sheetRates, grade, on);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetToday.java
+index 767c97a7..9dda5cf2 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetToday.java
+@@ -1,12 +1,13 @@
+ package net.officefloor.hq.app.sheet;
+ 
++import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithSheetToday {
+-    public void respond(@Val SheetResponse sheet, SheetRepository repository,
++    public void respond(@Val SheetResponse sheet, SheetRepository repository, RateRepository rates,
+             ObjectResponse<SheetTodayResponse> response) {
+         response.send(new SheetTodayResponse(sheet.id(), repository.today(sheet.id()).toString(),
+-                repository.isArchived(sheet.id())));
++                repository.isArchived(sheet.id()), rates.parentOf(sheet.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java
+index aaeb6142..9503f320 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetTodayAsOf.java
+@@ -2,16 +2,18 @@ package net.officefloor.hq.app.sheet;
+ 
+ import net.officefloor.hq.app.history.SheetHistory;
+ import net.officefloor.hq.app.history.ViewAsOf;
++import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+-/** The sheet's today as the signed-in user's screen shows it: an as-of date stands in for it. */
++/** The sheet's today as the signed-in user's screen shows it: an as-of date stands in for it. Its parent is the one set now. */
+ public class RespondWithSheetTodayAsOf {
+-    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
++    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history, RateRepository rates,
+             ObjectResponse<SheetTodayResponse> response) {
++        String parent = rates.parentOf(sheet.id());
+         response.send(history.view(sheet.id(), asOf.on(), jdbc -> {
+             SheetRepository sheets = new SheetRepository(jdbc);
+-            return new SheetTodayResponse(sheet.id(), sheets.today(sheet.id()).toString(), sheets.isArchived(sheet.id()));
++            return new SheetTodayResponse(sheet.id(), sheets.today(sheet.id()).toString(), sheets.isArchived(sheet.id()), parent);
+         }));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index 0d6c2ed7..f33810de 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -21,6 +21,11 @@ public class SheetRepository {
+                 id, id, LocalDate.now());
+     }
+ 
++    /** Whether the sheet has been loaded (is stored). */
++    public boolean exists(String id) {
++        return Boolean.TRUE.equals(jdbc.query("SELECT 1 FROM sheet WHERE id = ?", (java.sql.ResultSet rs) -> rs.next(), id));
++    }
++
+     /**
+      * The sheet's today. Every decision that depends on the date, and every default date, uses
+      * this — never the real clock. A sheet not yet stored is on the real date.
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetTodayResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetTodayResponse.java
+index bbb9c8b9..66284e5e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetTodayResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetTodayResponse.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet's today, as yyyy-MM-dd, and whether the sheet is archived. */
+-public record SheetTodayResponse(String id, String today, boolean archived) {
++/** A sheet's today, as yyyy-MM-dd, whether the sheet is archived, and its parent sheet's id (null: none). */
++public record SheetTodayResponse(String id, String today, boolean archived, String parent) {
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index c6c4d924..1b0958f9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,6 +1,6 @@
+-# Change a sheet setting (the clerk limit, the floor, the terms, a grade's terms, the late percent, the policy date or the cap). Validate the body before touching the store, so a refusal
++# Change a sheet setting (the clerk limit, the floor, the terms, a grade's terms, the late percent, the policy date, the cap or the parent). A parent that is the sheet itself, a sheet never loaded, or one with this sheet as an ancestor is refused. Validate the body before touching the store, so a refusal
+ # writes nothing. A dated setting (all but the policy date and period numbering from) records its value from its from-date
+-# (blank: the sheet's today), keeping the others. The floor, the late percent, the policy date and the cap move dues (the terms do not: a claim's terms are fixed when it is added, those in force on its date), so the figures it moved are recorded after the change.
++# (blank: the sheet's today), keeping the others. The floor, the late percent, the policy date, the cap and the parent move dues (the terms do not: a claim's terms are fixed when it is added, those in force on its date), so the figures it moved are recorded after the change.
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateSheetId
+   next: setting
+@@ -9,6 +9,10 @@ setting:
+   next: viewer
+ viewer:
+   class: net.officefloor.hq.app.access.RefuseViewer
++  next: parent
++parent:
++  class: net.officefloor.hq.app.access.RefuseBadParent
++  govern: [ transaction ]
+   next: ensure
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
