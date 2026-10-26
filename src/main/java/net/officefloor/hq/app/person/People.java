@@ -31,6 +31,13 @@ public class People {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The person on the sheet with this name, ignoring case and surrounding spaces; null when none. */
+    public Person findByName(String sheetId, String name) {
+        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(?)", ROW,
+                sheetId, name.trim());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether another person on the sheet (not {@code exceptId}) has this name, ignoring case. */
     public boolean nameTaken(String sheetId, String name, long exceptId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
