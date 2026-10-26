@@ -108,24 +108,26 @@ function addDays(date: string, days: number): string {
 }
 
 /**
- * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
+ * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise its rate figure — the one its
  * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
- * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` in force on the claim's date (two decimals). An overdue claim's late charge — for every full 30 days overdue, the late
- * percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of that figure, each rounded like the claim, added up — is added on top: a statement
- * never binds it, so it follows the sheet's today. A correction has neither floor nor late charge.
+ * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`). An overdue claim's late charge — for every full 30 days overdue, the late
+ * percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of that rate figure, each rounded like the claim, added up — is added on top: a statement
+ * never binds it, so it follows the sheet's today. Last, the sum is raised to the sheet's `floor` in force on the claim's date (two decimals).
+ * A correction has neither floor nor late charge.
  */
 export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: DatedValue[], late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
   const halfUp = roundsHalfUp(claim, late);
-  const live = due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
-  const bound = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, valueOn(floor, claim.date) ?? DEFAULT_FLOOR);
-  const months = isCorrection(claim) ? 0n : lateMonths(claim, late);
-  if (bound === 'n/a' || months === 0n) return bound;
+  const bound = claim.stated && claim.status !== 'PENDING'
+    ? (claim.statedDue ?? 'n/a')
+    : due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
+  if (isCorrection(claim) || bound === 'n/a') return bound;
+  const months = lateMonths(claim, late);
   let total = hundredths(bound);
   for (let n = 1n; n <= months; n++) {
     total += dueCents(bound, valueOn(late.pct, addDays(claim.dueBy, Number(n) * 30)) ?? DEFAULT_LATE_PCT, halfUp);
   }
-  return show(total);
+  return floored(show(total), valueOn(floor, claim.date) ?? DEFAULT_FLOOR);
 }
 
 function floored(live: string, floor: string): string {

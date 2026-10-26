@@ -182,20 +182,25 @@ public class Settings {
         return date.isBefore(policyDate(claim.sheetId())) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    /** The claim's live due at the rate (a percent): its amount times the rate, rounded by {@link #rounding}, raised to the floor; null (no rate) stays null. */
+    /** The claim's rate figure at the rate (a percent): its amount times the rate, rounded by {@link #rounding}, not yet floored; null (no rate) stays null. */
     public BigDecimal live(Claim claim, BigDecimal rate) {
-        return rate == null ? null
-                : floored(claim, claim.amount().multiply(rate).movePointLeft(2).setScale(2, rounding(claim)));
+        return rate == null ? null : claim.amount().multiply(rate).movePointLeft(2).setScale(2, rounding(claim));
     }
 
     /**
-     * A claim's figure with its late charge added on top: an open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
+     * A claim's live due from its rate figure (or the figure a statement bound): the figure with its late charge added on top, then raised
+     * to the floor in force on the claim's date ({@link #floored}). An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
      * before {@code today} gains, for every full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days)
      * of the figure, each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
-     * A correction has no late charge, nor has a deferred claim (it is not overdue until the sheet's today reaches its date).
+     * A correction has no late charge and no floor, and a deferred claim no late charge (it is not overdue until the sheet's today reaches its date).
      */
     public BigDecimal withLate(Claim claim, BigDecimal figure, LocalDate today) {
+        return floored(claim, lateAdded(claim, figure, today));
+    }
+
+    /** The figure with the claim's late charge on {@code today} added on top (see {@link #withLate}), not floored. */
+    private BigDecimal lateAdded(Claim claim, BigDecimal figure, LocalDate today) {
         if (figure == null || !claim.status().isOpen() || claim.isCorrection() || claim.deferredOn(today)) {
             return figure;
         }
@@ -215,7 +220,7 @@ public class Settings {
         return total;
     }
 
-    /** The claim's live due raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */
+    /** The claim's due (its figure plus its late charge) raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */
     public BigDecimal floored(Claim claim, BigDecimal due) {
         return due == null || claim.isCorrection() ? due : due.max(floor(claim.sheetId(), claim.date()));
     }

@@ -14,7 +14,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 public class ApplyResettle {
     // Only a steward re-settles, and only a SETTLED claim. The new figure is the one the claim would have today as an
     // open claim bound by no statement: its amount times its person's grade's rate on its date (as they stand now),
-    // rounded by the policy date, raised to the floor, with the late charge on the sheet's today added on top.
+    // rounded by the policy date, with the late charge on the sheet's today added on top, then raised to the floor.
     public void apply(@Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
             ServerHttpConnection connection, Out<ClaimResponse> responseOut, Out<Resettled> resettledOut)
             throws ClaimResettleRefusedException {

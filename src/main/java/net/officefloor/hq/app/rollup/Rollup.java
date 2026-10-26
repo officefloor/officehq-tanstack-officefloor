@@ -142,8 +142,8 @@ public class Rollup {
 
     /**
      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the figure its person's
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date, raised to the floor;
-     * an overdue claim's late charge on {@code today} added on top of the last two.
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date;
+     * an overdue claim's late charge on {@code today} added on top of the last two, then raised to the floor.
      */
     private BigDecimal figure(Claim claim, Person person, LocalDate today) {
         if (claim.settledDue() != null) {
@@ -153,7 +153,7 @@ public class Rollup {
     }
 
     /**
-     * The claim's figure before any late charge: the one its person's last statement bound, else its floored live figure.
+     * The claim's figure before any late charge: the one its person's last statement bound, else its live rate figure (not floored).
      * A PENDING claim is not bound: it shows its live figure until approved or rejected.
      */
     private BigDecimal bound(Claim claim, Person person) {

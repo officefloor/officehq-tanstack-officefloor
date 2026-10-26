@@ -50,7 +50,7 @@ public class TakeStatement {
 
     /**
      * The claim's figure now (null when it has none): a settled claim's frozen due, otherwise the figure the
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date, raised to the floor.
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date (not floored: the floor goes on last, after the late charge).
      */
     private static BigDecimal figure(Claim claim, Person person, Rates rates, Settings settings) {
         if (claim.settledDue() != null) {
