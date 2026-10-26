@@ -18,12 +18,12 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  number: number | null;
+  number: string | null;
   settledDue: string | null;
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
-  corrects: number | null;
+  corrects: string | null;
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */

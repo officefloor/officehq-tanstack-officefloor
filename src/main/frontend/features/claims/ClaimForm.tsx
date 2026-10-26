@@ -8,7 +8,7 @@ import { claimsKey } from './claimsQuery';
 import type { Claim } from './claimsQuery';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
-const NUMBER = /^\d+$/;
+const NUMBER = /^(\d+|.+-\d+)$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Body = { amount: string; date: string; note: string; corrects: string };

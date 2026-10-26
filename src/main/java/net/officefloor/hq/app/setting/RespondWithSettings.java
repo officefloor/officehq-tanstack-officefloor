@@ -9,6 +9,7 @@ public class RespondWithSettings {
         String sheet = sheetId.trim();
         response.send(new SettingsResponse(settings.get(sheet, Settings.CLERK_LIMIT),
                 settings.floor(sheet).setScale(2).toPlainString(), Integer.toString(settings.terms(sheet)),
-                settings.latePct(sheet).setScale(2).toPlainString(), settings.get(sheet, Settings.POLICY_DATE)));
+                settings.latePct(sheet).setScale(2).toPlainString(), settings.get(sheet, Settings.POLICY_DATE),
+                settings.get(sheet, Settings.PERIOD_NUMBERING_FROM)));
     }
 }

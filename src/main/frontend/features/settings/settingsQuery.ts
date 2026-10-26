@@ -7,11 +7,11 @@ import { claimsQuery } from '../claims/claimsQuery';
 
 /** `clerkLimit` has two decimals ("1.50"), or is "" when there is no limit; `floor` has two decimals;
  *  `terms` is a whole number of days ("14"); `latePct` is a percent with two decimals ("0.00");
- *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
+ *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off. */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string };
 
 /** What the request carries: a setting left out (or blank, for the floor, terms and late percent) is left as it is; a blank policy date is none. */
-export type SettingsChange = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string };
+export type SettingsChange = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string; periodNumberingFrom?: string };
 
 /** The floor a sheet starts with. */
 export const DEFAULT_FLOOR = '1.00';

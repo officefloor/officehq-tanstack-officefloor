@@ -19,5 +19,8 @@ public class ApplySettings {
         if (settings.policyDate() != null) {
             store.set(settings.sheetId(), Settings.POLICY_DATE, settings.policyDate());
         }
+        if (settings.periodNumberingFrom() != null) {
+            store.set(settings.sheetId(), Settings.PERIOD_NUMBERING_FROM, settings.periodNumberingFrom());
+        }
     }
 }

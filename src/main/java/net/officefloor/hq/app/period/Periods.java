@@ -33,6 +33,12 @@ public class Periods {
                 .findFirst().orElse(null);
     }
 
+    /** The sheet's period containing the date, or null when none does. */
+    public Period on(String sheetId, LocalDate date) {
+        return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND from_date <= ? AND ? <= to_date",
+                ROW, sheetId, Date.valueOf(date), Date.valueOf(date)).stream().findFirst().orElse(null);
+    }
+
     /** The sheet's closed period containing the date, or null when none does. */
     public Period closedOn(String sheetId, LocalDate date) {
         return jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND closed AND from_date <= ? AND ? <= to_date",

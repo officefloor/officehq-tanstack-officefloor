@@ -18,8 +18,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  claim's live due is at least, and the terms (days after its date a claim is due by) and the late percent (what an overdue claim gains per full 30 days) — and the form
  *  they are saved through. A blank floor, terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today). A save with every field blank clears whichever of the clerk limit and the policy date was last
- *  worked in (the clerk limit unless it was the policy date). */
+ *  today). From the period numbering date on, an opened claim is numbered within its period (blank: off).
+ *  A save with every field blank clears whichever of the clerk limit, the policy date and the period numbering
+ *  date was last worked in (the clerk limit unless it was one of the others). */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
@@ -28,7 +29,8 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate'>('clerkLimit');
+  const [numberingFrom, setNumberingFrom] = useState('');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom'>('clerkLimit');
   const [error, setError] = useState('');
 
   const [user] = useUser();
@@ -43,6 +45,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setTerms('');
       setLatePct('');
       setPolicyDate('');
+      setNumberingFrom('');
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -75,10 +78,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The policy date must be a date (yyyy-mm-dd).');
       return;
     }
+    const n = numberingFrom.trim();
+    if (n !== '' && !isDate(n)) {
+      setError('The period numbering from-date must be a date (yyyy-mm-dd).');
+      return;
+    }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && p === '' && d === '';
+    const none = l === '' && f === '' && t === '' && p === '' && d === '' && n === '';
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
+    if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
     if (p !== '') body.latePct = p;
@@ -151,6 +160,19 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Period numbering from{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="off"
+            value={numberingFrom}
+            onFocus={() => setBlank('periodNumberingFrom')}
+            onChange={(e) => {
+              setNumberingFrom(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -171,6 +193,10 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Policy date in force: <span data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</span>
+      </p>
+      <p>
+        Period numbering from:{' '}
+        <span data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</span>
       </p>
     </section>
   );

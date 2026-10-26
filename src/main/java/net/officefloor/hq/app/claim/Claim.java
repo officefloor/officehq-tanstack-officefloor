@@ -12,14 +12,14 @@ import java.time.LocalDate;
  * correction: {@code corrects} is the number of the SETTLED claim of the same person it corrects (null for any other claim).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-        ClaimStatus status, Long number, BigDecimal settledDue, String openedBy, boolean stated,
-        BigDecimal statedDue, Long corrects) {
+        ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
+        BigDecimal statedDue, String corrects) {
 
     public Claim with(ClaimInput input, LocalDate date) {
         return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects());
     }
 
-    public Claim withStatus(ClaimStatus status, Long number, BigDecimal settledDue, String openedBy) {
+    public Claim withStatus(ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
     }
 

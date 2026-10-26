@@ -24,6 +24,7 @@ public class Settings {
     public static final String LATE_PCT = "late-pct";
     public static final String LATE_PCT_DEFAULT = "0.00";
     public static final String POLICY_DATE = "policy-date";
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
@@ -77,6 +78,12 @@ public class Settings {
     public LocalDate policyDate(String sheetId) {
         String value = get(sheetId, POLICY_DATE);
         return value.isEmpty() ? sheets.today(sheetId) : LocalDate.parse(value);
+    }
+
+    /** The date from which opened claims are numbered within their period; null when it is off. */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        String value = get(sheetId, PERIOD_NUMBERING_FROM);
+        return value.isEmpty() ? null : LocalDate.parse(value);
     }
 
     /**

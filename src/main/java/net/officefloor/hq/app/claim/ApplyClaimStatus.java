@@ -1,8 +1,11 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Settings;
@@ -15,7 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ApplyClaimStatus {
     // Stored only if the claim still has the status it was loaded with, so two users cannot both move it.
     public void apply(@PathVariable("status") String status, @Val Claim claim, Claims claims,
-            People people, Rates rates, Settings settings, Sheets sheets, ServerHttpConnection connection,
+            People people, Rates rates, Settings settings, Sheets sheets, Periods periods, ServerHttpConnection connection,
             Out<ClaimResponse> responseOut) throws ClaimStatusRefusedException, ClaimOverLimitException {
         ClaimStatus next;
         try {
@@ -44,7 +47,15 @@ public class ApplyClaimStatus {
                                 + limit.toPlainString() + ".");
             }
         }
-        Claim changed = claims.changeStatus(claim, next, due, user);
+        // While the sheet numbers by period (its today on or after the from-date), an opened claim is numbered
+        // within the period its date falls in, or in the no-period sequence; otherwise sheet-wide.
+        String scope = null;
+        LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
+        if (next == ClaimStatus.OPEN && numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
+            Period period = periods.on(claim.sheetId(), claim.date());
+            scope = period == null ? "" : period.name();
+        }
+        Claim changed = claims.changeStatus(claim, next, due, user, scope);
         if (changed == null) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }

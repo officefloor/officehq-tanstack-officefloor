@@ -13,7 +13,7 @@ public class ValidateClaim {
 
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
 
-    private static final Pattern NUMBER = Pattern.compile("\\d{1,18}");
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,18}|.{1,280}-\\d{1,18}");
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withResolverStyle(ResolverStyle.STRICT);
@@ -47,6 +47,6 @@ public class ValidateClaim {
                 throw new InvalidClaimException("Not a date (yyyy-mm-dd): " + date);
             }
         }
-        input.set(new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : Long.valueOf(corrects)));
+        input.set(new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects));
     }
 }

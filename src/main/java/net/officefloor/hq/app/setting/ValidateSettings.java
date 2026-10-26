@@ -20,6 +20,7 @@ public class ValidateSettings {
     // refused. Blank terms are left as they are; otherwise they must be a whole number of days, 0 or more.
     // A blank late percent is left as it is; otherwise it must be a percent of 0.00 or more, with up to two decimals.
     // A missing policy date is left as it is; a blank one is none (the sheet's today is); otherwise it must be a yyyy-MM-dd date.
+    // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
             Out<SheetSettings> settingsOut) throws InvalidSettingException {
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
@@ -46,7 +47,16 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The policy date must be a date (yyyy-mm-dd).");
             }
         }
-        boolean others = !floor.isEmpty() || !terms.isEmpty() || !latePct.isEmpty() || policyDate != null;
+        String numberingFrom = body == null || body.periodNumberingFrom() == null ? null : body.periodNumberingFrom().trim();
+        if (numberingFrom != null && !numberingFrom.isEmpty()) {
+            try {
+                numberingFrom = LocalDate.parse(numberingFrom).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The period numbering from-date must be a date (yyyy-mm-dd).");
+            }
+        }
+        boolean others = !floor.isEmpty() || !terms.isEmpty() || !latePct.isEmpty() || policyDate != null
+                || numberingFrom != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -54,7 +64,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom));
     }
 
     private static String twoDecimals(String amount) {

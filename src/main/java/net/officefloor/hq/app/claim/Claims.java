@@ -19,9 +19,9 @@ public class Claims {
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"),
+            rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getObject("corrects", Long.class));
+            rs.getString("corrects"));
 
     private final JdbcTemplate jdbc;
 
@@ -40,13 +40,13 @@ public class Claims {
     }
 
     /** The person's claim with the number, or null when they have none. */
-    public Claim findByNumber(String sheetId, long personId, long number) {
+    public Claim findByNumber(String sheetId, long personId, String number) {
         List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
                 ROW, sheetId, personId, number);
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -71,17 +71,19 @@ public class Claims {
 
     /**
      * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
-     * it has since changed. Opening gives it the sheet's next number, which it keeps
+     * it has since changed. Opening gives it the next number of {@code scope} (null: the sheet-wide sequence; a
+     * period's name, or "" for no period, while the sheet numbers by period), which it keeps
      * (voided too: a number is never reused). Settling
      * stores {@code due} as its fixed due (null keeps it live). Opening records {@code user} as its opener.
      */
-    public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due, String user) {
+    public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due, String user, String scope) {
         if (jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND status = ?", next.name(), claim.id(),
                 claim.status().name()) != 1) {
             return null;
         }
-        Long number = switch (next) {
-            case OPEN -> nextNumber(claim.sheetId());
+        String number = switch (next) {
+            case OPEN -> scope == null ? Long.toString(nextNumber(claim.sheetId()))
+                    : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
             default -> claim.number();
         };
         BigDecimal settledDue = next == ClaimStatus.SETTLED ? due : claim.settledDue();
@@ -116,5 +118,20 @@ public class Claims {
         jdbc.update("UPDATE claim_number_seq SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
         return jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?", Long.class,
                 sheetId);
+    }
+
+    /** The next number of the sheet's sequence for the period ("" for no period); locked like {@link #nextNumber(String)}. */
+    private long nextNumber(String sheetId, String scope) {
+        try {
+            jdbc.update("INSERT INTO claim_period_number_seq (sheet_id, scope, last_number) SELECT ?, ?, 0 "
+                    + "WHERE NOT EXISTS (SELECT 1 FROM claim_period_number_seq WHERE sheet_id = ? AND scope = ?)",
+                    sheetId, scope, sheetId, scope);
+        } catch (DuplicateKeyException e) {
+            // Another user started the period's counter at the same moment.
+        }
+        jdbc.update("UPDATE claim_period_number_seq SET last_number = last_number + 1 WHERE sheet_id = ? AND scope = ?",
+                sheetId, scope);
+        return jdbc.queryForObject("SELECT last_number FROM claim_period_number_seq WHERE sheet_id = ? AND scope = ?",
+                Long.class, sheetId, scope);
     }
 }

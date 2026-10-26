@@ -15,7 +15,7 @@ public class AuditClaimStatus {
         List<String> fields = new ArrayList<>(List.of("person=" + (person == null ? "" : person.name()),
                 "amount=" + changed.amount(), "date=" + changed.date()));
         // A voided claim's line carries the number it had.
-        Long number = changed.number() != null ? changed.number() : loaded.number();
+        String number = changed.number() != null ? changed.number() : loaded.number();
         if (number != null) {
             fields.add("number=" + number);
         }
