@@ -54,6 +54,8 @@ public class SheetCloneRepository {
             people.put(id, copy);
             jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date"
                     + " FROM person_grade WHERE person_id = ?", copy, id);
+            jdbc.update("INSERT INTO person_terms (person_id, terms, from_date) SELECT ?, terms, from_date"
+                    + " FROM person_terms WHERE person_id = ?", copy, id);
             jdbc.update("INSERT INTO person_hold (person_id, from_date, to_date) SELECT ?, from_date, to_date"
                     + " FROM person_hold WHERE person_id = ? ORDER BY id", copy, id);
             jdbc.update("INSERT INTO person_retirement (person_id, from_date, to_date) SELECT ?, from_date, to_date"

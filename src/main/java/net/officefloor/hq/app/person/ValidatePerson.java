@@ -11,7 +11,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** A person's fields: a name (required), a grade, one of A, B or C, and the grade's from-date (blank, or a date as
- *  YYYY-MM-DD) and their own terms (blank for none, or a whole number of days) and
+ *  YYYY-MM-DD) and their own terms (blank for none, or a whole number of days) and the terms' from-date (blank, or a date as
+ *  YYYY-MM-DD) and
  *  their contact (blank for none; trimmed and lower-cased) and their tags (comma separated, blank for none; trimmed,
  *  lower-cased, repeats dropped, sorted). Publishes them trimmed, with the user making the change. */
 public class ValidatePerson {
@@ -41,6 +42,14 @@ public class ValidatePerson {
                 throw new BadRequestException("Enter the grade's from-date as YYYY-MM-DD");
             }
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                LocalDate.parse(termsFrom);
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("Enter the terms' from-date as YYYY-MM-DD");
+            }
+        }
         String terms = request.terms() == null ? "" : request.terms().trim();
         if (!terms.isEmpty() && !DAYS.matcher(terms).matches()) {
             throw new BadRequestException("Terms are a whole number of days, or blank for none");
@@ -51,6 +60,6 @@ public class ValidatePerson {
             throw new BadRequestException("Tags are at most 1000 characters");
         }
         return new PersonRequest(name, grade, by.name(), request.version(), gradeFrom,
-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact, tags == null ? "" : tags);
+                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact, tags == null ? "" : tags, termsFrom);
     }
 }

@@ -23,7 +23,7 @@ import org.springframework.stereotype.Repository;
 public class SheetHistory {
 
     /** The tables the screen reads (a statement's figures among them), parents before children. */
-    private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold", "person_retirement",
+    private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_terms", "person_hold", "person_retirement",
             "person_patron", "person_alias", "person_snapshot", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "rate_version", "sheet_setting",
             "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_line", "claim_template",
             "pool", "pool_member", "plan", "plan_claim", "crew", "crew_member");
@@ -166,7 +166,7 @@ public class SheetHistory {
     private static String ofSheet(String table, String schema) {
         return switch (table) {
             case "sheet" -> "id = ?";
-            case "person_grade", "person_hold", "person_retirement", "person_patron", "person_watch" ->
+            case "person_grade", "person_terms", "person_hold", "person_retirement", "person_patron", "person_watch" ->
                 "person_id IN (SELECT id FROM " + schema + ".person WHERE sheet_id = ?)";
             case "period_person_total" -> "period_id IN (SELECT id FROM " + schema + ".period WHERE sheet_id = ?)";
             default -> "sheet_id = ?";

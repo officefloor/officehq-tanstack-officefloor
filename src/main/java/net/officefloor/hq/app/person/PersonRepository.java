@@ -21,6 +21,7 @@ public class PersonRepository {
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
+            + " (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id) AS sheet_today,"
             + " (SELECT COUNT(*) FROM statement s WHERE s.person_id = p.id) AS statement_count,"
             + " (SELECT s.due_total FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS stated_total,"
             + " (SELECT s.taken_on FROM statement s WHERE s.person_id = p.id ORDER BY s.id DESC LIMIT 1) AS statement_date";
@@ -32,6 +33,8 @@ public class PersonRepository {
                 rs.getObject("statement_date", LocalDate.class)));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         person.setTerms(rs.getObject("terms", Integer.class));
+        LocalDate today = rs.getObject("sheet_today", LocalDate.class);
+        person.setToday(today == null ? LocalDate.now() : today);
         person.setContact(rs.getString("contact"));
         person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin"));
@@ -39,6 +42,9 @@ public class PersonRepository {
     };
 
     private static final RowMapper<GradeFrom> GRADE = (rs, n) -> new GradeFrom(rs.getString("grade"),
+            rs.getObject("from_date", LocalDate.class));
+
+    private static final RowMapper<TermsFrom> TERMS = (rs, n) -> new TermsFrom(rs.getObject("terms", Integer.class),
             rs.getObject("from_date", LocalDate.class));
 
     static final String CHANGED = "Someone else has saved this person since you opened it; the form now shows their changes";
@@ -241,6 +247,17 @@ public class PersonRepository {
         person.setGrade(person.gradeOn(today));
     }
 
+    /** Give the person their own terms (null: none) from the date, replacing those given from that same date and
+     *  keeping the rest; the person's dated terms are then re-read. */
+    public void giveTerms(Person person, Integer terms, LocalDate from) {
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ? AND from_date = ?", person.getId(),
+                java.sql.Date.valueOf(from));
+        jdbc.update("INSERT INTO person_terms (person_id, terms, from_date) VALUES (?, ?, ?)", person.getId(), terms,
+                java.sql.Date.valueOf(from));
+        person.setDatedTerms(jdbc.query("SELECT terms, from_date FROM person_terms WHERE person_id = ?", TERMS,
+                person.getId()));
+    }
+
     /** Note the tags (joined by commas; null: none) as used on the sheet, for good, so the tag totals list them. */
     private void tagsUsed(String sheetId, String tags) {
         if (tags == null) {
@@ -372,6 +389,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE id = ?", f);
         return true;
     }
@@ -402,6 +420,8 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), t);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", t);
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
+                + " WHERE person_id = ?", t, f);
+        jdbc.update("INSERT INTO person_terms (person_id, terms, from_date) SELECT ?, terms, from_date FROM person_terms"
                 + " WHERE person_id = ?", t, f);
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
         moveClaims(from, toSheet, t, numbers);
@@ -496,6 +516,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", f);
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_terms WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE id = ?", f);
     }
 
@@ -512,6 +533,15 @@ public class PersonRepository {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
         for (Person person : people) {
             person.setGrades(grades.getOrDefault(person.getId(), List.of()));
+        }
+        Map<Long, List<TermsFrom>> terms = jdbc.query(
+                "SELECT d.person_id, d.terms, d.from_date FROM person_terms d JOIN person q ON q.id = d.person_id"
+                        + " WHERE q.sheet_id = ?",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), TERMS.mapRow(rs, n)), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setDatedTerms(terms.getOrDefault(person.getId(), List.of()));
         }
         Map<Long, List<HoldSpan>> holds = jdbc.query(
                 "SELECT h.person_id, h.from_date, h.to_date FROM person_hold h JOIN person q ON q.id = h.person_id"

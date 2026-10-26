@@ -66,6 +66,7 @@ public class AddImportedPeople {
             if (person == null) {
                 person = repository.insert(sheet.id(), request.name(), request.grade(), request.termsDays(),
                         request.contactOrNull());
+                person.setToday(today);
                 new RecordPersonAdded().record(person, by, audit);
                 added++;
             } else {
@@ -78,6 +79,7 @@ public class AddImportedPeople {
                     throw new ConflictException(PersonRepository.CHANGED);
                 }
                 repository.giveGrade(person, edit.grade(), today, today);
+                person.setToday(today);
                 new RecordPersonEdited().record(person, by,
                         new TermsEdit(!Objects.equals(termsBefore, person.getTerms())),
                         new ContactEdit(!Objects.equals(contactBefore, person.getContact())), audit);
@@ -95,6 +97,6 @@ public class AddImportedPeople {
         String contact = request.contactOrNull() != null ? request.contact()
                 : person.getContact() == null ? "" : person.getContact();
         return new PersonRequest(person.getName(), request.grade(), request.by(), person.getVersion(), "", terms,
-                contact, person.getTags() == null ? "" : person.getTags());
+                contact, person.getTags() == null ? "" : person.getTags(), "");
     }
 }

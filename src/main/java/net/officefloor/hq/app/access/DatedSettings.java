@@ -47,10 +47,11 @@ public record DatedSettings(List<DatedValue> values) {
         return Integer.parseInt(value == null ? orStarting(Setting.TERMS, date) : value);
     }
 
-    /** The terms in force on the date for the person: their own, else their grade's on that date, else the sheet's. */
+    /** The terms in force on the date for the person: their own in force on that date, else their grade's on that date, else the sheet's. */
     public int terms(Person person, LocalDate date) {
-        if (person != null && person.getTerms() != null) {
-            return person.getTerms();
+        Integer own = person == null ? null : person.termsOn(date);
+        if (own != null) {
+            return own;
         }
         return terms(person == null ? null : person.gradeOn(date), date);
     }

@@ -18,8 +18,10 @@ import { useColumnShown } from '../columns/useColumns';
  *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted; `patronShares`: each patron with their share of
  *  100.00 (two decimals; split equally in the order named, the remainder to the first named), sorted by name. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
- *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
- *  is due by its date plus these, else their grade's terms, else the sheet's. `contact`: the person's contact, trimmed
+ *  the beginning of time). `terms`: the person's own terms in days in force on the sheet's today, null when they have none; a claim
+ *  added for them is due by its date plus their own terms in force on that date, else their grade's terms, else the
+ *  sheet's. `ownTerms`: their own terms from the beginning of time (null: none); `datedTerms`: the own terms they were
+ *  given from a date (null terms: none), oldest from-date first. `contact`: the person's contact, trimmed
  *  and lower-cased, null when they have none; no two people on a sheet share one. `tags`: the person's tags, trimmed,
  *  lower-cased, without repeats and sorted (empty: none); a claim counts in a tag's total when it or its person carries
  *  the tag. `aliases`: the other names they go by,
@@ -35,7 +37,9 @@ export type Person = { id: number; name: string; grade: string; grades: GradeFro
   holds: HoldSpan[];
   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; tags: string[]; aliases: string[];
   clashing: boolean; origin: string | null; snapshots: string[];
-  statementLines: string[] };
+  statementLines: string[]; ownTerms: number | null; datedTerms: TermsFrom[] };
+
+export type TermsFrom = { terms: number | null; from: string };
 
 export type PatronShare = { name: string; share: string };
 
@@ -105,8 +109,10 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   // The date the grade is given from; blank is the sheet's today (an added person's grade applies
   // from the beginning of time).
   const [gradeFrom, setGradeFrom] = useState('');
-  // The person's own terms in days; blank for none.
-  const [terms, setTerms] = useState(editing?.terms == null ? '' : String(editing.terms));
+  // The person's own terms in days; blank for none. An editor starts with those from the beginning of time.
+  const [terms, setTerms] = useState(editing?.ownTerms == null ? '' : String(editing.ownTerms));
+  // The date the terms are given from; blank is from the beginning of time.
+  const [termsFrom, setTermsFrom] = useState('');
   // The person's contact; blank for none.
   const [contact, setContact] = useState(editing?.contact ?? '');
   // The person's tags, comma separated; blank for none.
@@ -127,7 +133,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
   const save = useMutation({
-    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string }) => {
+    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a name');
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
@@ -150,6 +156,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setTermsFrom('');
         setContact('');
         setTags('');
       }
@@ -169,7 +176,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
       if (now) {
         setName(now.name);
         setGrade(now.grade);
-        setTerms(now.terms == null ? '' : String(now.terms));
+        setTerms(now.ownTerms == null ? '' : String(now.ownTerms));
         setContact(now.contact ?? '');
         setTags(now.tags.join(', '));
         setVersion(now.version);
@@ -197,7 +204,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
           return;
         }
         setTaken(undefined);
-        submit({ name, grade, gradeFrom, terms, contact, tags });
+        submit({ name, grade, gradeFrom, terms, termsFrom, contact, tags });
       }}
     >
       <label>
@@ -248,6 +255,18 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
           value={terms}
           onChange={(e) => {
             setTerms(e.target.value);
+            reset();
+          }}
+        />
+      </label>{' '}
+      <label>
+        from{' '}
+        <input
+          data-testid="person-form-terms-from"
+          type="date"
+          value={termsFrom}
+          onChange={(e) => {
+            setTermsFrom(e.target.value);
             reset();
           }}
         />

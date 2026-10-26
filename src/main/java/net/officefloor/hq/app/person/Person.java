@@ -25,6 +25,8 @@ public class Person {
     private List<SnapshotLine> snapshots = List.of();
     private List<StatementLine> statementLines = List.of();
     private Integer terms;
+    private List<TermsFrom> datedTerms = List.of();
+    private LocalDate today;
     private String contact;
     private String tags;
 
@@ -86,7 +88,42 @@ public class Person {
         return found == null ? grade : found.grade();
     }
 
-    /** The person's own terms in days; null when they have none. */
+    /** The own terms the person was given from a date, each from its from-date. */
+    public List<TermsFrom> getDatedTerms() {
+        return datedTerms;
+    }
+
+    public void setDatedTerms(List<TermsFrom> datedTerms) {
+        this.datedTerms = datedTerms;
+    }
+
+    /** The sheet's today, as the person was read; null when not known. */
+    public LocalDate getToday() {
+        return today;
+    }
+
+    public void setToday(LocalDate today) {
+        this.today = today;
+    }
+
+    /** Their own terms in force on the date: those given from the latest from-date on or before it, else those from
+     *  the beginning of time (see {@link #getTerms}); null when none. */
+    public Integer termsOn(LocalDate on) {
+        TermsFrom found = null;
+        for (TermsFrom t : datedTerms) {
+            if (!t.from().isAfter(on) && (found == null || t.from().isAfter(found.from()))) {
+                found = t;
+            }
+        }
+        return found == null ? terms : found.terms();
+    }
+
+    /** Their own terms in force on the sheet's today; null when none. */
+    public Integer getTermsToday() {
+        return today == null ? terms : termsOn(today);
+    }
+
+    /** The person's own terms in days from the beginning of time; null when they have none. */
     public Integer getTerms() {
         return terms;
     }

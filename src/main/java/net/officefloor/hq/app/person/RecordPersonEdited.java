@@ -9,7 +9,7 @@ public class RecordPersonEdited {
             @Val ContactEdit contactEdit, Audit audit) {
         audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + by.name() + " name=" + person.getName()
                 + " grade=" + person.getGrade()
-                + (termsEdit.changed() ? " terms=" + (person.getTerms() == null ? "" : person.getTerms()) : "")
+                + (termsEdit.changed() ? " terms=" + (person.getTermsToday() == null ? "" : person.getTermsToday()) : "")
                 + (contactEdit.changed() ? " contact=" + (person.getContact() == null ? "" : person.getContact()) : ""));
     }
 }

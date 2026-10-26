@@ -155,7 +155,8 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
   const [editingId] = useEditingClaim();
   const held = useHeld(sheetId);
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
-  const editing = mine.find((c) => c.id === editingId);
+  // Only a DRAFT can be edited: once the claim being edited is no longer one (another user opened it), its form adds.
+  const editing = mine.find((c) => c.id === editingId && c.status === 'DRAFT');
 
   return (
     <>

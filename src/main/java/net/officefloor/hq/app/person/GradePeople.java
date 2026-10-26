@@ -34,7 +34,7 @@ public class GradePeople {
             PersonRequest request = new PersonRequest(person.getName(), bulk.grade(), by.name(), person.getVersion(),
                     bulk.from(), person.getTerms() == null ? "" : String.valueOf(person.getTerms()),
                     person.getContact() == null ? "" : person.getContact(),
-                    person.getTags() == null ? "" : person.getTags());
+                    person.getTags() == null ? "" : person.getTags(), "");
             RollupSnapshot before = rollup.snapshot(sheet.id());
             TermsEdit[] terms = new TermsEdit[1];
             ContactEdit[] contact = new ContactEdit[1];

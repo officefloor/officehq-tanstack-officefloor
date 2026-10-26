@@ -38,7 +38,7 @@ public class ValidateImportPeople {
             }
             try {
                 PersonRequest person = ValidatePerson.parse(new PersonRequest(fields[0], fields[1], by.name(), null,
-                        "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", ""), by);
+                        "", fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", "", ""), by);
                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
                     throw new BadRequestException(person.name() + " is repeated in the import");
                 }
