@@ -1,0 +1,115 @@
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+new file mode 100644
+index 00000000..bbdcd941
+--- /dev/null
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -0,0 +1,34 @@
++import { useQuery } from '@tanstack/react-query';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { claimsQuery } from '../claims/claimsQuery';
++import { peopleQuery } from '../people/peopleQuery';
++import { useSheetDueTotal } from '../rates/due.slot';
++import { useSheetOverdue } from '../rates/overdue.slot';
++import { STATUSES, statusCount } from '../summary/summary.slot';
++
++/**
++ * Counters shown at the top of the sheet at all times. Each repeats a figure shown elsewhere and is
++ * worked out the same way: people on the sheet (retired included), claims per status as in the
++ * summary, and the sheet's due- and overdue-totals.
++ */
++function Header({ sheetId }: { sheetId: string }) {
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const dueTotal = useSheetDueTotal(sheetId);
++  const { total: overdueTotal } = useSheetOverdue(sheetId);
++
++  return (
++    <header data-testid="header">
++      People <strong data-testid="header-people-count">{people.length}</strong>
++      {STATUSES.map((s) => (
++        <span key={s}>
++          {' '}· {s} <strong data-testid={`header-claims-${s}-count`}>{statusCount(claims, s)}</strong>
++        </span>
++      ))}
++      {' '}· Due <strong data-testid="header-due-total">{dueTotal}</strong>
++      {' '}· Overdue <strong data-testid="header-overdue-total">{overdueTotal}</strong>
++    </header>
++  );
++}
++
++export const contribution = SheetPanel.fill({ order: -10, Component: Header });
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 6d519346..4e38f691 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -40,11 +40,16 @@ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: numbe
+   return <td data-testid="person-backing">{sumDue(dues)}</td>;
+ }
+ 
+-function DueTotal({ sheetId }: { sheetId: string }) {
++/** The sheet's due-total: every person's due-total added up, skipping n/a. */
++export function useSheetDueTotal(sheetId: string) {
+   const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
++  return sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late)));
++}
++
++function DueTotal({ sheetId }: { sheetId: string }) {
+   return (
+     <p data-testid="rollup-due">
+-      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late)))}</strong>
++      Due total <strong data-testid="rollup-due-total">{useSheetDueTotal(sheetId)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/overdue.slot.tsx b/src/main/frontend/features/rates/overdue.slot.tsx
+index 74b1cee7..0308e389 100644
+--- a/src/main/frontend/features/rates/overdue.slot.tsx
++++ b/src/main/frontend/features/rates/overdue.slot.tsx
+@@ -54,8 +54,13 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
++/** The sheet's overdue claims that count: how many, and their total. */
++export function useSheetOverdue(sheetId: string) {
++  return overdue(useOverdueData(sheetId));
++}
++
+ function OverdueTotal({ sheetId }: { sheetId: string }) {
+-  const { count, total } = overdue(useOverdueData(sheetId));
++  const { count, total } = useSheetOverdue(sheetId);
+   return (
+     <p data-testid="rollup-overdue">
+       Overdue <strong data-testid="rollup-overdue-count">{count}</strong> totalling{' '}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 89a3edb3..036d7188 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,14 +1,17 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { claimsQuery } from '../claims/claimsQuery';
+-import type { ClaimStatus } from '../claims/claimsQuery';
++import type { Claim, ClaimStatus } from '../claims/claimsQuery';
+ import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+ import { periodDue, periodsQuery } from '../periods/periodsQuery';
+ import { personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
+ import { useFloor, useLate } from '../settings/settingsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ 
+-const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
++/** How many of the sheet's claims have the status. */
++export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filter((c) => c.status === status).length;
+ 
+ /**
+  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
+@@ -79,7 +82,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+           {STATUSES.map((s) => (
+             <tr key={s} data-testid={`summary-status-${s}`}>
+               <td>{s}</td>
+-              <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
++              <td data-testid={`summary-status-${s}-count`}>{statusCount(claims, s)}</td>
+             </tr>
+           ))}
+         </tbody>
