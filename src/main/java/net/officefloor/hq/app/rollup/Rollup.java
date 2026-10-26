@@ -166,6 +166,11 @@ public class Rollup {
 
     /** Record the figures the change moved, from {@code before} to the sheet's figures now. */
     public void record(String sheetId, RollupSnapshot before, ChangedBy by) {
+        record(sheetId, before, by, false);
+    }
+
+    /** Record the figures the change moved; with {@code totals}, the TOTALS line even when the totals did not move. */
+    public void record(String sheetId, RollupSnapshot before, ChangedBy by, boolean totals) {
         RollupSnapshot after = snapshot(sheetId);
         List<String> lines = new ArrayList<>();
         String who = " sheet=" + sheetId + " by=" + by.name();
@@ -176,7 +181,7 @@ public class Rollup {
                         + " due-total=" + show(now.dueTotal()) + " overdue-total=" + now.overdueTotal().toPlainString());
             }
         }
-        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())
+        if (totals || !after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())
                 || !after.overdueTotal().equals(before.overdueTotal())) {
             lines.add("TOTALS" + who + " claimed-total=" + after.claimedTotal().toPlainString() + " due-total="
                     + after.dueTotal().toPlainString() + " overdue-total=" + after.overdueTotal().toPlainString());

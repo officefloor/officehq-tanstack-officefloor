@@ -19,7 +19,8 @@ export function useSheetToday(sheetId: string) {
 
 // The sheet's today: shown, and changeable. Changing it re-reads the whole sheet, since anything
 // that depends on the date may now show differently. Also whether the sheet is archived, and the
-// button a steward archives it with; the two share the sheet's error.
+// button a steward archives it with, and the entry and button a steward clones it to another sheet id with
+// (showing the last clone made); all share the sheet's error.
 function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
   const today = useSheetToday(sheetId);
   const [input, setInput] = useState('');
@@ -44,8 +45,17 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
     onSuccess: (saved) => queryClient.setQueryData(sheetTodayKey(sheetId), saved),
   });
 
+  const [cloneTo, setCloneTo] = useState('');
+  const clone = useMutation({
+    mutationFn: async (to: string) => {
+      if (to.trim() === '') throw new Error('Enter the sheet id to clone to');
+      return postJson<{ to: string }>(`/api/sheets/${encodeURIComponent(sheetId)}/clone`, { to: to.trim(), by: user ?? '' });
+    },
+  });
+
   const submit = useSubmitOnce(save);
   const submitArchive = useSubmitOnce(archive);
+  const submitClone = useSubmitOnce(clone);
   return (
     <section data-testid="sheet-today-panel">
       <p>
@@ -55,6 +65,7 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
         onSubmit={(e) => {
           e.preventDefault();
           archive.reset();
+          clone.reset();
           submit(input);
         }}
       >
@@ -66,6 +77,7 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
             setInput(e.target.value);
             save.reset();
             archive.reset();
+            clone.reset();
           }}
         />{' '}
         <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
@@ -82,15 +94,41 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
           disabled={archive.isPending}
           onClick={() => {
             save.reset();
+            clone.reset();
             submitArchive(undefined);
           }}
         >
           Archive sheet
         </button>
       </p>
-      {(save.isError || archive.isError || today.isError) && (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.reset();
+          archive.reset();
+          clone.reset();
+          submitClone(cloneTo);
+        }}
+      >
+        <input
+          data-testid="sheet-clone-to"
+          placeholder="Clone to sheet id"
+          value={cloneTo}
+          onChange={(e) => {
+            setCloneTo(e.target.value);
+            save.reset();
+            archive.reset();
+            clone.reset();
+          }}
+        />{' '}
+        <button type="submit" data-testid="sheet-clone" disabled={clone.isPending}>
+          Clone sheet
+        </button>{' '}
+        Last clone: <strong data-testid="sheet-cloned-to">{clone.data?.to ?? ''}</strong>
+      </form>
+      {(save.isError || archive.isError || clone.isError || today.isError) && (
         <p data-testid="sheet-error" role="alert">
-          {(save.error ?? archive.error ?? today.error)?.message}
+          {(save.error ?? archive.error ?? clone.error ?? today.error)?.message}
         </p>
       )}
     </section>
