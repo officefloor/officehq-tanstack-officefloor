@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.origin,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -33,6 +33,7 @@ public class PersonRepository {
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setOrigin(rs.getString("origin"));
         return person;
     };
 
@@ -334,7 +335,7 @@ public class PersonRepository {
 
     /**
      * Transfer the person to the other sheet (stored already): they are added there with their name, terms, contact,
-     * every grade they were given (with its from-date) and their aliases; their claims move with them (status, dates,
+     * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from; their claims move with them (status, dates,
      * notes, settled figures, logs and comments kept), listed there in the order they were listed here, each unbound
      * from any statement figure, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
@@ -345,6 +346,7 @@ public class PersonRepository {
         long f = from.getId();
         String grade = from.getGrade() != null ? from.getGrade() : from.getGrades().get(0).grade();
         long t = insert(toSheet, from.getName(), grade, from.getTerms(), from.getContact()).getId();
+        jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), t);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", t);
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
                 + " WHERE person_id = ?", t, f);

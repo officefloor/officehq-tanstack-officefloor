@@ -20,12 +20,12 @@ import { useSheetToday } from '../today/today.slot';
  *  and lower-cased, null when they have none; no two people on a sheet share one. `aliases`: the other names they go by,
  *  sorted as names are compared (ignoring case). `clashing`: whether their name or an alias is used, as a name or
  *  alias, on another sheet of the sheet's tree (its ancestors and descendants); every edit of them is then refused
- *  until it renames them out of the clash. */
+ *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else. */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   holds: HoldSpan[];
   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; aliases: string[];
-  clashing: boolean };
+  clashing: boolean; origin: string | null };
 
 export type PatronShare = { name: string; share: string };
 
@@ -394,6 +394,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>From</th>
             <PersonHeads.Slot sheetId={sheetId} user={user} />
             <th />
           </tr>
@@ -405,6 +406,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <td data-testid="person-origin">{p.origin ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} user={user} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => void openEditor(p.id)}>

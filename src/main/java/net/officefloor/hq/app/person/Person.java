@@ -24,6 +24,8 @@ public class Person {
     private Integer terms;
     private String contact;
 
+    private String origin;
+
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
         this.sheetId = sheetId;
@@ -96,6 +98,15 @@ public class Person {
 
     public void setContact(String contact) {
         this.contact = contact;
+    }
+
+    /** The sheet the person was transferred from; null when they were not transferred in. */
+    public String getOrigin() {
+        return origin;
+    }
+
+    public void setOrigin(String origin) {
+        this.origin = origin;
     }
 
     public long getVersion() {
