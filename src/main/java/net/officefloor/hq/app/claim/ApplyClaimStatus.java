@@ -14,9 +14,10 @@ public class ApplyClaimStatus {
         } catch (IllegalArgumentException e) {
             throw new ClaimStatusRefusedException("Not a claim status: " + status);
         }
-        if (!claim.status().allows(next) || !claims.changeStatus(claim, next)) {
+        Claim changed = claim.status().allows(next) ? claims.changeStatus(claim, next) : null;
+        if (changed == null) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
-        responseOut.set(ClaimResponse.from(claim.withStatus(next)));
+        responseOut.set(ClaimResponse.from(changed));
     }
 }

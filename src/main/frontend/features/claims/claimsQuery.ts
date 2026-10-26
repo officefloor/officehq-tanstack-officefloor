@@ -3,8 +3,16 @@ import { sheetKey } from '../sheet/sheetQuery';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+/** `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening (null for a draft or a voided claim). */
+export type Claim = {
+  id: number;
+  personId: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: number | null;
+};
 
 /** Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';

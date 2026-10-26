@@ -5,6 +5,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -17,7 +18,8 @@ public class Claims {
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+            rs.getObject("claim_number", Long.class));
 
     private final JdbcTemplate jdbc;
 
@@ -48,7 +50,7 @@ public class Claims {
             ps.setString(5, note);
             return ps;
         }, key);
-        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
+        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null);
     }
 
     public void save(Claim claim) {
@@ -56,9 +58,37 @@ public class Claims {
                 Date.valueOf(claim.date()), claim.note(), claim.id());
     }
 
-    /** Moves the claim to {@code next} if it still has its loaded status; false when it has since changed. */
-    public boolean changeStatus(Claim claim, ClaimStatus next) {
-        return jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND status = ?", next.name(), claim.id(),
-                claim.status().name()) == 1;
+    /**
+     * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
+     * it has since changed. Opening gives it the sheet's next number; voiding clears its number.
+     */
+    public Claim changeStatus(Claim claim, ClaimStatus next) {
+        if (jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND status = ?", next.name(), claim.id(),
+                claim.status().name()) != 1) {
+            return null;
+        }
+        Long number = switch (next) {
+            case OPEN -> nextNumber(claim.sheetId());
+            case VOID -> null;
+            default -> claim.number();
+        };
+        jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
+        return claim.withStatus(next, number);
+    }
+
+    /**
+     * The sheet's next claim number. The counter row is locked by the increment until the transaction
+     * commits, so two claims opened at once get different numbers.
+     */
+    private long nextNumber(String sheetId) {
+        try {
+            jdbc.update("INSERT INTO claim_number_seq (sheet_id, last_number) SELECT ?, 0 "
+                    + "WHERE NOT EXISTS (SELECT 1 FROM claim_number_seq WHERE sheet_id = ?)", sheetId, sheetId);
+        } catch (DuplicateKeyException e) {
+            // Another user started the sheet's counter at the same moment.
+        }
+        jdbc.update("UPDATE claim_number_seq SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
+        return jdbc.queryForObject("SELECT last_number FROM claim_number_seq WHERE sheet_id = ?", Long.class,
+                sheetId);
     }
 }

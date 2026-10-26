@@ -17,6 +17,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
         <tbody>
           {claims.map((c) => (
             <tr key={c.id} data-testid={`claim-row-${c.id}`}>
+              <td data-testid="claim-number">{c.number ?? ''}</td>
               <td data-testid="claim-amount">{c.amount}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
