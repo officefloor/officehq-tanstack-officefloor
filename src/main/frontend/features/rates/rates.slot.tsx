@@ -443,8 +443,8 @@ function SplitTotal({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
-// For every tag ever used on the sheet, its due-total: the due of the counted claims carrying it added up (n/a as 0); a claim
-// with two tags counts in both.
+// For every tag ever used on the sheet, its due-total: the due of the counted claims carrying it, or whose person carries it,
+// added up once each (n/a as 0); a claim with two tags counts in both.
 function TagTotals({ sheetId }: { sheetId: string; user: string }) {
   const tags = useClaimTags(sheetId);
   const people = usePeople(sheetId);
@@ -455,9 +455,11 @@ function TagTotals({ sheetId }: { sheetId: string; user: string }) {
   const late = useLate(sheetId);
   const sums = new Map<string, bigint>();
   for (const c of claims.data ?? []) {
-    if (c.tags.length === 0 || !counts(c, held)) continue;
-    const due = claimDueCents(rates.data ?? [], gradeOn(people.data?.find((p) => p.id === c.personId), c.date), c, floor, late) ?? 0n;
-    for (const t of c.tags) sums.set(t, (sums.get(t) ?? 0n) + due);
+    const person = people.data?.find((p) => p.id === c.personId);
+    const carried = new Set([...c.tags, ...(person?.tags ?? [])]);
+    if (carried.size === 0 || !counts(c, held)) continue;
+    const due = claimDueCents(rates.data ?? [], gradeOn(person, c.date), c, floor, late) ?? 0n;
+    for (const t of carried) sums.set(t, (sums.get(t) ?? 0n) + due);
   }
   return (
     <section data-testid="tag-rollup">

@@ -24,6 +24,7 @@ public class Person {
     private List<String> aliases = List.of();
     private Integer terms;
     private String contact;
+    private String tags;
 
     private String origin;
 
@@ -99,6 +100,15 @@ public class Person {
 
     public void setContact(String contact) {
         this.contact = contact;
+    }
+
+    /** The person's tags, sorted and joined by commas; null when they have none. */
+    public String getTags() {
+        return tags;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
     }
 
     /** The sheet the person was transferred from; null when they were not transferred in. */

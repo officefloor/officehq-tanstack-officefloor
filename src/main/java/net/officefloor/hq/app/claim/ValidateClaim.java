@@ -60,16 +60,6 @@ public class ValidateClaim {
 
     /** The tags as typed, normalised: sorted and joined by commas; null when there are none. */
     static String tags(String typed) {
-        if (typed == null) {
-            return null;
-        }
-        java.util.SortedSet<String> tags = new java.util.TreeSet<>();
-        for (String tag : typed.split(",")) {
-            String t = tag.trim().toLowerCase(java.util.Locale.ROOT);
-            if (!t.isEmpty()) {
-                tags.add(t);
-            }
-        }
-        return tags.isEmpty() ? null : String.join(",", tags);
+        return Tags.normalise(typed);
     }
 }

@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** A person's fields: a name (required), a grade, one of A, B or C, and the grade's from-date (blank, or a date as
  *  YYYY-MM-DD) and their own terms (blank for none, or a whole number of days) and
- *  their contact (blank for none; trimmed and lower-cased). Publishes them trimmed, with the user making the change. */
+ *  their contact (blank for none; trimmed and lower-cased) and their tags (comma separated, blank for none; trimmed,
+ *  lower-cased, repeats dropped, sorted). Publishes them trimmed, with the user making the change. */
 public class ValidatePerson {
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
@@ -45,7 +46,11 @@ public class ValidatePerson {
             throw new BadRequestException("Terms are a whole number of days, or blank for none");
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(Locale.ROOT);
+        String tags = net.officefloor.hq.app.claim.Tags.normalise(request.tags());
+        if (tags != null && tags.length() > 1000) {
+            throw new BadRequestException("Tags are at most 1000 characters");
+        }
         return new PersonRequest(name, grade, by.name(), request.version(), gradeFrom,
-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact);
+                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact, tags == null ? "" : tags);
     }
 }

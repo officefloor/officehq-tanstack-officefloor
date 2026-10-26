@@ -8,6 +8,6 @@ public class BuildPerson {
     public void build(@Val SheetResponse sheet, @Val PersonRequest request, PersonRepository repository,
             Out<Person> person) {
         person.set(repository.insert(sheet.id(), request.name(), request.grade(), request.termsDays(),
-                request.contactOrNull()));
+                request.contactOrNull(), request.tagsOrNull()));
     }
 }

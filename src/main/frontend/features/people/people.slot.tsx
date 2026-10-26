@@ -18,7 +18,9 @@ import { useSheetToday } from '../today/today.slot';
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
  *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
  *  is due by its date plus these, else their grade's terms, else the sheet's. `contact`: the person's contact, trimmed
- *  and lower-cased, null when they have none; no two people on a sheet share one. `aliases`: the other names they go by,
+ *  and lower-cased, null when they have none; no two people on a sheet share one. `tags`: the person's tags, trimmed,
+ *  lower-cased, without repeats and sorted (empty: none); a claim counts in a tag's total when it or its person carries
+ *  the tag. `aliases`: the other names they go by,
  *  sorted as names are compared (ignoring case). `clashing`: whether their name or an alias is used, as a name or
  *  alias, on another sheet of the sheet's tree (its ancestors and descendants); every edit of them is then refused
  *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else. */
@@ -26,7 +28,7 @@ export type Person = { id: number; name: string; grade: string; grades: GradeFro
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null;
   retirements: Retirement[]; held: boolean;
   holds: HoldSpan[];
-  patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; aliases: string[];
+  patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; tags: string[]; aliases: string[];
   clashing: boolean; origin: string | null };
 
 export type PatronShare = { name: string; share: string };
@@ -101,6 +103,8 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   const [terms, setTerms] = useState(editing?.terms == null ? '' : String(editing.terms));
   // The person's contact; blank for none.
   const [contact, setContact] = useState(editing?.contact ?? '');
+  // The person's tags, comma separated; blank for none.
+  const [tags, setTags] = useState(editing?.tags.join(', ') ?? '');
   // A contact another person on the sheet already has, refused before anything is sent (the server
   // refuses it too): the message, until the form is changed or submitted again.
   const [taken, setTaken] = useState<string>();
@@ -117,7 +121,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
   const save = useMutation({
-    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string }) => {
+    mutationFn: async (body: { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a name');
       // `by` is the signed-in user the change is recorded against.
       const sent = { ...body, by: user ?? '' };
@@ -141,6 +145,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
         setGradeFrom('');
         setTerms('');
         setContact('');
+        setTags('');
       }
     },
     onError: async (error) => {
@@ -160,6 +165,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
         setGrade(now.grade);
         setTerms(now.terms == null ? '' : String(now.terms));
         setContact(now.contact ?? '');
+        setTags(now.tags.join(', '));
         setVersion(now.version);
       }
     },
@@ -185,7 +191,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
           return;
         }
         setTaken(undefined);
-        submit({ name, grade, gradeFrom, terms, contact });
+        submit({ name, grade, gradeFrom, terms, contact, tags });
       }}
     >
       <label>
@@ -247,6 +253,17 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
           value={contact}
           onChange={(e) => {
             setContact(e.target.value);
+            reset();
+          }}
+        />
+      </label>{' '}
+      <label>
+        Tags{' '}
+        <input
+          data-testid="person-form-tags"
+          value={tags}
+          onChange={(e) => {
+            setTags(e.target.value);
             reset();
           }}
         />
@@ -400,6 +417,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>Tags</th>
             <th>From</th>
             <PersonHeads.Slot sheetId={sheetId} user={user} />
             <th />
@@ -412,6 +430,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td data-testid="person-origin">{p.origin ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} user={user} personId={p.id} />
               <td>

@@ -73,7 +73,7 @@ export function useClaims(sheetId: string) {
   });
 }
 
-/** Every tag ever used on the sheet's claims, sorted; under the claims' key, so whatever refreshes the claims refreshes it. */
+/** Every tag ever used on the sheet's claims or people, sorted; under the claims' key, so whatever refreshes the claims refreshes it. */
 export function useClaimTags(sheetId: string) {
   return useQuery({
     queryKey: [...claimsKey(sheetId), 'tags'] as const,

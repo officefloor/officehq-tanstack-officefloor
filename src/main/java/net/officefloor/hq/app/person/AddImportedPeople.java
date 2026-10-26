@@ -95,6 +95,6 @@ public class AddImportedPeople {
         String contact = request.contactOrNull() != null ? request.contact()
                 : person.getContact() == null ? "" : person.getContact();
         return new PersonRequest(person.getName(), request.grade(), request.by(), person.getVersion(), "", terms,
-                contact);
+                contact, person.getTags() == null ? "" : person.getTags());
     }
 }

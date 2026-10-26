@@ -47,8 +47,8 @@ public class SheetCloneRepository {
         Map<Long, Long> people = new HashMap<>();
         for (Long id : ids("SELECT id FROM person WHERE sheet_id = ? ORDER BY id", from)) {
             long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO person (sheet_id, name, version,"
-                    + " retired_from, terms, contact, list_position, origin) SELECT ?, name, 0, retired_from, terms,"
-                    + " contact, list_position, origin FROM person WHERE id = ?)", Long.class, to, id);
+                    + " retired_from, terms, contact, tags, list_position, origin) SELECT ?, name, 0, retired_from, terms,"
+                    + " contact, tags, list_position, origin FROM person WHERE id = ?)", Long.class, to, id);
             people.put(id, copy);
             jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date"
                     + " FROM person_grade WHERE person_id = ?", copy, id);

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.origin,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -33,6 +33,7 @@ public class PersonRepository {
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin"));
         return person;
     };
@@ -197,17 +198,24 @@ public class PersonRepository {
 
     /** Add the person with their own terms and contact (null for none), their grade in force from the beginning of time. */
     public Person insert(String sheetId, String name, String grade, Integer terms, String contact) {
+        return insert(sheetId, name, grade, terms, contact, null);
+    }
+
+    /** Add the person with their own terms, contact and tags (null for none), their grade in force from the beginning
+     *  of time; their tags are noted as used on the sheet. */
+    public Person insert(String sheetId, String name, String grade, Integer terms, String contact, String tags) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, terms, contact, list_position) VALUES (?, ?, ?, ?,"
+                    "INSERT INTO person (sheet_id, name, terms, contact, tags, list_position) VALUES (?, ?, ?, ?, ?,"
                             + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?))",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
             ps.setString(4, contact);
-            ps.setString(5, sheetId);
+            ps.setString(5, tags);
+            ps.setString(6, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -216,6 +224,8 @@ public class PersonRepository {
         person.setGrades(List.of(new GradeFrom(grade, null)));
         person.setTerms(terms);
         person.setContact(contact);
+        person.setTags(tags);
+        tagsUsed(sheetId, tags);
         return person;
     }
 
@@ -231,14 +241,26 @@ public class PersonRepository {
         person.setGrade(person.gradeOn(today));
     }
 
+    /** Note the tags (joined by commas; null: none) as used on the sheet, for good, so the tag totals list them. */
+    private void tagsUsed(String sheetId, String tags) {
+        if (tags == null) {
+            return;
+        }
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
+    }
+
     /** Saves the person if it is still at the version it was loaded at, moving it to the next
      *  version; false (nothing written) when someone else saved it in the meantime. */
     public boolean update(Person person) {
-        int n = jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1"
-                + " WHERE id = ? AND version = ?", person.getName(), person.getTerms(), person.getContact(), person.getId(), person.getVersion());
+        int n = jdbc.update("UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = version + 1"
+                + " WHERE id = ? AND version = ?", person.getName(), person.getTerms(), person.getContact(), person.getTags(),
+                person.getId(), person.getVersion());
         if (n == 0) {
             return false;
         }
+        tagsUsed(person.getSheetId(), person.getTags());
         person.setVersion(person.getVersion() + 1);
         return true;
     }
@@ -364,7 +386,7 @@ public class PersonRepository {
     public long transfer(Person from, String toSheet, Map<Long, String> numbers) {
         long f = from.getId();
         String grade = from.getGrade() != null ? from.getGrade() : from.getGrades().get(0).grade();
-        long t = insert(toSheet, from.getName(), grade, from.getTerms(), from.getContact()).getId();
+        long t = insert(toSheet, from.getName(), grade, from.getTerms(), from.getContact(), from.getTags()).getId();
         jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), t);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", t);
         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
