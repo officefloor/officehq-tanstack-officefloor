@@ -289,7 +289,7 @@ public class PersonRepository {
      * to the other (numbers and dates kept, listed after the other's claims in the order they were added, each
      * unbound from any statement figure); their name and aliases become the other's aliases; their patrons are added
      * to the other's and anyone naming them as patron names the other instead (never the other themselves, no
-     * repeats); their pool memberships move to the other (shares added where the other is a member already) and their
+     * repeats); their plans and pool memberships move to the other (shares added where the other is a member already) and their
      * closed periods' totals add to the other's. Their statements, holds, watchers, grades and contact are dropped
      * with them. False (nothing written) when either was saved by someone else in the meantime.
      */
@@ -326,6 +326,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM pool_member m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM pool_member o"
                 + " WHERE o.pool_id = m.pool_id AND o.person_id = ?)", f, t);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", t, f);
+        jdbc.update("UPDATE plan SET person_id = ? WHERE person_id = ?", t, f);
         jdbc.update("UPDATE period_person_total m SET total = total + (SELECT o.total FROM period_person_total o"
                 + " WHERE o.period_id = m.period_id AND o.person_id = ?) WHERE m.person_id = ? AND EXISTS"
                 + " (SELECT 1 FROM period_person_total o WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t, f);
@@ -357,7 +358,7 @@ public class PersonRepository {
      * notes, settled figures, logs and comments kept), listed there in the order they were listed here, each unbound
      * from any statement figure, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
-     * as used there. Everything else of theirs here — patron links either way, pool memberships, watches, holds,
+     * as used there. Everything else of theirs here — patron links either way, pool memberships, plans, watches, holds,
      * statements and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
      */
     public long transfer(Person from, String toSheet, Map<Long, String> numbers) {
@@ -432,6 +433,8 @@ public class PersonRepository {
     private void dropRest(long f) {
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", f);
+        jdbc.update("DELETE FROM plan WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);

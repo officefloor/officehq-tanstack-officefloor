@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository;
 /**
  * Copies a sheet to a sheet id never used: its today, settings, roles, rates, holidays, void reasons, templates, the
  * tags ever used on its claims, its people (grades, terms, contacts, aliases, holds, retirements, patrons), its pools,
- * its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs). Its
+ * its plans (with the dates they made claims for), its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs). Its
  * statements are not copied (no claim is bound), nor its snapshots, watches, delegations, comments, editor locks or
  * settle batches.
  */
@@ -79,6 +79,14 @@ public class SheetCloneRepository {
                     + " to_date) VALUES (?, ?, ?, ?, ?, ?, ?)", to, pools.get(id(member.get("pool_id"))),
                     people.get(id(member.get("person_id"))), pools.get(id(member.get("member_pool_id"))),
                     member.get("share"), member.get("from_date"), member.get("to_date"));
+        }
+        for (Long id : ids("SELECT id FROM plan WHERE sheet_id = ? ORDER BY id", from)) {
+            Long person = jdbc.queryForObject("SELECT person_id FROM plan WHERE id = ?", Long.class, id);
+            long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO plan (sheet_id, person_id, amount,"
+                    + " start_date, every_days, end_date) SELECT ?, ?, amount, start_date, every_days, end_date FROM plan"
+                    + " WHERE id = ?)", Long.class, to, people.get(person), id);
+            jdbc.update("INSERT INTO plan_claim (sheet_id, plan_id, plan_date) SELECT ?, ?, plan_date FROM plan_claim"
+                    + " WHERE plan_id = ? ORDER BY id", to, copy, id);
         }
         return people;
     }
