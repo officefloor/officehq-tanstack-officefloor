@@ -7,7 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Copies a sheet to a sheet id never used: its today, settings, roles, rates, holidays, void reasons, templates, the
+ * Copies a sheet to a sheet id never used, recording the sheet it was cloned from (see RateRepository#ancestry): its today, settings, roles, rates, holidays, void reasons, templates, the
  * tags ever used on its claims, its people (grades, terms, contacts, aliases, holds, retirements, patrons), its pools, its crews,
  * its plans (with the dates they made claims for), its periods (all open, with no figures fixed) and its claims (status, frozen figures, dates, notes, logs, lines). Its
  * statements are not copied (no claim is bound), nor its snapshots, watches, delegations, comments, editor locks or
@@ -26,6 +26,7 @@ public class SheetCloneRepository {
     public Map<Long, Long> copySheet(String from, String to) {
         jdbc.update("INSERT INTO sheet (id, today, last_claim_listed) SELECT ?, today, last_claim_listed FROM sheet"
                 + " WHERE id = ?", to, from);
+        jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
         jdbc.update("INSERT INTO sheet_setting (sheet_id, setting_key, setting_value) SELECT ?, setting_key,"
                 + " setting_value FROM sheet_setting WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_setting_from (sheet_id, setting_key, from_date, setting_value) SELECT ?,"

@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
  * The rates for each grade on each sheet, each in force from its from-date (null: from the beginning
  * of time), through its to-date (null: with no end). A grade without one in force on a date has no rate on
  * that date on the sheet itself; then its parent's rate on that date is used, then the parent's parent's, up to
- * three levels up (see {@link #chain}).
+ * three levels up, then for a cloned sheet the rate of the sheet it was cloned from (and so on, see {@link #ancestry}).
  */
 @Repository
 public class RateRepository {
@@ -57,19 +57,31 @@ public class RateRepository {
                 .toList();
     }
 
-    /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
+    /**
+     * The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up; then, for a
+     * cloned sheet, the sheet it was cloned from with its parents and source in turn (each sheet once).
+     */
     public List<String> ancestry(String sheetId) {
-        List<String> found = new java.util.ArrayList<>(List.of(sheetId));
-        String at = sheetId;
-        while (found.size() <= PARENT_LEVELS) {
-            String parent = parentOf(at);
-            if (parent == null || found.contains(parent)) {
-                break;
+        List<String> found = new java.util.ArrayList<>();
+        for (String at = sheetId; at != null && !found.contains(at); at = sourceOf(at)) {
+            found.add(at);
+            String child = at;
+            for (int level = 0; level < PARENT_LEVELS; level++) {
+                String parent = parentOf(child);
+                if (parent == null || found.contains(parent)) {
+                    break;
+                }
+                found.add(parent);
+                child = parent;
             }
-            found.add(parent);
-            at = parent;
         }
         return found;
+    }
+
+    /** The sheet the sheet was cloned from; null when it was not cloned. */
+    public String sourceOf(String sheetId) {
+        return jdbc.query("SELECT source_id FROM sheet_source WHERE sheet_id = ?", (rs, n) -> rs.getString(1), sheetId)
+                .stream().findFirst().orElse(null);
     }
 
     /** The sheet's parent; null when it has none. */
