@@ -12,27 +12,33 @@ import java.time.LocalDate;
  * correction: {@code corrects} is the number of the SETTLED claim of the same person it corrects (null for any other claim).
  * {@code dueBy} is fixed when the claim is made, and kept when its terms or its date change later.
  * {@code deferredUntil} is the date an OPEN claim was deferred to (null when never deferred).
+ * {@code proofs} is how many proofs it has been given (0 for none).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
-        BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil) {
+        BigDecimal statedDue, String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs) {
 
     public Claim with(ClaimInput input, LocalDate date) {
-        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects(), dueBy, deferredUntil);
+        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects(), dueBy, deferredUntil, proofs);
     }
 
     public Claim withStatus(ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs);
     }
 
     /** The claim moved to another person: unbound from any statement, so live until their next one. */
     public Claim withPerson(long personId) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs);
     }
 
     /** The claim deferred to {@code until}. */
     public Claim withDeferredUntil(LocalDate until) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, until);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, until, proofs);
+    }
+
+    /** The claim with {@code proofs} proofs. */
+    public Claim withProofs(int proofs) {
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs);
     }
 
     /**

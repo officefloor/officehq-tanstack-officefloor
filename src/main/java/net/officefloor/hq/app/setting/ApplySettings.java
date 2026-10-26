@@ -30,6 +30,9 @@ public class ApplySettings {
         if (settings.cap() != null) {
             dated(settings, store, today, Settings.CAP, settings.cap());
         }
+        if (settings.proofThreshold() != null) {
+            dated(settings, store, today, Settings.PROOF_THRESHOLD, settings.proofThreshold());
+        }
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {

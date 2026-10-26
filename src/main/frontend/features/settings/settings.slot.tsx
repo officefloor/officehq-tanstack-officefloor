@@ -23,9 +23,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
  *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
- *  today). A person's due-total is at most the cap (blank: none). From the period numbering date on, an opened claim is numbered within its period (blank: off).
+ *  today). A person's due-total is at most the cap (blank: none). A claim whose due is above the proof threshold in force on its date (blank: none) is settled or approved only once it has a proof. From the period numbering date on, an opened claim is numbered within its period (blank: off).
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
- *  date and the cap was last worked in (the clerk limit unless it was one of the others).
+ *  date, the cap and the proof threshold was last worked in (the clerk limit unless it was one of the others).
  *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
  *  (blank: the sheet's today), keeping the values recorded from other dates; what is shown in force is the value on the sheet's today. */
 function Settings({ sheetId }: { sheetId: string }) {
@@ -39,7 +39,8 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [policyDate, setPolicyDate] = useState('');
   const [numberingFrom, setNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap'>('clerkLimit');
+  const [threshold, setThreshold] = useState('');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold'>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -62,6 +63,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setPolicyDate('');
       setNumberingFrom('');
       setCap('');
+      setThreshold('');
       setFrom({});
     },
     onError: () => setError('The settings could not be saved.'),
@@ -115,6 +117,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The cap must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const pt = threshold.trim();
+    if (pt !== '' && !AMOUNT.test(pt)) {
+      setError('The proof threshold must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
     const froms: Record<string, string> = {};
     for (const [key, date] of Object.entries(from)) {
       const d = date.trim();
@@ -126,11 +133,12 @@ function Settings({ sheetId }: { sheetId: string }) {
       froms[key] = d;
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '';
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '';
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
     if (c !== '' || (none && blank === 'cap')) body.cap = c;
+    if (pt !== '' || (none && blank === 'proofThreshold')) body.proofThreshold = pt;
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
     if (Object.keys(g).length > 0) body.gradeTerms = g;
@@ -319,6 +327,31 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Proof threshold{' '}
+          <input
+            data-testid="setting-proof-threshold"
+            placeholder="none"
+            value={threshold}
+            onFocus={() => setBlank('proofThreshold')}
+            onChange={(e) => {
+              setThreshold(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid={`setting-proof-threshold-from`}
+            placeholder="sheet's today"
+            value={from['proof-threshold'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['proof-threshold']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -352,6 +385,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Cap in force: <span data-testid="setting-cap-current">{current('cap')}</span>
+      </p>
+      <p>
+        Proof threshold in force: <span data-testid="setting-proof-threshold-current">{current('proof-threshold')}</span>
       </p>
     </section>
   );

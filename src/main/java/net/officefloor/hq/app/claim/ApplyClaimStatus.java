@@ -24,7 +24,7 @@ public class ApplyClaimStatus {
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
             Periods periods, Rollup rollup, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
-            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException {
+            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException {
         ClaimStatus next;
         try {
             next = ClaimStatus.valueOf(status.trim().toUpperCase());
@@ -71,6 +71,15 @@ public class ApplyClaimStatus {
         }
         // Settling (or approving) freezes the late charge on the sheet's today into the due.
         BigDecimal due = settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
+        // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has a
+        // proof, whoever settles it, and before the clerk limit is considered (a due of n/a is within any threshold).
+        if (next == ClaimStatus.SETTLED && claim.proofs() == 0 && due != null) {
+            BigDecimal threshold = settings.proofThreshold(claim.sheetId(), claim.date());
+            if (threshold != null && due.compareTo(threshold) > 0) {
+                throw new ClaimProofNeededException("The claim's due is above the proof threshold (" + threshold.toPlainString()
+                        + "): add a proof before it is " + (claim.status() == ClaimStatus.PENDING ? "approved." : "settled."));
+            }
+        }
         // A clerk settles only a claim whose due is at or below the clerk limit (a due of n/a is within any
         // limit); above it the claim goes PENDING, for a steward to approve. A steward settles anything.
         if (next == ClaimStatus.SETTLED && claim.status() == ClaimStatus.OPEN && due != null && !steward) {

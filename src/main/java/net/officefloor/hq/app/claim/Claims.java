@@ -22,7 +22,7 @@ public class Claims {
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-            rs.getObject("deferred_until", LocalDate.class));
+            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -70,7 +70,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null);
+                false, null, corrects, dueBy, null, 0);
     }
 
     public void save(Claim claim) {
@@ -123,6 +123,18 @@ public class Claims {
             return null;
         }
         return claim.withDeferredUntil(until);
+    }
+
+    /**
+     * Raises the claim's proofs count by one if it still has its loaded status and count, and returns it as raised; null when
+     * it has since changed.
+     */
+    public Claim addProof(Claim claim) {
+        if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND status = ? AND proofs = ?", claim.id(),
+                claim.status().name(), claim.proofs()) != 1) {
+            return null;
+        }
+        return claim.withProofs(claim.proofs() + 1);
     }
 
     /**
