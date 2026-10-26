@@ -55,7 +55,7 @@ function PersonPeriodDues({ sheetId, personId }: { sheetId: string; personId: nu
   );
 }
 
-/** A period's closed flag and the buttons that close and reopen it (reopening is a steward's). A refusal
+/** A period's closed flag and the buttons that close and reopen it (each for the roles the settings' permission matrix allows: by default closing is a clerk's or a steward's, reopening a steward's). A refusal
  *  shows on the period until its next action. */
 function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) {
   const queryClient = useQueryClient();
@@ -70,7 +70,7 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
         user,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
-    onError: () => setError(`The period ${period.name} could not be closed: it is already closed.`),
+    onError: () => setError(`The period ${period.name} could not be closed: it is already closed, or your role is not allowed to close it.`),
   });
   const reopen = useMutation({
     mutationFn: () =>
@@ -81,7 +81,7 @@ function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) 
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
     onError: () =>
-      setError(`The period ${period.name} could not be reopened: it is not closed, or you are not a steward.`),
+      setError(`The period ${period.name} could not be reopened: it is not closed, or your role is not allowed to reopen it.`),
   });
 
   return (

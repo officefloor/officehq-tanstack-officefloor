@@ -99,7 +99,9 @@ public class Rollup {
             for (Claim claim : dated) {
                 Claim then = claim.withStatus(ended.getOrDefault(claim.id(), claim.status()), claim.number(),
                         claim.settledDue(), claim.openedBy());
-                if (claim.personId() != person.id() || !then.status().counts() || !counts(then, person, today)) {
+                // A hold leaves out only a claim that is open now.
+                boolean left = claim.status().isOpen() ? !counts(then, person, today) : then.deferredOn(today);
+                if (claim.personId() != person.id() || !then.status().counts() || left) {
                     continue;
                 }
                 BigDecimal figure = figure(claim, person, today);

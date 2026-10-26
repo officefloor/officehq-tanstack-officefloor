@@ -5,16 +5,18 @@ import { putJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
-import { ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
+import { PERM_ACTIONS, ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
 import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, valueOn } from './dated';
 import { useSheetToday } from '../sheet/useSheetToday';
-import type { Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
+import type { PermAction, Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
 import { GRADES } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const PERM_ROLES = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
@@ -27,7 +29,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
  *  date, the cap and the proof threshold was last worked in (the clerk limit unless it was one of the others).
  *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
- *  (blank: the sheet's today), keeping the values recorded from other dates; what is shown in force is the value on the sheet's today. */
+ *  (blank: the sheet's today), keeping the values recorded from other dates; what is shown in force is the value on the sheet's today.
+ *  The permission matrix gives, for each of open, settle, void, reassign, close and reopen, the roles allowed to do it as a comma
+ *  separated list (not dated); a blank entry is the standing rule, and is saved as such when it was the last field worked in. */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
@@ -40,7 +44,8 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [numberingFrom, setNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
   const [threshold, setThreshold] = useState('');
-  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold'>('clerkLimit');
+  const [perms, setPerms] = useState<Partial<Record<PermAction, string>>>({});
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap' | 'proofThreshold' | PermAction>('clerkLimit');
   const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const today = useSheetToday(sheetId);
@@ -64,6 +69,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setNumberingFrom('');
       setCap('');
       setThreshold('');
+      setPerms({});
       setFrom({});
     },
     onError: () => setError('The settings could not be saved.'),
@@ -122,6 +128,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The proof threshold must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const pm: Partial<Record<PermAction, string>> = {};
+    for (const action of PERM_ACTIONS) {
+      const roles = (perms[action] ?? '').trim();
+      if (roles === '') continue;
+      if (!PERM_ROLES.test(roles)) {
+        setError(`The roles allowed to ${action} must be clerk or steward, separated by commas.`);
+        return;
+      }
+      pm[action] = roles.split(',').map((r) => r.trim()).join(',');
+    }
     const froms: Record<string, string> = {};
     for (const [key, date] of Object.entries(from)) {
       const d = date.trim();
@@ -133,12 +149,15 @@ function Settings({ sheetId }: { sheetId: string }) {
       froms[key] = d;
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '';
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '' && pt === '' && Object.keys(pm).length === 0;
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
     if (c !== '' || (none && blank === 'cap')) body.cap = c;
     if (pt !== '' || (none && blank === 'proofThreshold')) body.proofThreshold = pt;
+    for (const action of PERM_ACTIONS) {
+      if (pm[action] !== undefined || (none && blank === action)) body.perms = { ...body.perms, [action]: pm[action] ?? '' };
+    }
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
     if (Object.keys(g).length > 0) body.gradeTerms = g;
@@ -352,6 +371,23 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        {PERM_ACTIONS.map((action) => (
+          <span key={action}>
+            <label>
+              Roles allowed to {action}{' '}
+              <input
+                data-testid={`setting-perm-${action}`}
+                placeholder="standing rule"
+                value={perms[action] ?? ''}
+                onFocus={() => setBlank(action)}
+                onChange={(e) => {
+                  setPerms({ ...perms, [action]: e.target.value });
+                  setError('');
+                }}
+              />
+            </label>{' '}
+          </span>
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -389,6 +425,11 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Proof threshold in force: <span data-testid="setting-proof-threshold-current">{current('proof-threshold')}</span>
       </p>
+      {PERM_ACTIONS.map((action) => (
+        <p key={action}>
+          Roles allowed to {action}: <span data-testid={`setting-perm-${action}-current`}>{settings.data?.perms?.[action] ?? ''}</span>
+        </p>
+      ))}
     </section>
   );
 }

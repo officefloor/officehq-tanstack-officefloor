@@ -1,5 +1,5 @@
 import { getJson } from '../../api/http';
-import { counts } from '../claims/claimsQuery';
+import { counts, isOpen } from '../claims/claimsQuery';
 import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import type { Person } from '../people/peopleQuery';
 import { figure, sumDue } from '../rates/ratesQuery';
@@ -52,7 +52,7 @@ export function statusOn(c: Claim, on: string): ClaimStatus {
 
 /**
  * A person's due-total for a period: the figures (as shown now) of their claims dated in it that counted by the
- * status they had at the end of its last day. While the period is
+ * status they had at the end of its last day. A hold leaves out only a claim that is open now. While the period is
  * closed it is the figure fixed when it was closed (0.00 for a person added since).
  */
 export function personPeriodDue(
@@ -72,7 +72,7 @@ export function personPeriodDue(
           c.personId === person.id &&
           period.from <= c.date &&
           c.date <= period.to &&
-          counts({ ...c, status: statusOn(c, period.to) }, people, late.today),
+          counts({ ...c, status: statusOn(c, period.to) }, isOpen(c) ? people : [], late.today),
       )
       .map((c) => figure(c, rates, person, floor, late)),
   );

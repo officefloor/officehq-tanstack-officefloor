@@ -17,7 +17,7 @@ public class RespondWithSettings {
                 settings.floor(sheet, today).setScale(2).toPlainString(), Integer.toString(settings.terms(sheet, today)),
                 settings.latePct(sheet, today).setScale(2).toPlainString(), settings.get(sheet, Settings.POLICY_DATE),
                 settings.get(sheet, Settings.PERIOD_NUMBERING_FROM), gradeTerms(settings, sheet, today),
-                settings.current(sheet, Settings.CAP), dated(settings, sheet)));
+                settings.current(sheet, Settings.CAP), dated(settings, sheet), perms(settings, sheet)));
     }
 
     private static Map<String, String> gradeTerms(Settings settings, String sheet, LocalDate today) {
@@ -26,6 +26,14 @@ public class RespondWithSettings {
             terms.put(grade, Integer.toString(settings.terms(sheet, grade, today)));
         }
         return terms;
+    }
+
+    private static Map<String, String> perms(Settings settings, String sheet) {
+        Map<String, String> perms = new LinkedHashMap<>();
+        for (String action : Settings.PERM_ACTIONS) {
+            perms.put(action, settings.perm(sheet, action));
+        }
+        return perms;
     }
 
     private static Map<String, List<Settings.DatedValue>> dated(Settings settings, String sheet) {

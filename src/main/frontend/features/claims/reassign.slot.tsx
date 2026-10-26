@@ -10,7 +10,7 @@ import type { Claim } from './claimsQuery';
 import { useClaimError } from './useClaimError';
 
 /**
- * Move the claim to another person on the sheet. Only a steward moves a DRAFT, OPEN or PENDING claim; the server
+ * Move the claim to another person on the sheet. Only a role the settings' permission matrix allows (by default a steward) moves a DRAFT, OPEN or PENDING claim; the server
  * refuses anything else, and the refusal shows on the claim (in its shared `claim-error`) until its next action.
  * The moved claim keeps its number and date, is live again until its new person's next statement, and lists first
  * under them.

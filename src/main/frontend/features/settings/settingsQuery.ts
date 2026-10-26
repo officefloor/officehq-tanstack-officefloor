@@ -13,11 +13,18 @@ import type { DatedValue } from './dated';
  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
  *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none.
  *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
- *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold; a blank clerk limit, cap or proof threshold is none). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; dated: Record<string, DatedValue[]> };
+ *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap, proof-threshold; a blank clerk limit, cap or proof threshold is none).
+ *  `perms` is the roles each action is allowed to, as a comma separated list, or "" for the standing rule (open, settle, void and close
+ *  by clerk and steward; reassign and reopen by steward). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; dated: Record<string, DatedValue[]>; perms: Record<PermAction, string> };
+
+/** The actions the permission matrix decides; each is kept (not dated) under perm-<action>. */
+export const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+export type PermAction = (typeof PERM_ACTIONS)[number];
 
 /** What the request carries: a setting left out (or blank, for the floor, terms, a grade's terms and late percent) is left as it is; a blank policy date is none.
- *  `from` is the from-date (yyyy-mm-dd) a dated setting is recorded from, by key; left out, it is the sheet's today. */
+ *  `from` is the from-date (yyyy-mm-dd) a dated setting is recorded from, by key; left out, it is the sheet's today.
+ *  `perms` are the roles each action is allowed to, by action: left out is left as it is, blank is the standing rule. */
 export type SettingsChange = {
   clerkLimit?: string;
   floor?: string;
@@ -29,6 +36,7 @@ export type SettingsChange = {
   cap?: string;
   proofThreshold?: string;
   from?: Record<string, string>;
+  perms?: Partial<Record<PermAction, string>>;
 };
 
 export type RoleName = 'clerk' | 'steward';

@@ -46,6 +46,17 @@ public class ApplyClaimStatus {
             throw new ClaimStatusRefusedException("A PENDING claim is approved or rejected by a steward, or voided.");
         }
         boolean steward = Settings.STEWARD.equals(settings.role(claim.sheetId(), user));
+        // Opening, settling and voiding are for the roles the sheet's permission matrix allows (approving and
+        // rejecting stay with stewards, below).
+        String permitted = decision ? null : switch (next) {
+            case OPEN -> "open";
+            case SETTLED -> "settle";
+            case VOID -> "void";
+            default -> null;
+        };
+        if (permitted != null && !settings.permits(claim.sheetId(), permitted, user)) {
+            throw new ClaimStatusRefusedException("Your role is not allowed to " + permitted + " a claim.");
+        }
         if (next == ClaimStatus.PENDING) {
             throw new ClaimStatusRefusedException("A claim becomes PENDING only when a clerk settles it above the clerk limit.");
         }

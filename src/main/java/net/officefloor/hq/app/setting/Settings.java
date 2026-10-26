@@ -34,6 +34,10 @@ public class Settings {
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD);
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
+    /** The roles a sheet gives user names. */
+    public static final List<String> ROLES = List.of(CLERK, STEWARD);
+    /** The actions the permission matrix decides, each kept (undated) under {@link #permKey}. */
+    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
     private final JdbcTemplate jdbc;
     private final Sheets sheets;
@@ -195,6 +199,28 @@ public class Settings {
     /** The claim's live due raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */
     public BigDecimal floored(Claim claim, BigDecimal due) {
         return due == null || claim.isCorrection() ? due : due.max(floor(claim.sheetId(), claim.date()));
+    }
+
+    /** The key an action's permitted roles are kept under: perm-<action>. */
+    public static String permKey(String action) {
+        return "perm-" + action;
+    }
+
+    /** The roles an action is permitted to, as saved: a comma separated list, or "" for the standing rule. */
+    public String perm(String sheetId, String action) {
+        return get(sheetId, permKey(action));
+    }
+
+    /** The standing rule: reassign and reopen by steward; open, settle, void and close by clerk and steward. */
+    private static List<String> standing(String action) {
+        return action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : ROLES;
+    }
+
+    /** Whether the user's role may take the action on the sheet: as the permission matrix has it, else by the standing rule. */
+    public boolean permits(String sheetId, String action, String user) {
+        String saved = perm(sheetId, action);
+        List<String> roles = saved.isEmpty() ? standing(action) : List.of(saved.split(","));
+        return roles.contains(role(sheetId, user));
     }
 
     /** The sheet's roles, by user name. */

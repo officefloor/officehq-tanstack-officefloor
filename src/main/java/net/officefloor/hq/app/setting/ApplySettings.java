@@ -33,6 +33,7 @@ public class ApplySettings {
         if (settings.proofThreshold() != null) {
             dated(settings, store, today, Settings.PROOF_THRESHOLD, settings.proofThreshold());
         }
+        settings.perms().forEach((action, roles) -> store.set(settings.sheetId(), Settings.permKey(action), roles));
     }
 
     private static void dated(SheetSettings settings, Settings store, LocalDate today, String key, String value) {
