@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { putJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
@@ -15,23 +16,36 @@ import { useClaimError } from './useClaimError';
  * on the server for everyone else until it is saved or cancelled (or the sheet's today changes); the server refuses a
  * viewer, a claim that cannot be edited and one another user has locked, and the refusal shows on the claim (in its shared `claim-error`).
  */
-function ClaimEditCell({ sheetId, claim, editing }: { sheetId: string; claim: Claim; editing: boolean }) {
+function ClaimEditCell({ sheetId, claim, editing, onPress, onDone }: {
+  sheetId: string;
+  claim: Claim;
+  editing: boolean;
+  onPress: (to: Switch) => void;
+  onDone: (to: Switch) => void;
+}) {
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [, setError] = useClaimError(claim.id);
   const once = useSubmitOnce();
   const path = `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}`;
   const lock = useMutation({
-    mutationFn: (to: 'lock' | 'unlock') => putJson<Claim>(`${path}/${to}`, {}, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-    onError: (e, to) =>
+    mutationFn: (sw: Switch) => putJson<Claim>(`${path}/${sw.to}`, {}, user),
+    onSuccess: async (_claim, sw) => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      // The re-read claims normally show the editor open or closed at once; should they not, release the form anyway.
+      setTimeout(() => onDone(sw), 2000);
+    },
+    onError: (e, sw) => {
+      onDone(sw);
+      const to = sw.to;
       setError(
         e instanceof RefusedError
           ? e.message
           : to === 'lock'
             ? 'The claim could not be opened for editing.'
             : 'The claim editor could not be closed.',
-      ),
+      );
+    },
   });
   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
   // What the screen already knows refuses at once, before anything is sent; the server checks the rest (and these again).
@@ -45,7 +59,11 @@ function ClaimEditCell({ sheetId, claim, editing }: { sheetId: string; claim: Cl
   const press = (to: 'lock' | 'unlock') => {
     const refused = to === 'lock' ? refusal() : '';
     setError(refused);
-    if (!refused) once(() => lock.mutateAsync(to));
+    if (!refused) {
+      const sw: Switch = to === 'lock' ? { to, id: claim.id } : { to };
+      onPress(sw);
+      once(() => lock.mutateAsync(sw));
+    }
   };
 
   return (
@@ -63,6 +81,9 @@ function ClaimEditCell({ sheetId, claim, editing }: { sheetId: string; claim: Cl
   );
 }
 
+/** An editor being opened on a claim, or closed, until the screen shows it. */
+type Switch = { to: 'lock'; id: number } | { to: 'unlock' };
+
 /**
  * A person's claims, newest first, with the form they are added and edited through. The editor is open on the claim
  * the signed-in user holds the lock of, so it is still open after the sheet is re-loaded.
@@ -71,6 +92,12 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [user] = useUser();
   const claims = (useQuery(claimsQuery(sheetId)).data ?? []).filter((c) => c.personId === personId);
   const editing = claims.find((c) => c.lockedBy !== null && c.lockedBy === user);
+  // From the press of edit or cancel until the editor shows open (filled) or closed, the form is held: what is typed
+  // in the meantime would land in the form it is leaving, and be lost or saved as the wrong thing.
+  const [switching, setSwitching] = useState<Switch | null>(null);
+  useEffect(() => {
+    if (switching && (switching.to === 'lock' ? editing?.id === switching.id : editing === undefined)) setSwitching(null);
+  }, [switching, editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <td data-testid="person-claims">
@@ -84,12 +111,18 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
               <td data-testid="claim-note">{c.note}</td>
               <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <ClaimCells.Slot sheetId={sheetId} claim={c} />
-              <ClaimEditCell sheetId={sheetId} claim={c} editing={c.id === editing?.id} />
+              <ClaimEditCell
+                sheetId={sheetId}
+                claim={c}
+                editing={c.id === editing?.id}
+                onPress={setSwitching}
+                onDone={(sw) => setSwitching((now) => (now === sw ? null : now))}
+              />
             </tr>
           ))}
         </tbody>
       </table>
-      <ClaimForm sheetId={sheetId} personId={personId} editing={editing} onDone={() => undefined} />
+      <ClaimForm sheetId={sheetId} personId={personId} editing={editing} held={switching !== null} onDone={() => undefined} />
     </td>
   );
 }

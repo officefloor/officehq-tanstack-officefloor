@@ -16,11 +16,13 @@ type Body = { amount: string; date: string; note: string; corrects: string };
 /**
  * The one form a person's claims are added and edited through. Opening a claim's editor fills it. A negative amount is a
  * correction: it names the number of the settled claim of the same person it corrects (the server checks that it is one).
+ * While an editor is being opened or closed (`held`) the form takes no input.
  */
-export function ClaimForm({ sheetId, personId, editing, onDone }: {
+export function ClaimForm({ sheetId, personId, editing, held, onDone }: {
   sheetId: string;
   personId: number;
   editing: Claim | undefined;
+  held: boolean;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -98,29 +100,33 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
     <form data-testid="claim-form" onSubmit={submit}>
       <input
         data-testid="claim-form-amount"
+        disabled={held}
         placeholder="Amount"
         value={amount}
         onChange={(e) => edit(setAmount)(e.target.value)}
       />{' '}
       <input
         data-testid="claim-form-date"
+        disabled={held}
         placeholder="yyyy-mm-dd"
         value={date}
         onChange={(e) => edit(setDate)(e.target.value)}
       />{' '}
       <input
         data-testid="claim-form-note"
+        disabled={held}
         placeholder="Note"
         value={note}
         onChange={(e) => edit(setNote)(e.target.value)}
       />{' '}
       <input
         data-testid="claim-form-corrects"
+        disabled={held}
         placeholder="Corrects no."
         value={corrects}
         onChange={(e) => edit(setCorrects)(e.target.value)}
       />{' '}
-      <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+      <button type="submit" data-testid="claim-form-submit" disabled={held || save.isPending}>
         {editing ? 'Save claim' : 'Add claim'}
       </button>
       {error && <p data-testid="claim-form-error">{error}</p>}
