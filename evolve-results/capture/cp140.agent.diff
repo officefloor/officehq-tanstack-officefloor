@@ -1,0 +1,56 @@
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 23770e01..96fc7bd9 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -102,8 +102,8 @@ public class PoolRepository {
+      * balance, and no cut (not even 0.00). A pool that is a member of none has the sheet's pot; a member pool's pot is
+      * its cut in the pool above (none while that has no cuts). Each member of a balanced pool with a pot has a cut: 0.00
+      * when retired or held (a hold in force on the sheet's today), else the pot times their share over the shares of
+-     * the members with a cut added up, half to even to two decimals, and the remainder to the member with a cut with the
+-     * largest share (the earliest added on a tie), so the cuts total the pot. A hold or a retirement leaves the pool's
++     * the members with a cut added up, half to even to two decimals, and the remainder to the member with the smallest
++     * non-zero cut (the latest added on a tie; the last member with a share when no cut is non-zero), so the cuts total the pot. A hold or a retirement leaves the pool's
+      * total share and balance as they are. A pool whose every member (in its dates) is retired has no cuts.
+      */
+     public List<PoolResponse> list(String sheetId) {
+@@ -213,7 +213,8 @@ public class PoolRepository {
+ 
+     /**
+      * The members with their cuts of the pot, spread over the members with a cut (neither retired, held nor out of their dates) by their
+-     * shares; the remainder goes to the largest share among them, the earliest added on a tie.
++     * shares; the remainder goes to the smallest non-zero cut among them, the latest added on a tie (to the last of them
++     * with a share when none has a non-zero cut).
+      */
+     private static List<PoolResponse.Member> cut(List<PoolResponse.Member> members, BigDecimal pot) {
+         BigDecimal shares = BigDecimal.ZERO.setScale(2);
+@@ -224,20 +225,24 @@ public class PoolRepository {
+         }
+         List<BigDecimal> cuts = new ArrayList<>();
+         BigDecimal sum = BigDecimal.ZERO.setScale(2);
+-        int largest = -1;
++        int smallest = -1;
++        int last = -1;
+         for (int i = 0; i < members.size(); i++) {
+             PoolResponse.Member m = members.get(i);
+             BigDecimal cut = !m.hasCut() || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
+                     : pot.multiply(new BigDecimal(m.share())).divide(shares, 2, RoundingMode.HALF_EVEN);
+             cuts.add(cut);
+             sum = sum.add(cut);
+-            if (m.hasCut() && (largest < 0
+-                    || new BigDecimal(m.share()).compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
+-                largest = i;
++            if (m.hasCut() && new BigDecimal(m.share()).signum() > 0) {
++                last = i;
++            }
++            if (m.hasCut() && cut.signum() != 0 && (smallest < 0 || cut.compareTo(cuts.get(smallest)) <= 0)) {
++                smallest = i;
+             }
+         }
+-        if (largest >= 0 && shares.signum() != 0) {
+-            cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
++        int to = smallest >= 0 ? smallest : last;
++        if (to >= 0 && shares.signum() != 0) {
++            cuts.set(to, cuts.get(to).add(pot.subtract(sum)));
+         }
+         List<PoolResponse.Member> cut = new ArrayList<>();
+         for (int i = 0; i < members.size(); i++) {
