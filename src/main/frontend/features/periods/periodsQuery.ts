@@ -1,6 +1,6 @@
 import { getJson } from '../../api/http';
 import { counts } from '../claims/claimsQuery';
-import type { Claim } from '../claims/claimsQuery';
+import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import type { Person } from '../people/peopleQuery';
 import { figure, sumDue } from '../rates/ratesQuery';
 import type { Late, Rate } from '../rates/ratesQuery';
@@ -36,7 +36,23 @@ export function periodOf(periods: Period[], date: string): Period | undefined {
 }
 
 /**
- * A person's due-total for a period: the figures of their counting claims dated in it. While the period is
+ * The claim's status at the end of the day `on` (yyyy-mm-dd), as its log records it: the last status logged on or
+ * before it, DRAFT (counting nowhere) when it was added after. A claim with no log has its status now.
+ */
+export function statusOn(c: Claim, on: string): ClaimStatus {
+  const log = c.log ?? [];
+  if (log.length === 0) return c.status;
+  let status: ClaimStatus = 'DRAFT';
+  for (const line of log) {
+    const m = /^(\S+) by .* on (\d{4}-\d{2}-\d{2}) due=\S*$/.exec(line);
+    if (m && m[2] <= on) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/**
+ * A person's due-total for a period: the figures (as shown now) of their claims dated in it that counted by the
+ * status they had at the end of its last day. While the period is
  * closed it is the figure fixed when it was closed (0.00 for a person added since).
  */
 export function personPeriodDue(
@@ -51,7 +67,13 @@ export function personPeriodDue(
   if (period.closed) return period.personTotals[String(person.id)] ?? '0.00';
   return sumDue(
     claims
-      .filter((c) => c.personId === person.id && counts(c, people, late.today) && period.from <= c.date && c.date <= period.to)
+      .filter(
+        (c) =>
+          c.personId === person.id &&
+          period.from <= c.date &&
+          c.date <= period.to &&
+          counts({ ...c, status: statusOn(c, period.to) }, people, late.today),
+      )
       .map((c) => figure(c, rates, person, floor, late)),
   );
 }

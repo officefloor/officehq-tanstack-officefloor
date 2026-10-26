@@ -168,6 +168,23 @@ public class Claims {
     }
 
     /**
+     * Each logged claim's status at the end of {@code on}, by claim id: the last status its log records on or before it,
+     * DRAFT (counting nowhere) when it was added after. A claim with no log is not in the map.
+     */
+    public java.util.Map<Long, ClaimStatus> statusesOn(String sheetId, LocalDate on) {
+        java.util.Map<Long, ClaimStatus> statuses = new java.util.HashMap<>();
+        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+            long id = rs.getLong("claim_id");
+            if (!rs.getObject("logged_on", LocalDate.class).isAfter(on)) {
+                statuses.put(id, ClaimStatus.valueOf(rs.getString("status")));
+            } else {
+                statuses.putIfAbsent(id, ClaimStatus.DRAFT);
+            }
+        }, sheetId);
+        return statuses;
+    }
+
+    /**
      * Binds the person's claims to the figures of a statement: each claim in {@code figures} is stated at
      * its figure (null: n/a), and every other claim of theirs is left unbound.
      */
