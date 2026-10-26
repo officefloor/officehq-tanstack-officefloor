@@ -1,0 +1,557 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 07becf4c..812587f3 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -44,7 +44,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
+   /** The claim's lines, in the order added: `<label> <qty> x <unit>`; with lines, its amount is their total. */
+   lines: string[];
+   /** The number of the bulk settle batch that settled the claim; none when no batch settled it. */
+-  settleBatch: number | null };
++  settleBatch: number | null;
++  /** Where the claim's adding stands in the order of changes: a forward-only rate applies to it only when saved before
++   *  it (see ratesForClaim); none for a claim added before every forward-only rate. */
++  added: number | null };
+ 
+ /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
+  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 7cad1ce4..6bdb55dd 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -4,8 +4,11 @@ import { getJson } from '../../api/http';
+ /** A grade's rate, in force from its from-date (yyyy-mm-dd; null applies from the beginning of time) through its
+  *  to-date (null: with no end). Its level is how far up the sheet's parents it is from: 0 (or none) the sheet's own,
+  *  1 its parent's, and so on, up to three. Its version is how many versions it has had for its grade and from-date; it is
+- *  always the newest, the one in force. */
+-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number };
++ *  always the newest, the one in force. A forward-only rate (saved with a from-date on or after the sheet's today) carries
++ *  `after`: it applies only to claims whose `added` is above it (none: it applies to every claim); `earlier` are its older
++ *  versions, newest first, for the claims it does not apply to. */
++export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number;
++  after?: number | null; earlier?: Rate[] };
+ 
+ /** The key every feature reads the sheet's rates under. */
+ export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
+@@ -38,6 +41,22 @@ export function rateOn(rates: readonly Rate[], grade: string, date: string): Rat
+   return undefined;
+ }
+ 
++/** Whether a rate's version applies to a claim added at `added` (none: before every forward-only rate). */
++function appliesTo(rate: Rate, added: number | null | undefined): boolean {
++  return rate.after == null || (added != null && added > rate.after);
++}
++
++/** The rates as they apply to a claim added at `added`: each rate whose newest version applies to it, else its newest
++ *  older version that does; a rate none of whose versions applies is left out. */
++export function ratesForClaim(rates: readonly Rate[], added: number | null | undefined): Rate[] {
++  const found: Rate[] = [];
++  for (const r of rates) {
++    const version = appliesTo(r, added) ? r : (r.earlier ?? []).find((e) => appliesTo(e, added));
++    if (version !== undefined) found.push(version);
++  }
++  return found;
++}
++
+ /** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n, "-1.03" -> -103n), exactly. */
+ export function toHundredths(text: string): bigint {
+   const trimmed = text.trim();
+@@ -143,14 +162,15 @@ export function lateCents(late: Late | undefined, claim: { amount: string; date:
+ 
+ /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
+  *  otherwise (or while it is PENDING) its amount times its person's grade's rate
+- *  in force on the claim's date, rounded half to even (half up when `halfUp`). The floor is not applied here (see
++ *  on the claim's date as it applies to the claim (see ratesForClaim), rounded half to even (half up when `halfUp`). The floor is not applied here (see
+  *  claimDueCents). Null when there is no figure (no rate of the grade then). */
+ export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
+-  claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null },
++  claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null;
++    added?: number | null },
+   halfUp = false): bigint | null {
+   if (claim.settledDue != null) return toHundredths(claim.settledDue);
+   if (isBound(claim)) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
+-  const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
++  const found = grade === undefined ? undefined : rateOn(ratesForClaim(rates, claim.added), grade, claim.date);
+   if (found === undefined) return null;
+   const correction = isCorrection(claim);
+   const amount = toHundredths(correction ? claim.amount.trim().slice(1) : claim.amount);
+@@ -163,7 +183,7 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
+  *  Null without a figure. */
+ export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
+   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
+-    dueBy: string; corrects?: string | null; deferred?: boolean },
++    dueBy: string; corrects?: string | null; deferred?: boolean; added?: number | null },
+   floorOn: (date: string) => bigint, late: Late | undefined): bigint | null {
+   const figure = claimFigureCents(rates, grade, claim, roundsHalfUp(late, claim));
+   if (figure == null) return null;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 7410a933..8f649213 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -219,7 +219,8 @@ public class ApplyClaimStatus {
+             return claim.getStatedDue();
+         }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
++        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
++                claim.getDate(), claim.getAddedSeq());
+         return claim.figureAt(rate, late.rounding(claim));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+index 05ec33bb..328aa3e5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyResettle.java
+@@ -32,7 +32,7 @@ public class ApplyResettle {
+         LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         BigDecimal rate = person == null ? null
+-                : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
++                : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate(), claim.getAddedSeq());
+         BigDecimal figure = claim.figureAt(rate, late.rounding(claim));
+         BigDecimal before = claim.getSettledDue();
+         BigDecimal after = late.dueAsOpen(claim, figure);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index c82494e3..0f2ad65b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -19,6 +19,7 @@ public class Claim {
+ 
+     private String editedBy;
+     private Integer settleBatch;
++    private Long addedSeq;
+     private boolean stated;
+     private BigDecimal statedDue;
+     private String corrects;
+@@ -268,6 +269,17 @@ public class Claim {
+         this.settleBatch = settleBatch;
+     }
+ 
++    /** Where the claim's adding stands in the order of changes: a forward-only rate saved later applies to it, one
++     *  saved earlier does not (see {@link net.officefloor.hq.app.rate.Rate#forClaim}). Null for a claim added before
++     *  forward-only rates, which counts as added before every one. */
++    public Long getAddedSeq() {
++        return addedSeq;
++    }
++
++    public void setAddedSeq(Long addedSeq) {
++        this.addedSeq = addedSeq;
++    }
++
+     /** The signed-in user who last edited the claim through its form or amount entry; null when never edited. */
+     public String getEditedBy() {
+         return editedBy;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index c7f3dc40..907f8c88 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -23,7 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
+ public class ClaimRepository {
+ 
+     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch,"
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, added_seq,"
+             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
+             + " AND o.claim_number = claim.corrects) AS corrected_date";
+ 
+@@ -47,6 +47,7 @@ public class ClaimRepository {
+         claim.setVoidReason(rs.getString("void_reason"));
+         claim.setEditedBy(rs.getString("edited_by"));
+         claim.setSettleBatch(rs.getObject("settle_batch", Integer.class));
++        claim.setAddedSeq(rs.getObject("added_seq", Long.class));
+         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
+         if (corrected != null) {
+             claim.setRoundOn(corrected);
+@@ -128,11 +129,12 @@ public class ClaimRepository {
+     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+             String ref, String tags, int terms) {
+         long listed = nextListed(sheetId);
++        long added = jdbc.queryForObject("SELECT NEXT VALUE FOR change_seq", Long.class);
+         LocalDate dueBy = holidays.dueBy(sheetId, date, terms);
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags, due_by, added_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setLong(2, personId);
+@@ -146,6 +148,7 @@ public class ClaimRepository {
+             ps.setString(10, ref);
+             ps.setString(11, tags);
+             ps.setDate(12, Date.valueOf(dueBy));
++            ps.setLong(13, added);
+             return ps;
+         }, keys);
+         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
+@@ -154,6 +157,7 @@ public class ClaimRepository {
+         claim.setDueBy(dueBy);
+         claim.setRef(ref);
+         claim.setTags(tags);
++        claim.setAddedSeq(added);
+         used(sheetId, tags);
+         return claim;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 1f0509fb..634090d2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -2,13 +2,13 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
+ 
+-/** A claim as the screen shows it; `deferred` as of the sheet's today (deferred until a date after it, whatever its status), and `deferredUntil` the date it was last deferred until (null when never deferred), and `splitFrom` the number of the claim it was split off (null when none), and `lateEntry` whether it was added while its period was soft-closed, and `reminded` the last day a reminder was written (null when never), and `ref` its external reference (null when none), and `tags` its tags, sorted (empty when none), and `voidReason` the reason it was voided with (null when none), and `settleBatch` the number of the bulk settle batch that settled it (null when none), and `comments` its comments, oldest first, as `<user> on <date>: <text>`, and `lines` its lines, in the order added, as `<label> <qty> x <unit>`. */
++/** A claim as the screen shows it; `deferred` as of the sheet's today (deferred until a date after it, whatever its status), and `deferredUntil` the date it was last deferred until (null when never deferred), and `splitFrom` the number of the claim it was split off (null when none), and `lateEntry` whether it was added while its period was soft-closed, and `reminded` the last day a reminder was written (null when never), and `ref` its external reference (null when none), and `tags` its tags, sorted (empty when none), and `voidReason` the reason it was voided with (null when none), and `settleBatch` the number of the bulk settle batch that settled it (null when none), and `comments` its comments, oldest first, as `<user> on <date>: <text>`, and `lines` its lines, in the order added, as `<label> <qty> x <unit>`, and `added` where its adding stands in the order of changes (null: before every forward-only rate; see Rate#forClaim). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status,
+         String number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
+         java.util.List<String> log, boolean deferred, String deferredUntil, int proofs,
+         String splitFrom, boolean lateEntry, String reminded, String ref,
+         java.util.List<String> tags, String voidReason, java.util.List<String> comments,
+-        Integer settleBatch, java.util.List<String> lines) {
++        Integer settleBatch, java.util.List<String> lines, Long added) {
+ 
+     /** The claim with its status log, oldest first, as of the sheet's today. */
+     public static ClaimResponse from(Claim claim, java.util.List<String> log, LocalDate today) {
+@@ -35,6 +35,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.getProofs(), claim.getSplitFrom(), claim.isLateEntry(),
+                 claim.getRemindedOn() == null ? null : claim.getRemindedOn().toString(), claim.getRef(),
+                 claim.getTags() == null ? java.util.List.of() : java.util.List.of(claim.getTags().split(",")),
+-                claim.getVoidReason(), comments, claim.getSettleBatch(), lines);
++                claim.getVoidReason(), comments, claim.getSettleBatch(), lines, claim.getAddedSeq());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+index e298a11f..67a7cb5c 100644
+--- a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
++++ b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+@@ -24,7 +24,7 @@ public class SheetHistory {
+ 
+     /** The tables the screen reads (a statement's figures among them), parents before children. */
+     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold", "person_retirement",
+-            "person_patron", "person_alias", "person_snapshot", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
++            "person_patron", "person_alias", "person_snapshot", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "rate_version", "sheet_setting",
+             "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_line", "claim_template",
+             "pool", "pool_member", "plan", "plan_claim");
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java b/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
+index 4291d188..94e2cd55 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ApplyRate.java
+@@ -1,11 +1,14 @@
+ package net.officefloor.hq.app.rate;
+ 
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyRate {
+-    public void apply(@Val SheetResponse sheet, @Val RateInput input, RateRepository repository, Out<Rate> rate) {
+-        rate.set(repository.set(sheet.id(), input.grade(), input.rate(), input.from(), input.to()));
++    public void apply(@Val SheetResponse sheet, @Val RateInput input, RateRepository repository, SheetRepository sheets,
++            Out<Rate> rate) {
++        rate.set(repository.set(sheet.id(), input.grade(), input.rate(), input.from(), input.to(),
++                sheets.today(sheet.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index 941b3076..7d99ab20 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -2,24 +2,55 @@ package net.officefloor.hq.app.rate;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
+ 
+ /** A grade's rate on a sheet: a percent with two decimals, in force from a date (null: from the beginning of time)
+  * through a to-date (null: with no end). Its level is how far up the sheet's parents it was found: 0 on the sheet itself,
+  * 1 on its parent, and so on. Its version counts how many times it has been set for its grade and from-date; it
+- * is always the newest version, the one in force. */
+-public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int level, int version) {
++ * is always the newest version, the one in force. A forward-only rate (saved with a from-date on or after the sheet's
++ * today) carries {@code after}: it applies only to claims added after it (see {@link #forClaim}); null for one that
++ * applies to every claim. {@code earlier} holds its older versions, newest first, for the claims it does not apply to. */
++public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int level, int version,
++        Long after, List<Rate> earlier) {
+ 
+     public Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
+-        this(sheetId, grade, rate, from, to, 0, 1);
++        this(sheetId, grade, rate, from, to, 0, 1, null, List.of());
+     }
+ 
+-    public Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int version) {
+-        this(sheetId, grade, rate, from, to, 0, version);
++    public Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int version, Long after) {
++        this(sheetId, grade, rate, from, to, 0, version, after, List.of());
+     }
+ 
+     /** The rate as found the given number of levels up. */
+     public Rate at(int level) {
+-        return new Rate(sheetId, grade, rate, from, to, level, version);
++        return new Rate(sheetId, grade, rate, from, to, level, version, after, earlier.stream().map(e -> e.at(level)).toList());
++    }
++
++    /** The rate with its older versions, newest first. */
++    public Rate withEarlier(List<Rate> versions) {
++        return new Rate(sheetId, grade, rate, from, to, level, version, after, versions);
++    }
++
++    /** Whether this version applies to a claim added at {@code added} (null: before every forward-only rate). */
++    public boolean appliesTo(Long added) {
++        return after == null || (added != null && added > after);
++    }
++
++    /**
++     * The rates as they apply to a claim added at {@code added}: each rate whose newest version applies to it, else its
++     * newest older version that does; a rate none of whose versions applies is left out.
++     */
++    public static List<Rate> forClaim(List<Rate> rates, Long added) {
++        List<Rate> found = new ArrayList<>();
++        for (Rate r : rates) {
++            if (r.appliesTo(added)) {
++                found.add(r);
++                continue;
++            }
++            r.earlier().stream().filter(e -> e.appliesTo(added)).findFirst().ifPresent(found::add);
++        }
++        return found;
+     }
+ 
+     /**
+@@ -45,4 +76,9 @@ public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from
+         }
+         return null;
+     }
++
++    /** The grade's rate in force on the date for a claim added at {@code added} (see {@link #forClaim}). */
++    public static BigDecimal on(List<Rate> rates, String grade, LocalDate on, Long added) {
++        return on(forClaim(rates, added), grade, on);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 8717d156..2d053aa4 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -21,7 +21,8 @@ public class RateRepository {
+         Date from = rs.getDate("from_date");
+         Date to = rs.getDate("to_date");
+         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
+-                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"));
++                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"),
++                rs.getObject("after_seq", Long.class));
+     };
+ 
+     /** How many levels of parents a sheet takes rates from. */
+@@ -33,10 +34,15 @@ public class RateRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's rates, by grade, then by from-date (none first). */
++    /** The sheet's rates, by grade, then by from-date (none first), each with its older versions, newest first. */
+     public List<Rate> list(String sheetId) {
+-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
+-                + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
++        List<Rate> versions = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate_version"
++                + " WHERE sheet_id = ? ORDER BY version DESC, id DESC", ROW, sheetId);
++        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ?"
++                + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId).stream()
++                .map(r -> r.withEarlier(versions.stream().filter(v -> v.grade().equals(r.grade())
++                        && java.util.Objects.equals(v.from(), r.from())).toList()))
++                .toList();
+     }
+ 
+     /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
+@@ -107,12 +113,20 @@ public class RateRepository {
+         return null;
+     }
+ 
++    /**
++     * The grade's rate on the date for a claim added at {@code added} (see {@link Rate#forClaim}): a forward-only rate
++     * saved after the claim was added does not apply to it. On the sheet or else up its parents; null when none has one.
++     */
++    public BigDecimal find(String sheetId, String grade, LocalDate on, Long added) {
++        return Rate.on(chain(sheetId), grade, on, added);
++    }
++
+     /**
+      * The grade's rate in force on the date on the sheet itself: the one with the latest from-date on or before it, a rate
+      * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
+      */
+     public BigDecimal findOwn(String sheetId, String grade, LocalDate on) {
+-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ? AND grade = ?"
++        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ? AND grade = ?"
+                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", ROW,
+                 sheetId, grade, Date.valueOf(on)).stream().findFirst()
+                 .filter(r -> r.to() == null || !r.to().isBefore(on)).map(Rate::rate).orElse(null);
+@@ -120,23 +134,28 @@ public class RateRepository {
+ 
+     /**
+      * Set a grade's rate from a date (null: from the beginning of time) through a to-date (null: with no end). One
+-     * already there for that from-date is kept as an older version, and the new one becomes the next version.
++     * already there for that from-date is kept as an older version, and the new one becomes the next version. Saved
++     * with a from-date on or after the sheet's {@code today}, it is forward-only: it applies only to claims added after
++     * it (see {@link Rate#forClaim}).
+      */
+-    public Rate set(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
++    public Rate set(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, LocalDate today) {
+         Date fromDate = from == null ? null : Date.valueOf(from);
+-        Rate old = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
++        Long after = from != null && !from.isBefore(today)
++                ? jdbc.queryForObject("SELECT NEXT VALUE FOR change_seq", Long.class) : null;
++        Rate old = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ?"
+                 + " AND grade = ? AND from_date IS NOT DISTINCT FROM ?", ROW, sheetId, grade, fromDate)
+                 .stream().findFirst().orElse(null);
+         int version = 1;
+         if (old != null) {
+-            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) VALUES (?, ?, ?, ?, ?, ?)",
+-                    sheetId, grade, fromDate, old.version(), old.rate(), old.to() == null ? null : Date.valueOf(old.to()));
++            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date, after_seq)"
++                    + " VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, grade, fromDate, old.version(), old.rate(),
++                    old.to() == null ? null : Date.valueOf(old.to()), old.after());
+             version = old.version() + 1;
+         }
+         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                 sheetId, grade, fromDate);
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)", sheetId,
+-                grade, rate, fromDate, to == null ? null : Date.valueOf(to), version);
+-        return new Rate(sheetId, grade, rate, from, to, version);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_seq) VALUES (?, ?, ?, ?, ?, ?, ?)",
++                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), version, after);
++        return new Rate(sheetId, grade, rate, from, to, version, after);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index d4de394b..20fc4e4b 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,11 +1,17 @@
+ package net.officefloor.hq.app.rate;
+ 
++import java.util.List;
++
+ /** A rate as the screen shows it; level 0 is the sheet's own, 1 its parent's, and so on up; version is how many
+- * versions it has had. */
+-public record RateResponse(String grade, String rate, String from, String to, int level, int version) {
++ * versions it has had. A forward-only rate carries {@code after}: it applies only to claims whose {@code added} is
++ * above it (null: it applies to every claim); {@code earlier} are its older versions, newest first, for the claims it
++ * does not apply to. */
++public record RateResponse(String grade, String rate, String from, String to, int level, int version, Long after,
++        List<RateResponse> earlier) {
+     public static RateResponse from(Rate rate) {
+         return new RateResponse(rate.grade(), rate.rate().toPlainString(),
+                 rate.from() == null ? null : rate.from().toString(),
+-                rate.to() == null ? null : rate.to().toString(), rate.level(), rate.version());
++                rate.to() == null ? null : rate.to().toString(), rate.level(), rate.version(), rate.after(),
++                rate.earlier().stream().map(RateResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java b/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
+index 5b36eb9e..a65291e2 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SetImportedRates.java
+@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupSnapshot;
+ import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.hq.app.sheet.SheetResponse;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -15,10 +16,11 @@ import net.officefloor.plugin.variable.Val;
+ public class SetImportedRates {
+ 
+     public void set(@Val SheetResponse sheet, @Val ImportedRates imported, @Val ChangedBy by,
+-            RateRepository repository, Rollup rollup, Audit audit, Out<ImportRatesResponse> response) {
++            RateRepository repository, SheetRepository sheets, Rollup rollup, Audit audit, Out<ImportRatesResponse> response) {
+         for (RateInput input : imported.rates()) {
+             RollupSnapshot before = rollup.snapshot(sheet.id());
+-            Rate rate = repository.set(sheet.id(), input.grade(), input.rate(), input.from(), input.to());
++            Rate rate = repository.set(sheet.id(), input.grade(), input.rate(), input.from(), input.to(),
++                    sheets.today(sheet.id()));
+             audit.record(RecordRateSet.line(rate, by));
+             rollup.record(sheet.id(), before, by);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 9e175a07..5220fb4d 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -240,7 +240,7 @@ public class Rollup {
+         if (claim.isBound()) {
+             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
+         }
+-        BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
++        BigDecimal rate = Rate.on(sheetRates, grade, claim.getDate(), claim.getAddedSeq());
+         return claim.figureAt(rate, late.rounding(claim));
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index fcdb6ed1..81b12e6a 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -32,10 +32,10 @@ public class SheetCloneRepository {
+                 + " setting_key, from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
+                 + " WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) SELECT ?, grade, rate, from_date,"
+-                + " to_date, version FROM rate WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) SELECT ?, grade, from_date,"
+-                + " version, rate, to_date FROM rate_version WHERE sheet_id = ? ORDER BY id", to, from);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_seq) SELECT ?, grade, rate,"
++                + " from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date, after_seq) SELECT ?, grade,"
++                + " from_date, version, rate, to_date, after_seq FROM rate_version WHERE sheet_id = ? ORDER BY id", to, from);
+         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM holiday"
+                 + " WHERE sheet_id = ? ORDER BY id", to, from);
+         jdbc.update("INSERT INTO void_reason (sheet_id, reason) SELECT ?, reason FROM void_reason"
+@@ -112,10 +112,10 @@ public class SheetCloneRepository {
+             long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO claim (sheet_id, person_id,"
+                     + " amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due,"
+                     + " corrects, listed, deferred_until, proofs, split_from, late_entry, reminded_on, due_from, terms,"
+-                    + " ref, tags, void_reason, edited_by, due_by, settle_batch)"
++                    + " ref, tags, void_reason, edited_by, due_by, settle_batch, added_seq)"
+                     + " SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, FALSE, NULL,"
+                     + " ?, listed, deferred_until, proofs, ?, late_entry, reminded_on, due_from, terms,"
+-                    + " ref, tags, void_reason, edited_by, due_by, NULL FROM claim WHERE id = ?)", Long.class,
++                    + " ref, tags, void_reason, edited_by, due_by, NULL, added_seq FROM claim WHERE id = ?)", Long.class,
+                     to, people.get(id(claim.get("person_id"))), numbers.get(id), renumbered.get((String) claim.get("corrects")),
+                     renumbered.get((String) claim.get("split_from")), id);
+             jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) SELECT ?, ?,"
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 701a6c76..e2a0e2d7 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -108,7 +108,8 @@ public class TakeStatement {
+         if (claim.isBound()) {
+             return claim.getStatedDue();
+         }
+-        BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
++        BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate(),
++                claim.getAddedSeq());
+         return claim.figureAt(rate, late.rounding(claim));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V70__rate_forward_only.sql b/src/main/resources/db/migration/V70__rate_forward_only.sql
+new file mode 100644
+index 00000000..33d4b40a
+--- /dev/null
++++ b/src/main/resources/db/migration/V70__rate_forward_only.sql
+@@ -0,0 +1,18 @@
++-- A rate saved with a from-date on or after the sheet's today is forward-only: it applies only to claims added after it
++-- was saved. Claims and rates take their place in the order of changes from one sequence: a claim's added_seq when it is
++-- added, a forward-only rate's after_seq when it is saved (null: the rate applies to every claim). A forward-only rate
++-- applies to a claim whose added_seq is above its after_seq; an older claim keeps the version it had before (rate_version),
++-- or none. Claims added before this change have no added_seq and count as added before every forward-only rate.
++CREATE SEQUENCE change_seq;
++ALTER TABLE claim ADD COLUMN added_seq BIGINT DEFAULT NEXT VALUE FOR change_seq;
++ALTER TABLE hist.claim ADD COLUMN added_seq BIGINT;
++ALTER TABLE asof.claim ADD COLUMN added_seq BIGINT;
++ALTER TABLE rate ADD COLUMN after_seq BIGINT;
++ALTER TABLE hist.rate ADD COLUMN after_seq BIGINT;
++ALTER TABLE asof.rate ADD COLUMN after_seq BIGINT;
++ALTER TABLE rate_version ADD COLUMN after_seq BIGINT;
++
++-- The older versions are read with the rates, so they are snapshotted with them.
++CREATE TABLE hist.rate_version AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM rate_version t WHERE FALSE;
++CREATE INDEX hist_rate_version_snapshot ON hist.rate_version (snapshot_id);
++CREATE TABLE asof.rate_version AS SELECT * FROM rate_version WHERE FALSE;
