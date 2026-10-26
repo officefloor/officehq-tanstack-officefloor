@@ -37,7 +37,7 @@ public class ClosePeriod {
             return null;
         }
         return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), false, total,
-                personTotals, true, period.cap(), personCarried);
+                personTotals, true, period.cap(), personCarried, period.locked());
     }
 
     /** Closes the open (or soft-closed) period, fixing its due-total and each person's as they are now; null when someone else closed it first. */
@@ -49,7 +49,7 @@ public class ClosePeriod {
             return null;
         }
         return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), true, total,
-                personTotals, false, period.cap(), personCarried);
+                personTotals, false, period.cap(), personCarried, period.locked());
     }
 
     /** Each person's carried figure for the period as it is now, their opening balance for it on top, by person id. */

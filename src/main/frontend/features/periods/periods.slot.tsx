@@ -21,11 +21,11 @@ const NO_HOLDS = new Map();
  *  figures fixed as a close fixes them, but claims dated inside it can still change; and the cap on each person's
  *  OPEN or PENDING claims in it (null: none); and each person's carried figure for it fixed when it was closed or
  *  soft-closed, by person id (empty while open); and each person's opening balance for it, which the live carried
- *  figure adds on top. */
+ *  figure adds on top; and whether a steward has locked it, so it cannot be reopened. */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
   personTotals: Record<string, string>; soft: boolean; cap?: number | null; personCarried?: Record<string, string>;
-  openings?: Record<string, string>;
+  openings?: Record<string, string>; locked?: boolean;
 };
 
 /** The key every feature reads the sheet's periods under. */
@@ -230,6 +230,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th></th>
           </tr>
         </thead>
@@ -344,7 +345,8 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
 // steward only) makes the due-total live again; anyone else, or a period not closed, is refused with
 // the row's error. Soft-closing (as closing, by the close permission) fixes the figures but leaves claims inside it
 // open to change; a soft-closed period can be closed (fixing them afresh) or reopened. Each action clears the
-// error the others left.
+// error the others left. Locking and unlocking (a steward only) are refused with the row's error for anyone else, or
+// when the period is already so; a locked period cannot be reopened.
 function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; period: Period; dueTotal: bigint; fy: string }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -363,10 +365,22 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
       `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/soft-close`, { by: user ?? '' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
   });
+  const lock = useMutation({
+    mutationFn: () => postJson<Period>(
+      `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/lock`, { by: user ?? '' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
+  const unlock = useMutation({
+    mutationFn: () => postJson<Period>(
+      `/api/sheets/${encodeURIComponent(sheetId)}/periods/${p.id}/unlock`, { by: user ?? '' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+  });
+  const submitLock = useSubmitOnce(lock);
+  const submitUnlock = useSubmitOnce(unlock);
   const submitClose = useSubmitOnce(close);
   const submitSoftClose = useSubmitOnce(softClose);
   const submitReopen = useSubmitOnce(reopen);
-  const error = close.error ?? softClose.error ?? reopen.error;
+  const error = close.error ?? softClose.error ?? reopen.error ?? lock.error ?? unlock.error;
   return (
     <tr data-testid={`period-row-${p.name}`}>
       <td data-testid="period-name">{p.name}</td>
@@ -378,6 +392,7 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
       <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fy}</td>
       <td data-testid="period-cap">{p.cap ?? ''}</td>
+      <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
       <td>
         {!p.closed && (
           <button
@@ -387,6 +402,8 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
             onClick={() => {
               softClose.reset();
               reopen.reset();
+              lock.reset();
+              unlock.reset();
               submitClose(undefined);
             }}
           >
@@ -401,6 +418,8 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
             onClick={() => {
               close.reset();
               reopen.reset();
+              lock.reset();
+              unlock.reset();
               submitSoftClose(undefined);
             }}
           >
@@ -414,10 +433,40 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
           onClick={() => {
             close.reset();
             softClose.reset();
+            lock.reset();
+            unlock.reset();
             submitReopen(undefined);
           }}
         >
           Reopen
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-lock"
+          disabled={lock.isPending}
+          onClick={() => {
+            close.reset();
+            softClose.reset();
+            reopen.reset();
+            unlock.reset();
+            submitLock(undefined);
+          }}
+        >
+          Lock
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-unlock"
+          disabled={unlock.isPending}
+          onClick={() => {
+            close.reset();
+            softClose.reset();
+            reopen.reset();
+            lock.reset();
+            submitUnlock(undefined);
+          }}
+        >
+          Unlock
         </button>
         {error && (
           <p data-testid="period-error" role="alert">

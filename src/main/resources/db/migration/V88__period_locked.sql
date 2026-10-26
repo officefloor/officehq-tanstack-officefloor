@@ -1,0 +1,4 @@
+-- A steward can lock a period; a locked period cannot be reopened until a steward unlocks it.
+ALTER TABLE period ADD COLUMN locked BOOLEAN DEFAULT FALSE NOT NULL;
+ALTER TABLE hist.period ADD COLUMN locked BOOLEAN DEFAULT FALSE NOT NULL;
+ALTER TABLE asof.period ADD COLUMN locked BOOLEAN DEFAULT FALSE NOT NULL;

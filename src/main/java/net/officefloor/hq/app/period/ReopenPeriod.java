@@ -21,10 +21,13 @@ public class ReopenPeriod {
         if (!period.closed() && !period.soft()) {
             throw new BadRequestException("That period is not closed");
         }
+        if (period.locked()) {
+            throw new BadRequestException("That period is locked; a steward must unlock it first");
+        }
         if (!repository.reopen(period.id())) {
             throw new BadRequestException("The period was reopened by someone else; reload the sheet");
         }
         reopened.set(new ReopenedPeriod(new Period(period.id(), period.sheetId(), period.name(), period.from(),
-                period.to(), false, null, Map.of(), false, period.cap(), Map.of())));
+                period.to(), false, null, Map.of(), false, period.cap(), Map.of(), false)));
     }
 }

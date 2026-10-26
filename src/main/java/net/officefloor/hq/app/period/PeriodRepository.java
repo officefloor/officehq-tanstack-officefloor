@@ -22,9 +22,9 @@ public class PeriodRepository {
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), rs.getBoolean("soft_closed"),
-            (Integer) rs.getObject("claim_cap"), Map.of());
+            (Integer) rs.getObject("claim_cap"), Map.of(), rs.getBoolean("locked"));
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap, locked";
 
     private final JdbcTemplate jdbc;
 
@@ -54,7 +54,7 @@ public class PeriodRepository {
 
     private static Period withTotals(Period p, Map<Long, BigDecimal> personTotals, Map<Long, BigDecimal> personCarried) {
         return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals, p.soft(), p.cap(),
-                personCarried);
+                personCarried, p.locked());
     }
 
     /** Each period's opening balances on the sheet, by period id, then person id. */
@@ -119,7 +119,7 @@ public class PeriodRepository {
             ps.setObject(5, cap, java.sql.Types.INTEGER);
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false, cap, Map.of());
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false, cap, Map.of(), false);
     }
 
     public Period find(String sheetId, long id) {
@@ -186,10 +186,15 @@ public class PeriodRepository {
 
     /** Reopen the closed or soft-closed period, its due-totals live again. Whether it was still closed or soft-closed: of two users reopening it, one wins. */
     public boolean reopen(long id) {
-        if (jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE id = ? AND (closed OR soft_closed)", id) != 1) {
+        if (jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE id = ? AND (closed OR soft_closed) AND NOT locked", id) != 1) {
             return false;
         }
         jdbc.update("DELETE FROM period_person_total WHERE period_id = ?", id);
         return true;
+    }
+
+    /** Lock or unlock the period. Whether it was not already so: of two users locking it, one wins. */
+    public boolean setLocked(long id, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE id = ? AND locked = ?", locked, id, !locked) == 1;
     }
 }
