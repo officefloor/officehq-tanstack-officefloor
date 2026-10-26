@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { peopleQuery } from './peopleQuery';
 import { PersonForm } from './PersonForm';
@@ -18,6 +19,7 @@ function People({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <PersonHeaders.Slot sheetId={sheetId} />
             <th />
           </tr>
         </thead>
@@ -26,6 +28,7 @@ function People({ sheetId }: { sheetId: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <PersonCells.Slot sheetId={sheetId} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditingId(p.id)}>
                   Edit
