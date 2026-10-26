@@ -182,6 +182,61 @@ public class PersonRepository {
         }
     }
 
+    /**
+     * Merge the person into the other, both still at the versions they were loaded at: the merged person's claims move
+     * to the other (numbers and dates kept, listed after the other's claims in the order they were added, each
+     * unbound from any statement figure); their name and aliases become the other's aliases; their patrons are added
+     * to the other's and anyone naming them as patron names the other instead (never the other themselves, no
+     * repeats); their pool memberships move to the other (shares added where the other is a member already) and their
+     * closed periods' totals add to the other's. Their statements, holds, watchers, grades and contact are dropped
+     * with them. False (nothing written) when either was saved by someone else in the meantime.
+     */
+    public boolean merge(Person from, Person into) {
+        String sheetId = from.getSheetId();
+        long f = from.getId();
+        long t = into.getId();
+        if (jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND version = ?", t, into.getVersion()) == 0
+                || jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND version = ?", f,
+                        from.getVersion()) == 0) {
+            return false;
+        }
+        for (Long claimId : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                Long.class, sheetId, f)) {
+            Long listed = jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE "
+                    + "(UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)", Long.class, sheetId);
+            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = ? WHERE id = ?", t,
+                    listed, claimId);
+        }
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, t,
+                from.getName());
+        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT DISTINCT ?, pp.patron_id FROM person_patron pp"
+                + " WHERE pp.person_id = ? AND pp.patron_id <> ? AND NOT EXISTS"
+                + " (SELECT 1 FROM person_patron o WHERE o.person_id = ? AND o.patron_id = pp.patron_id)", t, f, t, t);
+        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT DISTINCT pp.person_id, ? FROM person_patron pp"
+                + " WHERE pp.patron_id = ? AND pp.person_id <> ? AND NOT EXISTS"
+                + " (SELECT 1 FROM person_patron o WHERE o.person_id = pp.person_id AND o.patron_id = ?)", t, f, t, t);
+        jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
+        jdbc.update("UPDATE pool_member m SET share = share + (SELECT o.share FROM pool_member o WHERE o.pool_id = m.pool_id"
+                + " AND o.person_id = ?) WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM pool_member o"
+                + " WHERE o.pool_id = m.pool_id AND o.person_id = ?)", f, t, f);
+        jdbc.update("DELETE FROM pool_member m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM pool_member o"
+                + " WHERE o.pool_id = m.pool_id AND o.person_id = ?)", f, t);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", t, f);
+        jdbc.update("UPDATE period_person_total m SET total = total + (SELECT o.total FROM period_person_total o"
+                + " WHERE o.period_id = m.period_id AND o.person_id = ?) WHERE m.person_id = ? AND EXISTS"
+                + " (SELECT 1 FROM period_person_total o WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t, f);
+        jdbc.update("DELETE FROM period_person_total m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM period_person_total o"
+                + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
+        jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
+        jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person WHERE id = ?", f);
+        return true;
+    }
+
     /** Sets each person's patrons' names, sorted, their grades and their holds. */
     private List<Person> withPatrons(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
