@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
  * Splits an amount (above 0.00 and below the claim's) off an OPEN claim not deferred past the sheet's today: the claim
  * keeps the rest and loses any figure a statement bound it to; a new OPEN claim with the amount, the same date and note,
  * the next number, opened by the user, split from the claim's number and due by the terms-th business day after its date,
- * with the terms in force on that date for its person (their own, else their grade's on that date, else the sheet's), is listed as the person's newest;
+ * with the terms in force for its person on the sheet's today, the day it is created (their own, else their grade's on that day, else the sheet's), is listed as the person's newest;
  * a late entry when that due-by is in a soft-closed period.
  */
 public class ApplySplit {
@@ -31,7 +31,7 @@ public class ApplySplit {
             throw new BadRequestException("The amount split off is more than 0.00 and less than the claim's amount");
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        Claim into = repository.split(claim, amount.value(), by.name(), BuildClaim.terms(person, claim.getDate(), settings));
+        Claim into = repository.split(claim, amount.value(), by.name(), BuildClaim.terms(person, sheets.today(claim.getSheetId()), settings));
         if (into == null) {
             throw new BadRequestException("The claim was changed by someone else; reload the sheet");
         }

@@ -11,14 +11,14 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Refuses a new claim (date blank: the sheet's entry date, else its today) whose due-by, its date plus the terms it would
- * get, falls inside a closed period.
+ * get (those in force on the sheet's today), falls inside a closed period.
  */
 public class RefuseClosedNewDate {
 
     public void check(@Val Person person, @Val ClaimInput input, SheetRepository sheets,
             SettingRepository settings, PeriodRepository periods, HolidayRepository holidays) throws BadRequestException {
-        LocalDate date = input.date() != null ? input.date()
-                : settings.entryDate(person.getSheetId(), sheets.today(person.getSheetId()));
-        RefuseClosedDate.refuse(person.getSheetId(), BuildClaim.dueBy(person, date, settings, holidays), periods);
+        LocalDate today = sheets.today(person.getSheetId());
+        LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.getSheetId(), today);
+        RefuseClosedDate.refuse(person.getSheetId(), BuildClaim.dueBy(person, date, today, settings, holidays), periods);
     }
 }

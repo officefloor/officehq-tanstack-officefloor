@@ -50,13 +50,13 @@ public class GeneratePlanClaims {
                 // Re-read each time: an earlier claim may have changed what the rules see.
                 Person person = people.find(sheet.id(), plan.personId());
                 try {
-                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
+                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, today, settings, holidays), periods);
                     RefuseRetiredDate.refuse(person, date);
                 } catch (BadRequestException e) {
                     continue;
                 }
                 Claim claim = claims.insert(sheet.id(), person.getId(), plan.amount(), date, "", null, null, null,
-                        BuildClaim.terms(person, date, settings));
+                        BuildClaim.terms(person, today, settings));
                 if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
                     claims.markLate(claim);
                 }

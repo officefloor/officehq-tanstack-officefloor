@@ -46,7 +46,8 @@ public class AddPastedClaims {
             ClaimLockRepository locks, ClaimLineRepository claimLines, WatchRepository watches,
             VoidReasonRepository voidReasons, Rollup rollup, Audit audit, ClaimLog log, Out<PasteResponse> response)
             throws BadRequestException {
-        LocalDate today = settings.entryDate(sheet.id(), sheets.today(sheet.id()));
+        LocalDate sheetToday = sheets.today(sheet.id());
+        LocalDate today = settings.entryDate(sheet.id(), sheetToday);
         List<Person> persons = new ArrayList<>();
         List<Claim> matched = new ArrayList<>();
         Set<Long> taken = new HashSet<>();
@@ -80,7 +81,7 @@ public class AddPastedClaims {
                         pending.merge(target, input.amount(), BigDecimal::add);
                     }
                     RefuseUsedRef.refuse(sheet.id(), input.ref(), -1, claims);
-                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
+                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, sheetToday, settings, holidays), periods);
                     RefuseRetiredDate.refuse(person, date);
                 } else {
                     if (!taken.add(match.getId())) {
@@ -116,7 +117,7 @@ public class AddPastedClaims {
                     if (claim == null) {
                         LocalDate date = input.date() != null ? input.date() : today;
                         claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
-                                input.corrects(), input.ref(), input.tags(), BuildClaim.terms(person, date, settings));
+                                input.corrects(), input.ref(), input.tags(), BuildClaim.terms(person, sheetToday, settings));
                         if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
                             claims.markLate(claim);
                         }

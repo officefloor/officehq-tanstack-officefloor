@@ -19,7 +19,7 @@ import { useColumnShown } from '../columns/useColumns';
  *  100.00 (two decimals; split equally in the order named, the remainder to the first named), sorted by name. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
  *  the beginning of time). `terms`: the person's own terms in days in force on the sheet's today, null when they have none; a claim
- *  added for them is due by its date plus their own terms in force on that date, else their grade's terms, else the
+ *  added for them is due by its date plus their own terms in force on the day it is added (the sheet's today then), else their grade's terms on that day, else the
  *  sheet's. `ownTerms`: their own terms from the beginning of time (null: none); `datedTerms`: the own terms they were
  *  given from a date (null terms: none), oldest from-date first. `contact`: the person's contact, trimmed
  *  and lower-cased, null when they have none; no two people on a sheet share one. `tags`: the person's tags, trimmed,
