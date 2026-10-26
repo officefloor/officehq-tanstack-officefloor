@@ -8,6 +8,7 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/useClaims';
 import { useSheetToday } from '../today/today.slot';
+import { SORT_KEYS, useSortBy, useSortedPeople } from '../sort/useSortedPeople';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
@@ -371,6 +372,8 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const editing = people.data?.find((p) => p.id === editingId);
   // A refused edit's message, shown on the add form once the editor closes.
   const [refused, setRefused] = useState<string>();
+  const [sortBy, setSortBy] = useSortBy();
+  const shown = useSortedPeople(sheetId, (people.data ?? []).filter((p) => showRetired || p.retiredFrom === null));
   // Each Edit press opens a fresh editor, filled once the sheet's people are re-read from the store,
   // so it starts from the person's current values and version (`loading`: the press still re-reading).
   const queryClient = useQueryClient();
@@ -409,6 +412,16 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
           onChange={(e) => setShowRetired(e.target.checked || undefined)}
         />{' '}
         Show retired
+      </label>{' '}
+      <label>
+        Sort by{' '}
+        <select data-testid="sort-by" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+          {SORT_KEYS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
       </label>
       <table data-testid="people-list">
         <thead>
@@ -424,7 +437,7 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {(people.data ?? []).filter((p) => showRetired || p.retiredFrom === null).map((p) => (
+          {shown.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
