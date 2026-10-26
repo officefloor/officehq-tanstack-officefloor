@@ -1,0 +1,148 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 6ef041da..3ec65312 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -4,6 +4,7 @@ import { getJson, postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { peopleKey, usePeople } from '../people/people.slot';
++import { poolsKey } from '../pools/pools.slot';
+ import { useDueTotals } from '../rates/rates.slot';
+ import { showHundredths } from '../rates/useRates';
+ import { useUser } from '../session/useSession';
+@@ -47,6 +48,8 @@ function CrewRow({ sheetId, crew }: { sheetId: string; crew: Crew }) {
+     },
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
++      // A crew is also a pool: its members and their cuts show among the pools.
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+       setMember('');
+     },
+   });
+@@ -125,6 +128,8 @@ function CrewsPanel({ sheetId }: { sheetId: string; user: string }) {
+     },
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
++      // A crew is also a pool: its members and their cuts show among the pools.
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+       setName('');
+       setLead('');
+     },
+diff --git a/src/main/java/net/officefloor/hq/app/crew/BuildCrew.java b/src/main/java/net/officefloor/hq/app/crew/BuildCrew.java
+index 6b1f5799..37faec77 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/BuildCrew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/BuildCrew.java
+@@ -3,12 +3,14 @@ package net.officefloor.hq.app.crew;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Adds the crew; a name already on the sheet, or a lead not on it, is refused. */
++/** Adds the crew; a name already on the sheet, as a crew or a pool, or a lead not on it, is refused. */
+ public class BuildCrew {
+-    public void build(@Val Crew crew, CrewRepository repository, PersonRepository people, Out<CrewAdded> added)
++    public void build(@Val Crew crew, CrewRepository repository, PersonRepository people,
++            PoolRepository pools, Out<CrewAdded> added)
+             throws BadRequestException {
+         Person lead = people.find(crew.sheetId(), crew.leadId());
+         if (lead == null) {
+@@ -17,6 +19,9 @@ public class BuildCrew {
+         if (repository.findId(crew.sheetId(), crew.name()) != null) {
+             throw new BadRequestException("That crew is already on this sheet");
+         }
++        if (pools.findId(crew.sheetId(), crew.name()) != null) {
++            throw new BadRequestException("A pool of that name is already on this sheet");
++        }
+         repository.insert(crew.sheetId(), crew.name(), lead.getId());
+         added.set(new CrewAdded(crew.sheetId(), crew.name(), lead.getName()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/BuildPool.java b/src/main/java/net/officefloor/hq/app/pool/BuildPool.java
+index 73c05e30..304ef23b 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/BuildPool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/BuildPool.java
+@@ -3,12 +3,15 @@ package net.officefloor.hq.app.pool;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Adds the pool; a name already on the sheet is refused. */
++/** Adds the pool; a name already on the sheet, as a pool or a crew, is refused. */
+ public class BuildPool {
+     public void build(@Val Pool pool, PoolRepository repository) throws BadRequestException {
+         if (repository.findId(pool.sheetId(), pool.name()) != null) {
+             throw new BadRequestException("That pool is already on this sheet");
+         }
++        if (repository.isCrew(pool.sheetId(), pool.name())) {
++            throw new BadRequestException("A crew of that name is already on this sheet");
++        }
+         repository.insert(pool.sheetId(), pool.name());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 96fc7bd9..bb66f9d2 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -146,6 +146,7 @@ public class PoolRepository {
+                 parents.put(memberPoolId, poolId);
+             }
+         }, sheetId);
++        crews(sheetId, held, names, members, memberPools);
+         String potValue = new SettingRepository(jdbc).find(sheetId, Setting.POT);
+         BigDecimal pot = potValue == null ? null : new BigDecimal(potValue);
+         Map<Long, String> totals = new HashMap<>();
+@@ -167,6 +168,53 @@ public class PoolRepository {
+         return pools;
+     }
+ 
++    /**
++     * Adds the sheet's crews as pools, after the pools and in the order added (keyed by the crew's id negated): each
++     * has its lead and then its members in the order added, at equal shares of 100.00 split as patrons' shares are
++     * (each rounded half to even to two decimals, the remainder on the lead).
++     */
++    private void crews(String sheetId, Set<Long> held, Map<Long, String> names,
++            Map<Long, List<PoolResponse.Member>> members, Map<Long, List<Long>> memberPools) {
++        Map<Long, List<Object[]>> people = new LinkedHashMap<>();
++        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
++                + " JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
++            long key = -rs.getLong("id");
++            names.put(key, rs.getString("name"));
++            List<Object[]> of = new ArrayList<>();
++            of.add(new Object[] { rs.getLong("lead_id"), rs.getString("person_name"), rs.getDate("retired_from") != null });
++            people.put(key, of);
++        }, sheetId);
++        jdbc.query("SELECT m.crew_id, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"
++                + " JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
++            List<Object[]> of = people.get(-rs.getLong("crew_id"));
++            if (of != null) {
++                of.add(new Object[] { rs.getLong("person_id"), rs.getString("person_name"),
++                        rs.getDate("retired_from") != null });
++            }
++        }, sheetId);
++        people.forEach((key, of) -> {
++            BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(of.size()), 2, RoundingMode.HALF_EVEN);
++            BigDecimal lead = HUNDRED.subtract(each.multiply(BigDecimal.valueOf(of.size() - 1)));
++            List<PoolResponse.Member> crew = new ArrayList<>();
++            List<Long> none = new ArrayList<>();
++            for (int i = 0; i < of.size(); i++) {
++                long personId = (Long) of.get(i)[0];
++                crew.add(new PoolResponse.Member(personId, null, (String) of.get(i)[1],
++                        (i == 0 ? lead : each).toPlainString(), (Boolean) of.get(i)[2], held.contains(personId), false,
++                        null));
++                none.add(null);
++            }
++            members.put(key, crew);
++            memberPools.put(key, none);
++        });
++    }
++
++    /** Whether the sheet has a crew of that name. */
++    public boolean isCrew(String sheetId, String name) {
++        return !jdbc.queryForList("SELECT id FROM crew WHERE sheet_id = ? AND name = ?", Long.class, sheetId, name)
++                .isEmpty();
++    }
++
+     private java.sql.Date today(String sheetId) {
+         return java.sql.Date.valueOf(new SheetRepository(jdbc).today(sheetId));
+     }
