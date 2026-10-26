@@ -46,11 +46,13 @@ public class Settings {
     private final JdbcTemplate jdbc;
     private final Sheets sheets;
     private final Claims claims;
+    private final Delegations delegations;
 
-    public Settings(JdbcTemplate jdbc, Sheets sheets, Claims claims) {
+    public Settings(JdbcTemplate jdbc, Sheets sheets, Claims claims, Delegations delegations) {
         this.jdbc = jdbc;
         this.sheets = sheets;
         this.claims = claims;
+        this.delegations = delegations;
     }
 
     /** The setting's value; "" when it was never set. */
@@ -246,8 +248,19 @@ public class Settings {
                 (rs, n) -> new Role(rs.getString("sheet_id"), rs.getString("user_name"), rs.getString("role")), sheetId);
     }
 
-    /** The user's role: clerk unless the sheet gave them another. */
+    /** The role the user acts in: steward while the sheet's today is inside a delegation to them, else the role the sheet gave them. */
     public String role(String sheetId, String user) {
+        return delegator(sheetId, user) != null ? STEWARD : givenRole(sheetId, user);
+    }
+
+    /** The steward who delegated the steward role to the user for the sheet's today; null when none did. */
+    public String delegator(String sheetId, String user) {
+        String name = user == null ? "" : user.trim();
+        return name.isEmpty() ? null : delegations.delegator(sheetId, name, sheets.today(sheetId));
+    }
+
+    /** The role the sheet gave the user: clerk unless it gave them another (a delegation aside). */
+    public String givenRole(String sheetId, String user) {
         List<String> roles = jdbc.queryForList("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 String.class, sheetId, user);
         return roles.isEmpty() ? CLERK : roles.get(0);

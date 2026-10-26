@@ -8,6 +8,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import net.officefloor.server.http.HttpHeader;
 import net.officefloor.server.http.ServerHttpConnection;
+import java.util.Set;
+import net.officefloor.hq.app.setting.Settings;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,14 +26,26 @@ import org.springframework.stereotype.Service;
 @Service
 public class Audit {
 
-    private final Path file;
+    /** The lines that only report figures: they never name the steward a change is made for. */
+    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
 
-    public Audit(@Value("${app.audit.file:.run/audit.log}") String path) {
+    private final Path file;
+    private final ObjectProvider<Settings> settings;
+
+    public Audit(@Value("${app.audit.file:.run/audit.log}") String path, ObjectProvider<Settings> settings) {
         this.file = Path.of(path);
+        this.settings = settings;
     }
 
-    /** Append one audit record. Tests assert the exact line(s) in the file. */
+    /**
+     * Append one audit record. Tests assert the exact line(s) in the file. A change made by a user the steward role is
+     * delegated to (for the sheet's today) ends with for=<the steward who delegated>, unless the line only reports figures.
+     */
     public synchronized void record(String entry) {
+        String delegator = delegator(entry);
+        if (delegator != null) {
+            entry = entry + " for=" + delegator;
+        }
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {
@@ -41,6 +56,15 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The steward who delegated to the user the line is by, on the line's sheet; null when none did or the line only reports figures. */
+    private String delegator(String entry) {
+        String[] parts = entry.split(" ", 4);
+        if (parts.length < 3 || FIGURES.contains(parts[0]) || !parts[1].startsWith("sheet=") || !parts[2].startsWith("by=")) {
+            return null;
+        }
+        return settings.getObject().delegator(parts[1].substring("sheet=".length()), parts[2].substring("by=".length()));
     }
 
     /** The signed-in user a write names in its X-User header ("" when it names none). */
