@@ -1,0 +1,119 @@
+diff --git a/src/main/frontend/features/claims/claimsQuery.ts b/src/main/frontend/features/claims/claimsQuery.ts
+index 20287dfb..32fe647f 100644
+--- a/src/main/frontend/features/claims/claimsQuery.ts
++++ b/src/main/frontend/features/claims/claimsQuery.ts
+@@ -4,7 +4,7 @@ import { sheetKey } from '../sheet/sheetQuery';
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /**
+- * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening (null for a draft or a voided claim);
++ * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening and kept when voided (null for a draft);
+  * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date);
+  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
+  * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then).
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNotDraftException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNotDraftException.java
+new file mode 100644
+index 00000000..ef1ed038
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNotDraftException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++/** Only a DRAFT claim can be edited: an open claim is changed by voiding it and adding a new one. */
++public class ClaimNotDraftException extends Exception {
++
++    public ClaimNotDraftException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 1571bae1..fc53f0fd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -62,7 +62,8 @@ public class Claims {
+ 
+     /**
+      * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
+-     * it has since changed. Opening gives it the sheet's next number; voiding clears its number. Settling
++     * it has since changed. Opening gives it the sheet's next number, which it keeps
++     * (voided too: a number is never reused). Settling
+      * stores {@code due} as its fixed due (null keeps it live). Opening records {@code user} as its opener.
+      */
+     public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due, String user) {
+@@ -72,7 +73,6 @@ public class Claims {
+         }
+         Long number = switch (next) {
+             case OPEN -> nextNumber(claim.sheetId());
+-            case VOID -> null;
+             default -> claim.number();
+         };
+         BigDecimal settledDue = next == ClaimStatus.SETTLED ? due : claim.settledDue();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotDraft.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotDraft.java
+new file mode 100644
+index 00000000..191e8d6b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimNotDraft.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimNotDraft {
++    public void handle(@Parameter ClaimNotDraftException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftClaim.java b/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftClaim.java
+new file mode 100644
+index 00000000..0ee75c50
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseNonDraftClaim.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++public class RefuseNonDraftClaim {
++    // Only a draft can be edited; an open claim is changed by voiding it and adding a new one.
++    public void refuse(@Val Claim claim) throws ClaimNotDraftException {
++        if (claim.status() != ClaimStatus.DRAFT) {
++            throw new ClaimNotDraftException("A " + claim.status()
++                    + " claim cannot be edited: only a draft can. Void it and add a new one.");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotDraftException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotDraftException.yml
+new file mode 100644
+index 00000000..ba659783
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimNotDraftException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimNotDraft
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 539ab96b..7694badc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,6 +1,6 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim's amount, date and note. Body as for an
+-# add; refused the same way (400), 404 for a claim not on the sheet, and 422 for a claim dated, or
+-# being dated, inside a closed period.
++# add; refused the same way (400), 404 for a claim not on the sheet, and 422 for a claim that is not a
++# draft or that is dated, or being dated, inside a closed period.
+ snapshot:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   next: validate
+@@ -11,6 +11,10 @@ validate:
+   govern: [ transaction ]
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
++  next: draft
++  govern: [ transaction ]
++draft:
++  class: net.officefloor.hq.app.claim.RefuseNonDraftClaim
+   next: closed
+   govern: [ transaction ]
+ closed:
