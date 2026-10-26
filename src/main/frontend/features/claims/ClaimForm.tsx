@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { postJson, putJson, RefusedError } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { claimsKey } from './claimsQuery';
@@ -50,7 +50,7 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
         setNote('');
       }
     },
-    onError: () => setError('The claim could not be saved.'),
+    onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be saved.'),
   });
 
   const submit = (e: FormEvent) => {

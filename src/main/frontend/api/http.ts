@@ -3,10 +3,16 @@
 /** A write refused because the record was saved by someone else since it was loaded (409). */
 export class ConflictError extends Error {}
 
+/** A write refused by a rule the screen cannot see in full (422), e.g. a claim dated in a closed period; the message is the server's. */
+export class RefusedError extends Error {}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (res.status === 409) {
     throw new ConflictError(`${init?.method ?? 'GET'} ${path} -> 409`);
+  }
+  if (res.status === 422) {
+    throw new RefusedError(await res.text());
   }
   if (!res.ok) {
     throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);

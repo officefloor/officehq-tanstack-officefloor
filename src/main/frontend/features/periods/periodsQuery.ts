@@ -1,8 +1,11 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
 
-/** A sheet's period: a name unique on the sheet, `from` and `to` (yyyy-mm-dd) inclusive. Periods never overlap. */
-export type Period = { name: string; from: string; to: string };
+/**
+ * A sheet's period: a name unique on the sheet, `from` and `to` (yyyy-mm-dd) inclusive. Periods never overlap.
+ * A closed period's due-total was fixed when it was closed (`closedTotal`; null while open).
+ */
+export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
 
 /** Under the sheet's key, so re-loading the sheet re-reads its periods. */
 export const periodsKey = (sheetId: string) => [...sheetKey(sheetId), 'periods'] as const;

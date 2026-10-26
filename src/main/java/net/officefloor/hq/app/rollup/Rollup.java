@@ -67,6 +67,23 @@ public class Rollup {
         return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString());
     }
 
+    /** The figures of the sheet's counting claims dated from {@code from} to {@code to} inclusive, those without one skipped. */
+    public BigDecimal dueTotal(String sheetId, LocalDate from, LocalDate to) {
+        BigDecimal total = ZERO;
+        for (Claim claim : claims.list(sheetId)) {
+            if ((claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.SETTLED)
+                    || claim.date().isBefore(from) || claim.date().isAfter(to)) {
+                continue;
+            }
+            Person person = people.find(sheetId, claim.personId());
+            BigDecimal figure = person == null ? claim.settledDue() : figure(claim, person);
+            if (figure != null) {
+                total = total.add(figure);
+            }
+        }
+        return total;
+    }
+
     /**
      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the figure its person's
      * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even.

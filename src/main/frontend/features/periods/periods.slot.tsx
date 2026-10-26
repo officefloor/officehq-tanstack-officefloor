@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
@@ -20,8 +20,44 @@ function ClaimPeriod({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   return <td data-testid="claim-period">{periodOf(periods, claim.date)?.name ?? ''}</td>;
 }
 
-/** The sheet's periods, each with its due-total — the figures of the counting claims dated in it —
- *  and the form a period is added through. */
+/** A period's closed flag and the button that closes it. A refusal shows on the period until its next action. */
+function PeriodClosed({ sheetId, period }: { sheetId: string; period: Period }) {
+  const queryClient = useQueryClient();
+  const [user] = useUser();
+  const [error, setError] = useState('');
+  const once = useSubmitOnce();
+  const close = useMutation({
+    mutationFn: () =>
+      putJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(period.name)}/close`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) }),
+    onError: () => setError(`The period ${period.name} could not be closed: it is already closed.`),
+  });
+
+  return (
+    <td>
+      <span data-testid="period-closed">{period.closed ? 'yes' : 'no'}</span>{' '}
+      <button
+        type="button"
+        data-testid="period-close"
+        disabled={close.isPending}
+        onClick={() => {
+          setError('');
+          once(() => close.mutateAsync());
+        }}
+      >
+        Close
+      </button>
+      {error && <span data-testid="period-error">{error}</span>}
+    </td>
+  );
+}
+
+/** The sheet's periods, each with its due-total — the figures of the counting claims dated in it, fixed
+ *  when the period was closed — and the form a period is added through. */
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const periods = useQuery(periodsQuery(sheetId));
@@ -36,7 +72,8 @@ function Periods({ sheetId }: { sheetId: string }) {
   const [user] = useUser();
   const once = useSubmitOnce();
   const add = useMutation({
-    mutationFn: (body: Period) => postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, body, user),
+    mutationFn: (body: Pick<Period, 'name' | 'from' | 'to'>) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
       setName('');
@@ -78,6 +115,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   };
 
   const dueTotal = (period: Period) =>
+    period.closedTotal ??
     sumDue(
       claims
         .filter((c) => counts(c) && period.from <= c.date && c.date <= period.to)
@@ -115,6 +153,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>From</th>
             <th>To</th>
             <th>Due</th>
+            <th>Closed</th>
           </tr>
         </thead>
         <tbody>
@@ -124,6 +163,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{dueTotal(p)}</td>
+              <PeriodClosed sheetId={sheetId} period={p} />
             </tr>
           ))}
         </tbody>
