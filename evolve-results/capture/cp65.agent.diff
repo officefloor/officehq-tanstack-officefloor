@@ -1,0 +1,142 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index de3c76e6..33f06adc 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -24,6 +24,7 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
+  * shows on the claim until its next action. A clerk's settle above the clerk limit makes the claim PENDING: a
+  * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN). A steward can
+  * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.
++ * A steward can also void a SETTLED claim within 7 days of its settlement; the server refuses anyone else or a later day.
+  */
+ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/frontend/features/sheet/ActiveSheet.tsx b/src/main/frontend/features/sheet/ActiveSheet.tsx
+index aef1991b..07abd3d1 100644
+--- a/src/main/frontend/features/sheet/ActiveSheet.tsx
++++ b/src/main/frontend/features/sheet/ActiveSheet.tsx
+@@ -1,17 +1,22 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+ import { forSlot } from '../../slots/registry';
++import { claimsQuery } from '../claims/claimsQuery';
++import { peopleQuery } from '../people/peopleQuery';
+ import { useSheetId } from './useSheetId';
+ import { sheetQuery } from './sheetQuery';
+ 
+-/** The loaded sheet: its id, then every per-sheet panel. Nothing shows until it has loaded. */
++/** The loaded sheet: its id, then every per-sheet panel. Nothing shows until it, its people and its claims have loaded. */
+ export function ActiveSheet({ user }: { user: string }) {
+   const [sheetId] = useSheetId();
+   const sheet = useQuery({ ...sheetQuery(sheetId), enabled: sheetId !== '' });
++  // Its people and claims are read before it shows, so a loaded sheet never shows its rows filling in later.
++  const people = useQuery({ ...peopleQuery(sheetId), enabled: sheetId !== '' });
++  const claims = useQuery({ ...claimsQuery(sheetId), enabled: sheetId !== '' });
+ 
+   if (sheetId === '') return <p data-testid="sheet-none">No sheet loaded.</p>;
+   if (sheet.isError) return <p data-testid="sheet-load-error">Could not load sheet {sheetId}.</p>;
+-  if (!sheet.data) return <p data-testid="sheet-loading">Loading…</p>;
++  if (!sheet.data || people.isPending || claims.isPending) return <p data-testid="sheet-loading">Loading…</p>;
+ 
+   return (
+     <section data-testid="sheet">
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index efd592d0..b9d2e7bf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -73,6 +73,19 @@ public class ApplyClaimStatus {
+         if (!claim.status().allows(next)) {
+             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
+         }
++        // A SETTLED claim is voided only by a steward, and only within a week of its settlement (the status log's
++        // SETTLED date) by the sheet's today.
++        if (claim.status() == ClaimStatus.SETTLED && next == ClaimStatus.VOID) {
++            if (!steward) {
++                throw new ClaimStatusRefusedException("Only a steward can void a SETTLED claim.");
++            }
++            LocalDate settledOn = claims.settledOn(claim);
++            if (settledOn == null || sheets.today(claim.sheetId())
++                    .isAfter(settledOn.plusDays(ClaimStatus.VOID_SETTLED_DAYS))) {
++                throw new ClaimStatusRefusedException("A SETTLED claim can be voided only within "
++                        + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement.");
++            }
++        }
+         if (claim.status() == ClaimStatus.PENDING && (next == ClaimStatus.SETTLED || next == ClaimStatus.OPEN)
+                 && !steward) {
+             throw new ClaimStatusRefusedException("Only a steward can approve or reject a pending claim.");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index 1c0ac65a..ff671931 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -24,6 +24,10 @@ public class AuditClaimStatus {
+         if (status == ClaimStatus.SETTLED) {
+             fields.add("due=" + (changed.settledDue() == null ? "n/a" : changed.settledDue()));
+         }
++        // A voided SETTLED claim's line carries the frozen figure it takes out of the totals.
++        if (loaded.status() == ClaimStatus.SETTLED && status == ClaimStatus.VOID) {
++            fields.add("reversed=" + (loaded.settledDue() == null ? "n/a" : loaded.settledDue().toPlainString()));
++        }
+         // A rejected claim's line carries the steward's reason.
+         if (loaded.status() == ClaimStatus.PENDING && status == ClaimStatus.OPEN) {
+             fields.add("reason=" + request.reason());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index dbb89d9d..1e4ffab7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -1,20 +1,24 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /**
+- * Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT, OPEN or PENDING claim can be VOID. A clerk's
++ * Where a claim is in its life: DRAFT, then OPEN, then SETTLED; a DRAFT, OPEN or PENDING claim can be VOID, and a
++ * SETTLED one too, by a steward within {@link #VOID_SETTLED_DAYS} days of its settlement. A clerk's
+  * settle of a claim whose due is above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED)
+  * or rejects it (back to OPEN).
+  */
+ public enum ClaimStatus {
+     DRAFT, OPEN, PENDING, SETTLED, VOID;
+ 
++    /** How many days after its settlement (by the sheet's today) a steward may still void a SETTLED claim. */
++    public static final int VOID_SETTLED_DAYS = 7;
++
+     /** Whether a claim in this status may move to {@code next}. */
+     public boolean allows(ClaimStatus next) {
+         return switch (next) {
+             case OPEN -> this == DRAFT || this == PENDING;
+             case PENDING -> this == OPEN;
+             case SETTLED -> this == OPEN || this == PENDING;
+-            case VOID -> this == DRAFT || this == OPEN || this == PENDING;
++            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
+             case DRAFT -> false;
+         };
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index ebdcb46d..85dbf9cf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -195,6 +195,14 @@ public class Claims {
+                 due == null ? "n/a" : due.toPlainString());
+     }
+ 
++    /** The sheet's today on which the claim was last logged SETTLED; null when its log records no settlement. */
++    public LocalDate settledOn(Claim claim) {
++        List<LocalDate> on = jdbc.query(
++                "SELECT logged_on FROM claim_log WHERE claim_id = ? AND status = ? ORDER BY id DESC",
++                (rs, n) -> rs.getObject("logged_on", LocalDate.class), claim.id(), ClaimStatus.SETTLED.name());
++        return on.isEmpty() ? null : on.get(0);
++    }
++
+     /** The status logs of the sheet's claims, by claim id, each oldest first as "STATUS by user on date due=due". */
+     public java.util.Map<Long, List<String>> logs(String sheetId) {
+         java.util.Map<Long, List<String>> logs = new java.util.HashMap<>();
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status/{status}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status/{status}.PUT.yml
+index b9345811..5f400df1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status/{status}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status/{status}.PUT.yml
+@@ -1,5 +1,6 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId}/status/{status} — move a claim to OPEN, SETTLED or VOID.
+-# DRAFT -> OPEN -> SETTLED, and DRAFT, OPEN or PENDING -> VOID. A clerk settling a claim above the clerk limit
++# DRAFT -> OPEN -> SETTLED, and DRAFT, OPEN or PENDING -> VOID; a steward may also void a SETTLED claim within 7 days
++# of its settlement (the status log's SETTLED date) by the sheet's today. A clerk settling a claim above the clerk limit
+ # makes it PENDING; from PENDING a steward (not its opener) approves it (SETTLED) or rejects it (OPEN, with a
+ # "reason" in the body). Any other change is refused with 409 and nothing is stored. 404 for a claim not on the
+ # sheet; 422 for a claim dated inside a closed period, or for a settle or approve of a claim with no proof whose due is
