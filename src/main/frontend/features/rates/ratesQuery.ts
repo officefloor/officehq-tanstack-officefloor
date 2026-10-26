@@ -1,6 +1,6 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
-import { isCorrection } from '../claims/claimsQuery';
+import { counts, isCorrection } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { gradeOn } from '../people/peopleQuery';
 import type { Grade, Person } from '../people/peopleQuery';
@@ -99,4 +99,17 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, 
 
 function floored(live: string, floor: string): string {
   return live === 'n/a' || hundredths(live) >= hundredths(floor) ? live : show(hundredths(floor));
+}
+
+/**
+ * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
+ */
+export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
+  if (!person) return 'n/a';
+  const rate = rateFor(rates, gradeOn(person, today), today);
+  const figures = claims
+    .filter((c) => c.personId === person.id && counts(c, people))
+    .map((c) => figure(c, rates, person, floor, late))
+    .filter((d) => d !== 'n/a');
+  return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }

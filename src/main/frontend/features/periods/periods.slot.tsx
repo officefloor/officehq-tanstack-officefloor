@@ -5,13 +5,13 @@ import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery, counts } from '../claims/claimsQuery';
+import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
-import { figure, ratesQuery, sumDue } from '../rates/ratesQuery';
+import { ratesQuery } from '../rates/ratesQuery';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
-import { periodOf, periodsKey, periodsQuery } from './periodsQuery';
+import { periodDue, periodOf, periodsKey, periodsQuery } from './periodsQuery';
 import type { Period } from './periodsQuery';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -140,13 +140,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     once(() => add.mutateAsync({ name: n, from: f, to: t }));
   };
 
-  const dueTotal = (period: Period) =>
-    period.closedTotal ??
-    sumDue(
-      claims
-        .filter((c) => counts(c, people) && period.from <= c.date && c.date <= period.to)
-        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)),
-    );
+  const dueTotal = (period: Period) => periodDue(period, claims, people, rates, floor, late);
 
   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {
     set(e.target.value);

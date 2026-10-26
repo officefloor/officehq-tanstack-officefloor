@@ -2,28 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery, counts } from '../claims/claimsQuery';
+import { claimsQuery } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
-import { gradeOn, peopleQuery } from '../people/peopleQuery';
+import { peopleQuery } from '../people/peopleQuery';
 import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useFloor, useLate } from '../settings/settingsQuery';
-import type { Person } from '../people/peopleQuery';
-import { figure, rateFor, ratesQuery, sumDue } from './ratesQuery';
-import type { Late, Rate } from './ratesQuery';
-
-/**
- * A person's due-total: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
- */
-function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
-  if (!person) return 'n/a';
-  const rate = rateFor(rates, gradeOn(person, today), today);
-  const figures = claims
-    .filter((c) => c.personId === person.id && counts(c, people))
-    .map((c) => figure(c, rates, person, floor, late))
-    .filter((d) => d !== 'n/a');
-  return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
-}
+import { figure, personDue, ratesQuery, sumDue } from './ratesQuery';
 
 function useSheetData(sheetId: string) {
   return {
