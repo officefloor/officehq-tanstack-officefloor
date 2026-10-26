@@ -5,6 +5,7 @@ import { ClaimCells } from '../../slots/defs/claimColumns';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { claimsKey } from './claimsQuery';
+import { useClaimError } from './useClaimError';
 import type { Claim, ClaimStatus } from './claimsQuery';
 
 type Decision = 'approve' | 'reject';
@@ -26,7 +27,7 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
-  const [error, setError] = useState('');
+  const [error, setError] = useClaimError(claim.id);
   const [reason, setReason] = useState('');
   const once = useSubmitOnce();
   const change = useMutation({

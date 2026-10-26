@@ -23,15 +23,18 @@ public class Claims {
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"));
 
+    /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
+    private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
+
     private final JdbcTemplate jdbc;
 
     public Claims(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's claims, newest first. */
+    /** The sheet's claims, newest first (a reassigned claim as new as when it was moved). */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC", ROW, sheetId);
     }
 
     public Claim find(String sheetId, long id) {
@@ -50,7 +53,8 @@ public class Claims {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, "
+                            + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -58,6 +62,7 @@ public class Claims {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setObject(6, corrects);
+            ps.setString(7, sheetId);
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
@@ -67,6 +72,20 @@ public class Claims {
     public void save(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?", claim.amount(),
                 Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.id());
+    }
+
+    /**
+     * Moves the claim to another person if it still has its loaded person and status, and returns it as moved; null
+     * when it has since changed. It keeps its number and date, is unbound from any statement (live again until its
+     * new person's next statement) and lists as the newest claim on the sheet.
+     */
+    public Claim reassign(Claim claim, long personId) {
+        if (jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = " + NEXT_LISTED
+                + " WHERE id = ? AND person_id = ? AND status = ?", personId, claim.sheetId(), claim.id(),
+                claim.personId(), claim.status().name()) != 1) {
+            return null;
+        }
+        return claim.withPerson(personId);
     }
 
     /**

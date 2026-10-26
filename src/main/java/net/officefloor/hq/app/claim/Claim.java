@@ -23,6 +23,11 @@ public record Claim(long id, String sheetId, long personId, BigDecimal amount, L
         return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
     }
 
+    /** The claim moved to another person: unbound from any statement, so live until their next one. */
+    public Claim withPerson(long personId) {
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects);
+    }
+
     /** A correction: its due is its amount times the rate, with no floor and no late charge. */
     public boolean isCorrection() {
         return amount.signum() < 0;
