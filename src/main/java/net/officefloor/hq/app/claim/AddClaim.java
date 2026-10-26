@@ -19,7 +19,7 @@ public class AddClaim {
     public void add(@Val ClaimInput input, @Val Person person, Claims claims, Sheets sheets, Settings settings,
             Holidays holidays, Rollup rollup, ServerHttpConnection connection, Out<Claim> claimOut) {
         LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.sheetId());
-        LocalDate dueBy = holidays.dueBy(person.sheetId(), date.plusDays(person.termsOn(date, settings)));
+        LocalDate dueBy = holidays.dueBy(person.sheetId(), date, person.termsOn(date, settings));
         Claim claim = claims.add(person.sheetId(), person.id(), input.amount(), date, input.note(), input.corrects(),
                 dueBy);
         claims.log(claim, Audit.user(connection).trim(), sheets.today(person.sheetId()), rollup.figure(claim));

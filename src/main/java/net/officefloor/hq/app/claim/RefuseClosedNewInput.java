@@ -16,7 +16,7 @@ public class RefuseClosedNewInput {
             Settings settings, Holidays holidays, Periods periods) throws ClaimInClosedPeriodException {
         String sheet = sheetId.trim();
         LocalDate date = input.date() != null ? input.date() : settings.entryDate(sheet);
-        check(periods, sheet, holidays.dueBy(sheet, date.plusDays(person.termsOn(date, settings))));
+        check(periods, sheet, holidays.dueBy(sheet, date, person.termsOn(date, settings)));
     }
 
     /** Refuses a new claim due by {@code dueBy} when that falls inside a closed period. */

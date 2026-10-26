@@ -49,8 +49,8 @@ public class ApplySplit {
                     + claim.amount().toPlainString() + ".");
         }
         Person person = people.find(claim.sheetId(), claim.personId());
-        LocalDate dueBy = holidays.dueBy(claim.sheetId(), claim.date().plusDays(person == null
-                ? settings.terms(claim.sheetId(), claim.date()) : person.termsOn(claim.date(), settings)));
+        LocalDate dueBy = holidays.dueBy(claim.sheetId(), claim.date(), person == null
+                ? settings.terms(claim.sheetId(), claim.date()) : person.termsOn(claim.date(), settings));
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (numberingFrom != null && !today.isBefore(numberingFrom)) {

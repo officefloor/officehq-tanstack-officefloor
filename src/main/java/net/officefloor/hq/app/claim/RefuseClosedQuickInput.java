@@ -19,6 +19,6 @@ public class RefuseClosedQuickInput {
         LocalDate date = input.date() != null ? input.date() : settings.entryDate(sheet);
         Person person = people.findByName(sheet, name.name());
         int terms = person != null ? person.termsOn(date, settings) : settings.terms(sheet, "A", date);
-        RefuseClosedNewInput.check(periods, sheet, holidays.dueBy(sheet, date.plusDays(terms)));
+        RefuseClosedNewInput.check(periods, sheet, holidays.dueBy(sheet, date, terms));
     }
 }
