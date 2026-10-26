@@ -73,6 +73,19 @@ public class ApplyClaimStatus {
         if (!claim.status().allows(next)) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
+        // A SETTLED claim is voided only by a steward, and only within a week of its settlement (the status log's
+        // SETTLED date) by the sheet's today.
+        if (claim.status() == ClaimStatus.SETTLED && next == ClaimStatus.VOID) {
+            if (!steward) {
+                throw new ClaimStatusRefusedException("Only a steward can void a SETTLED claim.");
+            }
+            LocalDate settledOn = claims.settledOn(claim);
+            if (settledOn == null || sheets.today(claim.sheetId())
+                    .isAfter(settledOn.plusDays(ClaimStatus.VOID_SETTLED_DAYS))) {
+                throw new ClaimStatusRefusedException("A SETTLED claim can be voided only within "
+                        + ClaimStatus.VOID_SETTLED_DAYS + " days of its settlement.");
+            }
+        }
         if (claim.status() == ClaimStatus.PENDING && (next == ClaimStatus.SETTLED || next == ClaimStatus.OPEN)
                 && !steward) {
             throw new ClaimStatusRefusedException("Only a steward can approve or reject a pending claim.");

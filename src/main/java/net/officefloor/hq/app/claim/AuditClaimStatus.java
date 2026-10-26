@@ -24,6 +24,10 @@ public class AuditClaimStatus {
         if (status == ClaimStatus.SETTLED) {
             fields.add("due=" + (changed.settledDue() == null ? "n/a" : changed.settledDue()));
         }
+        // A voided SETTLED claim's line carries the frozen figure it takes out of the totals.
+        if (loaded.status() == ClaimStatus.SETTLED && status == ClaimStatus.VOID) {
+            fields.add("reversed=" + (loaded.settledDue() == null ? "n/a" : loaded.settledDue().toPlainString()));
+        }
         // A rejected claim's line carries the steward's reason.
         if (loaded.status() == ClaimStatus.PENDING && status == ClaimStatus.OPEN) {
             fields.add("reason=" + request.reason());

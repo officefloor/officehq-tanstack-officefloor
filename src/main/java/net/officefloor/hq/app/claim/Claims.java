@@ -195,6 +195,14 @@ public class Claims {
                 due == null ? "n/a" : due.toPlainString());
     }
 
+    /** The sheet's today on which the claim was last logged SETTLED; null when its log records no settlement. */
+    public LocalDate settledOn(Claim claim) {
+        List<LocalDate> on = jdbc.query(
+                "SELECT logged_on FROM claim_log WHERE claim_id = ? AND status = ? ORDER BY id DESC",
+                (rs, n) -> rs.getObject("logged_on", LocalDate.class), claim.id(), ClaimStatus.SETTLED.name());
+        return on.isEmpty() ? null : on.get(0);
+    }
+
     /** The status logs of the sheet's claims, by claim id, each oldest first as "STATUS by user on date due=due". */
     public java.util.Map<Long, List<String>> logs(String sheetId) {
         java.util.Map<Long, List<String>> logs = new java.util.HashMap<>();
