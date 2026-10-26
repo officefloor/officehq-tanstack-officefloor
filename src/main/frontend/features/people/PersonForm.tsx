@@ -43,11 +43,17 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (name.trim() === '') {
+    const trimmed = name.trim();
+    if (trimmed === '') {
       setError('Type a name.');
       return;
     }
-    save.mutate({ name, grade });
+    // Names are unique on the sheet, ignoring case; the server refuses one it finds in use too.
+    if (people.some((p) => p.id !== editing?.id && p.name.toLowerCase() === trimmed.toLowerCase())) {
+      setError('That name is already in use.');
+      return;
+    }
+    save.mutate({ name: trimmed, grade });
   };
 
   return (

@@ -8,11 +8,11 @@ public class ValidatePerson {
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
-    // The name is kept as typed; a blank one is refused.
+    // The name is kept without surrounding spaces; a blank one is refused.
     public void validate(@RequestBody PersonRequest body, Out<PersonRequest> request) throws InvalidPersonException {
-        String name = body == null || body.name() == null ? "" : body.name();
+        String name = body == null || body.name() == null ? "" : body.name().trim();
         String grade = body == null || body.grade() == null ? "" : body.grade().trim();
-        if (name.trim().isEmpty()) {
+        if (name.isEmpty()) {
             throw new InvalidPersonException("Type a name.");
         }
         if (!GRADES.contains(grade)) {
