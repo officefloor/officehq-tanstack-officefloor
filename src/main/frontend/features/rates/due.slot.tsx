@@ -5,6 +5,7 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery, counts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
+import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import type { Person } from '../people/peopleQuery';
@@ -46,6 +47,14 @@ function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: numb
   return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late)}</td>;
 }
 
+/** A person's backing: their patrons' due-totals added up, skipping n/a; 0.00 with no patrons. */
+function PersonBacking({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
+  const ids = patronIdsOf(useQuery(patronsQuery(sheetId)).data ?? [], personId);
+  const dues = people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, people, claims, rates, today, floor, late));
+  return <td data-testid="person-backing">{sumDue(dues)}</td>;
+}
+
 function DueTotal({ sheetId }: { sheetId: string }) {
   const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
   return (
@@ -59,5 +68,7 @@ export const contributions = [
   ClaimCells.fill({ order: 10, Component: ClaimDue }),
   PersonHeaders.fill({ order: 15, Component: () => <th>Due</th> }),
   PersonCells.fill({ order: 15, Component: PersonDueTotal }),
+  PersonHeaders.fill({ order: 22, Component: () => <th>Backing</th> }),
+  PersonCells.fill({ order: 22, Component: PersonBacking }),
   SheetPanel.fill({ order: 25, Component: DueTotal }),
 ];
