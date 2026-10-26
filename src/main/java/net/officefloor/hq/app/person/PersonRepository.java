@@ -238,6 +238,70 @@ public class PersonRepository {
         return true;
     }
 
+    /** Move the person to the next version; false (nothing written) when someone else saved them in the meantime. */
+    public boolean touch(Person person) {
+        if (jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND version = ?", person.getId(),
+                person.getVersion()) == 0) {
+            return false;
+        }
+        person.setVersion(person.getVersion() + 1);
+        return true;
+    }
+
+    /**
+     * Transfer the person to the other sheet (stored already): they are added there with their name, terms, contact,
+     * every grade they were given (with its from-date) and their aliases; their claims move with them (status, dates,
+     * notes, settled figures, logs and comments kept), listed there in the order they were listed here, each unbound
+     * from any statement figure, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
+     * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
+     * as used there. Everything else of theirs here — patron links either way, pool memberships, watches, holds,
+     * statements and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
+     */
+    public long transfer(Person from, String toSheet, Map<Long, String> numbers) {
+        long f = from.getId();
+        String grade = from.getGrade() != null ? from.getGrade() : from.getGrades().get(0).grade();
+        long t = insert(toSheet, from.getName(), grade, from.getTerms(), from.getContact()).getId();
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ?", t);
+        jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
+                + " WHERE person_id = ?", t, f);
+        jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
+        List<Map<String, Object>> claims = jdbc.queryForList(
+                "SELECT id, claim_number, corrects, split_from, tags FROM claim WHERE person_id = ? ORDER BY listed", f);
+        Map<String, String> renumbered = new java.util.HashMap<>();
+        for (Map<String, Object> claim : claims) {
+            if (claim.get("claim_number") != null) {
+                renumbered.put((String) claim.get("claim_number"), numbers.get(((Number) claim.get("id")).longValue()));
+            }
+        }
+        for (Map<String, Object> claim : claims) {
+            long id = ((Number) claim.get("id")).longValue();
+            Long listed = jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE "
+                    + "(UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)", Long.class, toSheet);
+            jdbc.update("UPDATE claim SET sheet_id = ?, person_id = ?, listed = ?, claim_number = ?, corrects = ?,"
+                    + " split_from = ?, stated = FALSE, stated_due = NULL, ref = NULL, settle_batch = NULL WHERE id = ?",
+                    toSheet, t, listed, numbers.get(id), renumbered.get((String) claim.get("corrects")),
+                    renumbered.get((String) claim.get("split_from")), id);
+            jdbc.update("UPDATE claim_log SET sheet_id = ? WHERE claim_id = ?", toSheet, id);
+            jdbc.update("UPDATE claim_comment SET sheet_id = ? WHERE claim_id = ?", toSheet, id);
+            jdbc.update("DELETE FROM claim_lock WHERE claim_id = ?", id);
+            String tags = (String) claim.get("tags");
+            if (tags != null) {
+                for (String tag : tags.split(",")) {
+                    jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", toSheet, tag);
+                }
+            }
+        }
+        jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
+        jdbc.update("DELETE FROM pool_member WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person WHERE id = ?", f);
+        return t;
+    }
+
     /** Sets each person's patrons' names, in the order named, their grades and their holds. */
     private List<Person> withPatrons(String sheetId, List<Person> people) {
         if (people.isEmpty()) {

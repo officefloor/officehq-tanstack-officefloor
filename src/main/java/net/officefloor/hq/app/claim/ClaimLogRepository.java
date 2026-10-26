@@ -25,6 +25,14 @@ public class ClaimLogRepository {
                 claim.getSheetId(), claim.getId(), claim.getStatus().name(), by, java.sql.Date.valueOf(on), due);
     }
 
+    /** The date of the claim's first log line in the status, or null when it never had it. */
+    public LocalDate firstOn(String sheetId, long claimId, ClaimStatus status) {
+        List<LocalDate> on = jdbc.query("SELECT logged_on FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ?"
+                + " ORDER BY id LIMIT 1", (rs, i) -> rs.getObject("logged_on", LocalDate.class),
+                sheetId, claimId, status.name());
+        return on.isEmpty() ? null : on.get(0);
+    }
+
     /** The date of the claim's last log line in the status, or null when it never had it. */
     public LocalDate lastOn(String sheetId, long claimId, ClaimStatus status) {
         List<LocalDate> on = jdbc.query("SELECT logged_on FROM claim_log WHERE sheet_id = ? AND claim_id = ? AND status = ?"

@@ -6,7 +6,6 @@ import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
 import net.officefloor.hq.app.access.SettingRepository;
-import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -144,14 +143,7 @@ public class ApplyClaimStatus {
      */
     static String number(Claim claim, ClaimRepository repository, SettingRepository settings,
             SheetRepository sheets, PeriodRepository periods) {
-        String sheetId = claim.getSheetId();
-        java.time.LocalDate from = settings.periodNumberingFrom(sheetId);
-        if (from == null || sheets.today(sheetId).isBefore(from)) {
-            return String.valueOf(repository.nextNumber(sheetId));
-        }
-        Period period = periods.on(sheetId, claim.getDueBy());
-        return period == null ? "X-" + repository.nextNumber(sheetId, "X")
-                : period.name() + "-" + repository.nextNumber(sheetId, String.valueOf(period.id()));
+        return ClaimNumbering.number(claim.getSheetId(), claim.getDueBy(), repository, settings, sheets, periods);
     }
 
     /** The figure a statement binds the claim to (not while PENDING), else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date (not floored); null when there is no rate. */

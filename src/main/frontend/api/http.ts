@@ -20,8 +20,22 @@ export function setViewAsOf(date: string): void {
   viewAsOf = date;
 }
 
+// Set only while readLive runs its read: the request then goes without the screen's as-of date.
+let live = false;
+
+/** Run the read (which must make its request at once) as the sheet stands now, whatever the screen's as-of date. */
+export function readLive<T>(read: () => Promise<T>): Promise<T> {
+  live = true;
+  try {
+    return read();
+  } finally {
+    live = false;
+  }
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = viewAsOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asof=${encodeURIComponent(viewAsOf)}`;
+  const asOf = live ? '' : viewAsOf;
+  const url = asOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asof=${encodeURIComponent(asOf)}`;
   const res = await fetch(url, init);
   if (!res.ok) {
     // A refusal carries {"error": "<why>"}; show that, else the status line.
