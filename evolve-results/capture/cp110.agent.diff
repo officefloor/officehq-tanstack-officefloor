@@ -1,0 +1,148 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 00000000..07a85d33
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,77 @@
++import { useEffect, useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useClaims } from '../claims/useClaims';
++import { useOverdue } from '../overdue/overdue.slot';
++import { usePeople } from '../people/people.slot';
++import { useSheetDueTotal } from '../rates/rates.slot';
++import { showHundredths } from '../rates/useRates';
++
++type Figures = { people: number; due: bigint; overdue: bigint };
++
++/** The ids of the sheet's descendants: its children (the sheets naming it as their parent), theirs, and so on down. */
++export const descendantsKey = (sheetId: string) => ['sheet', sheetId, 'descendants'] as const;
++
++function useDescendants(sheetId: string) {
++  return useQuery({
++    queryKey: descendantsKey(sheetId),
++    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`),
++  });
++}
++
++// One sheet's figures as its own header shows them, reported up once all of them are read.
++function SheetFigures({ sheetId, report }: { sheetId: string; report: (id: string, f: Figures | null) => void }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const due = useSheetDueTotal(sheetId);
++  const overdue = useOverdue(sheetId).sheet.cents;
++  const ready = people.data !== undefined && claims.data !== undefined;
++  const count = (people.data ?? []).length;
++  useEffect(() => {
++    report(sheetId, ready ? { people: count, due, overdue } : null);
++  }, [sheetId, report, ready, count, due, overdue]);
++  useEffect(() => () => report(sheetId, null), [sheetId, report]);
++  return null;
++}
++
++// The consolidated figures over the sheet and all its descendants: the people on each, and each sheet's
++// due-total and overdue-total as that sheet shows them, added up. A sheet with no children shows its own.
++function Consolidated({ sheetId }: { sheetId: string; user: string }) {
++  const descendants = useDescendants(sheetId);
++  const [figures, setFigures] = useState<Map<string, Figures>>(new Map());
++  const [report] = useState(() => (id: string, f: Figures | null) =>
++    setFigures((m) => {
++      const next = new Map(m);
++      if (f === null) next.delete(id);
++      else next.set(id, f);
++      return next;
++    }),
++  );
++  const sheets = descendants.data === undefined ? [] : [sheetId, ...descendants.data];
++  const all = sheets.length > 0 && sheets.every((s) => figures.has(s));
++  const shown = sheets.map((s) => figures.get(s)).filter((f): f is Figures => f !== undefined);
++  const people = shown.reduce((n, f) => n + f.people, 0);
++  const due = shown.reduce((n, f) => n + f.due, 0n);
++  const overdue = shown.reduce((n, f) => n + f.overdue, 0n);
++  return (
++    <section data-testid="consolidated">
++      {sheets.map((s) => (
++        <SheetFigures key={s} sheetId={s} report={report} />
++      ))}
++      <p>
++        Consolidated people: <strong data-testid="consolidated-people-count">{all ? people : ''}</strong>{' '}
++        Consolidated due total: <strong data-testid="consolidated-due-total">{all ? showHundredths(due) : ''}</strong>{' '}
++        Consolidated overdue total:{' '}
++        <strong data-testid="consolidated-overdue-total">{all ? showHundredths(overdue) : ''}</strong>
++      </p>
++      {descendants.isError && (
++        <p data-testid="consolidated-error" role="alert">
++          {descendants.error.message}
++        </p>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -9, Component: Consolidated });
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 54826854..1ee44684 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -60,6 +60,28 @@ public class RateRepository {
+                 (rs, n) -> rs.getString(1), sheetId).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+     }
+ 
++    /** The sheets naming this one as their parent, by id. */
++    public List<String> childrenOf(String sheetId) {
++        return jdbc.query("SELECT sheet_id FROM sheet_setting WHERE setting_key = 'parent' AND setting_value = ?"
++                + " ORDER BY sheet_id", (rs, n) -> rs.getString(1), sheetId);
++    }
++
++    /** The sheet's children, their children, and so on down (each once, the sheet itself never among them). */
++    public List<String> descendantsOf(String sheetId) {
++        List<String> found = new java.util.ArrayList<>();
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
++        while (!todo.isEmpty()) {
++            for (String child : childrenOf(todo.poll())) {
++                if (seen.add(child)) {
++                    found.add(child);
++                    todo.add(child);
++                }
++            }
++        }
++        return found;
++    }
++
+     /** The sheet's own rates (level 0), then each of its parents' (see {@link #ancestry}), each at its level up. */
+     public List<Rate> chain(String sheetId) {
+         List<String> sheets = ancestry(sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java
+new file mode 100644
+index 00000000..93fd8745
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The ids of the sheet's descendants: the sheets naming it as their parent now, theirs, and so on down. */
++public class RespondWithDescendants {
++    public void respond(@Val SheetResponse sheet, RateRepository rates, ObjectResponse<List<String>> response) {
++        response.send(rates.descendantsOf(sheet.id()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 00000000..99de07c1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,7 @@
++# The ids of the sheet's descendants (its children, theirs, and so on down).
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithDescendants
++  govern: [ readonly-transaction ]
