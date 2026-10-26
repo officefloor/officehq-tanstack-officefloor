@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { Fragment, useState, type ChangeEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimRow';
@@ -86,6 +86,34 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
       // Counted by its status then, but held (or deferred) as the live totals leave it out: by its status now.
       const live = c.status === 'OPEN' || c.status === 'PENDING';
       if (then === undefined || !counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
+      sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
+    }
+    return sum;
+  };
+}
+
+/** A person's carried figure for a period in cents: the due figures (as shown now) of their claims that belong to a
+ *  period (by due-by) ending before this one starts and were still OPEN or PENDING at the end of its last day by
+ *  the status log, counted (held or deferred left out) as the period due-totals count them. */
+export function usePeriodCarried(sheetId: string): (p: Period, personId: number) => bigint {
+  const claims = useClaims(sheetId);
+  const people = usePeople(sheetId);
+  const periods = usePeriods(sheetId);
+  const held = useHeld(sheetId);
+  const rates = useRates(sheetId);
+  const floor = useFloorCents(sheetId);
+  const late = useLate(sheetId);
+  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
+  return (p: Period, personId: number): bigint => {
+    let sum = 0n;
+    for (const c of claims.data ?? []) {
+      if (c.personId !== personId) continue;
+      const own = periodOn(periods.data ?? [], c.dueBy);
+      if (own === undefined || own.to >= p.from) continue;
+      const then = statusAsOf(c.log, p.to);
+      if (then !== 'OPEN' && then !== 'PENDING') continue;
+      const live = c.status === 'OPEN' || c.status === 'PENDING';
+      if (!counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
     return sum;
@@ -389,13 +417,16 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
   );
 }
 
-// One column per period on the people table: the person's due-total for it.
+// Two columns per period on the people table: the person's due-total for it, and what they carried into it.
 function PersonPeriodHeads({ sheetId }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <th key={p.id}>{p.name} due</th>
+        <Fragment key={p.id}>
+          <th>{p.name} due</th>
+          <th>{p.name} carried</th>
+        </Fragment>
       ))}
     </>
   );
@@ -404,12 +435,16 @@ function PersonPeriodHeads({ sheetId }: { sheetId: string; user: string }) {
 function PersonPeriodCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const periods = usePeriods(sheetId);
   const dueTotal = usePeriodDueTotal(sheetId);
+  const carried = usePeriodCarried(sheetId);
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
-          {showPersonPeriodDueTotal(p, personId, dueTotal(p, personId))}
-        </td>
+        <Fragment key={p.id}>
+          <td data-testid={`person-period-${p.name}-due-total`}>
+            {showPersonPeriodDueTotal(p, personId, dueTotal(p, personId))}
+          </td>
+          <td data-testid={`person-period-${p.name}-carried`}>{showHundredths(carried(p, personId))}</td>
+        </Fragment>
       ))}
     </>
   );
