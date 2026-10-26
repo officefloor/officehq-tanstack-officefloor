@@ -7,27 +7,28 @@ import { useUser } from '../session/useSession';
 import { peopleKey } from '../people/people.slot';
 import { claimsKey } from '../claims/useClaims';
 
-type ImportResult = { added: number };
+type ImportResult = { added: number; updated: number };
 
-// The import box: lines of name,grade,terms,contact (terms and contact may be absent or blank) add a person per
-// line, in order, each as the person form adds them. The server checks every line with the person form's rules
-// first (a name or contact repeated in the import refuses it too), so a refusal adds no one.
-// Shows how many were added; the count is gone while it runs, and shows before the new rows do.
+// The import box: lines of name,grade,terms,contact (terms and contact may be absent or blank), in order. A line
+// naming a person on the sheet (by name or alias) updates them as the person form edits them (blank terms or contact
+// keep theirs); any other line adds a person as the form adds them. The server checks every line with the person
+// form's rules first (a name or contact repeated in the import refuses it too), so a refusal imports nothing.
+// Shows how many were added and updated; the counts are gone while it runs, and show before the new rows do.
 function ImportPeople({ sheetId }: { sheetId: string; user: string }) {
   const [lines, setLines] = useState('');
-  const [added, setAdded] = useState<number | null>(null);
+  const [counts, setCounts] = useState<ImportResult | null>(null);
   const [user] = useUser();
   const queryClient = useQueryClient();
   const importPeople = useMutation({
     mutationFn: async (text: string) => {
-      setAdded(null);
+      setCounts(null);
       if (text.trim() === '') throw new Error('Paste at least one line of name,grade,terms,contact');
       // `by` is the signed-in user the change is recorded against.
       const result = await postJson<ImportResult>(`/api/sheets/${encodeURIComponent(sheetId)}/people/import`, {
         lines: text,
         by: user ?? '',
       });
-      setAdded(result.added);
+      setCounts(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -61,11 +62,12 @@ function ImportPeople({ sheetId }: { sheetId: string; user: string }) {
       </label>
       <br />
       <button type="submit" data-testid="import-submit" disabled={importPeople.isPending}>
-        Add people
+        Import people
       </button>{' '}
-      {added !== null && !importPeople.isError && (
+      {counts !== null && !importPeople.isError && (
         <span>
-          Added <strong data-testid="import-added">{added}</strong>
+          Added <strong data-testid="import-added">{counts.added}</strong>, updated{' '}
+          <strong data-testid="import-updated">{counts.updated}</strong>
         </span>
       )}
       {importPeople.isError && (
