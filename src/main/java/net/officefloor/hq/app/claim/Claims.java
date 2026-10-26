@@ -24,7 +24,7 @@ public class Claims {
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
             rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"),
-            rs.getString("split_from"), rs.getBoolean("late_entry"));
+            rs.getString("split_from"), rs.getBoolean("late_entry"), rs.getObject("reminded_on", LocalDate.class));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -74,7 +74,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0, null, late);
+                false, null, corrects, dueBy, null, 0, null, late, null);
     }
 
     /** Whether a claim made now, due by {@code dueBy}, is a late entry: its due-by is in a soft-closed period. */
@@ -164,7 +164,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
-                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late);
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number(), late, null);
     }
 
     /**
@@ -186,6 +186,18 @@ public class Claims {
             return null;
         }
         return claim.withDeferredUntil(until);
+    }
+
+    /**
+     * Reminds the claim on {@code on} if it is still OPEN or PENDING and not yet reminded that day, and returns it as
+     * reminded; null when it has since changed.
+     */
+    public Claim remind(Claim claim, LocalDate on) {
+        if (jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND status IN (?, ?) AND reminded_on IS DISTINCT FROM ?",
+                Date.valueOf(on), claim.id(), ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), Date.valueOf(on)) != 1) {
+            return null;
+        }
+        return claim.withRemindedOn(on);
     }
 
     /**
