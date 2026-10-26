@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery } from '../claims/claimsQuery';
+import { claimsQuery, isActive } from '../claims/claimsQuery';
 import type { Claim, ClaimStatus } from '../claims/claimsQuery';
 import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
 import { periodDue, periodsQuery } from '../periods/periodsQuery';
@@ -15,7 +15,7 @@ export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filt
 
 /**
  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
- * today (retired people excluded) and their due-totals added up, skipping n/a. Per period: its
+ * today (retired people excluded), their due-totals added up, skipping n/a, and how many of them are active. Per period: its
  * due-total. Per status: how many claims have it.
  */
 function Summary({ sheetId }: { sheetId: string }) {
@@ -28,7 +28,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
 
-  const active = people.filter((p) => p.retiredFrom === null);
+  const unretired = people.filter((p) => p.retiredFrom === null);
 
   return (
     <section data-testid="summary">
@@ -39,17 +39,21 @@ function Summary({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>People</th>
             <th>Due</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const onGrade = active.filter((p) => gradeOn(p, today) === g);
+            const onGrade = unretired.filter((p) => gradeOn(p, today) === g);
             return (
               <tr key={g} data-testid={`summary-grade-${g}`}>
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
                   {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}
+                </td>
+                <td data-testid={`summary-grade-${g}-active`}>
+                  {onGrade.filter((p) => isActive(p.id, claims, people, today)).length}
                 </td>
               </tr>
             );

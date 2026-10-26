@@ -60,6 +60,21 @@ export const counts = (c: Claim, people: Person[], today: string) =>
   (isOpen(c) &&
     ((c.stated && c.status !== 'PENDING') || !heldOn(people.find((p) => p.id === c.personId), c.date))));
 
+/** The first day (yyyy-mm-dd) of the 30 days up to and including the sheet's `today`. */
+const activeFrom = (today: string) => new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Whether the person is active: they have an open (OPEN or PENDING) claim that counts, dated within the 30 days up to
+ * and including the sheet's `today` (never while `today` is not loaded).
+ */
+export function isActive(personId: number, claims: Claim[], people: Person[], today: string): boolean {
+  if (today === '') return false;
+  const from = activeFrom(today);
+  return claims.some(
+    (c) => c.personId === personId && isOpen(c) && counts(c, people, today) && from <= c.date && c.date <= today,
+  );
+}
+
 /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;
 
