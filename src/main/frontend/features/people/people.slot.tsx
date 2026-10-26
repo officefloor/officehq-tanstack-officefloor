@@ -11,7 +11,8 @@ import { useSheetToday } from '../today/today.slot';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
- *  is retired from; set at all, they count as retired. `held`: whether they have any hold; `holds`: their holds, in the order
+ *  is retired from; set at all, they count as retired. `retirements`: their past retirements, each from its from-date to
+ *  the day they were unretired, in the order kept. `held`: whether they have any hold; `holds`: their holds, in the order
  *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted; `patronShares`: each patron with their share of
  *  100.00 (two decimals; split equally in the order named, the remainder to the first named), sorted by name. `grade` is the
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
@@ -22,7 +23,8 @@ import { useSheetToday } from '../today/today.slot';
  *  alias, on another sheet of the sheet's tree (its ancestors and descendants); every edit of them is then refused
  *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else. */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
-  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
+  statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null;
+  retirements: Retirement[]; held: boolean;
   holds: HoldSpan[];
   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; aliases: string[];
   clashing: boolean; origin: string | null };
@@ -30,6 +32,10 @@ export type Person = { id: number; name: string; grade: string; grades: GradeFro
 export type PatronShare = { name: string; share: string };
 
 export type GradeFrom = { grade: string; from: string | null };
+
+/** A past retirement, from its from-date to the day the person was unretired (yyyy-mm-dd): no claim dated strictly
+ *  between the two can be added. */
+export type Retirement = { from: string; to: string };
 
 /** A hold from its from-date to its to-date (yyyy-mm-dd, both inclusive; null: open at that end). */
 export type HoldSpan = { from: string | null; to: string | null };

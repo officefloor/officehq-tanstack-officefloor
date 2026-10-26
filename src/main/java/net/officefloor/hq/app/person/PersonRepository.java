@@ -249,6 +249,18 @@ public class PersonRepository {
                 java.sql.Date.valueOf(from), id) == 1;
     }
 
+    /** Unretire the person, still retired from the date, on the day: the retirement is kept as a past one; false
+     *  (nothing written) when they are no longer retired from that date. */
+    public boolean unretire(long id, LocalDate from, LocalDate on) {
+        if (jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ? AND retired_from = ?", id,
+                java.sql.Date.valueOf(from)) != 1) {
+            return false;
+        }
+        jdbc.update("INSERT INTO person_retirement (person_id, from_date, to_date) VALUES (?, ?, ?)", id,
+                java.sql.Date.valueOf(from), java.sql.Date.valueOf(on));
+        return true;
+    }
+
     /** Retire the person from the date, whether or not they were retired already (moving the date when they were). */
     public void retireFrom(long id, LocalDate from) {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ?", java.sql.Date.valueOf(from), id);
@@ -322,6 +334,7 @@ public class PersonRepository {
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
         jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE id = ?", f);
@@ -386,6 +399,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
@@ -393,7 +407,7 @@ public class PersonRepository {
         return t;
     }
 
-    /** Sets each person's patrons' names, in the order named, their grades and their holds. */
+    /** Sets each person's patrons' names, in the order named, their grades, their holds and their past retirements. */
     private List<Person> withPatrons(String sheetId, List<Person> people) {
         if (people.isEmpty()) {
             return people;
@@ -416,6 +430,16 @@ public class PersonRepository {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
         for (Person person : people) {
             person.setHolds(holds.getOrDefault(person.getId(), List.of()));
+        }
+        Map<Long, List<RetirementSpan>> retirements = jdbc.query(
+                "SELECT r.person_id, r.from_date, r.to_date FROM person_retirement r JOIN person q ON q.id = r.person_id"
+                        + " WHERE q.sheet_id = ? ORDER BY r.id",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), new RetirementSpan(
+                        rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class))), sheetId)
+                .stream().collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setRetirements(retirements.getOrDefault(person.getId(), List.of()));
         }
         Map<Long, List<String>> patrons = jdbc.query(
                 "SELECT pp.person_id, q.name FROM person_patron pp JOIN person q ON q.id = pp.patron_id"

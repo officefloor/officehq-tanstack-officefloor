@@ -23,7 +23,7 @@ import org.springframework.stereotype.Repository;
 public class SheetHistory {
 
     /** The tables the screen reads (a statement's figures among them), parents before children. */
-    private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold",
+    private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold", "person_retirement",
             "person_patron", "person_alias", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
             "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_template",
             "pool", "pool_member");
@@ -38,13 +38,29 @@ public class SheetHistory {
     }
 
     /** Snapshot the sheet as its today moves on from {@code through} to the later {@code until}. */
-    public void snapshot(String sheetId, LocalDate through, LocalDate until) {
+    public long snapshot(String sheetId, LocalDate through, LocalDate until) {
         long id = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO sheet_snapshot (sheet_id, through, until)"
                 + " VALUES (?, ?, ?))", Long.class, sheetId, Date.valueOf(through), Date.valueOf(until));
         for (String table : TABLES) {
             String columns = columns(jdbc, table);
             jdbc.update("INSERT INTO hist." + table + " (" + columns + ", snapshot_id) SELECT " + columns + ", ? FROM "
                     + "public." + table + " WHERE " + ofSheet(table, "public"), id, sheetId);
+        }
+        return id;
+    }
+
+    /** Lay the period, as it now stands live (closed, its totals), over the snapshot: a period closed as the today
+     *  moved on counts as closed by the end of the old today. */
+    public void refreshPeriod(long snapshotId, long periodId) {
+        for (String table : List.of("period_person_total", "period")) {
+            String key = table.equals("period") ? "id" : "period_id";
+            jdbc.update("DELETE FROM hist." + table + " WHERE snapshot_id = ? AND " + key + " = ?", snapshotId, periodId);
+        }
+        for (String table : List.of("period", "period_person_total")) {
+            String key = table.equals("period") ? "id" : "period_id";
+            String columns = columns(jdbc, table);
+            jdbc.update("INSERT INTO hist." + table + " (" + columns + ", snapshot_id) SELECT " + columns + ", ? FROM "
+                    + "public." + table + " WHERE " + key + " = ?", snapshotId, periodId);
         }
     }
 
@@ -150,7 +166,7 @@ public class SheetHistory {
     private static String ofSheet(String table, String schema) {
         return switch (table) {
             case "sheet" -> "id = ?";
-            case "person_grade", "person_hold", "person_patron", "person_watch" ->
+            case "person_grade", "person_hold", "person_retirement", "person_patron", "person_watch" ->
                 "person_id IN (SELECT id FROM " + schema + ".person WHERE sheet_id = ?)";
             case "period_person_total" -> "period_id IN (SELECT id FROM " + schema + ".period WHERE sheet_id = ?)";
             default -> "sheet_id = ?";

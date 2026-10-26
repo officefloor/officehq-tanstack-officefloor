@@ -19,6 +19,7 @@ public class Person {
     private Statements statements = Statements.NONE;
     private LocalDate retiredFrom;
     private List<HoldSpan> holds = List.of();
+    private List<RetirementSpan> retirements = List.of();
     private List<String> patrons = List.of();
     private List<String> aliases = List.of();
     private Integer terms;
@@ -143,6 +144,22 @@ public class Person {
      *  statement binds them, count in no live total, as a hold's would. */
     public boolean retiredOn(LocalDate on) {
         return retiredFrom != null && !on.isBefore(retiredFrom);
+    }
+
+    /** The person's past retirements, each from its from-date to the day they were unretired, in the order kept. */
+    public List<RetirementSpan> getRetirements() {
+        return retirements;
+    }
+
+    public void setRetirements(List<RetirementSpan> retirements) {
+        this.retirements = retirements;
+    }
+
+    /** Whether a claim dated then is refused: after the current retirement's date, or strictly between a past
+     *  retirement's from-date and the day it ended. */
+    public boolean retiredClaimDate(LocalDate date) {
+        return (retiredFrom != null && date.isAfter(retiredFrom))
+                || retirements.stream().anyMatch(r -> r.refuses(date));
     }
 
     /** Whether the person has any hold. */

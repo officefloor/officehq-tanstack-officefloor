@@ -5,6 +5,8 @@ import java.util.Comparator;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.access.RoleRepository;
 import net.officefloor.hq.app.access.SettingRepository;
+import net.officefloor.hq.app.history.SheetHistory;
+import net.officefloor.hq.app.history.TodaySnapshot;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.hq.app.sheet.SheetResponse;
@@ -13,10 +15,12 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Once the sheet's today is set: with grace days on, closes every open period (neither closed nor soft-closed) whose to-date plus the grace days is
  * before the new today, in order of their to-dates, as a close by hand would — whoever set the today, the sheet's
- * close permission governs only a close by hand — each writing PERIOD_CLOSED with auto=yes.
+ * close permission governs only a close by hand — each writing PERIOD_CLOSED with auto=yes. The snapshot taken as the
+ * today moved on shows each such period closed.
  */
 public class AutoClosePeriods {
-    public void close(@Val SheetResponse sheet, @Val LocalDate today, @Val ChangedBy by, PeriodRepository repository,
+    public void close(@Val SheetResponse sheet, @Val LocalDate today, @Val ChangedBy by, @Val TodaySnapshot snapshot,
+            SheetHistory history, PeriodRepository repository,
             RoleRepository roles, SettingRepository settings, Rollup rollup, Audit audit) {
         Integer grace = settings.graceDays(sheet.id());
         if (grace == null) {
@@ -28,6 +32,9 @@ public class AutoClosePeriods {
             Period closed = ClosePeriod.fix(period, repository, rollup);
             if (closed != null) {
                 audit.record(RecordPeriodClosed.line(closed, by) + " auto=yes");
+                if (snapshot != null && snapshot.id() != null) {
+                    history.refreshPeriod(snapshot.id(), closed.id());
+                }
             }
         }
     }
