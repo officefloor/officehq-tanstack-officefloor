@@ -90,6 +90,12 @@ public class Rollup {
         return total;
     }
 
+    /** The claim's figure as the screen shows it on the sheet's today (null: n/a), whatever its status. */
+    public BigDecimal figure(Claim claim) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        return person == null ? claim.settledDue() : figure(claim, person, sheets.today(claim.sheetId()));
+    }
+
     /** Whether the (OPEN, PENDING or SETTLED) claim counts: a held person's open claims count in no live total. */
     private static boolean counts(Claim claim, Person person) {
         return !(person.held() && claim.status().isOpen());

@@ -8,6 +8,7 @@ import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
@@ -22,7 +23,7 @@ public class ApplyClaimStatus {
     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
-            Periods periods, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+            Periods periods, Rollup rollup, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
             Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException {
         ClaimStatus next;
         try {
@@ -86,6 +87,7 @@ public class ApplyClaimStatus {
         if (changed == null) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
+        claims.log(changed, user, sheets.today(claim.sheetId()), rollup.figure(changed));
         responseOut.set(ClaimResponse.from(changed));
         requestOut.set(new ClaimStatusRequest(action, reason));
     }

@@ -13,7 +13,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
  * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim is not bound while PENDING;
  * a negative `amount` is a correction, and `corrects` is the number of the settled claim it corrects (null for any other claim);
- * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from the terms of its person's grade on its date, and kept when they or its date change.
+ * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from the terms of its person's grade on its date, and kept when they or its date change;
+ * `log` is its status log, oldest first, one line per status it has had: "<STATUS> by <user> on <date> due=<due>".
  */
 export type Claim = {
   id: number;
@@ -29,6 +30,7 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   dueBy: string;
+  log: string[];
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */

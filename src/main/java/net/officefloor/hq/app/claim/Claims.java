@@ -115,6 +115,24 @@ public class Claims {
         return claim.withStatus(next, number, settledDue, openedBy);
     }
 
+    /** Appends a line to the claim's status log: its status now, by {@code user} on {@code on}, at {@code due} (null: n/a). */
+    public void log(Claim claim, String user, LocalDate on, BigDecimal due) {
+        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) VALUES (?, ?, ?, ?, ?, ?)",
+                claim.sheetId(), claim.id(), claim.status().name(), user, Date.valueOf(on),
+                due == null ? "n/a" : due.toPlainString());
+    }
+
+    /** The status logs of the sheet's claims, by claim id, each oldest first as "STATUS by user on date due=due". */
+    public java.util.Map<Long, List<String>> logs(String sheetId) {
+        java.util.Map<Long, List<String>> logs = new java.util.HashMap<>();
+        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+            logs.computeIfAbsent(rs.getLong("claim_id"), k -> new java.util.ArrayList<>())
+                    .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
+                            + rs.getObject("logged_on", LocalDate.class) + " due=" + rs.getString("due"));
+        }, sheetId);
+        return logs;
+    }
+
     /**
      * Binds the person's claims to the figures of a statement: each claim in {@code figures} is stated at
      * its figure (null: n/a), and every other claim of theirs is left unbound.
