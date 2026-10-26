@@ -272,6 +272,23 @@ public class Claims {
                 due == null ? "n/a" : due.toPlainString());
     }
 
+    /** Adds a comment to the claim: {@code text}, written by {@code user} on {@code on}. */
+    public void comment(Claim claim, String user, LocalDate on, String text) {
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, commented_on, text) VALUES (?, ?, ?, ?, ?)",
+                claim.sheetId(), claim.id(), user, Date.valueOf(on), text);
+    }
+
+    /** The comments of the sheet's claims, by claim id, each oldest first as "user on date: text". */
+    public java.util.Map<Long, List<String>> comments(String sheetId) {
+        java.util.Map<Long, List<String>> comments = new java.util.HashMap<>();
+        jdbc.query("SELECT * FROM " + AsOf.table("claim_comment") + " WHERE sheet_id = ? ORDER BY id", rs -> {
+            comments.computeIfAbsent(rs.getLong("claim_id"), k -> new java.util.ArrayList<>())
+                    .add(rs.getString("by_user") + " on " + rs.getObject("commented_on", LocalDate.class) + ": "
+                            + rs.getString("text"));
+        }, sheetId);
+        return comments;
+    }
+
     /** The sheet's today on which the claim was last logged SETTLED; null when its log records no settlement. */
     public LocalDate settledOn(Claim claim) {
         List<LocalDate> on = jdbc.query(

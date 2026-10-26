@@ -27,6 +27,7 @@ public final class AsOf {
             Map.entry("period", List.of("sheet_id", "name")),
             Map.entry("period_person_total", List.of("sheet_id", "period_name", "person_id")),
             Map.entry("claim_log", List.of("id")),
+            Map.entry("claim_comment", List.of("id")),
             Map.entry("person_patron", List.of("person_id", "patron_id")),
             Map.entry("person_watch", List.of("id")),
             Map.entry("delegation", List.of("id")),

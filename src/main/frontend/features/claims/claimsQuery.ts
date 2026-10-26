@@ -22,7 +22,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `lateEntry` is whether it was added while the period its due-by falls in was soft-closed;
  * `remindedOn` (yyyy-mm-dd) is the last sheet's today a reminder was written for it (null when never reminded);
  * `ref` is its external reference, unique on the sheet without regard to case (null when it has none);
- * `tags` are its tags, trimmed, lower-cased, without repeats and sorted (empty for none).
+ * `tags` are its tags, trimmed, lower-cased, without repeats and sorted (empty for none);
+ * `comments` are its comments, oldest first, each "<user> on <date>: <text>" with the sheet's today when written.
  */
 export type Claim = {
   id: number;
@@ -47,6 +48,7 @@ export type Claim = {
   remindedOn: string | null;
   ref: string | null;
   tags: string[];
+  comments: string[];
 };
 
 /** A correction: its due is its amount times the rate, with no floor and no late charge. */
