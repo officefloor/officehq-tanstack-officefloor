@@ -5,7 +5,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
 
-type SheetToday = { id: string; today: string; archived: boolean };
+type SheetToday = { id: string; today: string; archived: boolean; parent?: string | null };
 
 /** The key every feature reads the sheet's today under: date decisions and default dates use it, never the real clock. */
 export const sheetTodayKey = (sheetId: string) => ['sheet', sheetId, 'today'] as const;
@@ -73,6 +73,7 @@ function SheetTodayPanel({ sheetId }: { sheetId: string; user: string }) {
         </button>
       </form>
       <p>
+        Parent sheet: <strong data-testid="sheet-parent">{today.data?.parent ?? ''}</strong>{' '}
         Archived:{' '}
         <strong data-testid="sheet-archived">{today.data === undefined ? '' : today.data.archived ? 'yes' : 'no'}</strong>{' '}
         <button

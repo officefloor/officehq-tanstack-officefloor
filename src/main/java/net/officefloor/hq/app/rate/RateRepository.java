@@ -11,7 +11,8 @@ import org.springframework.stereotype.Repository;
 /**
  * The rates for each grade on each sheet, each in force from its from-date (null: from the beginning
  * of time), through its to-date (null: with no end). A grade without one in force on a date has no rate on
- * that date.
+ * that date on the sheet itself; then its parent's rate on that date is used, then the parent's parent's, up to
+ * three levels up (see {@link #chain}).
  */
 @Repository
 public class RateRepository {
@@ -22,6 +23,9 @@ public class RateRepository {
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
                 from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate());
     };
+
+    /** How many levels of parents a sheet takes rates from. */
+    public static final int PARENT_LEVELS = 3;
 
     private final JdbcTemplate jdbc;
 
@@ -35,11 +39,57 @@ public class RateRepository {
                 + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
+    /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
+    public List<String> ancestry(String sheetId) {
+        List<String> found = new java.util.ArrayList<>(List.of(sheetId));
+        String at = sheetId;
+        while (found.size() <= PARENT_LEVELS) {
+            String parent = parentOf(at);
+            if (parent == null || found.contains(parent)) {
+                break;
+            }
+            found.add(parent);
+            at = parent;
+        }
+        return found;
+    }
+
+    /** The sheet's parent; null when it has none. */
+    public String parentOf(String sheetId) {
+        return jdbc.query("SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = 'parent'",
+                (rs, n) -> rs.getString(1), sheetId).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+    }
+
+    /** The sheet's own rates (level 0), then each of its parents' (see {@link #ancestry}), each at its level up. */
+    public List<Rate> chain(String sheetId) {
+        List<String> sheets = ancestry(sheetId);
+        List<Rate> found = new java.util.ArrayList<>();
+        for (int level = 0; level < sheets.size(); level++) {
+            int at = level;
+            list(sheets.get(level)).forEach(r -> found.add(r.at(at)));
+        }
+        return found;
+    }
+
     /**
-     * The grade's rate in force on the date: the one with the latest from-date on or before it, a rate
-     * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
+     * The grade's rate in force on the date, on the sheet or else (none in force there) up its parents (see
+     * {@link #ancestry}); null when none has one.
      */
     public BigDecimal find(String sheetId, String grade, LocalDate on) {
+        for (String sheet : ancestry(sheetId)) {
+            BigDecimal rate = findOwn(sheet, grade, on);
+            if (rate != null) {
+                return rate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The grade's rate in force on the date on the sheet itself: the one with the latest from-date on or before it, a rate
+     * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
+     */
+    public BigDecimal findOwn(String sheetId, String grade, LocalDate on) {
         return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", ROW,
                 sheetId, grade, Date.valueOf(on)).stream().findFirst()

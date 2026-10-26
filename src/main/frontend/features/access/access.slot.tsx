@@ -5,12 +5,15 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useUser } from '../session/useSession';
 import { poolsKey } from '../pools/pools.slot';
+import { ratesKey } from '../rates/useRates';
+import { sheetTodayKey } from '../today/today.slot';
 import { delegationsKey, rolesKey, settingsKey, useDelegations, useRoles, useSettings, FLOOR_DEFAULT, LATE_PCT_DEFAULT, TERMS_DEFAULT, type Delegation, type Role, type Setting } from './useAccess';
 
 const ROLES = ['clerk', 'steward', 'viewer'];
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,5}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const SHEET_ID = /^.{1,200}$/;
 const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/;
 
 // The role form: assigns a user name a role, clerk, steward or viewer (any name not listed is a clerk; a viewer
@@ -196,7 +199,7 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
 // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
 // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
-// roles that may take it (blank: the standing rule, shown as the placeholder). Every setting but the policy date, period numbering from, the entry date, the grace days and the permissions is dated: saving it records
+// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the parent and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -236,6 +239,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
   { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
+  { key: 'parent', label: 'Parent sheet', placeholder: 'none', blank: true, valid: SHEET_ID, inputMode: 'text',
+    invalid: 'A parent is a sheet id, or blank for none', dated: false },
   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
     ['close', 'clerk,steward'], ['reopen', 'steward']] as const).map(([action, standing]): SettingField => ({
     key: `perm-${action}`, label: `Who may ${action}`, placeholder: standing, blank: true, valid: ROLE_LIST, inputMode: 'text',
@@ -272,6 +277,9 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
       // The pot changes each pool member's cut.
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+      // The parent's rates stand in for the sheet's missing ones; the parent shows with the sheet's today.
+      await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+      await queryClient.invalidateQueries({ queryKey: sheetTodayKey(sheetId) });
     },
   });
   const submit = useSubmitOnce(save);

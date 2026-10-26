@@ -2,16 +2,18 @@ package net.officefloor.hq.app.sheet;
 
 import net.officefloor.hq.app.history.SheetHistory;
 import net.officefloor.hq.app.history.ViewAsOf;
+import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
-/** The sheet's today as the signed-in user's screen shows it: an as-of date stands in for it. */
+/** The sheet's today as the signed-in user's screen shows it: an as-of date stands in for it. Its parent is the one set now. */
 public class RespondWithSheetTodayAsOf {
-    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history,
+    public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history, RateRepository rates,
             ObjectResponse<SheetTodayResponse> response) {
+        String parent = rates.parentOf(sheet.id());
         response.send(history.view(sheet.id(), asOf.on(), jdbc -> {
             SheetRepository sheets = new SheetRepository(jdbc);
-            return new SheetTodayResponse(sheet.id(), sheets.today(sheet.id()).toString(), sheets.isArchived(sheet.id()));
+            return new SheetTodayResponse(sheet.id(), sheets.today(sheet.id()).toString(), sheets.isArchived(sheet.id()), parent);
         }));
     }
 }

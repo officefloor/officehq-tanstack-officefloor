@@ -21,6 +21,11 @@ public class SheetRepository {
                 id, id, LocalDate.now());
     }
 
+    /** Whether the sheet has been loaded (is stored). */
+    public boolean exists(String id) {
+        return Boolean.TRUE.equals(jdbc.query("SELECT 1 FROM sheet WHERE id = ?", (java.sql.ResultSet rs) -> rs.next(), id));
+    }
+
     /**
      * The sheet's today. Every decision that depends on the date, and every default date, uses
      * this — never the real clock. A sheet not yet stored is on the real date.
