@@ -235,6 +235,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'Grace days are a whole number of days, or blank for off', dated: false },
   { key: 'escalate-after', label: 'Escalate after (days)', placeholder: 'off', blank: true, valid: DAYS, inputMode: 'numeric',
     invalid: 'An escalation gap is a whole number of days, or blank for off', dated: false },
+  { key: 'review-sla', label: 'Review SLA (days)', placeholder: 'none', blank: true, valid: DAYS, inputMode: 'numeric',
+    invalid: 'A review SLA is a whole number of days, or blank for none', dated: false },
   { key: 'fiscal-start-month', label: 'Fiscal year start month', placeholder: '1', blank: false, valid: /^(0?[1-9]|1[0-2])$/,
     inputMode: 'numeric', invalid: 'A fiscal start month is a month from 1 to 12', dated: false, starting: '1' },
   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',

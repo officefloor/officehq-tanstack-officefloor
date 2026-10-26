@@ -41,6 +41,16 @@ public class ClaimLogRepository {
         return on.isEmpty() ? null : on.get(0);
     }
 
+    /** The date of each claim's last log line in the status, by claim id; a claim that never had it is absent. */
+    public Map<Long, LocalDate> lastOnEach(String sheetId, ClaimStatus status) {
+        Map<Long, LocalDate> on = new HashMap<>();
+        jdbc.query("SELECT claim_id, logged_on FROM claim_log WHERE sheet_id = ? AND status = ? ORDER BY id",
+                rs -> {
+                    on.put(rs.getLong("claim_id"), rs.getObject("logged_on", LocalDate.class));
+                }, sheetId, status.name());
+        return on;
+    }
+
     /**
      * Each claim's status at the end of the day, by claim id, as its log records it: its last line (in log order)
      * logged on or before the day. A claim with no such line (added after it) is absent.

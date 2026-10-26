@@ -7,13 +7,14 @@ import { useIsActive } from '../active/active.slot';
 import { useDueTotals } from '../rates/rates.slot';
 import { claimDueCents, showHundredths, toHundredths, useRates } from '../rates/useRates';
 import { useVoidReasons } from '../voidreasons/voidReasons.slot';
+import { useIsReviewLate } from '../reviewsla/reviewSla.slot';
 
 const GRADES = ['A', 'B', 'C'] as const;
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const;
 
 // The summary panel, built from the same figures as the lists so it always agrees with them. Per grade: the people
 // on it today, retired people left out, and their due-totals added up (skipping those that are n/a). Per period:
-// its due-total as its row shows it, and its change from the period before it by start date (none for the earliest). Per grade too: how many of its people are active. Per status: the claims on the sheet with that status.
+// its due-total as its row shows it, and its change from the period before it by start date (none for the earliest). Per grade too: how many of its people are active. Per status: the claims on the sheet with that status. And the REVIEW claims past the review SLA.
 // Per void reason on the list: the VOID claims voided with it.
 function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
@@ -23,6 +24,7 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
   const claims = useClaims(sheetId);
   const isActive = useIsActive(sheetId);
   const voidReasons = useVoidReasons(sheetId);
+  const isReviewLate = useIsReviewLate(sheetId);
 
   const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
   const periodShown = new Map((periods.data ?? []).map((p) => [p.id, showPeriodDueTotal(p, periodDueTotal(p))]));
@@ -94,6 +96,10 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
               <td data-testid={`summary-status-${s}-count`}>{(claims.data ?? []).filter((c) => c.status === s).length}</td>
             </tr>
           ))}
+          <tr>
+            <td>Review late</td>
+            <td data-testid="summary-review-late-count">{(claims.data ?? []).filter(isReviewLate).length}</td>
+          </tr>
         </tbody>
       </table>
       <table data-testid="summary-void-reasons">

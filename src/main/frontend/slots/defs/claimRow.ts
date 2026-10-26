@@ -12,5 +12,5 @@ export const ClaimCells = defineSlot<{
     settledDue: string | null; openedBy: string | null; stated: boolean; statedDue: string | null; dueBy: string; log: string[];
     deferred?: boolean; deferredUntil?: string | null; proofs?: number; splitFrom?: string | null; lateEntry?: boolean;
     reminded?: string | null; corrects?: string | null; ref?: string | null; tags?: string[];
-    comments?: string[]; settleBatch?: number | null };
+    comments?: string[]; settleBatch?: number | null; reviewDay?: string | null };
 }>('claim.cells');

@@ -47,7 +47,9 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   settleBatch: number | null;
   /** Where the claim's adding stands in the order of changes: a forward-only rate applies to it only when saved before
    *  it (see ratesForClaim); none for a claim added before every forward-only rate. */
-  added: number | null };
+  added: number | null;
+  /** The sheet's today when the REVIEW claim went to REVIEW; none for a claim in any other status. */
+  reviewDay?: string | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
