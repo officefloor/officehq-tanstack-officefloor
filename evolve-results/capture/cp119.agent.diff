@@ -1,0 +1,57 @@
+diff --git a/src/main/frontend/features/pools/cutTotals.slot.tsx b/src/main/frontend/features/pools/cutTotals.slot.tsx
+new file mode 100644
+index 00000000..19405fdf
+--- /dev/null
++++ b/src/main/frontend/features/pools/cutTotals.slot.tsx
+@@ -0,0 +1,51 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
++import { usePeople } from '../people/people.slot';
++import { showHundredths, toHundredths } from '../rates/useRates';
++import { usePools } from './pools.slot';
++
++/** Each person's cut total, in hundredths: their cuts across every pool they are a member of, added up (a pool that
++ *  shows no cuts adds nothing); and the sheet's: everyone's added up. */
++export function useCutTotals(sheetId: string): { byPerson: Map<number, bigint>; sheet: bigint } {
++  const people = usePeople(sheetId).data ?? [];
++  const pools = usePools(sheetId).data ?? [];
++  const byPerson = new Map<number, bigint>();
++  for (const p of people) byPerson.set(p.id, 0n);
++  for (const pool of pools) {
++    for (const m of pool.members) {
++      if (m.personId === null || m.cut === null || !byPerson.has(m.personId)) continue;
++      byPerson.set(m.personId, byPerson.get(m.personId)! + toHundredths(m.cut));
++    }
++  }
++  let sheet = 0n;
++  for (const cents of byPerson.values()) sheet += cents;
++  return { byPerson, sheet };
++}
++
++function CutTotalHead() {
++  return <th>Cut total</th>;
++}
++
++// A person's cut total.
++function CutTotalCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
++  const { byPerson } = useCutTotals(sheetId);
++  return <td data-testid="person-cut-total">{showHundredths(byPerson.get(personId) ?? 0n)}</td>;
++}
++
++// The sheet's cut total: everyone's added up.
++function CutTotal({ sheetId }: { sheetId: string; user: string }) {
++  const { sheet } = useCutTotals(sheetId);
++  return (
++    <section data-testid="cut-rollup">
++      <p>
++        Cut total: <strong data-testid="rollup-cut-total">{showHundredths(sheet)}</strong>
++      </p>
++    </section>
++  );
++}
++
++export const contributions = [
++  PersonHeads.fill({ order: 26.3, Component: CutTotalHead }),
++  PersonCells.fill({ order: 26.3, Component: CutTotalCell }),
++  SheetBody.fill({ order: 26.5, Component: CutTotal }),
++];
