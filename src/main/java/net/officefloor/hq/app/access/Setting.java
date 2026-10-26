@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the pot, the parent and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the fiscal start month, the pot, the parent and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -82,6 +82,12 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The days after its to-date an open period is closed by itself when the sheet's today moves past them; a whole number, blank for off. */
     public static final String GRACE_DAYS = "grace-days";
+
+    /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
+    /** The fiscal start month a sheet starts with, until it is set. */
+    public static final int FISCAL_START_MONTH_DEFAULT = 1;
 
     /** The roles that may take an action (the key is this plus the action, perm-open): a comma separated list of roles, blank for the standing rule. */
     public static final String PERMISSION = "perm-";

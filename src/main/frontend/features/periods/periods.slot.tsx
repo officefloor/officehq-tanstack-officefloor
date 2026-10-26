@@ -9,9 +9,10 @@ import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
-import { useFloorCents, useLate } from '../access/useAccess';
+import { useFloorCents, useLate, useSettings } from '../access/useAccess';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const YEAR = /^\d{4}$/;
 const NO_HOLDS = new Map();
 
 /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
@@ -37,6 +38,19 @@ export function usePeriods(sheetId: string) {
 /** The period whose dates contain the date (ISO dates compare as text), or none. */
 export function periodOn(periods: readonly Period[], date: string): Period | undefined {
   return periods.find((p) => p.from <= date && date <= p.to);
+}
+
+/** The month (1 to 12) the sheet's fiscal year starts in: the fiscal start month setting, 1 until it is set. */
+export function useFiscalStartMonth(sheetId: string): number {
+  const settings = useSettings(sheetId);
+  const value = (settings.data ?? []).find((s) => s.key === 'fiscal-start-month')?.value;
+  return value == null || value === '' ? 1 : Number(value);
+}
+
+/** The fiscal year a date (yyyy-mm-dd) falls in, named FY<yyyy> by the calendar year its first day falls in. */
+export function fiscalYearOf(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  return `FY${Number(date.slice(5, 7)) >= startMonth ? year : year - 1}`;
 }
 
 /** A claim's status at the end of a day (yyyy-mm-dd) as its log records it: its last line logged on or before the
@@ -94,6 +108,7 @@ export function showPersonPeriodDueTotal(p: Period, personId: number, live: bigi
 function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
   const dueTotal = usePeriodDueTotal(sheetId);
+  const startMonth = useFiscalStartMonth(sheetId);
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -163,12 +178,13 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
             <th>To</th>
             <th>Due total</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {(periods.data ?? []).map((p) => (
-            <PeriodRow key={p.id} sheetId={sheetId} period={p} dueTotal={dueTotal(p)} />
+            <PeriodRow key={p.id} sheetId={sheetId} period={p} dueTotal={dueTotal(p)} fy={fiscalYearOf(p.from, startMonth)} />
           ))}
         </tbody>
       </table>
@@ -179,9 +195,12 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
 // The generate form: a period per calendar month from the from-date's month (blank: the sheet's today) to the
 // to-date's, first to last day, named yyyy-mm. A month whose name is in use or whose days overlap a period is left
 // out. Shows how many were made; the count is gone while it runs. A to-date before the from-date is refused.
+// The fiscal year entry generates that fiscal year's twelve months (by the sheet's fiscal start month) the same way,
+// sharing the count and the error.
 function GeneratePeriods({ sheetId }: { sheetId: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [fyYear, setFyYear] = useState('');
   const [made, setMade] = useState<number | null>(null);
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -201,16 +220,33 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
       return result;
     },
   });
+  const generateFy = useMutation({
+    mutationFn: async (body: { year: string }) => {
+      setMade(null);
+      if (!YEAR.test(body.year.trim())) throw new Error('Enter a fiscal year as YYYY');
+      // `by` is the signed-in user the change is recorded against.
+      const result = await postJson<{ made: number }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-fy`,
+        { year: body.year.trim(), by: user ?? '' });
+      setMade(result.made);
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      return result;
+    },
+  });
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     generate.reset();
+    generateFy.reset();
   };
   const submit = useSubmitOnce(generate);
+  const submitFy = useSubmitOnce(generateFy);
+  const error = generate.error ?? generateFy.error;
   return (
     <form
       data-testid="period-generate-form"
       onSubmit={(e) => {
         e.preventDefault();
+        generateFy.reset();
         submit({ from, to });
       }}
     >
@@ -223,14 +259,29 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
       <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
         Generate periods
       </button>{' '}
-      {made !== null && !generate.isError && (
+      <label>
+        Fiscal year <input data-testid="period-generate-fy-year" inputMode="numeric" placeholder="yyyy" value={fyYear}
+          onChange={field(setFyYear)} />
+      </label>{' '}
+      <button
+        type="button"
+        data-testid="period-generate-fy"
+        disabled={generateFy.isPending}
+        onClick={() => {
+          generate.reset();
+          submitFy({ year: fyYear });
+        }}
+      >
+        Generate fiscal year
+      </button>{' '}
+      {made !== null && !error && (
         <span>
           Made <strong data-testid="period-generated">{made}</strong>
         </span>
       )}
-      {generate.isError && (
+      {error && (
         <p data-testid="period-generate-error" role="alert">
-          {generate.error.message}
+          {error.message}
         </p>
       )}
     </form>
@@ -243,7 +294,7 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
 // the row's error. Soft-closing (as closing, by the close permission) fixes the figures but leaves claims inside it
 // open to change; a soft-closed period can be closed (fixing them afresh) or reopened. Each action clears the
 // error the others left.
-function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: Period; dueTotal: bigint }) {
+function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; period: Period; dueTotal: bigint; fy: string }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
   const close = useMutation({
@@ -274,6 +325,7 @@ function PeriodRow({ sheetId, period: p, dueTotal }: { sheetId: string; period: 
         {showPeriodDueTotal(p, dueTotal)}
       </td>
       <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
+      <td data-testid="period-fy">{fy}</td>
       <td>
         {!p.closed && (
           <button

@@ -12,6 +12,7 @@ public class ValidateSetting {
 
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+    private static final Pattern MONTH = Pattern.compile("\\d{1,2}");
 
     public void validate(@RequestBody SettingRequest request, Out<SettingInput> setting, Out<ChangedBy> changedBy)
             throws BadRequestException {
@@ -114,6 +115,14 @@ public class ValidateSetting {
                 throw new BadRequestException("Grace days are a whole number of days, or blank for off");
             }
             setting.set(new SettingInput(key, text.isEmpty() ? null : String.valueOf(Integer.parseInt(text)), from));
+            changedBy.set(by);
+            return;
+        }
+        if (Setting.FISCAL_START_MONTH.equals(key)) {
+            if (!MONTH.matcher(text).matches() || Integer.parseInt(text) < 1 || Integer.parseInt(text) > 12) {
+                throw new BadRequestException("A fiscal start month is a month from 1 to 12");
+            }
+            setting.set(new SettingInput(key, String.valueOf(Integer.parseInt(text)), from));
             changedBy.set(by);
             return;
         }

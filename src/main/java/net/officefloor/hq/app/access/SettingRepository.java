@@ -92,6 +92,12 @@ public class SettingRepository {
         return value == null ? null : Integer.valueOf(value);
     }
 
+    /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
+    public int fiscalStartMonth(String sheetId) {
+        String value = find(sheetId, Setting.FISCAL_START_MONTH);
+        return value == null ? Setting.FISCAL_START_MONTH_DEFAULT : Integer.parseInt(value);
+    }
+
     /** The sheet's late charge as of its today, each 30-day boundary's late percent the one in force on its date, with its policy date for rounding and its people for each claim's grade's grace. */
     public LateCharge lateCharge(String sheetId, LocalDate today) {
         java.util.Map<Long, Person> byId = new java.util.HashMap<>();

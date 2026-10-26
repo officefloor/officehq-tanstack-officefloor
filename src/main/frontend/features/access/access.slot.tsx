@@ -194,7 +194,8 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
-// the entry date (blank: off), the default date of a new claim in place of the sheet's today,
+// the entry date (blank: off), the default date of a new claim in place of the sheet's today, the fiscal start month
+// (1 to 12, 1 until it is set), the month the sheet's fiscal year starts in,
 // the days after its to-date an open period closes by itself when the sheet's today moves past them, and the cap (blank: none), the most
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
 // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
@@ -203,7 +204,7 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
-  inputMode: 'decimal' | 'numeric' | 'text'; invalid: string; dated?: false };
+  inputMode: 'decimal' | 'numeric' | 'text'; invalid: string; dated?: false; starting?: string };
 
 const SETTINGS: readonly SettingField[] = [
   { key: 'clerk-limit', label: 'Clerk limit', placeholder: 'no limit', blank: true, valid: AMOUNT, inputMode: 'decimal',
@@ -228,6 +229,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'An entry date is a date (yyyy-mm-dd), or blank for off', dated: false },
   { key: 'grace-days', label: 'Grace days', placeholder: 'off', blank: true, valid: DAYS, inputMode: 'numeric',
     invalid: 'Grace days are a whole number of days, or blank for off', dated: false },
+  { key: 'fiscal-start-month', label: 'Fiscal year start month', placeholder: '1', blank: false, valid: /^(0?[1-9]|1[0-2])$/,
+    inputMode: 'numeric', invalid: 'A fiscal start month is a month from 1 to 12', dated: false, starting: '1' },
   { key: 'cap', label: 'Cap', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A cap is an amount with up to two decimals, or blank for none' },
   { key: 'proof-threshold', label: 'Proof threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
@@ -331,7 +334,7 @@ function SettingsPanel({ sheetId }: { sheetId: string; user: string }) {
               </>
             )}
             <span>
-              In force: <strong data-testid={`setting-${s.key}-current`}>{current(s.key)}</strong>
+              In force: <strong data-testid={`setting-${s.key}-current`}>{current(s.key) || (s.starting ?? '')}</strong>
             </span>{' '}
           </span>
         ))}
