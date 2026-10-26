@@ -1,0 +1,131 @@
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+index c980cc2d..5ddfb1d7 100644
+--- a/src/main/frontend/features/people/PersonForm.tsx
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -43,11 +43,17 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+     setError('');
+-    if (name.trim() === '') {
++    const trimmed = name.trim();
++    if (trimmed === '') {
+       setError('Type a name.');
+       return;
+     }
+-    save.mutate({ name, grade });
++    // Names are unique on the sheet, ignoring case; the server refuses one it finds in use too.
++    if (people.some((p) => p.id !== editing?.id && p.name.toLowerCase() === trimmed.toLowerCase())) {
++      setError('That name is already in use.');
++      return;
++    }
++    save.mutate({ name: trimmed, grade });
+   };
+ 
+   return (
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPerson.java b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+index e768da1c..6f08e293 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+@@ -6,7 +6,10 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class AddPerson {
+     public void add(@Val PersonRequest request, @PathVariable("sheetId") String sheetId, People people,
+-            Out<Person> personOut) {
++            Out<Person> personOut) throws InvalidPersonException {
++        if (people.nameTaken(sheetId.trim(), request.name(), -1)) {
++            throw new InvalidPersonException("The name is already in use.");
++        }
+         personOut.set(people.add(sheetId.trim(), request));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index e97a45c8..0e77a2d3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -5,7 +5,11 @@ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyPerson {
+     // Person is a record, so the edited person is published in place of the loaded one.
+-    public void apply(@Val PersonRequest request, @Val Person person, People people, Out<PersonResponse> responseOut) {
++    public void apply(@Val PersonRequest request, @Val Person person, People people, Out<PersonResponse> responseOut)
++            throws InvalidPersonException {
++        if (people.nameTaken(person.sheetId(), request.name(), person.id())) {
++            throw new InvalidPersonException("The name is already in use.");
++        }
+         Person edited = person.with(request);
+         people.save(edited);
+         responseOut.set(PersonResponse.from(edited));
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+index 50780697..937edbd3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+-/** A person was given without a name, or with a grade that is not A, B or C. */
++/** A person was given without a name, with a grade that is not A, B or C, or with a name already in use on the sheet. */
+ public class InvalidPersonException extends Exception {
+ 
+     public InvalidPersonException(String message) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index 9e282672..29c70932 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -1,7 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.sql.PreparedStatement;
+-import java.sql.Statement;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -32,11 +31,18 @@ public class People {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** Whether another person on the sheet (not {@code exceptId}) has this name, ignoring case. */
++    public boolean nameTaken(String sheetId, String name, long exceptId) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
++                Integer.class, sheetId, name.trim(), exceptId);
++        return n != null && n > 0;
++    }
++
+     public Person add(String sheetId, PersonRequest request) {
+         KeyHolder key = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
++                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, request.name());
+             ps.setString(3, request.grade());
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 9dac9803..a09f781c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -8,11 +8,11 @@ public class ValidatePerson {
+ 
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+-    // The name is kept as typed; a blank one is refused.
++    // The name is kept without surrounding spaces; a blank one is refused.
+     public void validate(@RequestBody PersonRequest body, Out<PersonRequest> request) throws InvalidPersonException {
+-        String name = body == null || body.name() == null ? "" : body.name();
++        String name = body == null || body.name() == null ? "" : body.name().trim();
+         String grade = body == null || body.grade() == null ? "" : body.grade().trim();
+-        if (name.trim().isEmpty()) {
++        if (name.isEmpty()) {
+             throw new InvalidPersonException("Type a name.");
+         }
+         if (!GRADES.contains(grade)) {
+diff --git a/src/main/resources/db/migration/V3__person_name_unique.sql b/src/main/resources/db/migration/V3__person_name_unique.sql
+new file mode 100644
+index 00000000..4c282fc3
+--- /dev/null
++++ b/src/main/resources/db/migration/V3__person_name_unique.sql
+@@ -0,0 +1,5 @@
++-- A person's name is unique on the sheet, compared without regard to case. Names are stored without
++-- surrounding spaces; name_key is the lower-cased name the uniqueness is kept on.
++UPDATE person SET name = TRIM(name);
++ALTER TABLE person ADD COLUMN name_key VARCHAR(255) GENERATED ALWAYS AS (LOWER(name));
++ALTER TABLE person ADD CONSTRAINT person_sheet_name UNIQUE (sheet_id, name_key);
