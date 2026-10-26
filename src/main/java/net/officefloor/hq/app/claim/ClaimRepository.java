@@ -23,7 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, waived, ref, tags, void_reason, edited_by, settle_batch, added_seq,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, waived, ref, tags, void_reason, edited_by, settle_batch, added_seq,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -39,6 +39,7 @@ public class ClaimRepository {
         claim.setDueBy(rs.getObject("due_by", LocalDate.class));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
+        claim.setPhotoProofs(rs.getInt("proofs_photo"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
@@ -294,12 +295,15 @@ public class ClaimRepository {
         return redated;
     }
 
-    /** Raise the claim's proofs count by one. Whether it was still in its status: another user may have moved it. */
-    public boolean addProof(Claim claim) {
-        boolean added = jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND status = ?",
-                claim.getId(), claim.getStatus().name()) == 1;
+    /** Raise the claim's proofs count by one, a photo's also its photo count. Whether it was still in its status: another user may have moved it. */
+    public boolean addProof(Claim claim, String kind) {
+        int photo = ProofKind.PHOTO.equals(kind) ? 1 : 0;
+        boolean added = jdbc.update("UPDATE claim SET proofs = proofs + 1, proofs_photo = proofs_photo + ? WHERE id = ? AND status = ?",
+                photo, claim.getId(), claim.getStatus().name()) == 1;
         if (added) {
-            claim.setProofs(jdbc.queryForObject("SELECT proofs FROM claim WHERE id = ?", Integer.class, claim.getId()));
+            java.util.Map<String, Object> now = jdbc.queryForMap("SELECT proofs, proofs_photo FROM claim WHERE id = ?", claim.getId());
+            claim.setProofs(((Number) now.get("proofs")).intValue());
+            claim.setPhotoProofs(((Number) now.get("proofs_photo")).intValue());
         }
         return added;
     }

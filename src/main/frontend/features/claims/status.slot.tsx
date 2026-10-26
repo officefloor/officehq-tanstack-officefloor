@@ -36,7 +36,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // counts in no total.
 // An OPEN claim can be deferred to a date after the sheet's today (not in a closed period): until then it counts in no
 // total, is not overdue and cannot be settled; whether it is deferred, and until when, shows on the claim.
-// A claim not SETTLED or VOID takes a proof, raising its proofs count by one; one whose due is above the proof threshold
+// A claim not SETTLED or VOID takes a proof of a kind, receipt or photo (a receipt when none is chosen), raising its proofs
+// count by one and its count of that kind; while the sheet has proof kinds, one above the threshold needs a proof of each; one whose due is above the proof threshold
 // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
 // An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
 // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
@@ -50,6 +51,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // A DRAFT claim (not in a closed period, nor held open by another user's editor) takes lines — a label, a whole quantity
 // of 1 or more and a unit amount — and its amount becomes their total; adding one counts as editing the claim.
 // A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
+const PROOF_KINDS = ['receipt', 'photo'] as const;
+
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -59,6 +62,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [proofKind, setProofKind] = useState('');
   const [newDate, setNewDate] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
   const [commentText, setCommentText] = useState('');
@@ -150,9 +154,13 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
   const proof = useMutation({
-    mutationFn: () =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`, { by: user ?? '' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    mutationFn: (kind: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/proof`,
+        kind === '' ? { by: user ?? '' } : { by: user ?? '', kind }),
+    onSuccess: () => {
+      setProofKind('');
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
   });
   const split = useMutation({
     mutationFn: (amount: string) =>
@@ -399,6 +407,19 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         Defer
       </button>{' '}
       Proofs <span data-testid="claim-proofs">{claim.proofs ?? 0}</span>{' '}
+      (receipts <span data-testid="claim-proofs-receipt">{claim.proofsReceipt ?? 0}</span>,{' '}
+      photos <span data-testid="claim-proofs-photo">{claim.proofsPhoto ?? 0}</span>){' '}
+      <select
+        data-testid="claim-proof-kind"
+        value={proofKind}
+        onChange={(e) => {
+          setProofKind(e.target.value);
+          proof.reset();
+        }}
+      >
+        <option value="">Kind (receipt)</option>
+        {PROOF_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+      </select>{' '}
       <button
         type="button"
         data-testid="claim-proof"
@@ -418,7 +439,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           comment.reset();
           line.reset();
           setRefused(undefined);
-          proof.mutate();
+          proof.mutate(proofKind);
         }}
       >
         Add proof

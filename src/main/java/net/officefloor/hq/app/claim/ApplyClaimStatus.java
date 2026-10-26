@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
  * sheet's note threshold in force on the claim's date, an open of a claim whose period (by its due-by) caps its person's OPEN or PENDING claims there and they already have that many, and
  * refusing to let the user who opened it, or who last edited it, settle it; a clerk's settle whose due is above the sheet's
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
- * above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's) is refused (a due of n/a is within any limit; a steward settles anything). A review of a
+ * above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's) is refused, as is one missing a proof of any of the sheet's proof kinds (a due of n/a is within any limit; a steward settles anything). A review of a
  * PENDING claim is a steward's: approving settles it at its due (the figure a statement binds it to, while one does) (never by the user who opened it or last edited it), rejecting
  * returns it to OPEN, still bound by its last statement if that bound it. A steward may void a SETTLED claim within
  * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. While the sheet has void reasons,
@@ -137,12 +137,18 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.OPEN && !review.asked()) {
             refuseOverCap(claim, repository, periods);
         }
-        if (status == ClaimStatus.SETTLED && due != null && claim.getProofs() == 0) {
-            Person owner = people.find(claim.getSheetId(), claim.getPersonId());
-            BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
-                    claim.getDate());
-            if (threshold != null && due.compareTo(threshold) > 0) {
-                throw new BadRequestException("A claim whose due is above the proof threshold needs a proof before it is settled");
+        if (status == ClaimStatus.SETTLED && due != null) {
+            java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
+            String missing = kinds.stream().filter(k -> claim.proofsOf(k) == 0).findFirst().orElse(null);
+            if (claim.getProofs() == 0 || missing != null) {
+                Person owner = people.find(claim.getSheetId(), claim.getPersonId());
+                BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
+                        claim.getDate());
+                if (threshold != null && due.compareTo(threshold) > 0) {
+                    throw new BadRequestException(claim.getProofs() == 0
+                            ? "A claim whose due is above the proof threshold needs a proof before it is settled"
+                            : "A claim whose due is above the proof threshold needs a " + missing + " proof before it is settled");
+                }
             }
         }
         ClaimStatus to = status;

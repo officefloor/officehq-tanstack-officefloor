@@ -29,6 +29,7 @@ public class Claim {
     private LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
+    private int photoProofs;
     private String splitFrom;
     private boolean lateEntry;
     private LocalDate remindedOn;
@@ -172,6 +173,20 @@ public class Claim {
 
     public void setProofs(int proofs) {
         this.proofs = proofs;
+    }
+
+    /** How many of the claim's proofs are photos. */
+    public int getPhotoProofs() {
+        return photoProofs;
+    }
+
+    public void setPhotoProofs(int photoProofs) {
+        this.photoProofs = photoProofs;
+    }
+
+    /** How many of the claim's proofs are of the kind (receipt or photo): every proof not a photo is a receipt. */
+    public int proofsOf(String kind) {
+        return ProofKind.PHOTO.equals(kind) ? photoProofs : ProofKind.RECEIPT.equals(kind) ? proofs - photoProofs : 0;
     }
 
     /** Whether the claim is deferred as of {@code today}: OPEN, and deferred until a date after today. Until then it

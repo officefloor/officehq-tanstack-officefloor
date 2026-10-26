@@ -6,11 +6,11 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Val;
 
-/** CLAIM_PROOF_ADDED, naming the claim, then its proofs count now. */
+/** CLAIM_PROOF_ADDED, naming the claim, then its proofs count now, then the kind when one was chosen. */
 public class RecordClaimProofAdded {
-    public void record(@Val Claim claim, @Val ChangedBy by, PersonRepository people, Audit audit) {
+    public void record(@Val Claim claim, @Val ChangedBy by, @Val ChosenProofKind kind, PersonRepository people, Audit audit) {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         audit.record(ClaimAudit.line("CLAIM_PROOF_ADDED", claim, by, person == null ? "" : person.getName())
-                + " proofs=" + claim.getProofs());
+                + " proofs=" + claim.getProofs() + (kind.chosen() == null ? "" : " kind=" + kind.chosen()));
     }
 }

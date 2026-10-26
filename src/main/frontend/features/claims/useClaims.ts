@@ -27,6 +27,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   deferredUntil: string | null;
   /** How many proofs the claim carries; one above the proof threshold needs one before it is settled or approved. */
   proofs: number;
+  /** How many of its proofs are receipts (a proof with no kind chosen is one). */
+  proofsReceipt: number;
+  /** How many of its proofs are photos. */
+  proofsPhoto: number;
   /** The number of the claim this one was split off; none when it was not split off one. */
   splitFrom: string | null;
   /** Whether it was added while the period containing its due-by was soft-closed. */

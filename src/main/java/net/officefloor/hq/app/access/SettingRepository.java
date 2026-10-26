@@ -98,6 +98,12 @@ public class SettingRepository {
         return value == null ? null : Integer.valueOf(value);
     }
 
+    /** The sheet's proof kinds, in the order listed; empty while blank. */
+    public java.util.List<String> proofKinds(String sheetId) {
+        String value = find(sheetId, Setting.PROOF_KINDS);
+        return value == null ? java.util.List.of() : java.util.List.of(value.split(","));
+    }
+
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 until it is set. */
     public int fiscalStartMonth(String sheetId) {
         String value = find(sheetId, Setting.FISCAL_START_MONTH);

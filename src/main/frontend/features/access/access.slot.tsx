@@ -202,7 +202,7 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
 // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
 // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
-// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent and the permissions is dated: saving it records
+// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent, the proof kinds (blank: none; a comma separated list of receipt and photo: a claim above the proof threshold needs a proof of each before it is settled or approved) and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -246,6 +246,9 @@ const SETTINGS: readonly SettingField[] = [
   ...(['A', 'B', 'C'] as const).map((grade): SettingField => ({ key: `proof-threshold-${grade}`,
     label: `Proof threshold for grade ${grade}`, placeholder: 'sheet\'s threshold', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A grade\'s proof threshold is an amount with up to two decimals, or blank for the sheet\'s' })),
+  { key: 'proof-kinds', label: 'Proof kinds', placeholder: 'none', blank: true,
+    valid: /^\s*(receipt|photo)(\s*,\s*(receipt|photo))*\s*$/, inputMode: 'text',
+    invalid: 'Proof kinds are a comma separated list of receipt and photo, or blank for none', dated: false },
   { key: 'note-threshold', label: 'Note threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
   { key: 'review-threshold', label: 'Review threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
