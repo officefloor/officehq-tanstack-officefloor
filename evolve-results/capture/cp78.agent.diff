@@ -1,0 +1,69 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 38f0a8c9..02d702aa 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+-import { excess, figure, personDue, personSum, ratesQuery, recentSettled, sumDue, trimmedSum } from './ratesQuery';
++import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, sumDue, trimmedSum } from './ratesQuery';
+ 
+ function useSheetData(sheetId: string) {
+   return {
+@@ -39,6 +39,19 @@ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number
+   return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), cap)}</td>;
+ }
+ 
++/** A person's open claims' figures that count, split by the claim's age on the sheet's today: 0-30, 31-60 and 61+ days. */
++function PersonAged({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
++  const [young, middle, old] = agedDue(people.find((p) => p.id === personId), people, claims, rates, today, floor, late);
++  return (
++    <>
++      <td data-testid="person-aged-0-30">{young}</td>
++      <td data-testid="person-aged-31-60">{middle}</td>
++      <td data-testid="person-aged-61">{old}</td>
++    </>
++  );
++}
++
+ /** A person's backing: their patrons' recent settled figures (see `recentSettled`) added up; 0.00 with no patrons. */
+ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const { people, claims, today } = useSheetData(sheetId);
+@@ -65,6 +78,8 @@ export const contributions = [
+   ClaimCells.fill({ order: 10, Component: ClaimDue }),
+   PersonHeaders.fill({ order: 15, Component: () => <th>Due</th> }),
+   PersonCells.fill({ order: 15, Component: PersonDueTotal }),
++  PersonHeaders.fill({ order: 15.5, Component: () => <><th>0–30</th><th>31–60</th><th>61+</th></> }),
++  PersonCells.fill({ order: 15.5, Component: PersonAged }),
+   PersonHeaders.fill({ order: 16, Component: () => <th>Excess</th> }),
+   PersonCells.fill({ order: 16, Component: PersonExcess }),
+   PersonHeaders.fill({ order: 22, Component: () => <th>Backing</th> }),
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index bd0ec88d..6781d4d8 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -147,6 +147,22 @@ export function personSum(person: Person | undefined, people: Person[], claims:
+   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
+ }
+ 
++/**
++ * A person's OPEN and PENDING claims that count, their figures added up by the claim's age on the sheet's today (the days
++ * from its date): 0 to 30 (a claim dated after today included), 31 to 60, and 61 or more. Not capped; n/a figures are skipped.
++ */
++export function agedDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): [string, string, string] {
++  const buckets: string[][] = [[], [], []];
++  if (person) {
++    for (const c of claims) {
++      if (c.personId !== person.id || !isOpen(c) || !counts(c, people, today)) continue;
++      const days = today === '' ? 0 : (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000;
++      buckets[days <= 30 ? 0 : days <= 60 ? 1 : 2].push(figure(c, rates, person, floor, late));
++    }
++  }
++  return [sumDue(buckets[0]), sumDue(buckets[1]), sumDue(buckets[2])];
++}
++
+ /** A sum of figures held to the sheet's `cap` (two decimals; "" for none); n/a is not capped. */
+ export function capped(sum: string, cap: string): string {
+   return sum === 'n/a' || cap === '' || hundredths(sum) <= hundredths(cap) ? sum : show(hundredths(cap));
