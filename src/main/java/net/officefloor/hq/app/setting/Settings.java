@@ -29,6 +29,8 @@ public class Settings {
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
+    /** Days after a period's to-date it stays open once the sheet's today passes it (undated); blank is off. */
+    public static final String GRACE_DAYS = "grace-days";
     /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
     public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
             gradeTermsKey("C"), LATE_PCT, CAP, PROOF_THRESHOLD);
@@ -155,6 +157,12 @@ public class Settings {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = get(sheetId, PERIOD_NUMBERING_FROM);
         return value.isEmpty() ? null : LocalDate.parse(value);
+    }
+
+    /** The grace days: how many days after its to-date an open period is closed when the sheet's today is changed; null when it is off. */
+    public Integer graceDays(String sheetId) {
+        String value = get(sheetId, GRACE_DAYS);
+        return value.isEmpty() ? null : Integer.valueOf(value);
     }
 
     /**

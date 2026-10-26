@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
 import { sheetKey } from './sheetQuery';
+import { periodsKey } from '../periods/periodsQuery';
 import type { Sheet } from './sheetQuery';
 import { useSheetToday } from './useSheetToday';
 
@@ -21,7 +22,11 @@ function SheetToday({ sheetId }: { sheetId: string }) {
   const save = useMutation({
     mutationFn: (date: string) =>
       putJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today: date }, user),
-    onSuccess: (sheet) => queryClient.setQueryData(sheetKey(sheetId), sheet),
+    onSuccess: async (sheet) => {
+      queryClient.setQueryData(sheetKey(sheetId), sheet);
+      // The change may have closed periods past their grace days.
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
     onError: () => setError('That is not a date (yyyy-mm-dd).'),
   });
 

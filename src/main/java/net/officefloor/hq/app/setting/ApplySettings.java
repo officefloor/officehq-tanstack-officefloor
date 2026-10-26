@@ -33,6 +33,9 @@ public class ApplySettings {
         if (settings.proofThreshold() != null) {
             dated(settings, store, today, Settings.PROOF_THRESHOLD, settings.proofThreshold());
         }
+        if (settings.graceDays() != null) {
+            store.set(settings.sheetId(), Settings.GRACE_DAYS, settings.graceDays());
+        }
         settings.perms().forEach((action, roles) -> store.set(settings.sheetId(), Settings.permKey(action), roles));
     }
 
