@@ -22,7 +22,8 @@ public class Claims {
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class),
-            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"));
+            rs.getObject("deferred_until", LocalDate.class), rs.getInt("proofs"),
+            rs.getString("split_from"));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -70,7 +71,7 @@ public class Claims {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects, dueBy, null, 0);
+                false, null, corrects, dueBy, null, 0, null);
     }
 
     public void save(Claim claim) {
@@ -114,6 +115,44 @@ public class Claims {
         jdbc.update("UPDATE claim SET claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ?", number,
                 settledDue, openedBy, claim.id());
         return claim.withStatus(next, number, settledDue, openedBy);
+    }
+
+    /**
+     * Splits {@code amount} off the claim if it is still OPEN at the amount it was loaded with, and returns the new
+     * claim; null when it has since changed. The claim keeps the rest of its amount and is unbound from any statement;
+     * the new claim is OPEN with the same person, date and note, numbered next in {@code scope} (as
+     * {@link #changeStatus}), opened by {@code user}, due by {@code dueBy}, split from the claim's number, and listed
+     * as the newest claim on the sheet.
+     */
+    public Claim split(Claim claim, BigDecimal amount, String user, String scope, LocalDate dueBy) {
+        BigDecimal rest = claim.amount().subtract(amount);
+        if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL WHERE id = ? AND status = ? AND amount = ?",
+                rest, claim.id(), ClaimStatus.OPEN.name(), claim.amount()) != 1) {
+            return null;
+        }
+        String number = scope == null ? Long.toString(nextNumber(claim.sheetId()))
+                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
+        KeyHolder key = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, claim_number, opened_by, due_by, split_from, listed) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " + NEXT_LISTED + ")",
+                    new String[] { "id" });
+            ps.setString(1, claim.sheetId());
+            ps.setLong(2, claim.personId());
+            ps.setBigDecimal(3, amount);
+            ps.setDate(4, Date.valueOf(claim.date()));
+            ps.setString(5, claim.note());
+            ps.setString(6, ClaimStatus.OPEN.name());
+            ps.setString(7, number);
+            ps.setString(8, user);
+            ps.setDate(9, Date.valueOf(dueBy));
+            ps.setString(10, claim.number());
+            ps.setString(11, claim.sheetId());
+            return ps;
+        }, key);
+        return new Claim(key.getKey().longValue(), claim.sheetId(), claim.personId(), amount, claim.date(), claim.note(),
+                ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number());
     }
 
     /** Defers the claim to {@code until} if it is still OPEN, and returns it as deferred; null when it has since changed. */
