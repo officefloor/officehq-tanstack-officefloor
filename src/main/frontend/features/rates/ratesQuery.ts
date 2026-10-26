@@ -161,3 +161,15 @@ export function excess(sum: string, cap: string): string {
 export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late, cap: string): string {
   return capped(personSum(person, people, claims, rates, today, floor, late), cap);
 }
+
+/**
+ * A person's recent settled sum: the frozen figures of their SETTLED claims dated within the 90 days up to and including
+ * the sheet's today, added up (a claim settled while no rate applied has no figure and is skipped); 0.00 with none.
+ */
+export function recentSettled(personId: number, claims: Claim[], today: string): string {
+  if (today === '') return '0.00';
+  const from = addDays(today, -89);
+  return sumDue(claims
+    .filter((c) => c.personId === personId && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
+    .map((c) => c.settledDue as string));
+}

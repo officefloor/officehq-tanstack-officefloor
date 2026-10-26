@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useCap, useFloor, useLate } from '../settings/settingsQuery';
-import { excess, figure, personDue, personSum, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
+import { excess, figure, personDue, personSum, ratesQuery, recentSettled, sumDue, trimmedSum } from './ratesQuery';
 
 function useSheetData(sheetId: string) {
   return {
@@ -39,12 +39,12 @@ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number
   return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), cap)}</td>;
 }
 
-/** A person's backing: their patrons' due-totals added up, skipping n/a; 0.00 with no patrons. */
+/** A person's backing: their patrons' recent settled figures (see `recentSettled`) added up; 0.00 with no patrons. */
 function PersonBacking({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+  const { people, claims, today } = useSheetData(sheetId);
   const ids = patronIdsOf(useQuery(patronsQuery(sheetId)).data ?? [], personId);
-  const dues = people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, people, claims, rates, today, floor, late, cap));
-  return <td data-testid="person-backing">{sumDue(dues)}</td>;
+  const sums = people.filter((p) => ids.includes(p.id)).map((p) => recentSettled(p.id, claims, today));
+  return <td data-testid="person-backing">{sumDue(sums)}</td>;
 }
 
 /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
