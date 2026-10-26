@@ -16,11 +16,12 @@ import { useSheetToday } from '../today/today.slot';
  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
  *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
  *  is due by its date plus these, else their grade's terms, else the sheet's. `contact`: the person's contact, trimmed
- *  and lower-cased, null when they have none; no two people on a sheet share one. */
+ *  and lower-cased, null when they have none; no two people on a sheet share one. `aliases`: the other names they go by,
+ *  sorted as names are compared (ignoring case). */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   holds: HoldSpan[];
-  patrons: string[]; terms: number | null; contact: string | null };
+  patrons: string[]; terms: number | null; contact: string | null; aliases: string[] };
 
 export type GradeFrom = { grade: string; from: string | null };
 

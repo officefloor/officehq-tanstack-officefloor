@@ -16,6 +16,7 @@ public class Person {
     private LocalDate retiredFrom;
     private List<HoldSpan> holds = List.of();
     private List<String> patrons = List.of();
+    private List<String> aliases = List.of();
     private Integer terms;
     private String contact;
 
@@ -156,5 +157,14 @@ public class Person {
 
     public void setPatrons(List<String> patrons) {
         this.patrons = patrons;
+    }
+
+    /** The person's aliases, sorted as names are compared. */
+    public List<String> getAliases() {
+        return aliases;
+    }
+
+    public void setAliases(List<String> aliases) {
+        this.aliases = aliases;
     }
 }

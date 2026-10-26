@@ -62,19 +62,40 @@ public class PersonRepository {
                 .stream().findFirst().orElse(null);
     }
 
-    /** The person on the sheet with this name, ignoring case and surrounding spaces; null when none. */
+    /** The person on the sheet with this name or alias, ignoring case and surrounding spaces; null when none. */
     public Person findByName(String sheetId, String name) {
         return withPatrons(sheetId, jdbc.query(
-                "SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND p.name_key = LOWER(TRIM(?))", ROW, sheetId,
-                name)).stream().findFirst().orElse(null);
+                "SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? AND (p.name_key = LOWER(TRIM(?))"
+                        + " OR p.id IN (SELECT a.person_id FROM person_alias a WHERE a.sheet_id = ? AND a.alias_key = LOWER(TRIM(?))))",
+                ROW, sheetId, name, sheetId, name)).stream().findFirst().orElse(null);
     }
 
-    /** Whether another person on the sheet has this name, ignoring case and surrounding spaces. */
+    /** Whether another person on the sheet has this name, or anyone on the sheet has it as an alias, ignoring case and
+     *  surrounding spaces. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+        return (n != null && n > 0) || aliasTaken(sheetId, name);
+    }
+
+    /** Whether anyone on the sheet has this alias, ignoring case and surrounding spaces. */
+    public boolean aliasTaken(String sheetId, String alias) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?))",
+                Integer.class, sheetId, alias);
         return n != null && n > 0;
+    }
+
+    /** Give the person the alias (trimmed); false (nothing written) when the sheet has it as an alias already. */
+    public boolean addAlias(Person person, String alias) {
+        try {
+            return jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, ? WHERE NOT EXISTS"
+                    + " (SELECT 1 FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(TRIM(?)))",
+                    person.getSheetId(), person.getId(), alias, person.getSheetId(), alias) == 1;
+        } catch (DuplicateKeyException e) {
+            return false;
+        }
     }
 
     /** Whether another person on the sheet has this contact; false for no contact (null). */
@@ -193,6 +214,14 @@ public class PersonRepository {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
         for (Person person : people) {
             person.setPatrons(patrons.getOrDefault(person.getId(), List.of()).stream().sorted().toList());
+        }
+        Map<Long, List<String>> aliases = jdbc.query(
+                "SELECT a.person_id, a.alias FROM person_alias a WHERE a.sheet_id = ?",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), rs.getString("alias")), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setAliases(PersonName.sorted(aliases.getOrDefault(person.getId(), List.of())));
         }
         return people;
     }

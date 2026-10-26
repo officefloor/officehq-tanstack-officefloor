@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.person;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 import net.officefloor.hq.app.BadRequestException;
 
 /** The rule for a person's name, shared by every form that names a person. */
@@ -18,5 +21,11 @@ public final class PersonName {
             throw new BadRequestException("A name is at most 200 characters");
         }
         return name;
+    }
+
+    /** The names (or aliases) sorted as names are compared: ignoring case. */
+    public static List<String> sorted(List<String> names) {
+        return names.stream().sorted(Comparator.comparing((String n) -> n.toLowerCase(Locale.ROOT))
+                .thenComparing(Comparator.naturalOrder())).toList();
     }
 }
