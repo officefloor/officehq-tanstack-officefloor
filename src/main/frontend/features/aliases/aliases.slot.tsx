@@ -5,11 +5,13 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { peopleKey, usePeople, type Person } from '../people/people.slot';
 import { personActionKey, useLastPersonAction } from '../people/personAction';
 import { useUser } from '../session/useSession';
+import { useColumnShown } from '../columns/useColumns';
 
-function AliasHeads() {
+function AliasHeads({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>Aliases</th>
+      {shown('aliases') && <th>Aliases</th>}
       <th>Clashing</th>
       <th />
     </>
@@ -21,6 +23,7 @@ function AliasHeads() {
 // used on another sheet of the tree — the person form refuses their edits until a rename ends it); the quick-add bar and the paste box find the person by it. A refusal
 // shows on the person until the entry is changed or the next action on their row.
 function AliasCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
   const [alias, setAlias] = useState('');
   const [user] = useUser();
@@ -43,7 +46,7 @@ function AliasCells({ sheetId, personId }: { sheetId: string; user: string; pers
 
   return (
     <>
-      <td data-testid="person-aliases">{(person?.aliases ?? []).join(', ')}</td>
+      {shown('aliases') && <td data-testid="person-aliases">{(person?.aliases ?? []).join(', ')}</td>}
       <td data-testid="person-clashing">{person?.clashing ? 'yes' : 'no'}</td>
       <td>
         <input

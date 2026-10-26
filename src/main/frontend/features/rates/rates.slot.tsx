@@ -11,6 +11,7 @@ import { useUser } from '../session/useSession';
 import { claimDueCents, isBound, isOpen, rateOn, ratesKey, showHundredths, toHundredths, trimmedSum, useRates, type Rate } from './useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useCapCents, useFloorCents, useLate } from '../access/useAccess';
+import { useColumnShown } from '../columns/useColumns';
 
 const GRADES = ['A', 'B', 'C'] as const;
 const RATE = /^\d{1,5}(\.\d{1,2})?$/;
@@ -356,14 +357,15 @@ function RatePreview({ sheetId }: { sheetId: string }) {
   );
 }
 
-function DueHead() {
-  return <th>Due total</th>;
+function DueHead({ sheetId }: { sheetId: string; user: string }) {
+  return useColumnShown(sheetId)('due-total') ? <th>Due total</th> : null;
 }
 
 // A person's due-total: their counted claims' due figures added up, at most the sheet's cap; n/a when the grade has no rate today and
 // no settled or stated claim keeps a figure.
 function DueTotalCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const total = useDueTotals(sheetId).get(personId);
+  if (!useColumnShown(sheetId)('due-total')) return null;
   return <td data-testid="person-due-total">{total == null ? NA : showHundredths(total)}</td>;
 }
 
@@ -387,13 +389,14 @@ function SplitCells({ sheetId, personId }: { sheetId: string; user: string; pers
   );
 }
 
-function ExcessHead() {
-  return <th>Excess</th>;
+function ExcessHead({ sheetId }: { sheetId: string; user: string }) {
+  return useColumnShown(sheetId)('excess') ? <th>Excess</th> : null;
 }
 
 // A person's excess: how far their figures add up to more than the sheet's cap; 0.00 when they do not.
 function ExcessCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const excess = useExcesses(sheetId).get(personId) ?? 0n;
+  if (!useColumnShown(sheetId)('excess')) return null;
   return <td data-testid="person-excess">{showHundredths(excess)}</td>;
 }
 

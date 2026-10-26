@@ -7,13 +7,15 @@ import { claimsKey } from '../claims/useClaims';
 import { peopleKey, usePeople, type Person } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 import { personActionKey, useLastPersonAction } from '../people/personAction';
+import { useColumnShown } from '../columns/useColumns';
 
-function StatementHeads() {
+function StatementHeads({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>Statements</th>
-      <th>Last stated total</th>
-      <th>Last statement</th>
+      {shown('statement-count') && <th>Statements</th>}
+      {shown('stated-total') && <th>Last stated total</th>}
+      {shown('statement-date') && <th>Last statement</th>}
       <th />
     </>
   );
@@ -24,6 +26,7 @@ function StatementHeads() {
 // as-of field (on or before the sheet's today), the figures they had at the end of that date. A refusal shows on
 // the person until the next action on their row.
 function StatementCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -61,9 +64,9 @@ function StatementCells({ sheetId, personId }: { sheetId: string; user: string; 
 
   return (
     <>
-      <td data-testid="person-statement-count">{person?.statementCount ?? 0}</td>
-      <td data-testid="person-stated-total">{person?.statedTotal ?? ''}</td>
-      <td data-testid="person-statement-date">{person?.statementDate ?? ''}</td>
+      {shown('statement-count') && <td data-testid="person-statement-count">{person?.statementCount ?? 0}</td>}
+      {shown('stated-total') && <td data-testid="person-stated-total">{person?.statedTotal ?? ''}</td>}
+      {shown('statement-date') && <td data-testid="person-statement-date">{person?.statementDate ?? ''}</td>}
       <td>
         <input
           type="date"

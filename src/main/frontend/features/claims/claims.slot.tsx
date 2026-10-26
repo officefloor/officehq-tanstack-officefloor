@@ -9,6 +9,8 @@ import { useHeld } from '../people/people.slot';
 import { claimLockKey, claimSaveKey, claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useTemplates } from '../templates/templates.slot';
+import { useColumnShown } from '../columns/useColumns';
+import { useColumnShown } from '../columns/useColumns';
 
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
@@ -135,10 +137,11 @@ function ClaimForm({ sheetId, personId, editing }: { sheetId: string; personId: 
   );
 }
 
-function ClaimsHead() {
+function ClaimsHead({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>Claimed</th>
+      {shown('claimed') && <th>Claimed</th>}
       <th>Claims</th>
     </>
   );
@@ -147,6 +150,7 @@ function ClaimsHead() {
 // A person's claimed total, and their claims, newest first, under the form that adds or edits them. A claim's edit and
 // cancel buttons are in its status cell, with its locking.
 function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const claims = useClaims(sheetId);
   const [editingId] = useEditingClaim();
   const held = useHeld(sheetId);
@@ -155,7 +159,7 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(mine, held)}</td>
+      {shown('claimed') && <td data-testid="person-claimed">{sumAmounts(mine, held)}</td>}
       <td>
         <ClaimForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} personId={personId} editing={editing} />
         <ul data-testid="claim-list">

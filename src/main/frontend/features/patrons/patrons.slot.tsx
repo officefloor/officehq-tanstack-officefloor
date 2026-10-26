@@ -8,6 +8,7 @@ import { addDays, showHundredths, toHundredths } from '../rates/useRates';
 import { useClaims } from '../claims/useClaims';
 import { useSheetToday } from '../today/today.slot';
 import { useUser } from '../session/useSession';
+import { useColumnShown } from '../columns/useColumns';
 
 /** n divided by d (d > 0), rounded half to even. */
 function roundHalfEven(n: bigint, d: bigint): bigint {
@@ -21,11 +22,12 @@ function roundHalfEven(n: bigint, d: bigint): bigint {
   return q;
 }
 
-function PatronHeads() {
+function PatronHeads({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>Patrons</th>
-      <th>Backing</th>
+      {shown('patrons') && <th>Patrons</th>}
+      {shown('backing') && <th>Backing</th>}
       <th />
     </>
   );
@@ -36,6 +38,7 @@ function PatronHeads() {
 // added up) times their share divided by 100, added up and rounded half to even (0.00 with none) — and the picker that names one more. Only other people not yet their patrons are offered. A refusal shows on
 // the person until the picker is changed or the next action on their row.
 function PatronCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const people = usePeople(sheetId).data ?? [];
   const person = people.find((p) => p.id === personId);
   const claims = useClaims(sheetId).data ?? [];
@@ -83,8 +86,8 @@ function PatronCells({ sheetId, personId }: { sheetId: string; user: string; per
 
   return (
     <>
-      <td data-testid="person-patrons">{shares.map((s) => `${s.name} ${s.share}`).join(', ')}</td>
-      <td data-testid="person-backing">{showHundredths(backing)}</td>
+      {shown('patrons') && <td data-testid="person-patrons">{shares.map((s) => `${s.name} ${s.share}`).join(', ')}</td>}
+      {shown('backing') && <td data-testid="person-backing">{showHundredths(backing)}</td>}
       <td>
         <select
           data-testid="person-patron-select"

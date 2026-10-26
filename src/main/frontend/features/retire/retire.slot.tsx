@@ -5,11 +5,13 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { peopleKey, usePeople, type Person } from '../people/people.slot';
 import { personActionKey, useLastPersonAction } from '../people/personAction';
 import { useUser } from '../session/useSession';
+import { useColumnShown } from '../columns/useColumns';
 
-function RetireHeads() {
+function RetireHeads({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>Retired</th>
+      {shown('retired') && <th>Retired</th>}
       <th>Retired from</th>
       <th>Past retirements</th>
       <th />
@@ -22,6 +24,7 @@ function RetireHeads() {
 // on the person until the next action on their row. A retired person can be unretired (on the sheet's today): their
 // retirement is then kept, one line per past retirement, from its from-date to the day they were unretired.
 function RetireCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
   const [date, setDate] = useState('');
   const [user] = useUser();
@@ -52,7 +55,7 @@ function RetireCells({ sheetId, personId }: { sheetId: string; user: string; per
 
   return (
     <>
-      <td data-testid="person-retired">{retired ? 'yes' : 'no'}</td>
+      {shown('retired') && <td data-testid="person-retired">{retired ? 'yes' : 'no'}</td>}
       <td data-testid="person-retired-from">{person?.retiredFrom ?? ''}</td>
       <td>
         {(person?.retirements ?? []).map((r, i) => (

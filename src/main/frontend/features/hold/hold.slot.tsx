@@ -5,11 +5,13 @@ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
 import { peopleKey, usePeople, type Person } from '../people/people.slot';
 import { personActionKey, useLastPersonAction } from '../people/personAction';
 import { useUser } from '../session/useSession';
+import { useColumnShown } from '../columns/useColumns';
 
-function HoldHeads() {
+function HoldHeads({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>On hold</th>
+      {shown('hold') && <th>On hold</th>}
       <th>Holds</th>
       <th />
     </>
@@ -21,6 +23,7 @@ function HoldHeads() {
 // hold count in no live total unless a statement binds them; a hold ends on its to-date, there is no release. A
 // refusal shows on the person until the next action on their row.
 function HoldCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -44,7 +47,7 @@ function HoldCells({ sheetId, personId }: { sheetId: string; user: string; perso
 
   return (
     <>
-      <td data-testid="person-hold">{person?.held ? 'yes' : 'no'}</td>
+      {shown('hold') && <td data-testid="person-hold">{person?.held ? 'yes' : 'no'}</td>}
       <td>
         {(person?.holds ?? []).map((h, i) => (
           <div key={i} data-testid="person-hold-line">

@@ -6,6 +6,7 @@ import { counts, useClaims } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { claimDueCents, isOpen, lateFrom, showHundredths, trimmedSum, useRates } from '../rates/useRates';
 import { useSheetToday } from '../today/today.slot';
+import { useColumnShown } from '../columns/useColumns';
 
 /** Whether a claim is overdue: OPEN or PENDING, not deferred past the sheet's today, and its due-by plus its grade's
  *  grace (see lateFrom; `grade` is its person's grade on its date) before the sheet's today. */
@@ -43,22 +44,24 @@ export function useOverdue(sheetId: string): { byPerson: Map<number, Overdue>; s
   return { byPerson, sheet };
 }
 
-function OverdueHeads() {
+function OverdueHeads({ sheetId }: { sheetId: string; user: string }) {
+  const shown = useColumnShown(sheetId);
   return (
     <>
-      <th>Overdue</th>
-      <th>Overdue total</th>
+      {shown('overdue-count') && <th>Overdue</th>}
+      {shown('overdue-total') && <th>Overdue total</th>}
     </>
   );
 }
 
 // A person's overdue count and overdue-total: their counted OPEN claims past their due-by, and those claims' due added up.
 function OverdueCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+  const shown = useColumnShown(sheetId);
   const mine = useOverdue(sheetId).byPerson.get(personId) ?? { count: 0, cents: 0n };
   return (
     <>
-      <td data-testid="person-overdue-count">{mine.count}</td>
-      <td data-testid="person-overdue-total">{showHundredths(mine.cents)}</td>
+      {shown('overdue-count') && <td data-testid="person-overdue-count">{mine.count}</td>}
+      {shown('overdue-total') && <td data-testid="person-overdue-total">{showHundredths(mine.cents)}</td>}
     </>
   );
 }

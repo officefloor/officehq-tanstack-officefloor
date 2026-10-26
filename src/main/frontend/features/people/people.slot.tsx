@@ -9,6 +9,7 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { claimsKey, type Claim } from '../claims/useClaims';
 import { useSheetToday } from '../today/today.slot';
 import { SORT_KEYS, useSortBy, useSortedPeople } from '../sort/useSortedPeople';
+import { useColumnShown } from '../columns/useColumns';
 
 /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
@@ -369,6 +370,7 @@ export function useShowRetired() {
 // have no row unless "show retired" is on.
 function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
+  const columnShown = useColumnShown(sheetId);
   const [showRetired, setShowRetired] = useShowRetired();
   const [editingId, setEditing] = useEditingPerson();
   const editing = people.data?.find((p) => p.id === editingId);
@@ -430,8 +432,8 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            {columnShown('terms') && <th>Terms</th>}
+            {columnShown('contact') && <th>Contact</th>}
             <th>Tags</th>
             <th>From</th>
             <PersonHeads.Slot sheetId={sheetId} user={user} />
@@ -443,8 +445,8 @@ function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-terms">{p.terms ?? ''}</td>
-              <td data-testid="person-contact">{p.contact ?? ''}</td>
+              {columnShown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+              {columnShown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td data-testid="person-origin">{p.origin ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} user={user} personId={p.id} />
