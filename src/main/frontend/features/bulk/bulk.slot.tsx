@@ -199,10 +199,69 @@ function BulkReassign({ sheetId }: { sheetId: string; user: string }) {
   );
 }
 
+type BulkRedateResult = { redated: number; refused: number };
+
+// Re-dates the selected claims to one date together; the server re-dates them in list order exactly as each row's
+// re-date and leaves any it cannot re-date as they are. Shows how many were re-dated and how many refused; the counts
+// are gone while it runs.
+function BulkRedate({ sheetId }: { sheetId: string; user: string }) {
+  const chosen = useSelected(sheetId);
+  const [user] = useUser();
+  const [date, setDate] = useState('');
+  const queryClient = useQueryClient();
+  const redate = useMutation({
+    mutationFn: ({ ids, date }: { ids: number[]; date: string }) => {
+      if (ids.length === 0) throw new Error('Select the claims to re-date');
+      if (date.trim() === '') throw new Error("Enter the claims' new date");
+      return postJson<BulkRedateResult>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/bulk-redate`,
+        { ids, date: date.trim(), by: user ?? '' });
+    },
+    onSuccess: async () => {
+      selection.set(sheetId, NONE);
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  return (
+    <section data-testid="bulk-redate-actions">
+      <input
+        type="text"
+        data-testid="bulk-redate-date"
+        placeholder="yyyy-mm-dd"
+        value={date}
+        onChange={(e) => {
+          redate.reset();
+          setDate(e.target.value);
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="bulk-redate"
+        disabled={redate.isPending}
+        onClick={() => redate.mutate({ ids: [...chosen], date })}
+      >
+        Re-date selected
+      </button>{' '}
+      {redate.isSuccess && (
+        <span>
+          Re-dated <strong data-testid="bulk-redated">{redate.data.redated}</strong>, refused{' '}
+          <strong data-testid="bulk-redate-refused">{redate.data.refused}</strong>
+        </span>
+      )}
+      {redate.isError && (
+        <span data-testid="bulk-redate-error" role="alert">
+          {redate.error.message}
+        </span>
+      )}
+    </section>
+  );
+}
+
 export const contributions = [
   ClaimCells.fill({ order: 0, Component: ClaimSelect }),
   ClaimCells.fill({ order: 21, Component: ClaimBatch }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),
   SheetBody.fill({ order: 16, Component: BulkSettle }),
   SheetBody.fill({ order: 16.5, Component: BulkReassign }),
+  SheetBody.fill({ order: 16.6, Component: BulkRedate }),
 ];
