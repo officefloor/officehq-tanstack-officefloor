@@ -1,0 +1,60 @@
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index 6bdb55dd..5211dc87 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -128,10 +128,10 @@ export function isOpen(claim: { status: string }): boolean {
+   return claim.status === 'OPEN' || claim.status === 'PENDING';
+ }
+ 
+-/** Whether the person's last statement binds the claim to its `statedDue`: it was stated, and is not PENDING (a PENDING
+- *  claim shows and totals its live figure; rejected back to OPEN, it is bound again). */
++/** Whether the person's last statement binds the claim to its `statedDue`: it was stated (a PENDING claim too, like
++ *  any other claim that counts). */
+ export function isBound(claim: { stated: boolean; status?: string }): boolean {
+-  return claim.stated && claim.status !== 'PENDING';
++  return claim.stated;
+ }
+ 
+ /** The date a claim's lateness counts from: its due-by plus the grace in force on its date of its person's grade on
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 8f649213..37180f7f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -24,8 +24,8 @@ import net.officefloor.plugin.variable.Val;
+  * refusing to let the user who opened it, or who last edited it, settle it; a clerk's settle whose due is above the sheet's
+  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
+  * above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's) is refused (a due of n/a is within any limit; a steward settles anything). A review of a
+- * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it or last edited it), rejecting
+- * returns it to OPEN, bound again by its last statement if that bound it. A steward may void a SETTLED claim within
++ * PENDING claim is a steward's: approving settles it at its due (the figure a statement binds it to, while one does) (never by the user who opened it or last edited it), rejecting
++ * returns it to OPEN, still bound by its last statement if that bound it. A steward may void a SETTLED claim within
+  * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. While the sheet has void reasons,
+  * a void needs one of them, kept on the claim. Opening records who opened it; a voided claim keeps its number. Settling
+  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
+@@ -212,7 +212,7 @@ public class ApplyClaimStatus {
+         return ClaimNumbering.number(claim.getSheetId(), claim.getDueBy(), repository, settings, sheets, periods);
+     }
+ 
+-    /** The figure a statement binds the claim to (not while PENDING), else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date (not floored); null when there is no rate. */
++    /** The figure a statement binds the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date (not floored); null when there is no rate. */
+     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
+             SettingRepository settings, LateCharge late) {
+         if (claim.isBound()) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 0f2ad65b..1576ea60 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -294,10 +294,10 @@ public class Claim {
+         return stated;
+     }
+ 
+-    /** Whether the last statement's figure is the claim's: it was stated, and is not PENDING (a PENDING claim shows and
+-     *  totals its live figure; rejected back to OPEN, it is bound again). */
++    /** Whether the last statement's figure is the claim's: it was stated (a PENDING claim too, like any other claim
++     *  that counts). */
+     public boolean isBound() {
+-        return stated && status != ClaimStatus.PENDING;
++        return stated;
+     }
+ 
+     /** The figure the last statement bound the claim to; null when bound without one (n/a) or not bound. */
