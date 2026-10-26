@@ -147,6 +147,22 @@ export function personSum(person: Person | undefined, people: Person[], claims: 
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }
 
+/**
+ * A person's OPEN and PENDING claims that count, their figures added up by the claim's age on the sheet's today (the days
+ * from its date): 0 to 30 (a claim dated after today included), 31 to 60, and 61 or more. Not capped; n/a figures are skipped.
+ */
+export function agedDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): [string, string, string] {
+  const buckets: string[][] = [[], [], []];
+  if (person) {
+    for (const c of claims) {
+      if (c.personId !== person.id || !isOpen(c) || !counts(c, people, today)) continue;
+      const days = today === '' ? 0 : (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000;
+      buckets[days <= 30 ? 0 : days <= 60 ? 1 : 2].push(figure(c, rates, person, floor, late));
+    }
+  }
+  return [sumDue(buckets[0]), sumDue(buckets[1]), sumDue(buckets[2])];
+}
+
 /** A sum of figures held to the sheet's `cap` (two decimals; "" for none); n/a is not capped. */
 export function capped(sum: string, cap: string): string {
   return sum === 'n/a' || cap === '' || hundredths(sum) <= hundredths(cap) ? sum : show(hundredths(cap));
