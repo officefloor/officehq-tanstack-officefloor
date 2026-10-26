@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery, sumAmounts } from './claimsQuery';
+import { claimsQuery, counts, sumAmounts } from './claimsQuery';
 
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+  const claims = (useQuery(claimsQuery(sheetId)).data ?? []).filter(counts);
   return <td data-testid="person-claimed">{sumAmounts(claims.filter((c) => c.personId === personId))}</td>;
 }
 
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
-  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+  const claims = (useQuery(claimsQuery(sheetId)).data ?? []).filter(counts);
   return (
     <p data-testid="rollup">
       Claimed total <strong data-testid="rollup-claimed-total">{sumAmounts(claims)}</strong>

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
-import { claimsQuery, sumAmounts } from '../claims/claimsQuery';
+import { claimsQuery, counts, sumAmounts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
@@ -12,7 +12,7 @@ import type { Rate } from './ratesQuery';
 /** A person's due-total: their claimed times their grade's rate, or n/a when the grade has none. */
 function personDue(person: Person | undefined, claims: Claim[], rates: Rate[]): string {
   if (!person) return 'n/a';
-  return due(sumAmounts(claims.filter((c) => c.personId === person.id)), rateFor(rates, person.grade));
+  return due(sumAmounts(claims.filter((c) => c.personId === person.id && counts(c))), rateFor(rates, person.grade));
 }
 
 function useSheetData(sheetId: string) {

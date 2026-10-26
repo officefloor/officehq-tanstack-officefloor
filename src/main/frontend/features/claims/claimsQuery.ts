@@ -1,8 +1,13 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
 
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+
 /** `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+
+/** Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not. */
+export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
 /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
 export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;

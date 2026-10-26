@@ -17,7 +17,7 @@ public class Claims {
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
 
     private final JdbcTemplate jdbc;
 
@@ -48,11 +48,17 @@ public class Claims {
             ps.setString(5, note);
             return ps;
         }, key);
-        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note);
+        return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
     }
 
     public void save(Claim claim) {
         jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ?", claim.amount(),
                 Date.valueOf(claim.date()), claim.note(), claim.id());
+    }
+
+    /** Moves the claim to {@code next} if it still has its loaded status; false when it has since changed. */
+    public boolean changeStatus(Claim claim, ClaimStatus next) {
+        return jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND status = ?", next.name(), claim.id(),
+                claim.status().name()) == 1;
     }
 }
