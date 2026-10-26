@@ -32,6 +32,10 @@ public class AuditClaimStatus {
         if (loaded.status() == ClaimStatus.PENDING && status == ClaimStatus.OPEN) {
             fields.add("reason=" + request.reason());
         }
+        // A claim voided with a reason from the sheet's list carries it.
+        if (status == ClaimStatus.VOID && request.voidReason() != null && !request.voidReason().isEmpty()) {
+            fields.add("reason=" + request.voidReason());
+        }
         audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(),
                 Audit.user(connection), fields.toArray(String[]::new)));
     }

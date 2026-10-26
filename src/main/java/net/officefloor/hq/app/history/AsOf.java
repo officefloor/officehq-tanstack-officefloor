@@ -31,7 +31,8 @@ public final class AsOf {
             Map.entry("person_watch", List.of("id")),
             Map.entry("delegation", List.of("id")),
             Map.entry("sheet_role", List.of("sheet_id", "user_name")),
-            Map.entry("holiday", List.of("sheet_id", "holiday_date")));
+            Map.entry("holiday", List.of("sheet_id", "holiday_date")),
+            Map.entry("void_reason", List.of("sheet_id", "reason")));
 
     private static final ThreadLocal<LocalDate> DATE = new ThreadLocal<>();
 

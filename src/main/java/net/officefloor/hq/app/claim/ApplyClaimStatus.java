@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.period.Period;
@@ -11,6 +12,7 @@ import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
+import net.officefloor.hq.app.voidreason.VoidReasons;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -23,8 +25,9 @@ public class ApplyClaimStatus {
     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
-            Periods periods, Rollup rollup, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
-            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException {
+            Periods periods, Rollup rollup, VoidReasons voidReasons, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException,
+            ClaimVoidReasonNeededException {
         ClaimStatus next;
         try {
             next = ClaimStatus.valueOf(status.trim().toUpperCase());
@@ -34,6 +37,7 @@ public class ApplyClaimStatus {
         String user = Audit.user(connection).trim();
         String action = body == null || body.action() == null ? "" : body.action().trim();
         String reason = body == null || body.reason() == null ? "" : body.reason().trim();
+        String voidReason = body == null || body.voidReason() == null ? "" : body.voidReason().trim();
         boolean decision = !action.isEmpty();
         if (decision && !(action.equals("approve") && next == ClaimStatus.SETTLED)
                 && !(action.equals("reject") && next == ClaimStatus.OPEN)) {
@@ -93,6 +97,17 @@ public class ApplyClaimStatus {
         if (claim.status() == ClaimStatus.PENDING && next == ClaimStatus.OPEN && reason.isEmpty()) {
             throw new ClaimStatusRefusedException("Give a reason to reject the claim.");
         }
+        // While the sheet has void reasons, a claim is voided only with one of them; with none, no reason is kept.
+        if (next == ClaimStatus.VOID) {
+            List<String> reasons = voidReasons.list(claim.sheetId());
+            if (reasons.isEmpty()) {
+                voidReason = "";
+            } else if (!reasons.contains(voidReason)) {
+                throw new ClaimVoidReasonNeededException(voidReason.isEmpty()
+                        ? "Choose a void reason to void the claim."
+                        : "\"" + voidReason + "\" is not one of the sheet's void reasons.");
+            }
+        }
         // Settling (or approving) freezes the late charge on the sheet's today into the due.
         BigDecimal due = settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
         // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has a
@@ -134,9 +149,12 @@ public class ApplyClaimStatus {
         if (changed == null) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
+        if (next == ClaimStatus.VOID && !voidReason.isEmpty()) {
+            voidReasons.voided(changed.id(), voidReason);
+        }
         claims.log(changed, user, sheets.today(claim.sheetId()), rollup.figure(changed));
         responseOut.set(ClaimResponse.from(changed));
-        requestOut.set(new ClaimStatusRequest(action, reason));
+        requestOut.set(new ClaimStatusRequest(action, reason, voidReason));
     }
 
     /**

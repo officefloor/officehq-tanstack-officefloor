@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { putJson, RefusedError } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
+import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
 import { claimsKey } from './claimsQuery';
 import { useClaimError } from './useClaimError';
 import type { Claim, ClaimStatus } from './claimsQuery';
@@ -25,18 +26,21 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
  * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN). A steward can
  * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.
  * A steward can also void a SETTLED claim within 7 days of its settlement; the server refuses anyone else or a later day.
+ * While the sheet has void reasons, a void needs one chosen from them; the server refuses a void without one.
  */
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [error, setError] = useClaimError(claim.id);
   const [reason, setReason] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const voidReasons = useQuery(voidReasonsQuery(sheetId)).data ?? [];
   const once = useSubmitOnce();
   const change = useMutation({
-    mutationFn: ({ to, decision, reason }: { to: ClaimStatus; decision?: Decision; reason?: string }) =>
+    mutationFn: ({ to, decision, reason, voidReason }: { to: ClaimStatus; decision?: Decision; reason?: string; voidReason?: string }) =>
       putJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`,
-        { action: decision, reason },
+        { action: decision, reason, voidReason },
         user,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
@@ -77,12 +81,33 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
           disabled={change.isPending}
           onClick={() => {
             setError('');
-            once(() => change.mutateAsync({ to, decision }));
+            once(() =>
+              to === 'VOID'
+                ? change.mutateAsync({ to, voidReason }).then(() => setVoidReason(''))
+                : change.mutateAsync({ to, decision }),
+            );
           }}
         >
           {label}
         </button>
       ))}
+      {voidReasons.length > 0 && (
+        <select
+          data-testid="claim-void-reason"
+          value={voidReason}
+          onChange={(e) => {
+            setVoidReason(e.target.value);
+            setError('');
+          }}
+        >
+          <option value="">Void reason…</option>
+          {voidReasons.map((r) => (
+            <option key={r.reason} value={r.reason}>
+              {r.reason}
+            </option>
+          ))}
+        </select>
+      )}{' '}
       <button
         type="button"
         data-testid="claim-resettle"
