@@ -7,6 +7,8 @@ import net.officefloor.plugin.variable.Val;
 public class RecordPoolMemberAdded {
     public void record(@Val PoolMemberAdded added, @Val ChangedBy by, Audit audit) {
         audit.record("POOL_MEMBER_ADDED sheet=" + added.sheetId() + " by=" + by.name() + " pool=" + added.pool()
-                + " name=" + added.name() + " share=" + added.share().toPlainString());
+                + " name=" + added.name() + " share=" + added.share().toPlainString()
+                + (added.from() == null ? "" : " from=" + added.from())
+                + (added.to() == null ? "" : " to=" + added.to()));
     }
 }

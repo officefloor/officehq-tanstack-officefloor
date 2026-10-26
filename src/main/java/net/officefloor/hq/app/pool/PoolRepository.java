@@ -2,6 +2,7 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,18 +44,23 @@ public class PoolRepository {
         jdbc.update("INSERT INTO pool (sheet_id, name) VALUES (?, ?)", sheetId, name);
     }
 
-    /** Adds the person to the pool; false when they are in it already. */
-    public boolean addMember(String sheetId, long poolId, long personId, BigDecimal share) {
-        return jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share) SELECT ?, ?, ?, ? WHERE NOT EXISTS"
-                + " (SELECT 1 FROM pool_member WHERE pool_id = ? AND person_id = ?)",
-                sheetId, poolId, personId, share, poolId, personId) > 0;
+    /** Adds the person to the pool, with the membership's dates (each null when not given); false when they are in it already. */
+    public boolean addMember(String sheetId, long poolId, long personId, BigDecimal share, LocalDate from, LocalDate to) {
+        return jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, from_date, to_date)"
+                + " SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM pool_member WHERE pool_id = ? AND person_id = ?)",
+                sheetId, poolId, personId, share, sqlDate(from), sqlDate(to), poolId, personId) > 0;
     }
 
-    /** Adds the other pool to the pool; false when it is a member of a pool already. */
-    public boolean addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share) {
-        return jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share) SELECT ?, ?, ?, ?"
-                + " WHERE NOT EXISTS (SELECT 1 FROM pool_member WHERE member_pool_id = ?)",
-                sheetId, poolId, memberPoolId, share, memberPoolId) > 0;
+    /** Adds the other pool to the pool, with the membership's dates; false when it is a member of a pool already. */
+    public boolean addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share, LocalDate from,
+            LocalDate to) {
+        return jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, from_date, to_date)"
+                + " SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM pool_member WHERE member_pool_id = ?)",
+                sheetId, poolId, memberPoolId, share, sqlDate(from), sqlDate(to), memberPoolId) > 0;
+    }
+
+    private static java.sql.Date sqlDate(LocalDate date) {
+        return date == null ? null : java.sql.Date.valueOf(date);
     }
 
     /** The id of the pool the pool is a member of; null when none. */
@@ -91,12 +97,14 @@ public class PoolRepository {
 
     /**
      * The sheet's pools, in the order added, each with its members in the order added, the total of their shares (a
-     * member with a retirement date set, whatever the date, counts as 0.00) and whether it is exactly 100.00. A pool
-     * that is a member of none has the sheet's pot; a member pool's pot is its cut in the pool above (none while that
-     * has no cuts). Each member of a balanced pool with a pot has a cut: 0.00 when retired or held (a hold in force on
-     * the sheet's today), else the pot times their share over the shares of the members with a cut added up, half to
-     * even to two decimals, and the remainder to the member with a cut with the largest share (the earliest added on a
-     * tie), so the cuts total the pot. A hold leaves the pool's total share and balance as they are.
+     * member with a retirement date set, whatever the date, counts as 0.00) and whether it is exactly 100.00. A member
+     * whose membership dates do not include the sheet's today is left out entirely: not in the total share, nor the
+     * balance, and no cut (not even 0.00). A pool that is a member of none has the sheet's pot; a member pool's pot is
+     * its cut in the pool above (none while that has no cuts). Each member of a balanced pool with a pot has a cut: 0.00
+     * when retired or held (a hold in force on the sheet's today), else the pot times their share over the shares of
+     * the members with a cut added up, half to even to two decimals, and the remainder to the member with a cut with the
+     * largest share (the earliest added on a tie), so the cuts total the pot. A hold leaves the pool's total share and
+     * balance as they are.
      */
     public List<PoolResponse> list(String sheetId) {
         Map<Long, String> names = new LinkedHashMap<>();
@@ -111,7 +119,9 @@ public class PoolRepository {
         Set<Long> held = new HashSet<>(jdbc.queryForList("SELECT DISTINCT h.person_id FROM person_hold h"
                 + " JOIN person p ON p.id = h.person_id WHERE p.sheet_id = ? AND (h.from_date IS NULL OR h.from_date <= ?)"
                 + " AND (h.to_date IS NULL OR h.to_date >= ?)", Long.class, sheetId, today(sheetId), today(sheetId)));
-        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, p.name, p.retired_from, q.name AS pool_name"
+        java.sql.Date today = today(sheetId);
+        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date, p.name,"
+                + " p.retired_from, q.name AS pool_name"
                 + " FROM pool_member m LEFT JOIN person p ON p.id = m.person_id LEFT JOIN pool q ON q.id = m.member_pool_id"
                 + " WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
             long poolId = rs.getLong("pool_id");
@@ -120,15 +130,18 @@ public class PoolRepository {
                 return;
             }
             String share = rs.getBigDecimal("share").setScale(2).toPlainString();
+            java.sql.Date from = rs.getDate("from_date");
+            java.sql.Date to = rs.getDate("to_date");
+            boolean out = (from != null && from.after(today)) || (to != null && to.before(today));
             long memberPoolId = rs.getLong("member_pool_id");
             if (rs.wasNull()) {
                 long personId = rs.getLong("person_id");
                 of.add(new PoolResponse.Member(personId, null, rs.getString("name"), share,
-                        rs.getDate("retired_from") != null, held.contains(personId), null));
+                        rs.getDate("retired_from") != null, held.contains(personId), out, null));
                 memberPools.get(poolId).add(null);
             } else {
                 String name = rs.getString("pool_name");
-                of.add(new PoolResponse.Member(null, name, name, share, false, false, null));
+                of.add(new PoolResponse.Member(null, name, name, share, false, false, out, null));
                 memberPools.get(poolId).add(memberPoolId);
                 parents.put(memberPoolId, poolId);
             }
@@ -140,7 +153,7 @@ public class PoolRepository {
         names.keySet().forEach(id -> {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolResponse.Member m : members.get(id)) {
-                if (!m.retired()) {
+                if (!m.retired() && !m.out()) {
                     total = total.add(new BigDecimal(m.share()));
                 }
             }
@@ -184,7 +197,7 @@ public class PoolRepository {
     }
 
     /**
-     * The members with their cuts of the pot, spread over the members with a cut (neither retired nor held) by their
+     * The members with their cuts of the pot, spread over the members with a cut (neither retired, held nor out of their dates) by their
      * shares; the remainder goes to the largest share among them, the earliest added on a tie.
      */
     private static List<PoolResponse.Member> cut(List<PoolResponse.Member> members, BigDecimal pot) {
@@ -213,7 +226,8 @@ public class PoolRepository {
         }
         List<PoolResponse.Member> cut = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
-            cut.add(members.get(i).withCut(cuts.get(i).setScale(2).toPlainString()));
+            PoolResponse.Member m = members.get(i);
+            cut.add(m.out() ? m : m.withCut(cuts.get(i).setScale(2).toPlainString()));
         }
         return cut;
     }

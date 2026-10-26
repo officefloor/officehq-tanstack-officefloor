@@ -254,7 +254,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
 
 // The rate preview: how many OPEN and PENDING claims of people on a grade (on the claim's date) would show a different due if a
 // candidate rate applied to that grade on every date, and the sum of new due minus current due. A settled or bound claim keeps
-// its figure, so it never changes. Nothing is saved.
+// its figure, so it never changes. Nothing is saved. Changing the grade or the rate clears the result shown.
 function RatePreview({ sheetId }: { sheetId: string }) {
   const floor = useFloorCents(sheetId);
   const late = useLate(sheetId);
@@ -312,6 +312,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
           onChange={(e) => {
             setGrade(e.target.value);
             setError(null);
+            setResult(null);
           }}
         >
           {GRADES.map((g) => (
@@ -331,6 +332,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
           onChange={(e) => {
             setPct(e.target.value);
             setError(null);
+            setResult(null);
           }}
         />
       </label>{' '}

@@ -33,19 +33,21 @@ public class AddPoolMember {
             if (pools.chainUp(poolId).size() + pools.height(memberId) > PoolRepository.MAX_DEPTH) {
                 throw new BadRequestException("A chain of pools is at most " + PoolRepository.MAX_DEPTH + " deep");
             }
-            if (!pools.addPoolMember(sheet.id(), poolId, memberId, input.share())) {
+            if (!pools.addPoolMember(sheet.id(), poolId, memberId, input.share(), input.from(), input.to())) {
                 throw new BadRequestException(input.memberPool() + " is already a member of a pool");
             }
-            added.set(new PoolMemberAdded(sheet.id(), input.pool(), input.memberPool(), input.share()));
+            added.set(new PoolMemberAdded(sheet.id(), input.pool(), input.memberPool(), input.share(),
+                    input.from(), input.to()));
             return;
         }
         Person person = people.find(sheet.id(), input.personId());
         if (person == null) {
             throw new BadRequestException("No such person on this sheet");
         }
-        if (!pools.addMember(sheet.id(), poolId, person.getId(), input.share())) {
+        if (!pools.addMember(sheet.id(), poolId, person.getId(), input.share(), input.from(), input.to())) {
             throw new BadRequestException(person.getName() + " is already in this pool");
         }
-        added.set(new PoolMemberAdded(sheet.id(), input.pool(), person.getName(), input.share()));
+        added.set(new PoolMemberAdded(sheet.id(), input.pool(), person.getName(), input.share(),
+                input.from(), input.to()));
     }
 }

@@ -7,7 +7,8 @@ import { peopleKey, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
 
 /** A pool member: a person (their id), or another pool (personId null, `pool` its name); its name, share (two
- *  decimals), whether the person is retired, and its cut of the pool's pot (two decimals; null while the pool is
+ *  decimals), whether the person is retired, whether its membership dates leave out the sheet's today (`out`: not in
+ *  the total share, no cut), and its cut of the pool's pot (two decimals; null while the pool is
  *  unbalanced or has no pot — a member pool's pot is its cut in the pool above, a top pool's the sheet's pot). */
 export type PoolMember = {
   personId: number | null;
@@ -15,6 +16,7 @@ export type PoolMember = {
   name: string;
   share: string;
   retired: boolean;
+  out: boolean;
   cut: string | null;
 };
 
@@ -34,18 +36,20 @@ export function usePools(sheetId: string) {
   });
 }
 
-/** The member picked: `person:<id>` or `pool:<name>`. */
-type MemberBody = { member: string; share: string };
+/** The member picked: `person:<id>` or `pool:<name>`; the membership's from-date and to-date (blank: none). */
+type MemberBody = { member: string; share: string; from: string; to: string };
 
 // A pool's row: its total share and balanced yes/no, each member's share and cut of the pot on their line, and a picker
-// of a person or another pool (pool:<name>) with a share that adds one more member. A person already in the pool, a
+// of a person or another pool (pool:<name>) with a share and an optional from-date and to-date that adds one more member. A person already in the pool, a
 // pool that is already a member of a pool, would contain itself or make a chain more than three deep, or a share that is not more than 0.00 and at most
-// 100.00 with at most two decimals, is refused with an error on the pool until its fields are changed or it is
+// 100.00 with at most two decimals, or a to-date before the from-date, is refused with an error on the pool until its fields are changed or it is
 // submitted again.
 function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools: Pool[] }) {
   const people = usePeople(sheetId).data ?? [];
   const [member, setMember] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [user] = useUser();
   const queryClient = useQueryClient();
   const add = useMutation({
@@ -58,6 +62,8 @@ function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools:
         person: memberPool === null ? Number(body.member.slice('person:'.length)) : null,
         memberPool,
         share: body.share,
+        from: body.from,
+        to: body.to,
         by: user ?? '',
       });
     },
@@ -65,6 +71,8 @@ function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools:
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       setMember('');
       setShare('');
+      setFrom('');
+      setTo('');
     },
   });
   const submit = useSubmitOnce(add);
@@ -84,6 +92,7 @@ function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools:
             <span data-testid="pool-share">{m.share}</span>{' '}
             cut <span data-testid="pool-cut">{m.cut ?? ''}</span>
             {m.retired && ' (retired)'}
+            {m.out && ' (not a member today)'}
           </li>
         ))}
       </ul>
@@ -91,7 +100,7 @@ function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools:
         onSubmit={(e) => {
           e.preventDefault();
           add.reset();
-          submit({ member, share });
+          submit({ member, share, from, to });
         }}
       >
         <select
@@ -121,6 +130,26 @@ function PoolRow({ sheetId, pool, pools }: { sheetId: string; pool: Pool; pools:
           value={share}
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
             setShare(e.target.value);
+            add.reset();
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-from"
+          aria-label="Member from"
+          value={from}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            setFrom(e.target.value);
+            add.reset();
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-to"
+          aria-label="Member to"
+          value={to}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            setTo(e.target.value);
             add.reset();
           }}
         />{' '}
