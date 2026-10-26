@@ -21,6 +21,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
   { action: 'settle', change: { status: 'SETTLED' }, label: 'Settle' },
   { action: 'void', change: { status: 'VOID' }, label: 'Void' },
   { action: 'approve', change: { status: 'SETTLED', review: true }, label: 'Approve' },
+  { action: 'delete', change: { status: 'DELETED' }, label: 'Delete' },
+  { action: 'restore', change: { status: 'DRAFT' }, label: 'Restore' },
 ];
 
 // A claim's number and status, the buttons that open, settle, void, approve or reject it, and a steward's move of a DRAFT,
@@ -39,6 +41,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
 // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
 // A claim in any status can be commented; an empty comment is refused.
+// A DRAFT claim (not in a closed period) can be deleted: DELETED, it counts nowhere and takes no edit, open or void; on
+// the sheet-today it was deleted it can be restored to a DRAFT, and on a later day the restore is refused.
 // A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
   const [user] = useUser();

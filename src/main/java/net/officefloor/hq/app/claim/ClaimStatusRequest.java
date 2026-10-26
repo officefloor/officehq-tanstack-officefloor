@@ -1,7 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 /**
- * The status a claim is to move to (OPEN, SETTLED or VOID), and the signed-in user (`by`) making the change. With
+ * The status a claim is to move to (OPEN, SETTLED or VOID; DELETED deletes a DRAFT, DRAFT restores a DELETED one), and the signed-in user (`by`) making the change. With
  * `review`, a steward's review of a PENDING claim: SETTLED approves it, OPEN rejects it with the `reason`. A void
  * carries the `voidReason` chosen from the sheet's list (blank: none).
  */

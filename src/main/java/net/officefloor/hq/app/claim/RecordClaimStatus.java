@@ -15,7 +15,8 @@ public class RecordClaimStatus {
             case PENDING -> "CLAIM_PENDING";
             case SETTLED -> review.asked() ? "CLAIM_APPROVED" : "CLAIM_SETTLED";
             case VOID -> "CLAIM_VOIDED";
-            case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
+            case DELETED -> "CLAIM_DELETED";
+            case DRAFT -> "CLAIM_RESTORED";
         };
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         String line = ClaimAudit.line(event, claim, by, person == null ? "" : person.getName(), number.value());

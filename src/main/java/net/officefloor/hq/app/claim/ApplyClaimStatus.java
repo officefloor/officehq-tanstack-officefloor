@@ -31,6 +31,7 @@ import net.officefloor.plugin.variable.Val;
  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
  */
 public class ApplyClaimStatus {
+    // A DRAFT claim may be deleted, and a DELETED one restored to DRAFT only on the sheet-today it was deleted.
     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, @Val VoidChoice voidChoice, VoidReasonRepository voidReasons,
@@ -53,7 +54,23 @@ public class ApplyClaimStatus {
             }
         } else {
             if (!from.canBecome(status)) {
-                throw new BadRequestException("A " + from + " claim cannot become " + status);
+                throw new BadRequestException(status == ClaimStatus.DELETED ? "Only a DRAFT claim can be deleted"
+                        : status == ClaimStatus.DRAFT ? "Only a DELETED claim can be restored"
+                        : "A " + from + " claim cannot become " + status);
+            }
+            if (status == ClaimStatus.DRAFT) {
+                java.time.LocalDate deletedOn = log.lastOn(claim.getSheetId(), claim.getId(), ClaimStatus.DELETED);
+                if (deletedOn == null || !deletedOn.equals(sheets.today(claim.getSheetId()))) {
+                    throw new BadRequestException("A deleted claim can be restored only on the day it was deleted");
+                }
+            }
+            if (status == ClaimStatus.DELETED || status == ClaimStatus.DRAFT) {
+                claim.setStatus(status);
+                if (!repository.updateStatus(claim, from)) {
+                    throw new BadRequestException("The claim was changed by someone else; reload the sheet");
+                }
+                audited.set(new ClaimNumber(claim.getNumber()));
+                return;
             }
             String action = status == ClaimStatus.OPEN ? "open" : status == ClaimStatus.VOID ? "void" : "settle";
             if (!settings.allows(claim.getSheetId(), action, role)) {

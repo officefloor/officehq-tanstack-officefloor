@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import { asNumber, useSearchParam } from '../../url/useSearchParam';
 import type { Holds } from '../people/people.slot';
 
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
 export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   /** Given when the claim is opened: the sheet's next (1, 2, ...), or within its period (<period>-<n>, X-<n> in none); none for a draft. */
