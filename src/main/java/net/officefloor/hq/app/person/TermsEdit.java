@@ -1,5 +1,5 @@
 package net.officefloor.hq.app.person;
 
-/** Whether an edit changed the person's own terms from what they were before the save. */
+/** Whether the terms an edit entered differ from the own terms in force on the sheet's today before the save. */
 public record TermsEdit(boolean changed) {
 }

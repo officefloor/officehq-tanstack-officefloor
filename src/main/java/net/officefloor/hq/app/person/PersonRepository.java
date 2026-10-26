@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin, p.arrived_on,"
+    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin, p.arrived_on, p.flag_reason, p.flag_until,"
             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
@@ -39,6 +39,8 @@ public class PersonRepository {
         person.setTags(rs.getString("tags"));
         person.setOrigin(rs.getString("origin"));
         person.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
+        person.setFlagReason(rs.getString("flag_reason"));
+        person.setFlagUntil(rs.getObject("flag_until", LocalDate.class));
         return person;
     };
 
@@ -281,6 +283,11 @@ public class PersonRepository {
         tagsUsed(person.getSheetId(), person.getTags());
         person.setVersion(person.getVersion() + 1);
         return true;
+    }
+
+    /** Flag the person with the reason until the date, replacing any flag they had. */
+    public void flag(long id, String reason, LocalDate until) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ?", reason, java.sql.Date.valueOf(until), id);
     }
 
     /** Retire the person from the date; false (nothing written) when they were retired already. */

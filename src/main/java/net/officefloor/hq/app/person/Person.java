@@ -30,6 +30,9 @@ public class Person {
     private String contact;
     private String tags;
 
+    private String flagReason;
+    private LocalDate flagUntil;
+
     private String origin;
     private LocalDate arrivedOn;
 
@@ -96,6 +99,34 @@ public class Person {
 
     public void setDatedTerms(List<TermsFrom> datedTerms) {
         this.datedTerms = datedTerms;
+    }
+
+    /** A steward's flag's reason; null when never flagged. */
+    public String getFlagReason() {
+        return flagReason;
+    }
+
+    public void setFlagReason(String flagReason) {
+        this.flagReason = flagReason;
+    }
+
+    /** The date a steward's flag holds until (inclusive); null when never flagged. */
+    public LocalDate getFlagUntil() {
+        return flagUntil;
+    }
+
+    public void setFlagUntil(LocalDate flagUntil) {
+        this.flagUntil = flagUntil;
+    }
+
+    /** Whether a steward's flag holds on the date: it is on or before the flag's until date. */
+    public boolean isFlaggedOn(LocalDate on) {
+        return flagReason != null && flagUntil != null && on != null && !on.isAfter(flagUntil);
+    }
+
+    /** The flag's reason while it holds on the sheet's today; null otherwise. */
+    public String getFlagShown() {
+        return isFlaggedOn(today) ? flagReason : null;
     }
 
     /** The sheet's today, as the person was read; null when not known. */

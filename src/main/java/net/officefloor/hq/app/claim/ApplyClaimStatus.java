@@ -32,6 +32,7 @@ import net.officefloor.plugin.variable.Val;
  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
  * An open whose due (as open) is above the review threshold in force on the claim's date leaves it in REVIEW instead,
  * recording who opened it but giving no number; a steward's review then opens it with its number (anyone else is refused).
+ * While a steward's flag on the claim's person holds on the sheet's today, only a steward may open it.
  */
 public class ApplyClaimStatus {
     // A DRAFT claim may be deleted, and a DELETED one restored to DRAFT only on the sheet-today it was deleted.
@@ -94,6 +95,13 @@ public class ApplyClaimStatus {
             String action = status == ClaimStatus.OPEN ? "open" : status == ClaimStatus.VOID ? "void" : "settle";
             if (!settings.allows(claim.getSheetId(), action, role)) {
                 throw new BadRequestException("A " + role + " may not " + action + " a claim on this sheet");
+            }
+            if (status == ClaimStatus.OPEN && !steward) {
+                Person owner = people.find(claim.getSheetId(), claim.getPersonId());
+                if (owner != null && owner.isFlaggedOn(sheets.today(claim.getSheetId()))) {
+                    throw new BadRequestException("This person is flagged (" + owner.getFlagReason()
+                            + "); only a steward may open their claims until " + owner.getFlagUntil());
+                }
             }
             if (status == ClaimStatus.VOID && from == ClaimStatus.SETTLED) {
                 if (!steward) {

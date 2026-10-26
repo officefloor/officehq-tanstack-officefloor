@@ -11,15 +11,14 @@ import net.officefloor.plugin.variable.Val;
  *  the form loaded it. The grade is given from the request's from-date (the sheet's today when blank; nothing is given when blank and it is the
  *  grade already in force on today), keeping the grades already given; the person then shows the grade in force on the sheet's today. Their own terms are given
  *  from the request's terms from-date (replacing those from that same date, keeping the rest), or when blank replace
- *  those from the beginning of time, publishing whether any changed, and likewise their contact; their tags are replaced too. */
+ *  those from the beginning of time, publishing whether the terms entered differ from those in force on the sheet's today before the save, and likewise their contact; their tags are replaced too. */
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, PersonRepository repository,
             SheetRepository sheets, Out<TermsEdit> termsEdit, Out<ContactEdit> contactEdit) throws ConflictException {
         if (request.version() == null || request.version() != person.getVersion()) {
             throw new ConflictException(PersonRepository.CHANGED);
         }
-        Integer before = person.getTerms();
-        java.util.Set<TermsFrom> datedBefore = java.util.Set.copyOf(person.getDatedTerms());
+        Integer before = person.getTermsToday();
         LocalDate termsFrom = request.termsFromDate();
         person.setName(request.name());
         if (termsFrom == null) {
@@ -43,7 +42,6 @@ public class ApplyPerson {
             repository.giveTerms(person, request.termsDays(), termsFrom);
         }
         person.setToday(today);
-        termsEdit.set(new TermsEdit(!Objects.equals(before, person.getTerms())
-                || !datedBefore.equals(java.util.Set.copyOf(person.getDatedTerms()))));
+        termsEdit.set(new TermsEdit(!Objects.equals(before, request.termsDays())));
     }
 }

@@ -37,7 +37,7 @@ export type Person = { id: number; name: string; grade: string; grades: GradeFro
   holds: HoldSpan[];
   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; tags: string[]; aliases: string[];
   clashing: boolean; origin: string | null; snapshots: string[];
-  statementLines: string[]; ownTerms: number | null; datedTerms: TermsFrom[] };
+  statementLines: string[]; ownTerms: number | null; datedTerms: TermsFrom[]; flagShown: string | null };
 
 export type TermsFrom = { terms: number | null; from: string };
 
@@ -109,8 +109,8 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
   // The date the grade is given from; blank is the sheet's today (an added person's grade applies
   // from the beginning of time).
   const [gradeFrom, setGradeFrom] = useState('');
-  // The person's own terms in days; blank for none. An editor starts with those from the beginning of time.
-  const [terms, setTerms] = useState(editing?.ownTerms == null ? '' : String(editing.ownTerms));
+  // The person's own terms in days; blank for none. An editor starts with those in force on the sheet's today.
+  const [terms, setTerms] = useState(editing?.terms == null ? '' : String(editing.terms));
   // The date the terms are given from; blank is from the beginning of time.
   const [termsFrom, setTermsFrom] = useState('');
   // The person's contact; blank for none.
@@ -176,7 +176,7 @@ function PersonForm({ sheetId, editing, refused, onRefused }: { sheetId: string;
       if (now) {
         setName(now.name);
         setGrade(now.grade);
-        setTerms(now.ownTerms == null ? '' : String(now.ownTerms));
+        setTerms(now.terms == null ? '' : String(now.terms));
         setContact(now.contact ?? '');
         setTags(now.tags.join(', '));
         setVersion(now.version);
