@@ -32,6 +32,7 @@ public class Claim {
     private String splitFrom;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private boolean waived;
     private String ref;
     private String tags;
     private String voidReason;
@@ -113,6 +114,15 @@ public class Claim {
     }
 
     /** The last sheet-today a reminder was written for the claim; null when never reminded. */
+    /** Whether a steward waived the claim's late charge: it bears none from then on. */
+    public boolean isWaived() {
+        return waived;
+    }
+
+    public void setWaived(boolean waived) {
+        this.waived = waived;
+    }
+
     public LocalDate getRemindedOn() {
         return remindedOn;
     }

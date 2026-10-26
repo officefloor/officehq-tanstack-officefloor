@@ -14,7 +14,7 @@ import net.officefloor.hq.app.person.Person;
  * full 30 days it is overdue, the late percent in force on that boundary date (that date plus 30, 60, 90 ... days) of its figure
  * plus the charges of the boundaries before it (compounding),
  * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
- * (a negative amount) never gains one. The charge is never bound by a statement; settling freezes it into the settled due.
+ * (a negative amount) never gains one, nor does a claim whose late charge a steward waived. The charge is never bound by a statement; settling freezes it into the settled due.
  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its
  * late charge (a correction has no floor).
  */
@@ -64,7 +64,7 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
     /** The late charge the claim would have on its figure were it OPEN. */
     public BigDecimal onAsOpen(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.isCorrection()) {
+        if (figure == null || claim.isCorrection() || claim.isWaived()) {
             return none;
         }
         LocalDate from = lateFrom(claim);

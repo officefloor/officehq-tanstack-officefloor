@@ -33,6 +33,8 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   lateEntry: boolean;
   /** The last sheet-today a reminder was written for the claim; none when it was never reminded. */
   reminded: string | null;
+  /** Whether a steward waived its late charge: it bears none from then on. */
+  waived: boolean;
   /** The claim's external reference, used at most once on the sheet (case aside); none when it has none. */
   ref: string | null;
   /** The claim's tags, sorted; empty when it has none. */
