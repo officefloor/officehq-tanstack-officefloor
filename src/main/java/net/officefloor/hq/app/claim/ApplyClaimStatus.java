@@ -24,8 +24,8 @@ import net.officefloor.plugin.variable.Val;
  * refusing to let the user who opened it, or who last edited it, settle it; a clerk's settle whose due is above the sheet's
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
  * above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's) is refused (a due of n/a is within any limit; a steward settles anything). A review of a
- * PENDING claim is a steward's: approving settles it at its live due (never by the user who opened it or last edited it), rejecting
- * returns it to OPEN, bound again by its last statement if that bound it. A steward may void a SETTLED claim within
+ * PENDING claim is a steward's: approving settles it at its due (the figure a statement binds it to, while one does) (never by the user who opened it or last edited it), rejecting
+ * returns it to OPEN, still bound by its last statement if that bound it. A steward may void a SETTLED claim within
  * seven days of its settlement (its status log's last SETTLED date) by the sheet's today. While the sheet has void reasons,
  * a void needs one of them, kept on the claim. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
@@ -212,7 +212,7 @@ public class ApplyClaimStatus {
         return ClaimNumbering.number(claim.getSheetId(), claim.getDueBy(), repository, settings, sheets, periods);
     }
 
-    /** The figure a statement binds the claim to (not while PENDING), else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date (not floored); null when there is no rate. */
+    /** The figure a statement binds the claim to, else the claim's amount times its person's grade's rate on the claim's date, rounded as the claim rounds by the sheet's policy date (not floored); null when there is no rate. */
     private static BigDecimal dueNow(Claim claim, PersonRepository people, RateRepository rates,
             SettingRepository settings, LateCharge late) {
         if (claim.isBound()) {

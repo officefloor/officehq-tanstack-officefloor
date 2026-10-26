@@ -128,10 +128,10 @@ export function isOpen(claim: { status: string }): boolean {
   return claim.status === 'OPEN' || claim.status === 'PENDING';
 }
 
-/** Whether the person's last statement binds the claim to its `statedDue`: it was stated, and is not PENDING (a PENDING
- *  claim shows and totals its live figure; rejected back to OPEN, it is bound again). */
+/** Whether the person's last statement binds the claim to its `statedDue`: it was stated (a PENDING claim too, like
+ *  any other claim that counts). */
 export function isBound(claim: { stated: boolean; status?: string }): boolean {
-  return claim.stated && claim.status !== 'PENDING';
+  return claim.stated;
 }
 
 /** The date a claim's lateness counts from: its due-by plus the grace in force on its date of its person's grade on
