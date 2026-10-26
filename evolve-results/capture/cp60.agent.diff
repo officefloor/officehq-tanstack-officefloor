@@ -1,0 +1,120 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 09575f84..1611b0b3 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+-import { excess, figure, personDue, personSum, ratesQuery, sumDue } from './ratesQuery';
++import { excess, figure, personDue, personSum, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
+ 
+ function useSheetData(sheetId: string) {
+   return {
+@@ -47,10 +47,10 @@ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: numbe
+   return <td data-testid="person-backing">{sumDue(dues)}</td>;
+ }
+ 
+-/** The sheet's due-total: every person's due-total added up, skipping n/a. */
++/** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
+ export function useSheetDueTotal(sheetId: string) {
+   const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+-  return sumDue(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
++  return trimmedSum(people.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)));
+ }
+ 
+ function DueTotal({ sheetId }: { sheetId: string }) {
+diff --git a/src/main/frontend/features/rates/overdue.slot.tsx b/src/main/frontend/features/rates/overdue.slot.tsx
+index 0fcb01fc..009621c5 100644
+--- a/src/main/frontend/features/rates/overdue.slot.tsx
++++ b/src/main/frontend/features/rates/overdue.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import type { Person } from '../people/peopleQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useFloor, useLate } from '../settings/settingsQuery';
+-import { figure, isOverdue, ratesQuery, sumDue } from './ratesQuery';
++import { figure, isOverdue, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
+ 
+ function useOverdueData(sheetId: string) {
+   return {
+@@ -54,9 +54,11 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
+-/** The sheet's overdue claims that count: how many, and their total. */
++/** The sheet's overdue claims that count: how many, and their total (every person's, trimmed of the highest and lowest). */
+ export function useSheetOverdue(sheetId: string) {
+-  return overdue(useOverdueData(sheetId));
++  const data = useOverdueData(sheetId);
++  const { count } = overdue(data);
++  return { count, total: trimmedSum(data.people.map((p) => overdue(data, p).total)) };
+ }
+ 
+ function OverdueTotal({ sheetId }: { sheetId: string }) {
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 83b51f5c..5e9878dd 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -67,6 +67,13 @@ export function sumDue(dues: string[]): string {
+   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
+ }
+ 
++/** A sheet total of per-person figures: with three or more figures (n/a is none), the single highest and lowest are left out. */
++export function trimmedSum(dues: string[]): string {
++  const figures = dues.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
++  return show(kept.reduce((total, d) => total + d, 0n));
++}
++
+ /**
+  * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percents
+  * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 0122affc..7924c9e9 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
+@@ -41,8 +42,8 @@ public class Rollup {
+                 .filter(c -> c.status().counts()).toList();
+         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
+         BigDecimal claimedTotal = ZERO;
+-        BigDecimal dueTotal = ZERO;
+-        BigDecimal overdueTotal = ZERO;
++        List<BigDecimal> dues = new ArrayList<>();
++        List<BigDecimal> overdues = new ArrayList<>();
+         for (Person person : people.list(sheetId)) {
+             BigDecimal claimed = ZERO;
+             BigDecimal due = ZERO;
+@@ -68,14 +69,21 @@ public class Rollup {
+             due = settings.capped(sheetId, due);
+             claimedTotal = claimedTotal.add(claimed);
+             if (!none) {
+-                dueTotal = dueTotal.add(due);
++                dues.add(due);
+             }
+-            overdueTotal = overdueTotal.add(overdue);
++            overdues.add(overdue);
+             figures.put(person.id(), new Figures.PersonFigures(person.name(), claimed.toPlainString(),
+                     none ? "n/a" : due.toPlainString(), overdue.toPlainString()));
+         }
+-        return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
+-                overdueTotal.toPlainString());
++        return new Figures(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
++                trimmed(overdues).toPlainString());
++    }
++
++    /** A sheet total of per-person figures: with three or more, the single highest and lowest are left out. */
++    private static BigDecimal trimmed(List<BigDecimal> figures) {
++        List<BigDecimal> sorted = figures.stream().sorted().toList();
++        List<BigDecimal> kept = sorted.size() >= 3 ? sorted.subList(1, sorted.size() - 1) : sorted;
++        return kept.stream().reduce(ZERO, BigDecimal::add);
+     }
+ 
+     /** An open (OPEN or PENDING) claim, not deferred, whose due-by (fixed when it was made) is before {@code today}. */
