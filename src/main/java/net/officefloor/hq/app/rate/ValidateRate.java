@@ -11,14 +11,14 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * A rate's fields: a grade (A, B or C), a percent with up to two decimals, 0.00 to 100.00, and an
+ * A rate's fields: a grade (A, B or C), a percent with up to two decimals, 0.00 to 99999.99, and an
  * optional from-date and to-date (yyyy-mm-dd; blank for none); a to-date is not before the from-date.
  */
 public class ValidateRate {
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
-    private static final Pattern RATE = Pattern.compile("\\d{1,3}(\\.\\d{1,2})?");
+    private static final Pattern RATE = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?");
 
     public void validate(@RequestBody RateRequest request, Out<RateInput> rate, Out<ChangedBy> changedBy)
             throws BadRequestException {
@@ -38,11 +38,11 @@ public class ValidateRate {
             throw new BadRequestException("Enter a rate");
         }
         if (!RATE.matcher(text).matches()) {
-            throw new BadRequestException("A rate is a percent, 0.00 to 100.00, with up to two decimals");
+            throw new BadRequestException("A rate is a percent, 0.00 to 99999.99, with up to two decimals");
         }
         BigDecimal value = new BigDecimal(text).setScale(2);
-        if (value.compareTo(BigDecimal.valueOf(100)) > 0) {
-            throw new BadRequestException("A rate is a percent, 0.00 to 100.00, with up to two decimals");
+        if (value.compareTo(new BigDecimal("99999.99")) > 0) {
+            throw new BadRequestException("A rate is a percent, 0.00 to 99999.99, with up to two decimals");
         }
         String fromText = request.from() == null ? "" : request.from().trim();
         LocalDate from = null;

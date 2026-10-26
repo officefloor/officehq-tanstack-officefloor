@@ -1,4 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { LocaleFigures } from '../features/locale/LocaleFigures';
+import { useLocale } from '../features/locale/useLocale';
 import { SignIn } from '../features/session/SignIn';
 import { UserBar } from '../features/session/UserBar';
 import { useSheetId, useUser } from '../features/session/useSession';
@@ -14,6 +16,7 @@ export const Route = createFileRoute('/')({
 function Home() {
   const [user] = useUser();
   const [sheetId] = useSheetId();
+  const locale = useLocale(user ?? '');
   if (!user) {
     return <SignIn />;
   }
@@ -22,7 +25,9 @@ function Home() {
       <UserBar />
       <SheetPicker />
       {sheetId ? (
-        <SheetBody.Slot key={sheetId} sheetId={sheetId} user={user} />
+        <LocaleFigures locale={locale.data?.locale ?? 'en'}>
+          <SheetBody.Slot key={sheetId} sheetId={sheetId} user={user} />
+        </LocaleFigures>
       ) : (
         <p data-testid="home-empty">Load a sheet to begin.</p>
       )}

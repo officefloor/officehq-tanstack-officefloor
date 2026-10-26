@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.access.RoleRepository;
 import net.officefloor.hq.app.access.SettingRepository;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -30,7 +31,13 @@ public class GeneratePlanClaims {
 
     public void generate(@Val SheetResponse sheet, @Val ChangedBy by, PlanRepository plans, PersonRepository people,
             ClaimRepository claims, SheetRepository sheets, PeriodRepository periods, SettingRepository settings,
-            HolidayRepository holidays, Rollup rollup, Audit audit, ClaimLog log, Out<GenerateResponse> response) {
+            HolidayRepository holidays, RoleRepository roles, Rollup rollup, Audit audit, ClaimLog log,
+            Out<GenerateResponse> response) {
+        if (roles.isViewer(sheet.id(), by.name()) || sheets.isArchived(sheet.id())) {
+            // A viewer's press, or one on an archived sheet, goes through with nothing made.
+            response.set(new GenerateResponse(0));
+            return;
+        }
         LocalDate today = sheets.today(sheet.id());
         RollupSnapshot before = rollup.snapshot(sheet.id());
         int made = 0;

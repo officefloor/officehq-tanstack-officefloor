@@ -13,7 +13,7 @@ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useCapCents, useFloorCents, useLate } from '../access/useAccess';
 
 const GRADES = ['A', 'B', 'C'] as const;
-const RATE = /^\d{1,3}(\.\d{1,2})?$/;
+const RATE = /^\d{1,5}(\.\d{1,2})?$/;
 export const NA = 'n/a';
 
 /** The rate (in hundredths of a percent) in force on the sheet's today for each grade that has one. */
@@ -115,8 +115,8 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
   const save = useMutation({
     mutationFn: async (body: { grade: string; rate: string; from: string; to: string }) => {
       if (body.rate.trim() === '') throw new Error('Enter a rate');
-      if (!RATE.test(body.rate.trim()) || Number(body.rate) > 100) {
-        throw new Error('A rate is a percent, 0.00 to 100.00, with up to two decimals');
+      if (!RATE.test(body.rate.trim()) || Number(body.rate) > 99999.99) {
+        throw new Error('A rate is a percent, 0.00 to 99999.99, with up to two decimals');
       }
       // `by` is the signed-in user the change is recorded against.
       return putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, { ...body, from: body.from.trim(), to: body.to.trim(), by: user ?? '' });
@@ -273,7 +273,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
     setError(null);
     const rate = pct.trim();
     if (rate === '') return setError('Enter a rate');
-    if (!RATE.test(rate) || Number(rate) > 100) return setError('A rate is a percent, 0.00 to 100.00, with up to two decimals');
+    if (!RATE.test(rate) || Number(rate) > 99999.99) return setError('A rate is a percent, 0.00 to 99999.99, with up to two decimals');
     const base = `/api/sheets/${encodeURIComponent(sheetId)}`;
     // Re-read what the preview is worked out from, so it reflects the store now; the result is fixed as of this press.
     const [claims, people, current] = await Promise.all([
