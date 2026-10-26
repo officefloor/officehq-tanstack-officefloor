@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { claimsKey } from './claimsQuery';
 import type { Claim } from './claimsQuery';
@@ -33,6 +34,7 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [user] = useUser();
+  const once = useSubmitOnce();
   const save = useMutation({
     mutationFn: (body: Body) =>
       editing
@@ -64,7 +66,7 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
       setError('The date must be yyyy-mm-dd.');
       return;
     }
-    save.mutate({ amount: a, date: d, note: note.trim() });
+    once(() => save.mutateAsync({ amount: a, date: d, note: note.trim() }));
   };
 
   const edit = <T,>(set: (v: T) => void) => (v: T) => {

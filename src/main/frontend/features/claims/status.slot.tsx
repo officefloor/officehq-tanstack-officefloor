@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { ClaimCells } from '../../slots/defs/claimColumns';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { claimsKey } from './claimsQuery';
 import type { Claim, ClaimStatus } from './claimsQuery';
@@ -21,6 +22,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [error, setError] = useState('');
+  const once = useSubmitOnce();
   const change = useMutation({
     mutationFn: (to: ClaimStatus) =>
       putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`, {}, user),
@@ -44,7 +46,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
           disabled={change.isPending}
           onClick={() => {
             setError('');
-            change.mutate(to);
+            once(() => change.mutateAsync(to));
           }}
         >
           {label}

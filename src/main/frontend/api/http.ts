@@ -1,7 +1,13 @@
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
+/** A write refused because the record was saved by someone else since it was loaded (409). */
+export class ConflictError extends Error {}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
+  if (res.status === 409) {
+    throw new ConflictError(`${init?.method ?? 'GET'} ${path} -> 409`);
+  }
   if (!res.ok) {
     throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
   }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { ConflictError, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { GRADES, peopleKey, peopleQuery } from './peopleQuery';
 import type { Grade, Person } from './peopleQuery';
@@ -16,17 +17,25 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<Grade>('A');
   const [error, setError] = useState('');
+  // The version of the person the editor loaded; a save is refused once someone else has saved since.
+  const [version, setVersion] = useState<number | undefined>(undefined);
+
+  const fill = (p: Person | undefined) => {
+    setName(p?.name ?? '');
+    setGrade(p?.grade ?? 'A');
+    setVersion(p?.version);
+  };
 
   // Opening an editor (or closing it) refills the form.
   useEffect(() => {
-    setName(editing?.name ?? '');
-    setGrade(editing?.grade ?? 'A');
+    fill(editing);
     setError('');
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [user] = useUser();
+  const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: Grade }) =>
+    mutationFn: (body: { name: string; grade: Grade; version?: number }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
@@ -39,7 +48,16 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
       }
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
-    onError: () => setError('The person could not be saved.'),
+    onError: async (e) => {
+      if (e instanceof ConflictError && editing) {
+        // Someone else saved this person since the editor loaded it: show what is stored now.
+        setError('Someone else has saved this person since you opened it. The form now shows their changes.');
+        const fresh = await queryClient.fetchQuery({ ...peopleQuery(sheetId), staleTime: 0 });
+        fill(fresh.find((p) => p.id === editing.id));
+      } else {
+        setError('The person could not be saved.');
+      }
+    },
   });
 
   const submit = (e: FormEvent) => {
@@ -55,7 +73,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
       setError('That name is already in use.');
       return;
     }
-    save.mutate({ name: trimmed, grade });
+    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version } : { name: trimmed, grade }));
   };
 
   return (

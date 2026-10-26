@@ -12,15 +12,15 @@ import type { Rate } from './ratesQuery';
 
 /**
  * A person's due-total: the sum of their counting claims' rounded figures — a settled claim's frozen
- * figure, otherwise its amount times their grade's rate in force on the sheet's today. With no rate
- * today it is n/a, unless a settled claim keeps a figure: then it is the sum of the figures there are.
+ * figure, otherwise its due as the claim shows it (its amount times their grade's rate on the claim's
+ * date). With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
 function personDue(person: Person | undefined, claims: Claim[], rates: Rate[], today: string): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, person.grade, today);
   const figures = claims
     .filter((c) => c.personId === person.id && counts(c))
-    .map((c) => c.settledDue ?? due(c.amount, rate))
+    .map((c) => c.settledDue ?? due(c.amount, rateFor(rates, person.grade, c.date)))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
+import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { GRADES } from '../people/peopleQuery';
@@ -25,6 +26,7 @@ function Rates({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
 
   const [user] = useUser();
+  const once = useSubmitOnce();
   const save = useMutation({
     mutationFn: (body: { grade: Grade; rate: string; from: string }) =>
       putJson<Rate>(
@@ -53,7 +55,7 @@ function Rates({ sheetId }: { sheetId: string }) {
       setError('The from-date must be a date (yyyy-mm-dd).');
       return;
     }
-    save.mutate({ grade, rate: p, from: f });
+    once(() => save.mutateAsync({ grade, rate: p, from: f }));
   };
 
   const list = rates.data ?? [];
