@@ -1,0 +1,304 @@
+diff --git a/src/main/frontend/features/session/CurrentUser.tsx b/src/main/frontend/features/session/CurrentUser.tsx
+new file mode 100644
+index 00000000..51ad6f7a
+--- /dev/null
++++ b/src/main/frontend/features/session/CurrentUser.tsx
+@@ -0,0 +1,13 @@
++import { useUser } from './useUser';
++
++export function CurrentUser() {
++  const [user, setUser] = useUser();
++  return (
++    <p>
++      Signed in as <strong data-testid="current-user">{user}</strong>{' '}
++      <button type="button" data-testid="signout" onClick={() => setUser(undefined)}>
++        Sign out
++      </button>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 00000000..05d3de89
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,40 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useUser } from './useUser';
++
++export function SignIn() {
++  const [, setUser] = useUser();
++  const [name, setName] = useState('');
++  const [error, setError] = useState('');
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = name.trim();
++    if (trimmed === '') {
++      setError('Type a name to sign in.');
++      return;
++    }
++    setError('');
++    setUser(trimmed);
++  };
++
++  return (
++    <form data-testid="signin-form" onSubmit={submit}>
++      <label>
++        Name{' '}
++        <input
++          data-testid="signin-name"
++          value={name}
++          onChange={(e) => {
++            setName(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++      {error && <p data-testid="signin-error">{error}</p>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/useUser.ts b/src/main/frontend/features/session/useUser.ts
+new file mode 100644
+index 00000000..dff4c300
+--- /dev/null
++++ b/src/main/frontend/features/session/useUser.ts
+@@ -0,0 +1,6 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The signed-in name. There is no password: signing in is typing a name, kept in the URL. */
++export function useUser() {
++  return useSearchParam('user', asString);
++}
+diff --git a/src/main/frontend/features/sheet/ActiveSheet.tsx b/src/main/frontend/features/sheet/ActiveSheet.tsx
+new file mode 100644
+index 00000000..aef1991b
+--- /dev/null
++++ b/src/main/frontend/features/sheet/ActiveSheet.tsx
+@@ -0,0 +1,25 @@
++import { useQuery } from '@tanstack/react-query';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { forSlot } from '../../slots/registry';
++import { useSheetId } from './useSheetId';
++import { sheetQuery } from './sheetQuery';
++
++/** The loaded sheet: its id, then every per-sheet panel. Nothing shows until it has loaded. */
++export function ActiveSheet({ user }: { user: string }) {
++  const [sheetId] = useSheetId();
++  const sheet = useQuery({ ...sheetQuery(sheetId), enabled: sheetId !== '' });
++
++  if (sheetId === '') return <p data-testid="sheet-none">No sheet loaded.</p>;
++  if (sheet.isError) return <p data-testid="sheet-load-error">Could not load sheet {sheetId}.</p>;
++  if (!sheet.data) return <p data-testid="sheet-loading">Loading…</p>;
++
++  return (
++    <section data-testid="sheet">
++      <h2>
++        Sheet <span data-testid="sheet-current-id">{sheet.data.id}</span>
++      </h2>
++      <SheetPanel.Slot user={user} sheetId={sheet.data.id} />
++      {forSlot(SheetPanel.id).length === 0 && <p data-testid="home-empty">Nothing here yet.</p>}
++    </section>
++  );
++}
+diff --git a/src/main/frontend/features/sheet/SheetPicker.tsx b/src/main/frontend/features/sheet/SheetPicker.tsx
+new file mode 100644
+index 00000000..080d9285
+--- /dev/null
++++ b/src/main/frontend/features/sheet/SheetPicker.tsx
+@@ -0,0 +1,45 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { useSheetId } from './useSheetId';
++import { sheetKey } from './sheetQuery';
++
++export function SheetPicker() {
++  const [sheetId, setSheetId] = useSheetId();
++  const queryClient = useQueryClient();
++  const [typed, setTyped] = useState(sheetId);
++  const [error, setError] = useState('');
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const id = typed.trim();
++    if (id === '') {
++      setError('Type a sheet id to load.');
++      return;
++    }
++    setError('');
++    // Loading a sheet always re-reads it from the store, even when it was loaded before.
++    void queryClient.invalidateQueries({ queryKey: sheetKey(id) });
++    setSheetId(id);
++  };
++
++  return (
++    <form data-testid="sheet-form" onSubmit={submit}>
++      <label>
++        Sheet{' '}
++        <input
++          data-testid="sheet-id-input"
++          value={typed}
++          onChange={(e) => {
++            setTyped(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="sheet-load">
++        Load
++      </button>
++      {error && <p data-testid="sheet-error">{error}</p>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/sheet/sheetQuery.ts b/src/main/frontend/features/sheet/sheetQuery.ts
+new file mode 100644
+index 00000000..434c0048
+--- /dev/null
++++ b/src/main/frontend/features/sheet/sheetQuery.ts
+@@ -0,0 +1,11 @@
++import { getJson } from '../../api/http';
++
++export type Sheet = { id: string };
++
++/** Every query kept per sheet lives under this key, so re-loading a sheet re-reads all of it. */
++export const sheetKey = (sheetId: string) => ['sheet', sheetId] as const;
++
++export const sheetQuery = (sheetId: string) => ({
++  queryKey: sheetKey(sheetId),
++  queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}`),
++});
+diff --git a/src/main/frontend/features/sheet/useSheetId.ts b/src/main/frontend/features/sheet/useSheetId.ts
+new file mode 100644
+index 00000000..3f1c36f5
+--- /dev/null
++++ b/src/main/frontend/features/sheet/useSheetId.ts
+@@ -0,0 +1,6 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The id of the active sheet, kept in the URL. */
++export function useSheetId() {
++  return useSearchParam('sheet', asString);
++}
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb03126..0df17d86 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,24 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { useUser } from '../features/session/useUser';
++import { SignIn } from '../features/session/SignIn';
++import { CurrentUser } from '../features/session/CurrentUser';
++import { SheetPicker } from '../features/sheet/SheetPicker';
++import { ActiveSheet } from '../features/sheet/ActiveSheet';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The one screen: sign in by name, then load a sheet by id. Everything else is kept per sheet and
++// fills the sheet.panel slot (slots/defs/sheetPanel.ts).
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  const [user] = useUser();
++  if (user === '') return <SignIn />;
++  return (
++    <>
++      <CurrentUser />
++      <SheetPicker />
++      <ActiveSheet user={user} />
++    </>
++  );
+ }
+diff --git a/src/main/frontend/slots/defs/sheetPanel.ts b/src/main/frontend/slots/defs/sheetPanel.ts
+new file mode 100644
+index 00000000..3a07efc7
+--- /dev/null
++++ b/src/main/frontend/slots/defs/sheetPanel.ts
+@@ -0,0 +1,7 @@
++import { defineSlot } from '../Slot';
++
++/**
++ * The body of the loaded sheet. Every feature kept per sheet contributes its own panel here; it
++ * is rendered only once a sheet has loaded, with the signed-in user and that sheet's id.
++ */
++export const SheetPanel = defineSlot<{ user: string; sheetId: string }>('sheet.panel');
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+new file mode 100644
+index 00000000..dc635fca
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadSheet {
++    // A sheet that was never loaded before starts empty, so any id loads.
++    public void load(@PathVariable("sheetId") String sheetId, Out<Sheet> sheetOut) {
++        sheetOut.set(new Sheet(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 00000000..a4173be6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSheet {
++    public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
++        response.send(SheetResponse.from(sheet));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+new file mode 100644
+index 00000000..6caff1d6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A sheet, identified by the id a user types. Everything else in the app is kept per sheet. */
++public record Sheet(String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+new file mode 100644
+index 00000000..edd5944a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++/** The sheet as the screen sees it. */
++public record SheetResponse(String id) {
++
++    public static SheetResponse from(Sheet sheet) {
++        return new SheetResponse(sheet.id());
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml
+new file mode 100644
+index 00000000..7ea75075
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml
+@@ -0,0 +1,6 @@
++# GET /api/sheets/{sheetId} — load a sheet by id. An id never used before is an empty sheet.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
