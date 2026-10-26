@@ -5,13 +5,19 @@ import { useSheetToday } from '../sheet/useSheetToday';
 import type { Late } from '../rates/ratesQuery';
 import { claimsQuery } from '../claims/claimsQuery';
 import type { Grade } from '../people/peopleQuery';
+import { valueOn } from './dated';
+import type { DatedValue } from './dated';
+
 
 /** `clerkLimit` has two decimals ("1.50"), or is "" when there is no limit; `floor` has two decimals;
  *  `terms` is a whole number of days ("14"), and `gradeTerms` the terms in force for each grade (its own, else the sheet's); `latePct` is a percent with two decimals ("0.00");
- *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none. */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string };
+ *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date); `periodNumberingFrom` is yyyy-mm-dd, or "" when numbering by period is off; `cap` has two decimals, or is "" when there is none.
+ *  Those that carry a figure are as in force on the sheet's today when they were read; `dated` holds every value recorded for each of them, by key
+ *  (clerk-limit, floor, terms, terms-<grade>, late-pct, cap; a blank clerk limit or cap is none). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string; gradeTerms: Record<Grade, string>; cap: string; dated: Record<string, DatedValue[]> };
 
-/** What the request carries: a setting left out (or blank, for the floor, terms, a grade's terms and late percent) is left as it is; a blank policy date is none. */
+/** What the request carries: a setting left out (or blank, for the floor, terms, a grade's terms and late percent) is left as it is; a blank policy date is none.
+ *  `from` is the from-date (yyyy-mm-dd) a dated setting is recorded from, by key; left out, it is the sheet's today. */
 export type SettingsChange = {
   clerkLimit?: string;
   floor?: string;
@@ -21,13 +27,8 @@ export type SettingsChange = {
   periodNumberingFrom?: string;
   gradeTerms?: Partial<Record<Grade, string>>;
   cap?: string;
+  from?: Record<string, string>;
 };
-
-/** The floor a sheet starts with. */
-export const DEFAULT_FLOOR = '1.00';
-
-/** The late percent a sheet starts with. */
-export const DEFAULT_LATE_PCT = '0.00';
 
 export type RoleName = 'clerk' | 'steward';
 
@@ -45,19 +46,25 @@ export const settingsQuery = (sheetId: string) => ({
   queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
 });
 
-/** The sheet's floor: what a claim's live due is at least. */
-export function useFloor(sheetId: string): string {
-  return useQuery(settingsQuery(sheetId)).data?.floor ?? DEFAULT_FLOOR;
+/** A dated setting's value in force on the sheet's today, or `starting` when none is recorded on or before it. */
+export function useCurrent(sheetId: string, key: string, starting = ''): string {
+  const today = useSheetToday(sheetId);
+  return valueOn(useQuery(settingsQuery(sheetId)).data?.dated?.[key], today) ?? starting;
 }
 
-/** The sheet's cap: what a person's due-total is at most ("" for none). */
+/** The sheet's floors by from-date: what a claim's live due is at least, as in force on the claim's date. */
+export function useFloor(sheetId: string): DatedValue[] {
+  return useQuery(settingsQuery(sheetId)).data?.dated?.floor ?? [];
+}
+
+/** The sheet's cap in force on its today: what a person's due-total is at most ("" for none). */
 export function useCap(sheetId: string): string {
-  return useQuery(settingsQuery(sheetId)).data?.cap ?? '';
+  return useCurrent(sheetId, 'cap');
 }
 
-/** The sheet's late percent: what an overdue claim gains of its figure for every full 30 days it is overdue. */
-export function useLatePct(sheetId: string): string {
-  return useQuery(settingsQuery(sheetId)).data?.latePct ?? DEFAULT_LATE_PCT;
+/** The sheet's late percents by from-date: what an overdue claim gains of its figure for every full 30 days it is overdue, as in force on the claim's date. */
+export function useLatePct(sheetId: string): DatedValue[] {
+  return useQuery(settingsQuery(sheetId)).data?.dated?.['late-pct'] ?? [];
 }
 
 /** The sheet's policy date (yyyy-mm-dd): the one set, or the sheet's today when there is none. */

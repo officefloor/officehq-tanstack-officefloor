@@ -27,6 +27,7 @@ public class ValidateSettings {
     // and only a grade (A, B or C) may have them.
     // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
     // The cap is missing: left as it is, blank: none, otherwise an amount of 0.00 or more with up to two decimals.
+    // A from-date, given by setting key, is blank (the sheet's today) or a yyyy-MM-dd date, and only a dated setting has one.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
             Out<SheetSettings> settingsOut) throws InvalidSettingException {
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
@@ -85,6 +86,24 @@ public class ValidateSettings {
             }
             cap = twoDecimals(cap);
         }
+        Map<String, LocalDate> from = new java.util.HashMap<>();
+        if (body != null && body.from() != null) {
+            for (Map.Entry<String, String> entry : body.from().entrySet()) {
+                String key = entry.getKey() == null ? "" : entry.getKey().trim();
+                String date = entry.getValue() == null ? "" : entry.getValue().trim();
+                if (date.isEmpty()) {
+                    continue;
+                }
+                if (!Settings.DATED.contains(key)) {
+                    throw new InvalidSettingException("Only a setting that carries a figure has a from-date.");
+                }
+                try {
+                    from.put(key, LocalDate.parse(date));
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("The from-date must be a date (yyyy-mm-dd).");
+                }
+            }
+        }
         boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null || cap != null;
         if (typed == null && !others) {
@@ -94,7 +113,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, gradeTerms));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, cap, gradeTerms, from));
     }
 
     private static String twoDecimals(String amount) {

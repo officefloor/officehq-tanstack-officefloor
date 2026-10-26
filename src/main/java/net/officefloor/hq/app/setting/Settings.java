@@ -28,6 +28,9 @@ public class Settings {
     public static final String POLICY_DATE = "policy-date";
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
     public static final String CAP = "cap";
+    /** The settings that carry a figure: each value is kept from a from-date (see {@link #on}). */
+    public static final List<String> DATED = List.of(CLERK_LIMIT, FLOOR, TERMS, gradeTermsKey("A"), gradeTermsKey("B"),
+            gradeTermsKey("C"), LATE_PCT, CAP);
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
@@ -53,15 +56,44 @@ public class Settings {
                 sheetId, key, value);
     }
 
-    /** The clerk limit; null when there is none. */
+    /** A dated setting's value from a from-date; one already recorded from that date is replaced. */
+    public void set(String sheetId, String key, LocalDate from, String value) {
+        jdbc.update("MERGE INTO setting_from (sheet_id, setting_key, from_date, setting_value) KEY (sheet_id, setting_key, from_date)"
+                + " VALUES (?, ?, ?, ?)", sheetId, key, java.sql.Date.valueOf(from), value);
+    }
+
+    /** A dated setting's value in force on the date: the one with the latest from-date on or before it; "" when there is none. */
+    public String on(String sheetId, String key, LocalDate date) {
+        List<String> values = jdbc.queryForList("SELECT setting_value FROM setting_from WHERE sheet_id = ? AND setting_key = ?"
+                + " AND from_date <= ? ORDER BY from_date DESC LIMIT 1", String.class, sheetId, key, java.sql.Date.valueOf(date));
+        return values.isEmpty() ? "" : values.get(0);
+    }
+
+    /** A dated setting's values, by from-date. */
+    public List<DatedValue> history(String sheetId, String key) {
+        return jdbc.query("SELECT from_date, setting_value FROM setting_from WHERE sheet_id = ? AND setting_key = ? ORDER BY from_date",
+                (rs, n) -> new DatedValue(rs.getDate("from_date").toLocalDate().toString(), rs.getString("setting_value")),
+                sheetId, key);
+    }
+
+    /** A dated setting's value from a from-date (yyyy-MM-dd). */
+    public record DatedValue(String from, String value) {
+    }
+
+    /** A dated setting's value in force on the sheet's today; "" when there is none. */
+    public String current(String sheetId, String key) {
+        return on(sheetId, key, sheets.today(sheetId));
+    }
+
+    /** The clerk limit in force on the sheet's today; null when there is none. */
     public BigDecimal clerkLimit(String sheetId) {
-        String value = get(sheetId, CLERK_LIMIT);
+        String value = current(sheetId, CLERK_LIMIT);
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 
-    /** The cap, with two decimals: what a person's due-total is at most; null when there is none. */
+    /** The cap in force on the sheet's today, with two decimals: what a person's due-total is at most; null when there is none. */
     public BigDecimal cap(String sheetId) {
-        String value = get(sheetId, CAP);
+        String value = current(sheetId, CAP);
         return value.isEmpty() ? null : new BigDecimal(value);
     }
 
@@ -71,15 +103,15 @@ public class Settings {
         return dueTotal == null || cap == null ? dueTotal : dueTotal.min(cap);
     }
 
-    /** The floor, with two decimals: what a claim's live due is at least; 1.00 when never set. */
-    public BigDecimal floor(String sheetId) {
-        String value = get(sheetId, FLOOR);
+    /** The floor in force on the date, with two decimals: what a claim's live due is at least; 1.00 when none is. */
+    public BigDecimal floor(String sheetId, LocalDate date) {
+        String value = on(sheetId, FLOOR, date);
         return new BigDecimal(value.isEmpty() ? FLOOR_DEFAULT : value);
     }
 
-    /** The terms: the number of days after its date a claim is due by; 14 when never set. */
-    public int terms(String sheetId) {
-        String value = get(sheetId, TERMS);
+    /** The terms in force on the date: the number of days after its date a claim is due by; 14 when none are. */
+    public int terms(String sheetId, LocalDate date) {
+        String value = on(sheetId, TERMS, date);
         return Integer.parseInt(value.isEmpty() ? TERMS_DEFAULT : value);
     }
 
@@ -88,15 +120,15 @@ public class Settings {
         return TERMS + "-" + grade;
     }
 
-    /** The terms of the grade: its own terms, or the sheet's terms when it has none of its own. */
-    public int terms(String sheetId, String grade) {
-        String value = get(sheetId, gradeTermsKey(grade));
-        return value.isEmpty() ? terms(sheetId) : Integer.parseInt(value);
+    /** The terms of the grade in force on the date: its own terms, or the sheet's terms when it has none of its own. */
+    public int terms(String sheetId, String grade, LocalDate date) {
+        String value = on(sheetId, gradeTermsKey(grade), date);
+        return value.isEmpty() ? terms(sheetId, date) : Integer.parseInt(value);
     }
 
-    /** The late percent, with two decimals: what an overdue claim gains per full 30 days; 0.00 when never set. */
-    public BigDecimal latePct(String sheetId) {
-        String value = get(sheetId, LATE_PCT);
+    /** The late percent in force on the date, with two decimals: what an overdue claim gains per full 30 days; 0.00 when none is. */
+    public BigDecimal latePct(String sheetId, LocalDate date) {
+        String value = on(sheetId, LATE_PCT, date);
         return new BigDecimal(value.isEmpty() ? LATE_PCT_DEFAULT : value);
     }
 
@@ -135,7 +167,7 @@ public class Settings {
 
     /**
      * A claim's figure with its late charge added on top: an open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
-     * before {@code today} gains the late percent of the figure for every full 30 days it is overdue, rounded by {@link #rounding}.
+     * before {@code today} gains the late percent in force on the claim's date of the figure for every full 30 days it is overdue, rounded by {@link #rounding}.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge.
      */
@@ -148,14 +180,14 @@ public class Settings {
             return figure;
         }
         long periods = ChronoUnit.DAYS.between(dueBy, today) / 30;
-        BigDecimal charge = figure.multiply(latePct(claim.sheetId())).multiply(BigDecimal.valueOf(periods))
+        BigDecimal charge = figure.multiply(latePct(claim.sheetId(), claim.date())).multiply(BigDecimal.valueOf(periods))
                 .movePointLeft(2).setScale(2, rounding(claim));
         return figure.add(charge);
     }
 
-    /** The claim's live due raised to the sheet's floor; null (no due) stays null, and a correction's due has no floor. */
+    /** The claim's live due raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */
     public BigDecimal floored(Claim claim, BigDecimal due) {
-        return due == null || claim.isCorrection() ? due : due.max(floor(claim.sheetId()));
+        return due == null || claim.isCorrection() ? due : due.max(floor(claim.sheetId(), claim.date()));
     }
 
     /** The sheet's roles, by user name. */

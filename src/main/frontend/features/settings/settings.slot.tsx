@@ -6,6 +6,8 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
+import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, valueOn } from './dated';
+import { useSheetToday } from '../sheet/useSheetToday';
 import type { Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
 import { GRADES } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
@@ -23,7 +25,9 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
  *  today). A person's due-total is at most the cap (blank: none). From the period numbering date on, an opened claim is numbered within its period (blank: off).
  *  A save with every field blank clears whichever of the clerk limit, the policy date, the period numbering
- *  date and the cap was last worked in (the clerk limit unless it was one of the others). */
+ *  date and the cap was last worked in (the clerk limit unless it was one of the others).
+ *  Each setting that carries a figure (all but the policy date and the period numbering date) is saved from its from-date
+ *  (blank: the sheet's today), keeping the values recorded from other dates; what is shown in force is the value on the sheet's today. */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
@@ -36,7 +40,12 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [numberingFrom, setNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
   const [blank, setBlank] = useState<'clerkLimit' | 'policyDate' | 'periodNumberingFrom' | 'cap'>('clerkLimit');
+  const [from, setFrom] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const today = useSheetToday(sheetId);
+  const dated = settings.data?.dated;
+  const current = (key: string, starting = '') => (settings.data ? (valueOn(dated?.[key], today) ?? starting) : '');
+  const currentTerms = current('terms', DEFAULT_TERMS);
 
   const [user] = useUser();
   const once = useSubmitOnce();
@@ -53,6 +62,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setPolicyDate('');
       setNumberingFrom('');
       setCap('');
+      setFrom({});
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -105,6 +115,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The cap must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
+    const froms: Record<string, string> = {};
+    for (const [key, date] of Object.entries(from)) {
+      const d = date.trim();
+      if (d === '') continue;
+      if (!isDate(d)) {
+        setError('A from-date must be a date (yyyy-mm-dd).');
+        return;
+      }
+      froms[key] = d;
+    }
     const body: SettingsChange = {};
     const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '' && c === '';
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
@@ -115,6 +135,7 @@ function Settings({ sheetId }: { sheetId: string }) {
     if (t !== '') body.terms = t;
     if (Object.keys(g).length > 0) body.gradeTerms = g;
     if (p !== '') body.latePct = p;
+    if (Object.keys(froms).length > 0) body.from = froms;
     once(() => save.mutateAsync(body));
   };
 
@@ -136,6 +157,18 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          from{' '}
+          <input
+            data-testid={`setting-clerk-limit-from`}
+            placeholder="sheet's today"
+            value={from['clerk-limit'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['clerk-limit']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Floor{' '}
           <input
             data-testid="setting-floor"
@@ -148,6 +181,18 @@ function Settings({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          from{' '}
+          <input
+            data-testid={`setting-floor-from`}
+            placeholder="sheet's today"
+            value={from['floor'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['floor']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
           Terms (days){' '}
           <input
             data-testid="setting-terms"
@@ -155,6 +200,18 @@ function Settings({ sheetId }: { sheetId: string }) {
             value={terms}
             onChange={(e) => {
               setTerms(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid={`setting-terms-from`}
+            placeholder="sheet's today"
+            value={from['terms'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['terms']: e.target.value });
               setError('');
             }}
           />
@@ -173,6 +230,18 @@ function Settings({ sheetId }: { sheetId: string }) {
                 }}
               />
             </label>{' '}
+            <label>
+              from{' '}
+              <input
+                data-testid={`setting-terms-${grade}-from`}
+                placeholder="sheet's today"
+                value={from[`terms-${grade}`] ?? ''}
+                onChange={(e) => {
+                  setFrom({ ...from, [`terms-${grade}`]: e.target.value });
+                  setError('');
+                }}
+              />
+            </label>{' '}
           </span>
         ))}
         <label>
@@ -183,6 +252,18 @@ function Settings({ sheetId }: { sheetId: string }) {
             value={latePct}
             onChange={(e) => {
               setLatePct(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid={`setting-late-pct-from`}
+            placeholder="sheet's today"
+            value={from['late-pct'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['late-pct']: e.target.value });
               setError('');
             }}
           />
@@ -226,6 +307,18 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid={`setting-cap-from`}
+            placeholder="sheet's today"
+            value={from['cap'] ?? ''}
+            onChange={(e) => {
+              setFrom({ ...from, ['cap']: e.target.value });
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -233,22 +326,22 @@ function Settings({ sheetId }: { sheetId: string }) {
       </form>
       {settings.isError && <p data-testid="settings-load-error">Could not load the settings.</p>}
       <p>
-        Clerk limit in force: <span data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</span>
+        Clerk limit in force: <span data-testid="setting-clerk-limit-current">{current('clerk-limit')}</span>
       </p>
       <p>
-        Floor in force: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
+        Floor in force: <span data-testid="setting-floor-current">{current('floor', DEFAULT_FLOOR)}</span>
       </p>
       <p>
-        Terms in force: <span data-testid="setting-terms-current">{settings.data?.terms ?? ''}</span>
+        Terms in force: <span data-testid="setting-terms-current">{currentTerms}</span>
       </p>
       {GRADES.map((grade) => (
         <p key={grade}>
           Terms of grade {grade} in force:{' '}
-          <span data-testid={`setting-terms-${grade}-current`}>{settings.data?.gradeTerms?.[grade] ?? ''}</span>
+          <span data-testid={`setting-terms-${grade}-current`}>{current(`terms-${grade}`, currentTerms)}</span>
         </p>
       ))}
       <p>
-        Late percent in force: <span data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</span>
+        Late percent in force: <span data-testid="setting-late-pct-current">{current('late-pct', DEFAULT_LATE_PCT)}</span>
       </p>
       <p>
         Policy date in force: <span data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</span>
@@ -258,7 +351,7 @@ function Settings({ sheetId }: { sheetId: string }) {
         <span data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</span>
       </p>
       <p>
-        Cap in force: <span data-testid="setting-cap-current">{settings.data?.cap ?? ''}</span>
+        Cap in force: <span data-testid="setting-cap-current">{current('cap')}</span>
       </p>
     </section>
   );

@@ -4,6 +4,8 @@ import { counts, isCorrection, isOpen } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { gradeOn } from '../people/peopleQuery';
 import type { Grade, Person } from '../people/peopleQuery';
+import { DEFAULT_FLOOR, DEFAULT_LATE_PCT, valueOn } from '../settings/dated';
+import type { DatedValue } from '../settings/dated';
 
 /**
  * `rate` is a percent with two decimals ("12.50"), in force from `from` (yyyy-mm-dd; null: from the
@@ -66,10 +68,10 @@ export function sumDue(dues: string[]): string {
 }
 
 /**
- * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percent
- * (two decimals), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
+ * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percents
+ * by from-date (two decimals; a claim takes the one in force on its date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
  */
-export type Late = { today: string; pct: string; policy: string; claims: Claim[] };
+export type Late = { today: string; pct: DatedValue[]; policy: string; claims: Claim[] };
 
 /**
  * Whether the claim's live figures round half up: it is dated before the policy date (on or after it, they round half
@@ -95,18 +97,18 @@ function lateMonths(claim: Claim, { today }: Late): bigint {
 /**
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
  * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
- * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
- * percent of that figure for every full 30 days overdue — is added on top: a statement
+ * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` in force on the claim's date (two decimals). An overdue claim's late charge — the late
+ * percent in force on the claim's date of that figure for every full 30 days overdue — is added on top: a statement
  * never binds it, so it follows the sheet's today. A correction has neither floor nor late charge.
  */
-export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: string, late: Late): string {
+export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: DatedValue[], late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
   const halfUp = roundsHalfUp(claim, late);
   const live = due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
-  const bound = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, floor);
+  const bound = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, valueOn(floor, claim.date) ?? DEFAULT_FLOOR);
   const months = isCorrection(claim) ? 0n : lateMonths(claim, late);
   if (bound === 'n/a' || months === 0n) return bound;
-  return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct, halfUp));
+  return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), valueOn(late.pct, claim.date) ?? DEFAULT_LATE_PCT, halfUp));
 }
 
 function floored(live: string, floor: string): string {
@@ -116,7 +118,7 @@ function floored(live: string, floor: string): string {
 /**
  * A person's figures added up, before the cap: the sum of their counting claims' rounded figures, as each claim shows it. With no rate today and no figure it is n/a; otherwise it is the sum of the figures there are.
  */
-export function personSum(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
+export function personSum(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): string {
   if (!person) return 'n/a';
   const rate = rateFor(rates, gradeOn(person, today), today);
   const figures = claims
@@ -137,6 +139,6 @@ export function excess(sum: string, cap: string): string {
 }
 
 /** A person's due-total: their figures added up (see `personSum`), held to the sheet's `cap` (two decimals; "" for none). */
-export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late, cap: string): string {
+export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late, cap: string): string {
   return capped(personSum(person, people, claims, rates, today, floor, late), cap);
 }

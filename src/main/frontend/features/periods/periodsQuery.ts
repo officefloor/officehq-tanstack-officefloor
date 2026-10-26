@@ -5,6 +5,7 @@ import type { Person } from '../people/peopleQuery';
 import { figure, sumDue } from '../rates/ratesQuery';
 import type { Late, Rate } from '../rates/ratesQuery';
 import { sheetKey } from '../sheet/sheetQuery';
+import type { DatedValue } from '../settings/dated';
 
 /**
  * A sheet's period: a name unique on the sheet, `from` and `to` (yyyy-mm-dd) inclusive. Periods never overlap.
@@ -44,7 +45,7 @@ export function personPeriodDue(
   claims: Claim[],
   people: Person[],
   rates: Rate[],
-  floor: string,
+  floor: DatedValue[],
   late: Late,
 ): string {
   if (period.closed) return period.personTotals[String(person.id)] ?? '0.00';
@@ -56,6 +57,6 @@ export function personPeriodDue(
 }
 
 /** A period's due-total: its people's due-totals for it added up. */
-export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: string, late: Late): string {
+export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: DatedValue[], late: Late): string {
   return sumDue(people.map((p) => personPeriodDue(period, p, claims, people, rates, floor, late)));
 }
