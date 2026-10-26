@@ -4,12 +4,13 @@ import { getJson, putJson } from '../../api/http';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from '../people/people.slot';
 import { periodsKey } from '../periods/periods.slot';
+import { notesKey } from '../notes/notes.slot';
 import { useSheetId } from '../session/useSession';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 
 // Choose a sheet by typing its id and loading it. Loading drops everything cached for that sheet,
 // so the screen re-reads it from the store (an id never used before starts empty). Its people, claims
-// and periods are read before it becomes the active sheet, so its rows show as soon as its id does.
+// periods and notes are read before it becomes the active sheet, so its rows show as soon as its id does.
 export function SheetPicker() {
   const [sheetId, setSheetId] = useSheetId();
   const [input, setInput] = useState('');
@@ -26,6 +27,7 @@ export function SheetPicker() {
         queryClient.fetchQuery({ queryKey: peopleKey(sheet.id), queryFn: () => getJson(`${base}/people`) }),
         queryClient.fetchQuery({ queryKey: claimsKey(sheet.id), queryFn: () => getJson(`${base}/claims`) }),
         queryClient.fetchQuery({ queryKey: periodsKey(sheet.id), queryFn: () => getJson(`${base}/periods`) }),
+        queryClient.fetchQuery({ queryKey: notesKey(sheet.id), queryFn: () => getJson(`${base}/notes`) }),
       ]).catch(() => {
         // the panels show their own read errors
       });
