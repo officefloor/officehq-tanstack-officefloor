@@ -332,17 +332,22 @@ public class ClaimRepository {
     }
 
     /**
-     * Take the next claim number of the sheet's tree (its top ancestor and everything below it, the sheets sharing one
-     * sequence): one after the last number given on any of its sheets, kept as this sheet's last. The tree's sheets
-     * are locked first so two users never get the same one.
+     * Take the next claim number of the sheet's tree within the fiscal year (its name, FY<yyyy>), from 1: one after
+     * the last given in that year on any of its sheets, kept as this sheet's last. The tree's sheets are locked first
+     * so two users never get the same one.
      */
-    public int nextNumber(String sheetId) {
+    public int nextFiscalNumber(String sheetId, String fiscalYear) {
         List<String> tree = treeOf(sheetId);
         String in = String.join(",", java.util.Collections.nCopies(tree.size(), "?"));
-        List<Integer> last = jdbc.queryForList("SELECT last_claim_number FROM sheet WHERE id IN (" + in + ")"
-                + " ORDER BY id FOR UPDATE", Integer.class, tree.toArray());
-        int next = last.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
-        jdbc.update("UPDATE sheet SET last_claim_number = ? WHERE id = ?", next, sheetId);
+        jdbc.queryForList("SELECT id FROM sheet WHERE id IN (" + in + ") ORDER BY id FOR UPDATE", String.class, tree.toArray());
+        List<Object> args = new java.util.ArrayList<>(tree);
+        args.add(fiscalYear);
+        Integer last = jdbc.queryForObject("SELECT MAX(last_number) FROM claim_sequence WHERE sheet_id IN (" + in + ")"
+                + " AND seq_key = ?", Integer.class, args.toArray());
+        int next = (last == null ? 0 : last) + 1;
+        if (jdbc.update("UPDATE claim_sequence SET last_number = ? WHERE sheet_id = ? AND seq_key = ?", next, sheetId, fiscalYear) == 0) {
+            jdbc.update("INSERT INTO claim_sequence (sheet_id, seq_key, last_number) VALUES (?, ?, ?)", sheetId, fiscalYear, next);
+        }
         return next;
     }
 
