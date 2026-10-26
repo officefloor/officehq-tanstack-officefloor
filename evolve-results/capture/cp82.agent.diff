@@ -1,0 +1,83 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 02d702aa..af795de1 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+-import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, sumDue, trimmedSum } from './ratesQuery';
++import { agedDue, excess, figure, personDue, personSum, ratesQuery, recentSettled, settledAndOpen, sumDue, trimmedSum } from './ratesQuery';
+ 
+ function useSheetData(sheetId: string) {
+   return {
+@@ -60,6 +60,30 @@ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: numbe
+   return <td data-testid="person-backing">{sumDue(sums)}</td>;
+ }
+ 
++/** A person's settled-total and open-total: their counting SETTLED, and OPEN and PENDING, claims' figures added up (not capped). */
++function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
++  const [settled, open] = settledAndOpen(people.find((p) => p.id === personId), people, claims, rates, today, floor, late);
++  return (
++    <>
++      <td data-testid="person-settled-total">{settled}</td>
++      <td data-testid="person-open-total">{open}</td>
++    </>
++  );
++}
++
++/** The sheet's settled-total and open-total: everyone's added up (not trimmed). */
++function SettledOpenTotal({ sheetId }: { sheetId: string }) {
++  const { people, claims, rates, today, floor, late } = useSheetData(sheetId);
++  const split = people.map((p) => settledAndOpen(p, people, claims, rates, today, floor, late));
++  return (
++    <p data-testid="rollup-settled-open">
++      Settled <strong data-testid="rollup-settled-total">{sumDue(split.map(([s]) => s))}</strong>
++      {' '}· Open <strong data-testid="rollup-open-total">{sumDue(split.map(([, o]) => o))}</strong>
++    </p>
++  );
++}
++
+ /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
+ export function useSheetDueTotal(sheetId: string) {
+   const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
+@@ -78,6 +102,8 @@ export const contributions = [
+   ClaimCells.fill({ order: 10, Component: ClaimDue }),
+   PersonHeaders.fill({ order: 15, Component: () => <th>Due</th> }),
+   PersonCells.fill({ order: 15, Component: PersonDueTotal }),
++  PersonHeaders.fill({ order: 15.2, Component: () => <><th>Settled</th><th>Open</th></> }),
++  PersonCells.fill({ order: 15.2, Component: PersonSettledOpen }),
+   PersonHeaders.fill({ order: 15.5, Component: () => <><th>0–30</th><th>31–60</th><th>61+</th></> }),
+   PersonCells.fill({ order: 15.5, Component: PersonAged }),
+   PersonHeaders.fill({ order: 16, Component: () => <th>Excess</th> }),
+@@ -85,4 +111,5 @@ export const contributions = [
+   PersonHeaders.fill({ order: 22, Component: () => <th>Backing</th> }),
+   PersonCells.fill({ order: 22, Component: PersonBacking }),
+   SheetPanel.fill({ order: 25, Component: DueTotal }),
++  SheetPanel.fill({ order: 25.5, Component: SettledOpenTotal }),
+ ];
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index 6781d4d8..0c5280e3 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -189,3 +189,19 @@ export function recentSettled(personId: number, claims: Claim[], today: string):
+     .filter((c) => c.personId === personId && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
+     .map((c) => c.settledDue as string));
+ }
++
++/**
++ * A person's figures that count (see `personSum`), split by status: their SETTLED claims' frozen figures, and their
++ * OPEN and PENDING claims' figures, each added up (n/a skipped; not capped). The two add up to `personSum`.
++ */
++export function settledAndOpen(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): [string, string] {
++  const settled: string[] = [];
++  const open: string[] = [];
++  if (person) {
++    for (const c of claims) {
++      if (c.personId !== person.id || !counts(c, people, today)) continue;
++      (c.status === 'SETTLED' ? settled : open).push(figure(c, rates, person, floor, late));
++    }
++  }
++  return [sumDue(settled), sumDue(open)];
++}
