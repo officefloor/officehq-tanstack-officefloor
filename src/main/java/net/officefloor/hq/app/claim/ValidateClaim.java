@@ -22,6 +22,11 @@ public class ValidateClaim {
     // A negative amount is a correction and must name the number it corrects; no other claim may name one.
     // Whether that number is a SETTLED claim of the same person is checked once the person is loaded.
     public void validate(@RequestBody ClaimRequest body, Out<ClaimInput> input) throws InvalidClaimException {
+        input.set(parse(body));
+    }
+
+    /** The claim form's rules on a typed body; shared with the paste box, which checks every line by them. */
+    static ClaimInput parse(ClaimRequest body) throws InvalidClaimException {
         String amount = body == null || body.amount() == null ? "" : body.amount().trim();
         String date = body == null || body.date() == null ? "" : body.date().trim();
         String note = body == null || body.note() == null ? "" : body.note().trim();
@@ -47,6 +52,6 @@ public class ValidateClaim {
                 throw new InvalidClaimException("Not a date (yyyy-mm-dd): " + date);
             }
         }
-        input.set(new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects));
+        return new ClaimInput(value, parsed, note, corrects.isEmpty() ? null : corrects);
     }
 }
