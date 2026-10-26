@@ -1,0 +1,79 @@
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index e3d54253..7cc54779 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,10 +1,11 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { useClaims } from '../claims/useClaims';
+-import { usePeople } from '../people/people.slot';
++import { counts, useClaims } from '../claims/useClaims';
++import { gradeOn, useHeld, usePeople } from '../people/people.slot';
++import { useFloorCents, useLate } from '../access/useAccess';
+ import { showPeriodDueTotal, usePeriodDueTotal, usePeriods } from '../periods/periods.slot';
+ import { useIsActive } from '../active/active.slot';
+ import { useDueTotals } from '../rates/rates.slot';
+-import { showHundredths, toHundredths } from '../rates/useRates';
++import { claimDueCents, showHundredths, toHundredths, useRates } from '../rates/useRates';
+ import { useVoidReasons } from '../voidreasons/voidReasons.slot';
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+@@ -117,4 +118,58 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
+   );
+ }
+ 
+-export const contribution = SheetBody.fill({ order: 30, Component: SummaryPanel });
++// The classic summary, shown beside the summary. Per period: the due figures of the claims whose due-by falls in it,
++// each counted by its status now (OPEN, PENDING and SETTLED count; held or deferred ones left out as in the live
++// totals), added up; a closed or soft-closed period shows the figure fixed then. And the sheet's due-total with no
++// trimming: everyone's due-total added up, skipping those that are n/a.
++function ClassicSummaryPanel({ sheetId }: { sheetId: string; user: string }) {
++  const people = usePeople(sheetId);
++  const totals = useDueTotals(sheetId);
++  const periods = usePeriods(sheetId);
++  const claims = useClaims(sheetId);
++  const held = useHeld(sheetId);
++  const rates = useRates(sheetId);
++  const floor = useFloorCents(sheetId);
++  const late = useLate(sheetId);
++
++  const personOf = new Map((people.data ?? []).map((p) => [p.id, p]));
++  const liveTotal = (from: string, to: string): bigint => {
++    let sum = 0n;
++    for (const c of claims.data ?? []) {
++      if (c.dueBy < from || c.dueBy > to || !counts(c, held)) continue;
++      sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
++    }
++    return sum;
++  };
++  let sheetTotal = 0n;
++  for (const t of totals.values()) if (t != null) sheetTotal += t;
++  return (
++    <section data-testid="classic-summary-panel">
++      <h2>Classic summary</h2>
++      <table data-testid="classic-periods">
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {(periods.data ?? []).map((p) => (
++            <tr key={p.id}>
++              <td>{p.name}</td>
++              <td data-testid={`classic-period-${p.name}-due-total`}>{showPeriodDueTotal(p, liveTotal(p.from, p.to))}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p>
++        Due total: <strong data-testid="classic-due-total">{showHundredths(sheetTotal)}</strong>
++      </p>
++    </section>
++  );
++}
++
++export const contributions = [
++  SheetBody.fill({ order: 30, Component: SummaryPanel }),
++  SheetBody.fill({ order: 31, Component: ClassicSummaryPanel }),
++];
