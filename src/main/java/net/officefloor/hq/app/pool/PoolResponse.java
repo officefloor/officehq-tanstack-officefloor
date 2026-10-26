@@ -9,13 +9,14 @@ import java.util.List;
 public record PoolResponse(String name, List<Member> members, String totalShare, boolean balanced) {
 
     /**
-     * A member: the person's id and name, their share (two decimals), whether they are retired, and their cut of the
-     * sheet's pot (two decimals; null while the pool is unbalanced or the sheet has no pot).
+     * A member: a person (their id) or another pool (personId null, {@code pool} its name), its name, its share (two
+     * decimals), whether the person is retired, and its cut of the pool's pot (two decimals; null while the pool is
+     * unbalanced or has no pot).
      */
-    public record Member(long personId, String name, String share, boolean retired, String cut) {
+    public record Member(Long personId, String pool, String name, String share, boolean retired, String cut) {
 
         Member withCut(String cut) {
-            return new Member(personId, name, share, retired, cut);
+            return new Member(personId, pool, name, share, retired, cut);
         }
     }
 }

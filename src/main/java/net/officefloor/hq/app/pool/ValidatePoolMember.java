@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** A member to add: a pool, a person and a share percent (at most two decimals, more than 0.00, at most 100.00). */
+/** A member to add: a pool, a person or another pool, and a share percent (at most two decimals, more than 0.00, at most 100.00). */
 public class ValidatePoolMember {
 
     private static final Pattern SHARE = Pattern.compile("\\d+(\\.\\d{1,2})?");
@@ -20,8 +20,9 @@ public class ValidatePoolMember {
         if (request == null || request.pool() == null || request.pool().isBlank()) {
             throw new BadRequestException("Choose a pool");
         }
-        if (request.person() == null) {
-            throw new BadRequestException("Choose a person");
+        String memberPool = request.memberPool() == null ? "" : request.memberPool().trim();
+        if (request.person() == null && memberPool.isEmpty()) {
+            throw new BadRequestException("Choose a person or a pool");
         }
         String text = request.share() == null ? "" : request.share().trim();
         if (!SHARE.matcher(text).matches()) {
@@ -31,7 +32,8 @@ public class ValidatePoolMember {
         if (share.signum() <= 0 || share.compareTo(HUNDRED) > 0) {
             throw new BadRequestException("A share is more than 0.00 and at most 100.00");
         }
-        member.set(new PoolMemberInput(request.pool().trim(), request.person(), share));
+        member.set(new PoolMemberInput(request.pool().trim(), request.person(),
+                request.person() == null ? memberPool : null, share));
         changedBy.set(by);
     }
 }

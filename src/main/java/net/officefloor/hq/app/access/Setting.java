@@ -41,7 +41,7 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** The sheet's parent: the id of a sheet whose rates (then its parent's, up to three levels up) stand in for a grade without a rate in force on a date; blank for none. */
     public static final String PARENT = "parent";
 
-    /** The sheet's pot, cut among each balanced pool's members by their shares; an amount with two decimals, blank for none. */
+    /** The sheet's pot: the pot of each pool that is a member of none, cut among its members by their shares when it is balanced (a member pool's cut is its own pot); an amount with two decimals, blank for none. */
     public static final String POT = "pot";
 
     /** The least a claim's live due may be; an amount with two decimals. */
