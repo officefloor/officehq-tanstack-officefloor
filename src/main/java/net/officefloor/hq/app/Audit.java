@@ -88,6 +88,25 @@ public class Audit {
         }
     }
 
+    /** The lines the file holds for a sheet, in the order they were written (none when there is no file yet). */
+    public synchronized List<String> lines(String sheetId) {
+        if (!Files.exists(file)) {
+            return List.of();
+        }
+        try {
+            List<String> lines = new ArrayList<>();
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                Matcher head = HEAD.matcher(line);
+                if (head.find() && head.group(2).equals(sheetId)) {
+                    lines.add(line);
+                }
+            }
+            return lines;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     /** Remove the audit file. */
     public synchronized void clear() {
         try {
