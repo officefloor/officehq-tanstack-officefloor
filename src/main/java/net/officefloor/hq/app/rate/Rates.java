@@ -15,8 +15,9 @@ public class Rates {
 
     private static final RowMapper<Rate> ROW = (rs, n) -> {
         Date from = rs.getDate("from_date");
+        Date to = rs.getDate("to_date");
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
-                from == null ? null : from.toLocalDate());
+                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate());
     };
 
     private final JdbcTemplate jdbc;
@@ -35,15 +36,19 @@ public class Rates {
         Date from = rate.from() == null ? null : Date.valueOf(rate.from());
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 rate.sheetId(), rate.grade(), from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date) VALUES (?, ?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.rate(), from);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.rate(), from, rate.to() == null ? null : Date.valueOf(rate.to()));
     }
 
-    /** The grade's rate on the date: the one with the latest from-date on or before it; null when none applies. */
+    /**
+     * The grade's rate on the date: the one with the latest from-date on or before it; null when none applies, or when
+     * that one's to-date is before the date (an earlier rate does not take over again).
+     */
     public BigDecimal on(String sheetId, String grade, LocalDate date) {
         return list(sheetId).stream()
                 .filter(r -> r.grade().equals(grade) && (r.from() == null || !r.from().isAfter(date)))
                 .max(Comparator.comparing(Rate::from, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .filter(r -> r.to() == null || !r.to().isBefore(date))
                 .map(Rate::rate).orElse(null);
     }
 }

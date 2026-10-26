@@ -7,9 +7,10 @@ import type { Grade, Person } from '../people/peopleQuery';
 
 /**
  * `rate` is a percent with two decimals ("12.50"), in force from `from` (yyyy-mm-dd; null: from the
- * beginning of time). A grade may have several, one per from-date; a grade with no rate has no entry.
+ * beginning of time) through `to` (yyyy-mm-dd; null: with no end). A grade may have several, one per
+ * from-date; a grade with no rate has no entry.
  */
-export type Rate = { grade: Grade; rate: string; from: string | null };
+export type Rate = { grade: Grade; rate: string; from: string | null; to: string | null };
 
 /** Under the sheet's key, so re-loading the sheet re-reads its rates. */
 export const ratesKey = (sheetId: string) => [...sheetKey(sheetId), 'rates'] as const;
@@ -19,11 +20,15 @@ export const ratesQuery = (sheetId: string) => ({
   queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`),
 });
 
-/** The grade's rate on the date (yyyy-mm-dd): the one with the latest from-date on or before it, or undefined when none applies. */
+/**
+ * The grade's rate on the date (yyyy-mm-dd): the one with the latest from-date on or before it, or undefined when none
+ * applies or that one's to-date is before the date (an earlier rate does not take over again).
+ */
 export function rateFor(rates: Rate[], grade: Grade | undefined, date: string): string | undefined {
   // No from-date sorts as '', before every date.
   const applying = rates.filter((r) => r.grade === grade && (r.from ?? '') <= date);
-  return applying.reduce<Rate | undefined>((best, r) => (!best || (r.from ?? '') > (best.from ?? '') ? r : best), undefined)?.rate;
+  const latest = applying.reduce<Rate | undefined>((best, r) => (!best || (r.from ?? '') > (best.from ?? '') ? r : best), undefined);
+  return latest && (latest.to === null || date <= latest.to) ? latest.rate : undefined;
 }
 
 /** A two-decimal string ("12.50", "-0.30") in whole hundredths, exactly. */

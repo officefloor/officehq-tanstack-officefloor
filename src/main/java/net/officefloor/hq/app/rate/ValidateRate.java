@@ -21,7 +21,8 @@ public class ValidateRate {
 
     // The rate is kept with two decimals; a grade other than A, B or C, or a rate that is not a
     // percent of 0.00 or more with up to two decimals, is refused. A blank from-date means from the
-    // beginning of time; one that is not a date (yyyy-mm-dd) is refused.
+    // beginning of time; one that is not a date (yyyy-mm-dd) is refused. A blank to-date means with no end; one
+    // that is not a date, or is before the from-date, is refused.
     public void validate(@PathVariable("sheetId") String sheetId, @PathVariable("grade") String grade,
             @RequestBody RateRequest body, Out<Rate> rateOut) throws InvalidRateException {
         String g = grade == null ? "" : grade.trim();
@@ -41,6 +42,18 @@ public class ValidateRate {
                 throw new InvalidRateException("The from-date must be a date (yyyy-mm-dd).");
             }
         }
-        rateOut.set(new Rate(sheetId.trim(), g, new BigDecimal(typed).setScale(2, RoundingMode.UNNECESSARY), from));
+        String typedTo = body == null || body.to() == null ? "" : body.to().trim();
+        LocalDate to = null;
+        if (!typedTo.isEmpty()) {
+            try {
+                to = LocalDate.parse(typedTo, ISO);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The to-date must be a date (yyyy-mm-dd).");
+            }
+            if (from != null && to.isBefore(from)) {
+                throw new InvalidRateException("The to-date must not be before the from-date.");
+            }
+        }
+        rateOut.set(new Rate(sheetId.trim(), g, new BigDecimal(typed).setScale(2, RoundingMode.UNNECESSARY), from, to));
     }
 }

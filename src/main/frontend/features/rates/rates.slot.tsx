@@ -15,29 +15,31 @@ const PERCENT = /^\d{1,7}(\.\d{1,2})?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The sheet's rates — per grade, the one in force on the sheet's today, and every rate with its
- *  from-date — and the form a grade's rate is set through. */
+ *  from-date and to-date — and the form a grade's rate is set through. */
 function Rates({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const rates = useQuery(ratesQuery(sheetId));
   const [grade, setGrade] = useState<Grade>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const today = useSheetToday(sheetId);
   const [error, setError] = useState('');
 
   const [user] = useUser();
   const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { grade: Grade; rate: string; from: string }) =>
+    mutationFn: (body: { grade: Grade; rate: string; from: string; to: string }) =>
       putJson<Rate>(
         `/api/sheets/${encodeURIComponent(sheetId)}/rates/${body.grade}`,
-        { rate: body.rate, from: body.from },
+        { rate: body.rate, from: body.from, to: body.to },
         user,
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
       setPct('');
       setFrom('');
+      setTo('');
     },
     onError: () => setError('The rate could not be set.'),
   });
@@ -55,7 +57,16 @@ function Rates({ sheetId }: { sheetId: string }) {
       setError('The from-date must be a date (yyyy-mm-dd).');
       return;
     }
-    once(() => save.mutateAsync({ grade, rate: p, from: f }));
+    const t = to.trim();
+    if (t !== '' && !DATE.test(t)) {
+      setError('The to-date must be a date (yyyy-mm-dd).');
+      return;
+    }
+    if (t !== '' && f !== '' && t < f) {
+      setError('The to-date must not be before the from-date.');
+      return;
+    }
+    once(() => save.mutateAsync({ grade, rate: p, from: f, to: t }));
   };
 
   const list = rates.data ?? [];
@@ -104,6 +115,18 @@ function Rates({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            data-testid="rate-form-to"
+            type="date"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -126,6 +149,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>Rate %</th>
             <th>From</th>
+            <th>To</th>
           </tr>
         </thead>
         <tbody>
@@ -134,6 +158,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td>{r.grade}</td>
               <td data-testid="rate-pct">{r.rate}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
             </tr>
           ))}
         </tbody>
