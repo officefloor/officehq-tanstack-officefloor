@@ -56,7 +56,7 @@ public class ReassignClaims {
                 closed.check(claim, periods);
                 RollupSnapshot before = rollup.snapshot(sheet.id());
                 ReassignTo to = new ReassignTo(selected.personId());
-                apply.move(to, claim, by, claims, people, roles, settings, true);
+                apply.move(to, claim, by, claims, people, roles, settings, sheets, periods, true);
                 record.record(claim, to, by, audit);
                 rollup.record(sheet.id(), before, by);
                 moved++;
