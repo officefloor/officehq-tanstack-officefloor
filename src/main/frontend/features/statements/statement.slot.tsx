@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { ClaimCells } from '../../slots/defs/claimColumns';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
@@ -12,7 +12,8 @@ import type { Statements } from './statementsQuery';
 
 /**
  * A person's statements and the button that takes one: it records their due-total now and binds each of
- * their counting claims to its figure now, until their next statement.
+ * their counting claims to its figure now, until their next statement; and the button that cancels the last
+ * one (a steward only), leaving the claims it bound live again.
  */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const queryClient = useQueryClient();
@@ -30,6 +31,15 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
     },
     onError: () => setError('The statement could not be taken.'),
   });
+  const cancel = useMutation({
+    mutationFn: () =>
+      putJson<Statements>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/unstate`, {}, user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      await queryClient.invalidateQueries({ queryKey: statementsKey(sheetId) });
+    },
+    onError: () => setError('The statement could not be cancelled.'),
+  });
 
   return (
     <td>
@@ -46,6 +56,17 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
         }}
       >
         Statement
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-unstate"
+        disabled={cancel.isPending}
+        onClick={() => {
+          setError('');
+          once(() => cancel.mutateAsync());
+        }}
+      >
+        Cancel statement
       </button>
     </td>
   );

@@ -12,7 +12,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 public class AutoClosePeriods {
     // Once the sheet's today is changed: with grace days set, every open period whose to-date plus the grace days is before the
     // new today is closed as a close by hand would (its people's figures fixed as they stand now), in order of their to-dates,
-    // each audited as PERIOD_CLOSED ending auto=yes.
+    // each audited as PERIOD_CLOSED ending auto=yes. A soft-closed period keeps the figures it was fixed at.
     public void autoClose(@Val Sheet sheet, Periods periods, Rollup rollup, Settings settings,
             ServerHttpConnection connection, Audit audit) {
         String sheetId = sheet.id();
@@ -22,7 +22,7 @@ public class AutoClosePeriods {
         }
         LocalDate today = sheet.today();
         for (Period period : periods.list(sheetId).stream().sorted(Comparator.comparing(Period::to)).toList()) {
-            if (period.closed() || !period.to().plusDays(grace).isBefore(today)) {
+            if (period.closed() || period.soft() || !period.to().plusDays(grace).isBefore(today)) {
                 continue;
             }
             Period closed = period.closedAt(rollup.personDueTotals(sheetId, period.from(), period.to()));

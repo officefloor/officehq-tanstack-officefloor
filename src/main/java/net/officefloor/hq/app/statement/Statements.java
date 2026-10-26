@@ -2,6 +2,7 @@ package net.officefloor.hq.app.statement;
 
 import java.sql.Date;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -24,6 +25,17 @@ public class Statements {
         jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, claims, stated_on) VALUES (?, ?, ?, ?, ?)",
                 statement.sheetId(), statement.personId(), statement.dueTotal(), statement.claims(),
                 Date.valueOf(statement.statedOn()));
+    }
+
+    /** Removes the person's last statement and returns it; null when they have none. */
+    public CancelledStatement removeLast(String sheetId, long personId) {
+        List<Map<String, Object>> last = jdbc.queryForList("SELECT id, due_total FROM statement "
+                + "WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1", sheetId, personId);
+        if (last.isEmpty()) {
+            return null;
+        }
+        jdbc.update("DELETE FROM statement WHERE id = ?", last.get(0).get("id"));
+        return new CancelledStatement((String) last.get(0).get("due_total"));
     }
 
     /** Each person of the sheet who has a statement: their count, and their last statement's due-total and date. */
