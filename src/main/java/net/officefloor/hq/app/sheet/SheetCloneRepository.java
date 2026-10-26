@@ -32,10 +32,10 @@ public class SheetCloneRepository {
                 + " setting_key, from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
                 + " WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) SELECT ?, grade, rate, from_date,"
-                + " to_date, version FROM rate WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) SELECT ?, grade, from_date,"
-                + " version, rate, to_date FROM rate_version WHERE sheet_id = ? ORDER BY id", to, from);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_seq) SELECT ?, grade, rate,"
+                + " from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date, after_seq) SELECT ?, grade,"
+                + " from_date, version, rate, to_date, after_seq FROM rate_version WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM holiday"
                 + " WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, reason) SELECT ?, reason FROM void_reason"
@@ -112,10 +112,10 @@ public class SheetCloneRepository {
             long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO claim (sheet_id, person_id,"
                     + " amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due,"
                     + " corrects, listed, deferred_until, proofs, split_from, late_entry, reminded_on, due_from, terms,"
-                    + " ref, tags, void_reason, edited_by, due_by, settle_batch)"
+                    + " ref, tags, void_reason, edited_by, due_by, settle_batch, added_seq)"
                     + " SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, FALSE, NULL,"
                     + " ?, listed, deferred_until, proofs, ?, late_entry, reminded_on, due_from, terms,"
-                    + " ref, tags, void_reason, edited_by, due_by, NULL FROM claim WHERE id = ?)", Long.class,
+                    + " ref, tags, void_reason, edited_by, due_by, NULL, added_seq FROM claim WHERE id = ?)", Long.class,
                     to, people.get(id(claim.get("person_id"))), numbers.get(id), renumbered.get((String) claim.get("corrects")),
                     renumbered.get((String) claim.get("split_from")), id);
             jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) SELECT ?, ?,"

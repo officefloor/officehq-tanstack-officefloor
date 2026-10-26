@@ -32,7 +32,7 @@ public class ApplyResettle {
         LateCharge late = settings.lateCharge(claim.getSheetId(), sheets.today(claim.getSheetId()));
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal rate = person == null ? null
-                : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+                : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate(), claim.getAddedSeq());
         BigDecimal figure = claim.figureAt(rate, late.rounding(claim));
         BigDecimal before = claim.getSettledDue();
         BigDecimal after = late.dueAsOpen(claim, figure);

@@ -4,8 +4,11 @@ import { getJson } from '../../api/http';
 /** A grade's rate, in force from its from-date (yyyy-mm-dd; null applies from the beginning of time) through its
  *  to-date (null: with no end). Its level is how far up the sheet's parents it is from: 0 (or none) the sheet's own,
  *  1 its parent's, and so on, up to three. Its version is how many versions it has had for its grade and from-date; it is
- *  always the newest, the one in force. */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number };
+ *  always the newest, the one in force. A forward-only rate (saved with a from-date on or after the sheet's today) carries
+ *  `after`: it applies only to claims whose `added` is above it (none: it applies to every claim); `earlier` are its older
+ *  versions, newest first, for the claims it does not apply to. */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number;
+  after?: number | null; earlier?: Rate[] };
 
 /** The key every feature reads the sheet's rates under. */
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
@@ -36,6 +39,22 @@ export function rateOn(rates: readonly Rate[], grade: string, date: string): Rat
     if (found !== undefined && !(found.to != null && found.to < date)) return found;
   }
   return undefined;
+}
+
+/** Whether a rate's version applies to a claim added at `added` (none: before every forward-only rate). */
+function appliesTo(rate: Rate, added: number | null | undefined): boolean {
+  return rate.after == null || (added != null && added > rate.after);
+}
+
+/** The rates as they apply to a claim added at `added`: each rate whose newest version applies to it, else its newest
+ *  older version that does; a rate none of whose versions applies is left out. */
+export function ratesForClaim(rates: readonly Rate[], added: number | null | undefined): Rate[] {
+  const found: Rate[] = [];
+  for (const r of rates) {
+    const version = appliesTo(r, added) ? r : (r.earlier ?? []).find((e) => appliesTo(e, added));
+    if (version !== undefined) found.push(version);
+  }
+  return found;
 }
 
 /** A two-decimal number as a whole count of hundredths ("10.25" -> 1025n, "-1.03" -> -103n), exactly. */
@@ -143,14 +162,15 @@ export function lateCents(late: Late | undefined, claim: { amount: string; date:
 
 /** A claim's due figure in cents: fixed when it was settled; while a statement binds it, the figure it was bound to;
  *  otherwise (or while it is PENDING) its amount times its person's grade's rate
- *  in force on the claim's date, rounded half to even (half up when `halfUp`). The floor is not applied here (see
+ *  on the claim's date as it applies to the claim (see ratesForClaim), rounded half to even (half up when `halfUp`). The floor is not applied here (see
  *  claimDueCents). Null when there is no figure (no rate of the grade then). */
 export function claimFigureCents(rates: readonly Rate[], grade: string | undefined,
-  claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null },
+  claim: { amount: string; date: string; status?: string; settledDue: string | null; stated: boolean; statedDue: string | null;
+    added?: number | null },
   halfUp = false): bigint | null {
   if (claim.settledDue != null) return toHundredths(claim.settledDue);
   if (isBound(claim)) return claim.statedDue == null ? null : toHundredths(claim.statedDue);
-  const found = grade === undefined ? undefined : rateOn(rates, grade, claim.date);
+  const found = grade === undefined ? undefined : rateOn(ratesForClaim(rates, claim.added), grade, claim.date);
   if (found === undefined) return null;
   const correction = isCorrection(claim);
   const amount = toHundredths(correction ? claim.amount.trim().slice(1) : claim.amount);
@@ -163,7 +183,7 @@ export function claimFigureCents(rates: readonly Rate[], grade: string | undefin
  *  Null without a figure. */
 export function claimDueCents(rates: readonly Rate[], grade: string | undefined,
   claim: { amount: string; date: string; status: string; settledDue: string | null; stated: boolean; statedDue: string | null;
-    dueBy: string; corrects?: string | null; deferred?: boolean },
+    dueBy: string; corrects?: string | null; deferred?: boolean; added?: number | null },
   floorOn: (date: string) => bigint, late: Late | undefined): bigint | null {
   const figure = claimFigureCents(rates, grade, claim, roundsHalfUp(late, claim));
   if (figure == null) return null;

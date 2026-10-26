@@ -19,6 +19,7 @@ public class Claim {
 
     private String editedBy;
     private Integer settleBatch;
+    private Long addedSeq;
     private boolean stated;
     private BigDecimal statedDue;
     private String corrects;
@@ -266,6 +267,17 @@ public class Claim {
 
     public void setSettleBatch(Integer settleBatch) {
         this.settleBatch = settleBatch;
+    }
+
+    /** Where the claim's adding stands in the order of changes: a forward-only rate saved later applies to it, one
+     *  saved earlier does not (see {@link net.officefloor.hq.app.rate.Rate#forClaim}). Null for a claim added before
+     *  forward-only rates, which counts as added before every one. */
+    public Long getAddedSeq() {
+        return addedSeq;
+    }
+
+    public void setAddedSeq(Long addedSeq) {
+        this.addedSeq = addedSeq;
     }
 
     /** The signed-in user who last edited the claim through its form or amount entry; null when never edited. */

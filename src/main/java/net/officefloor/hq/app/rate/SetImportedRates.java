@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupSnapshot;
 import net.officefloor.hq.app.session.ChangedBy;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.sheet.SheetResponse;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -15,10 +16,11 @@ import net.officefloor.plugin.variable.Val;
 public class SetImportedRates {
 
     public void set(@Val SheetResponse sheet, @Val ImportedRates imported, @Val ChangedBy by,
-            RateRepository repository, Rollup rollup, Audit audit, Out<ImportRatesResponse> response) {
+            RateRepository repository, SheetRepository sheets, Rollup rollup, Audit audit, Out<ImportRatesResponse> response) {
         for (RateInput input : imported.rates()) {
             RollupSnapshot before = rollup.snapshot(sheet.id());
-            Rate rate = repository.set(sheet.id(), input.grade(), input.rate(), input.from(), input.to());
+            Rate rate = repository.set(sheet.id(), input.grade(), input.rate(), input.from(), input.to(),
+                    sheets.today(sheet.id()));
             audit.record(RecordRateSet.line(rate, by));
             rollup.record(sheet.id(), before, by);
         }

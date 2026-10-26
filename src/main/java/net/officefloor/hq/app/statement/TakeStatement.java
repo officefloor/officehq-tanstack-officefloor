@@ -108,7 +108,8 @@ public class TakeStatement {
         if (claim.isBound()) {
             return claim.getStatedDue();
         }
-        BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal rate = rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate(),
+                claim.getAddedSeq());
         return claim.figureAt(rate, late.rounding(claim));
     }
 }

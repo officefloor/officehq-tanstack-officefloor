@@ -219,7 +219,8 @@ public class ApplyClaimStatus {
             return claim.getStatedDue();
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal rate = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()),
+                claim.getDate(), claim.getAddedSeq());
         return claim.figureAt(rate, late.rounding(claim));
     }
 }

@@ -23,7 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ref, tags, void_reason, edited_by, settle_batch, added_seq,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -47,6 +47,7 @@ public class ClaimRepository {
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
         claim.setSettleBatch(rs.getObject("settle_batch", Integer.class));
+        claim.setAddedSeq(rs.getObject("added_seq", Long.class));
         LocalDate corrected = rs.getObject("corrected_date", LocalDate.class);
         if (corrected != null) {
             claim.setRoundOn(corrected);
@@ -128,11 +129,12 @@ public class ClaimRepository {
     public Claim insert(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             String ref, String tags, int terms) {
         long listed = nextListed(sheetId);
+        long added = jdbc.queryForObject("SELECT NEXT VALUE FOR change_seq", Long.class);
         LocalDate dueBy = holidays.dueBy(sheetId, date, terms);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed, due_from, terms, ref, tags, due_by, added_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -146,6 +148,7 @@ public class ClaimRepository {
             ps.setString(10, ref);
             ps.setString(11, tags);
             ps.setDate(12, Date.valueOf(dueBy));
+            ps.setLong(13, added);
             return ps;
         }, keys);
         Claim claim = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null, corrects);
@@ -154,6 +157,7 @@ public class ClaimRepository {
         claim.setDueBy(dueBy);
         claim.setRef(ref);
         claim.setTags(tags);
+        claim.setAddedSeq(added);
         used(sheetId, tags);
         return claim;
     }

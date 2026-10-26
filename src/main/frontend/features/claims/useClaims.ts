@@ -44,7 +44,10 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   /** The claim's lines, in the order added: `<label> <qty> x <unit>`; with lines, its amount is their total. */
   lines: string[];
   /** The number of the bulk settle batch that settled the claim; none when no batch settled it. */
-  settleBatch: number | null };
+  settleBatch: number | null;
+  /** Where the claim's adding stands in the order of changes: a forward-only rate applies to it only when saved before
+   *  it (see ratesForClaim); none for a claim added before every forward-only rate. */
+  added: number | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
  *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;

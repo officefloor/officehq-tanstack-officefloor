@@ -240,7 +240,7 @@ public class Rollup {
         if (claim.isBound()) {
             return claim.getStatedDue() == null ? null : claim.getStatedDue().setScale(2);
         }
-        BigDecimal rate = rateOn(sheetRates, grade, claim.getDate());
+        BigDecimal rate = Rate.on(sheetRates, grade, claim.getDate(), claim.getAddedSeq());
         return claim.figureAt(rate, late.rounding(claim));
     }
 

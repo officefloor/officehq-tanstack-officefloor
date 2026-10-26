@@ -21,7 +21,8 @@ public class RateRepository {
         Date from = rs.getDate("from_date");
         Date to = rs.getDate("to_date");
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
-                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"));
+                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"),
+                rs.getObject("after_seq", Long.class));
     };
 
     /** How many levels of parents a sheet takes rates from. */
@@ -33,10 +34,15 @@ public class RateRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's rates, by grade, then by from-date (none first). */
+    /** The sheet's rates, by grade, then by from-date (none first), each with its older versions, newest first. */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
-                + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+        List<Rate> versions = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate_version"
+                + " WHERE sheet_id = ? ORDER BY version DESC, id DESC", ROW, sheetId);
+        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ?"
+                + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId).stream()
+                .map(r -> r.withEarlier(versions.stream().filter(v -> v.grade().equals(r.grade())
+                        && java.util.Objects.equals(v.from(), r.from())).toList()))
+                .toList();
     }
 
     /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
@@ -108,11 +114,19 @@ public class RateRepository {
     }
 
     /**
+     * The grade's rate on the date for a claim added at {@code added} (see {@link Rate#forClaim}): a forward-only rate
+     * saved after the claim was added does not apply to it. On the sheet or else up its parents; null when none has one.
+     */
+    public BigDecimal find(String sheetId, String grade, LocalDate on, Long added) {
+        return Rate.on(chain(sheetId), grade, on, added);
+    }
+
+    /**
      * The grade's rate in force on the date on the sheet itself: the one with the latest from-date on or before it, a rate
      * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
      */
     public BigDecimal findOwn(String sheetId, String grade, LocalDate on) {
-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ? AND grade = ?"
+        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", ROW,
                 sheetId, grade, Date.valueOf(on)).stream().findFirst()
                 .filter(r -> r.to() == null || !r.to().isBefore(on)).map(Rate::rate).orElse(null);
@@ -120,23 +134,28 @@ public class RateRepository {
 
     /**
      * Set a grade's rate from a date (null: from the beginning of time) through a to-date (null: with no end). One
-     * already there for that from-date is kept as an older version, and the new one becomes the next version.
+     * already there for that from-date is kept as an older version, and the new one becomes the next version. Saved
+     * with a from-date on or after the sheet's {@code today}, it is forward-only: it applies only to claims added after
+     * it (see {@link Rate#forClaim}).
      */
-    public Rate set(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
+    public Rate set(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, LocalDate today) {
         Date fromDate = from == null ? null : Date.valueOf(from);
-        Rate old = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
+        Long after = from != null && !from.isBefore(today)
+                ? jdbc.queryForObject("SELECT NEXT VALUE FOR change_seq", Long.class) : null;
+        Rate old = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM rate WHERE sheet_id = ?"
                 + " AND grade = ? AND from_date IS NOT DISTINCT FROM ?", ROW, sheetId, grade, fromDate)
                 .stream().findFirst().orElse(null);
         int version = 1;
         if (old != null) {
-            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) VALUES (?, ?, ?, ?, ?, ?)",
-                    sheetId, grade, fromDate, old.version(), old.rate(), old.to() == null ? null : Date.valueOf(old.to()));
+            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date, after_seq)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?)", sheetId, grade, fromDate, old.version(), old.rate(),
+                    old.to() == null ? null : Date.valueOf(old.to()), old.after());
             version = old.version() + 1;
         }
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 sheetId, grade, fromDate);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)", sheetId,
-                grade, rate, fromDate, to == null ? null : Date.valueOf(to), version);
-        return new Rate(sheetId, grade, rate, from, to, version);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version, after_seq) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                sheetId, grade, rate, fromDate, to == null ? null : Date.valueOf(to), version, after);
+        return new Rate(sheetId, grade, rate, from, to, version, after);
     }
 }
