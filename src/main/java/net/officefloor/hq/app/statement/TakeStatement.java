@@ -22,10 +22,11 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Takes the person's statement on the sheet's today: records their due-total, binds each of their counting claims
- * to the figure it has now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
+ * to the due it shows now, and unbinds the rest. A claim's figure is its settled due when it has one, else the
  * figure its last statement bound it to, else its amount times the rate in force on the claim's date of its
  * person's grade in force on that date (rounded as the claim rounds by the sheet's policy date; none without a rate) — the rate figure, never floored. The due-total is the counting claims' dues
- * added up: each figure with its late charge on top while it is overdue, then at least the floor in force on the claim's date (neither is bound); n/a
+ * added up: each figure with its late charge on top while it is overdue, then at least the floor in force on the claim's date; each
+ * counting claim is bound to that due as shown (a claim already bound keeps its bound due); n/a
  * (null) when the grade has no rate today and no counting claim keeps a settled or bound figure; at most the sheet's cap in force on its today.
  * <p>
  * Taken as of a date on or before the sheet's today, the statement reads the sheet as it stood at the end of that
@@ -91,10 +92,12 @@ public class TakeStatement {
             // A figure at a grade other than today's does not hang on today's grade having a rate; nor does one
             // dated on or before today, whose rate may have ended since.
             kept |= figure != null && (!person.gradeOn(c.getDate()).equals(person.getGrade()) || !c.getDate().isAfter(today));
-            if (figure != null) {
-                sum = sum.add(late.due(c, figure));
+            BigDecimal due = figure == null ? null : late.due(c, figure);
+            if (due != null) {
+                sum = sum.add(due);
             }
-            bound.put(c.getId(), figure);
+            // The claim is bound to its due as shown, late charge and floor included.
+            bound.put(c.getId(), due);
         }
         BigDecimal dueTotal = SettingRepository.capped(
                 kept || rates.find(sheetId, person.getGrade(), today) != null ? sum : null, late.settings().cap(today));

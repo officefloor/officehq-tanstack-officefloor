@@ -14,7 +14,9 @@ import net.officefloor.hq.app.person.Person;
  * full 30 days it is overdue, the late percent in force on that boundary date (that date plus 30, 60, 90 ... days) of its figure
  * plus the charges of the boundaries before it (compounding),
  * each rounded to two decimals as the claim rounds (see {@link #rounding}), the charges added up. A correction
- * (a negative amount) never gains one, nor does a claim whose late charge a steward waived. The charge is never bound by a statement; settling freezes it into the settled due.
+ * (a negative amount) never gains one, nor does a claim whose late charge a steward waived. Settling freezes it into the
+ * settled due; a statement binds the due as shown (late charge and floor included), so a bound claim's late charge no
+ * longer follows today until the statement is cancelled.
  * The floor is applied last: a claim's live due is the greater of the floor in force on its date and its figure plus its
  * late charge (a correction has no floor).
  */
@@ -55,7 +57,7 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
     /** The claim's late charge on its figure (zero when it is not overdue, is deferred past today, or has no figure). */
     public BigDecimal on(Claim claim, BigDecimal figure) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (!claim.getStatus().isOpen() || claim.isDeferredOn(today)) {
+        if (!claim.getStatus().isOpen() || claim.isDeferredOn(today) || bound(claim)) {
             return none;
         }
         return onAsOpen(claim, figure);
@@ -84,22 +86,30 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
     }
 
     /**
-     * The claim's due: its settled due as it is; else the greater of the floor in force on its date and the figure with
+     * The claim's due: its settled due, or the due a statement bound it to, as it is; else the greater of the floor in force on its date and the figure with
      * its late charge added on top (a correction has no floor); null without a figure.
      */
     public BigDecimal due(Claim claim, BigDecimal figure) {
         if (figure == null) {
             return null;
         }
-        if (claim.getSettledDue() != null) {
+        if (claim.getSettledDue() != null || bound(claim)) {
             return figure.setScale(2);
         }
         return floored(claim, figure.setScale(2).add(on(claim, figure)));
     }
 
-    /** The due the claim would have were it OPEN (floored as {@link #due}); null without a figure. */
+    /** The due the claim would have were it OPEN (floored as {@link #due}; a bound due as it is); null without a figure. */
     public BigDecimal dueAsOpen(Claim claim, BigDecimal figure) {
+        if (figure != null && bound(claim)) {
+            return figure.setScale(2);
+        }
         return figure == null ? null : floored(claim, figure.setScale(2).add(onAsOpen(claim, figure)));
+    }
+
+    /** Whether a statement bound the claim's due (late charge included) and it is not settled: its figure is that due. */
+    private static boolean bound(Claim claim) {
+        return claim.isBound() && claim.getSettledDue() == null;
     }
 
     /** At least the floor in force on the claim's date, unless it is a correction. */
