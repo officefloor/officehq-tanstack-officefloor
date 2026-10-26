@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { useUser } from '../session/useUser';
 import { claimsKey } from './claimsQuery';
 import type { Claim } from './claimsQuery';
 
@@ -31,11 +32,12 @@ export function ClaimForm({ sheetId, personId, editing, onDone }: {
     setError('');
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [user] = useUser();
   const save = useMutation({
     mutationFn: (body: Body) =>
       editing
-        ? putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${editing.id}`, body)
-        : postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/claims`, body),
+        ? putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${editing.id}`, body, user)
+        : postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/claims`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
       if (editing) {

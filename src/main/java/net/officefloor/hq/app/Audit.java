@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import net.officefloor.server.http.HttpHeader;
+import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +41,22 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The signed-in user a write names in its X-User header ("" when it names none). */
+    public static String user(ServerHttpConnection connection) {
+        HttpHeader header = connection.getRequest().getHeaders().getHeader("X-User");
+        return header == null ? "" : header.getValue();
+    }
+
+    /** One record: the event, then sheet=<id> and by=<user>, then the fields, separated by single spaces. */
+    public static String line(String event, String sheetId, String user, String... fields) {
+        StringBuilder line = new StringBuilder(event).append(" sheet=").append(sheetId)
+                .append(" by=").append(user == null ? "" : user.trim());
+        for (String field : fields) {
+            line.append(' ').append(field);
+        }
+        return line.toString();
     }
 
     /** Remove the audit file. */

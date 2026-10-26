@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { useUser } from '../session/useUser';
 import { GRADES, peopleKey, peopleQuery } from './peopleQuery';
 import type { Grade, Person } from './peopleQuery';
 import { useEditingPerson } from './useEditingPerson';
@@ -23,11 +24,12 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
     setError('');
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [user] = useUser();
   const save = useMutation({
     mutationFn: (body: { name: string; grade: Grade }) =>
       editing
-        ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body)
-        : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body),
+        ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
+        : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
     onSuccess: () => {
       if (editing) {
         setEditingId(undefined);
