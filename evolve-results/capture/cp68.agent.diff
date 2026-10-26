@@ -1,0 +1,50 @@
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 1611b0b3..38f0a8c9 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -8,7 +8,7 @@ import { peopleQuery } from '../people/peopleQuery';
+ import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+-import { excess, figure, personDue, personSum, ratesQuery, sumDue, trimmedSum } from './ratesQuery';
++import { excess, figure, personDue, personSum, ratesQuery, recentSettled, sumDue, trimmedSum } from './ratesQuery';
+ 
+ function useSheetData(sheetId: string) {
+   return {
+@@ -39,12 +39,12 @@ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number
+   return <td data-testid="person-excess">{excess(personSum(people.find((p) => p.id === personId), people, claims, rates, today, floor, late), cap)}</td>;
+ }
+ 
+-/** A person's backing: their patrons' due-totals added up, skipping n/a; 0.00 with no patrons. */
++/** A person's backing: their patrons' recent settled figures (see `recentSettled`) added up; 0.00 with no patrons. */
+ function PersonBacking({ sheetId, personId }: { sheetId: string; personId: number }) {
+-  const { people, claims, rates, today, floor, late, cap } = useSheetData(sheetId);
++  const { people, claims, today } = useSheetData(sheetId);
+   const ids = patronIdsOf(useQuery(patronsQuery(sheetId)).data ?? [], personId);
+-  const dues = people.filter((p) => ids.includes(p.id)).map((p) => personDue(p, people, claims, rates, today, floor, late, cap));
+-  return <td data-testid="person-backing">{sumDue(dues)}</td>;
++  const sums = people.filter((p) => ids.includes(p.id)).map((p) => recentSettled(p.id, claims, today));
++  return <td data-testid="person-backing">{sumDue(sums)}</td>;
+ }
+ 
+ /** The sheet's due-total: every person's due-total added up, skipping n/a, trimmed of the highest and lowest. */
+diff --git a/src/main/frontend/features/rates/ratesQuery.ts b/src/main/frontend/features/rates/ratesQuery.ts
+index f0fc1621..bd0ec88d 100644
+--- a/src/main/frontend/features/rates/ratesQuery.ts
++++ b/src/main/frontend/features/rates/ratesQuery.ts
+@@ -161,3 +161,15 @@ export function excess(sum: string, cap: string): string {
+ export function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late, cap: string): string {
+   return capped(personSum(person, people, claims, rates, today, floor, late), cap);
+ }
++
++/**
++ * A person's recent settled sum: the frozen figures of their SETTLED claims dated within the 90 days up to and including
++ * the sheet's today, added up (a claim settled while no rate applied has no figure and is skipped); 0.00 with none.
++ */
++export function recentSettled(personId: number, claims: Claim[], today: string): string {
++  if (today === '') return '0.00';
++  const from = addDays(today, -89);
++  return sumDue(claims
++    .filter((c) => c.personId === personId && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
++    .map((c) => c.settledDue as string));
++}
