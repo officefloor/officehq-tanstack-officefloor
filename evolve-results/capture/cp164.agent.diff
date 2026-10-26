@@ -1,0 +1,185 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 593f8ab8..e092022d 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -13,6 +13,7 @@ import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, typ
+ 
+ // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
+ const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
++const CLOSED = "That claim's date is in a closed period";
+ 
+ // `release`: a steward's review of a REVIEW claim, opening it (it takes its number then).
+ type Change = { status: ClaimStatus; review?: boolean; release?: boolean; reason?: string; voidReason?: string };
+@@ -72,7 +73,8 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+   // An edit the screen can already tell is refused shows its refusal at once, before any request: the claim form must
+   // not be taken for its editor. The server refuses the same edits (and any it alone can tell).
+   const [refused, setRefused] = useState<string>();
+-  // A viewer's edit is refused too, but its editor opens (to be cancelled), as for a lock another user holds.
++  // A viewer's edit, and one of a claim in a closed period, is refused too, but its editor opens (to be cancelled), as
++  // for a lock another user holds; its save is refused in turn.
+   // One a steward's delegation holds on the sheet's today acts as a steward, as the server decides.
+   const viewer = () => {
+     const assigned = roles.data ?? [];
+@@ -85,7 +87,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+   const refusal = (): string | undefined => {
+     if (viewer()) return 'A viewer may not change anything on this sheet';
+     if (claim.status !== 'DRAFT') return 'Only a DRAFT claim can be edited; void it and add a new one instead';
+-    if (periodOn(periods.data ?? [], claim.dueBy)?.closed) return "That claim's date is in a closed period";
++    if (periodOn(periods.data ?? [], claim.dueBy)?.closed) return CLOSED;
+     return undefined;
+   };
+   const base = `/api/sheets/${encodeURIComponent(sheetId)}/claims`;
+@@ -489,7 +491,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
+           if (why === undefined) lock.mutate();
+           else {
+             setRefused(why);
+-            if (viewer()) openEditor();
++            if (viewer() || why === CLOSED) openEditor();
+           }
+         }}
+       >
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 4f4918c4..0c80aa08 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -1,8 +1,11 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.HashSet;
++import java.util.Map;
+ import java.util.List;
+ import java.util.Objects;
+ import java.util.Set;
+@@ -47,6 +50,7 @@ public class AddPastedClaims {
+         List<Person> persons = new ArrayList<>();
+         List<Claim> matched = new ArrayList<>();
+         Set<Long> taken = new HashSet<>();
++        Map<String, BigDecimal> pending = new HashMap<>();
+         int n = 0;
+         for (PasteLine line : pasted.lines()) {
+             n++;
+@@ -69,7 +73,12 @@ public class AddPastedClaims {
+                     }
+                 }
+                 if (match == null) {
+-                    RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), claims);
++                    String target = person.getId() + ":" + input.corrects();
++                    RefuseBadCorrection.refuse(input, sheet.id(), person.getId(), -1,
++                            input.corrects() == null ? BigDecimal.ZERO : pending.getOrDefault(target, BigDecimal.ZERO), claims);
++                    if (input.corrects() != null) {
++                        pending.merge(target, input.amount(), BigDecimal::add);
++                    }
+                     RefuseUsedRef.refuse(sheet.id(), input.ref(), -1, claims);
+                     RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
+                     RefuseRetiredDate.refuse(person, date);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 907f8c88..ff3bfde8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -108,6 +108,19 @@ public class ClaimRepository {
+                 Integer.class, sheetId, personId, number, ClaimStatus.SETTLED.name()) > 0;
+     }
+ 
++    /**
++     * What remains of the person's SETTLED claim numbered {@code number}: its amount less the amounts of the corrections
++     * made against it, VOID or DELETED ones and the claim {@code exceptId} left out.
++     */
++    public BigDecimal correctableRemaining(String sheetId, long personId, String number, long exceptId) {
++        BigDecimal target = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
++                + " AND claim_number = ? AND status = ?", BigDecimal.class, sheetId, personId, number, ClaimStatus.SETTLED.name());
++        BigDecimal corrected = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
++                + " AND corrects = ? AND status NOT IN (?, ?) AND id <> ?", BigDecimal.class, sheetId, personId, number,
++                ClaimStatus.VOID.name(), ClaimStatus.DELETED.name(), exceptId);
++        return target.add(corrected);
++    }
++
+     public Claim find(String sheetId, long id) {
+         return due(jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND id = ?", ROW, sheetId, id))
+                 .stream().findFirst().orElse(null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseBadCorrection.java b/src/main/java/net/officefloor/hq/app/claim/RefuseBadCorrection.java
+index ac8cf93c..2cc9edd9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseBadCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseBadCorrection.java
+@@ -1,10 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++
+ import net.officefloor.hq.app.BadRequestException;
+ 
+ /**
+  * A claim with a negative amount is a correction: it must name, by number, a SETTLED claim of the same person;
+- * any other claim names none.
++ * any other claim names none. A correction may not exceed what remains of the claim it corrects.
+  */
+ final class RefuseBadCorrection {
+ 
+@@ -13,6 +16,16 @@ final class RefuseBadCorrection {
+ 
+     static void refuse(ClaimInput input, String sheetId, long personId, ClaimRepository repository)
+             throws BadRequestException {
++        refuse(input, sheetId, personId, -1, BigDecimal.ZERO, repository);
++    }
++
++    /**
++     * As {@link #refuse(ClaimInput, String, long, ClaimRepository)}, the claim {@code exceptId} (the one being edited; -1
++     * for none) left out of the corrections already made, and {@code pending} (the not yet stored corrections against the
++     * same claim, as a negative sum) counted in.
++     */
++    static void refuse(ClaimInput input, String sheetId, long personId, long exceptId, BigDecimal pending,
++            ClaimRepository repository) throws BadRequestException {
+         if (input.amount().signum() >= 0) {
+             if (input.corrects() != null) {
+                 throw new BadRequestException("Only a correction (a negative amount) names a claim it corrects");
+@@ -25,5 +38,10 @@ final class RefuseBadCorrection {
+         if (!repository.settledNumbered(sheetId, personId, input.corrects())) {
+             throw new BadRequestException("A correction names a SETTLED claim of the same person");
+         }
++        BigDecimal remaining = repository.correctableRemaining(sheetId, personId, input.corrects(), exceptId).add(pending);
++        if (input.amount().negate().compareTo(remaining) > 0) {
++            throw new BadRequestException("A correction may not exceed what remains of the claim it corrects ("
++                    + remaining.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString() + ")");
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseBadEditedCorrection.java b/src/main/java/net/officefloor/hq/app/claim/RefuseBadEditedCorrection.java
+index b144b14a..ed2500f1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseBadEditedCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseBadEditedCorrection.java
+@@ -6,6 +6,7 @@ import net.officefloor.plugin.variable.Val;
+ /** Refuses an edited correction that does not name a SETTLED claim of its person, or a claim naming one that is not a correction. */
+ public class RefuseBadEditedCorrection {
+     public void check(@Val Claim claim, @Val ClaimInput input, ClaimRepository repository) throws BadRequestException {
+-        RefuseBadCorrection.refuse(input, claim.getSheetId(), claim.getPersonId(), repository);
++        RefuseBadCorrection.refuse(input, claim.getSheetId(), claim.getPersonId(), claim.getId(), java.math.BigDecimal.ZERO,
++                repository);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index 4ac46f26..6e2b488f 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -10,7 +10,7 @@ import net.officefloor.web.ObjectResponse;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ 
+ /** The sheet's rates, then its parents' (see {@link RateRepository#chain}). Viewed as of a date, the sheet's own are
+- *  as they stood then; a view holds only the sheet's own rows, so its parents' are read as they stand. */
++ *  as they stood then, and each parent's as it stood then on that parent. */
+ public class RespondWithRates {
+     public void respond(@Val SheetResponse sheet, @Val ViewAsOf asOf, SheetHistory history, JdbcTemplate jdbc,
+             ObjectResponse<List<RateResponse>> response) {
+@@ -18,7 +18,8 @@ public class RespondWithRates {
+         List<String> ancestry = new RateRepository(jdbc).ancestry(sheet.id());
+         for (int level = 1; level < ancestry.size(); level++) {
+             int at = level;
+-            new RateRepository(jdbc).list(ancestry.get(level)).forEach(r -> found.add(r.at(at)));
++            String parent = ancestry.get(level);
++            history.view(parent, asOf.on(), view -> new RateRepository(view).list(parent)).forEach(r -> found.add(r.at(at)));
+         }
+         response.send(found.stream().map(RateResponse::from).toList());
+     }
