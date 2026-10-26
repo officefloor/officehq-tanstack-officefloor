@@ -1,0 +1,262 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index c59eab51..11338cdb 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -24,13 +24,15 @@ import { SORT_KEYS, useSortBy, useSortedPeople } from '../sort/useSortedPeople';
+  *  the tag. `aliases`: the other names they go by,
+  *  sorted as names are compared (ignoring case). `clashing`: whether their name or an alias is used, as a name or
+  *  alias, on another sheet of the sheet's tree (its ancestors and descendants); every edit of them is then refused
+- *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else. */
++ *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else.
++ *  `snapshots`: their snapshot lines, oldest first, one per SNAPSHOT written for them as the sheet's today moved on:
++ *  the day being left and their due-total then ("n/a" when none). */
+ export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
+   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null;
+   retirements: Retirement[]; held: boolean;
+   holds: HoldSpan[];
+   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; tags: string[]; aliases: string[];
+-  clashing: boolean; origin: string | null };
++  clashing: boolean; origin: string | null; snapshots: string[] };
+ 
+ export type PatronShare = { name: string; share: string };
+ 
+diff --git a/src/main/frontend/features/snapshots/snapshots.slot.tsx b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+new file mode 100644
+index 00000000..fd529d79
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+@@ -0,0 +1,26 @@
++import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
++import { usePeople } from '../people/people.slot';
++
++function SnapshotHeads() {
++  return <th>Snapshots</th>;
++}
++
++// The person's snapshot lines, oldest first: one per SNAPSHOT written for them as the sheet's today moved on, the
++// day being left and their due-total as it stood then.
++function SnapshotCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
++  const person = usePeople(sheetId).data?.find((p) => p.id === personId);
++  return (
++    <td>
++      {(person?.snapshots ?? []).map((line, i) => (
++        <div key={i} data-testid="person-snapshot-line">
++          {line}
++        </div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHeads.fill({ order: 21.5, Component: SnapshotHeads }),
++  PersonCells.fill({ order: 21.5, Component: SnapshotCells }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+index e102f654..e298a11f 100644
+--- a/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
++++ b/src/main/java/net/officefloor/hq/app/history/SheetHistory.java
+@@ -24,7 +24,7 @@ public class SheetHistory {
+ 
+     /** The tables the screen reads (a statement's figures among them), parents before children. */
+     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_hold", "person_retirement",
+-            "person_patron", "person_alias", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
++            "person_patron", "person_alias", "person_snapshot", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "sheet_setting",
+             "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_line", "claim_template",
+             "pool", "pool_member", "plan", "plan_claim");
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index e0f4e9d4..db43cfe1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -22,6 +22,7 @@ public class Person {
+     private List<RetirementSpan> retirements = List.of();
+     private List<String> patrons = List.of();
+     private List<String> aliases = List.of();
++    private List<SnapshotLine> snapshots = List.of();
+     private Integer terms;
+     private String contact;
+     private String tags;
+@@ -245,4 +246,13 @@ public class Person {
+     public void setAliases(List<String> aliases) {
+         this.aliases = aliases;
+     }
++
++    /** The person's snapshot lines, oldest first. */
++    public List<SnapshotLine> getSnapshots() {
++        return snapshots;
++    }
++
++    public void setSnapshots(List<SnapshotLine> snapshots) {
++        this.snapshots = snapshots;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 27e76e2e..f2e0f8c5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -357,6 +357,7 @@ public class PersonRepository {
+                 + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
+         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
+         carryStatements(f, sheetId, t);
++        jdbc.update("UPDATE person_snapshot SET person_id = ? WHERE person_id = ?", t, f);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
+@@ -480,6 +481,7 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
++        jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person WHERE id = ?", f);
+@@ -536,6 +538,15 @@ public class PersonRepository {
+         for (Person person : people) {
+             person.setAliases(PersonName.sorted(aliases.getOrDefault(person.getId(), List.of())));
+         }
++        Map<Long, List<SnapshotLine>> snapshots = jdbc.query(
++                "SELECT s.person_id, s.left_on, s.due_total FROM person_snapshot s WHERE s.sheet_id = ? ORDER BY s.id",
++                (rs, n) -> Map.entry(rs.getLong("person_id"), new SnapshotLine(rs.getObject("left_on", LocalDate.class),
++                        rs.getBigDecimal("due_total"))), sheetId).stream()
++                .collect(Collectors.groupingBy(Map.Entry::getKey,
++                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
++        for (Person person : people) {
++            person.setSnapshots(snapshots.getOrDefault(person.getId(), List.of()));
++        }
+         return people;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 5ca0dbc1..67af97ce 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -3,11 +3,11 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ 
+ /** A person, with the grade in force on the sheet's today and every grade they were given (each from its from-date), their statement count and their last statement's due-total ("n/a" when it had none) and date
+- *  (both null before their first statement), the date they are retired from (null: not retired), their past retirements (in the order kept), whether they have any hold and their holds (in the order added), their patrons' names, sorted, their patrons with their shares of 100.00, sorted by name, their own terms (null: none), their contact (null: none), their tags, sorted (empty: none), their aliases, sorted as names are compared, whether they clash (their name or an alias used on another sheet of their tree) and the sheet they were transferred from (null: none). */
++ *  (both null before their first statement), the date they are retired from (null: not retired), their past retirements (in the order kept), whether they have any hold and their holds (in the order added), their patrons' names, sorted, their patrons with their shares of 100.00, sorted by name, their own terms (null: none), their contact (null: none), their tags, sorted (empty: none), their aliases, sorted as names are compared, whether they clash (their name or an alias used on another sheet of their tree) the sheet they were transferred from (null: none) and their snapshot lines, oldest first. */
+ public record PersonResponse(long id, String name, String grade, List<GradeResponse> grades, long version, int statementCount, String statedTotal,
+         String statementDate, String retiredFrom, List<RetirementResponse> retirements, boolean held, List<HoldResponse> holds,
+         List<String> patrons, List<PatronShareResponse> patronShares, Integer terms, String contact, List<String> tags, List<String> aliases,
+-        boolean clashing, String origin) {
++        boolean clashing, String origin, List<String> snapshots) {
+     public static PersonResponse from(Person person) {
+         Statements s = person.getStatements();
+         return new PersonResponse(person.getId(), person.getName(), person.getGrade(),
+@@ -20,6 +20,6 @@ public record PersonResponse(long id, String name, String grade, List<GradeRespo
+                 person.getPatrons(), person.getPatronShares().stream().map(PatronShareResponse::from).toList(),
+                 person.getTerms(), person.getContact(),
+                 person.getTags() == null ? List.of() : List.of(person.getTags().split(",")), person.getAliases(), person.isClashing(),
+-                person.getOrigin());
++                person.getOrigin(), person.getSnapshots().stream().map(SnapshotLine::line).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SnapshotLine.java b/src/main/java/net/officefloor/hq/app/person/SnapshotLine.java
+new file mode 100644
+index 00000000..c03f42f6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/SnapshotLine.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.person;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++
++/** One of a person's snapshot lines: the day being left as the sheet's today moved on, and their due-total then
++ *  (null: n/a). */
++public record SnapshotLine(LocalDate day, BigDecimal dueTotal) {
++
++    /** The line as shown: the day, then the due-total ("n/a" when none). */
++    public String line() {
++        return day + " " + (dueTotal == null ? "n/a" : dueTotal.toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/PersonSnapshotRepository.java b/src/main/java/net/officefloor/hq/app/rollup/PersonSnapshotRepository.java
+new file mode 100644
+index 00000000..8af4769d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/PersonSnapshotRepository.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.rollup;
++
++import java.math.BigDecimal;
++import java.sql.Date;
++import java.time.LocalDate;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The people's snapshot lines, one per SNAPSHOT written for them (read with the person, see PersonRepository). */
++@Repository
++public class PersonSnapshotRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public PersonSnapshotRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** Keep the person's due-total (null: n/a) as it stood on the day being left. */
++    public void insert(String sheetId, long personId, LocalDate day, BigDecimal dueTotal) {
++        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_on, due_total) VALUES (?, ?, ?, ?)", sheetId,
++                personId, Date.valueOf(day), dueTotal);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshots.java b/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshots.java
+index f8242ffe..02fca878 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshots.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RecordSnapshots.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rollup;
+ 
+ import java.time.LocalDate;
++import java.util.Map;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+@@ -9,15 +10,19 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * A change of the sheet's today first records one SNAPSHOT line per person, in list order, with their due-total as it
+- * stood on the day being left. Runs before the new today is stored, ahead of any period closing and the rollup lines.
++ * stood on the day being left, each also kept as one of the person's snapshot lines. Runs before the new today is
++ * stored, ahead of any period closing and the rollup lines.
+  */
+ public class RecordSnapshots {
+     public void record(@Val SheetResponse sheet, @Val LocalDate today, @Val RollupBefore before, @Val ChangedBy by,
+-            SheetRepository sheets, Audit audit) {
+-        if (today.equals(sheets.today(sheet.id()))) {
++            SheetRepository sheets, PersonSnapshotRepository snapshots, Audit audit) {
++        LocalDate leaving = sheets.today(sheet.id());
++        if (today.equals(leaving)) {
+             return;
+         }
+-        for (Figures f : before.snapshot().people().values()) {
++        for (Map.Entry<Long, Figures> e : before.snapshot().people().entrySet()) {
++            Figures f = e.getValue();
++            snapshots.insert(sheet.id(), e.getKey(), leaving, f.dueTotal());
+             audit.record("SNAPSHOT sheet=" + sheet.id() + " by=" + by.name() + " name=" + f.name() + " due-total="
+                     + (f.dueTotal() == null ? "n/a" : f.dueTotal().toPlainString()));
+         }
+diff --git a/src/main/resources/db/migration/V67__person_snapshot.sql b/src/main/resources/db/migration/V67__person_snapshot.sql
+new file mode 100644
+index 00000000..4f025d33
+--- /dev/null
++++ b/src/main/resources/db/migration/V67__person_snapshot.sql
+@@ -0,0 +1,15 @@
++-- A person's snapshot lines: one per SNAPSHOT written for them as the sheet's today moved on, with the day being left
++-- and their due-total as it stood then (null: n/a). Listed oldest first (by id).
++CREATE TABLE person_snapshot (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200)   NOT NULL REFERENCES sheet (id),
++    person_id BIGINT         NOT NULL REFERENCES person (id),
++    left_on   DATE           NOT NULL,
++    due_total DECIMAL(19, 2)
++);
++CREATE INDEX person_snapshot_person ON person_snapshot (person_id, id);
++
++-- Snapshotted with the rest of the screen (see V40, V41).
++CREATE TABLE hist.person_snapshot AS SELECT t.*, CAST(NULL AS BIGINT) AS snapshot_id FROM person_snapshot t WHERE FALSE;
++CREATE INDEX hist_person_snapshot_snapshot ON hist.person_snapshot (snapshot_id);
++CREATE TABLE asof.person_snapshot AS SELECT * FROM person_snapshot WHERE FALSE;
