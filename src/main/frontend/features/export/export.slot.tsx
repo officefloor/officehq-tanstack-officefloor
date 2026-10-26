@@ -1,3 +1,4 @@
+import { useIsFetching } from '@tanstack/react-query';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { gradeOn, usePeople } from '../people/people.slot';
 import { useClaims } from '../claims/useClaims';
@@ -27,10 +28,12 @@ function downloadCsv(name: string, lines: string[][]) {
 
 // The button that downloads the people as a CSV file: a header line, then one line per person in list order,
 // retired people included, with the grade in force today, the retired-from date (or nothing) and the due-total as
-// its row shows it. Lines end with a line feed.
+// its row shows it. Lines end with a line feed. While an as-of date is set the rows show the as-of figures, so every
+// export does too: the buttons wait until the sheet's reads (re-read on setting or clearing the date) are all in.
 function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const totals = useDueTotals(sheetId);
+  const reading = useIsFetching({ queryKey: ['sheet'] }) > 0;
 
   const download = () => {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
@@ -43,18 +46,18 @@ function ExportPeople({ sheetId }: { sheetId: string; user: string }) {
 
   return (
     <section data-testid="export-panel">
-      <button type="button" data-testid="export-people" disabled={!people.data} onClick={download}>
+      <button type="button" data-testid="export-people" disabled={reading || !people.data} onClick={download}>
         Export people (CSV)
       </button>{' '}
-      <ExportClaims sheetId={sheetId} />{' '}
-      <ExportPools sheetId={sheetId} />
+      <ExportClaims sheetId={sheetId} reading={reading} />{' '}
+      <ExportPools sheetId={sheetId} reading={reading} />
     </section>
   );
 }
 
 // The button that downloads the claims as a CSV file: a header line, then one line per claim, people in list order (retired
 // people included) and each person's claims oldest first, with the number, due, status and period as its row shows them.
-function ExportClaims({ sheetId }: { sheetId: string }) {
+function ExportClaims({ sheetId, reading }: { sheetId: string; reading: boolean }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -77,7 +80,7 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
   };
 
   return (
-    <button type="button" data-testid="export-claims" disabled={!people.data || !claims.data} onClick={download}>
+    <button type="button" data-testid="export-claims" disabled={reading || !people.data || !claims.data} onClick={download}>
       Export claims (CSV)
     </button>
   );
@@ -86,7 +89,7 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
 // The button that downloads the pools as a CSV file: a header line, then one line per member, pools in the order added
 // and each pool's members in the order added, a member pool as pool:<name>, with the share and the cut as its line shows
 // them (nothing when it has none).
-function ExportPools({ sheetId }: { sheetId: string }) {
+function ExportPools({ sheetId, reading }: { sheetId: string; reading: boolean }) {
   const pools = usePools(sheetId);
 
   const download = async () => {
@@ -101,7 +104,7 @@ function ExportPools({ sheetId }: { sheetId: string }) {
   };
 
   return (
-    <button type="button" data-testid="export-pools" disabled={!pools.data} onClick={() => void download()}>
+    <button type="button" data-testid="export-pools" disabled={reading || !pools.data} onClick={() => void download()}>
       Export pools (CSV)
     </button>
   );
