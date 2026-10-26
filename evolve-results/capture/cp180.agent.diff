@@ -1,0 +1,160 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 2bf09ea5..423fd559 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -19,7 +19,7 @@ import { useColumnShown } from '../columns/useColumns';
+  *  100.00 (two decimals; split equally in the order named, the remainder to the first named), sorted by name. `grade` is the
+  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
+  *  the beginning of time). `terms`: the person's own terms in days in force on the sheet's today, null when they have none; a claim
+- *  added for them is due by its date plus their own terms in force on that date, else their grade's terms, else the
++ *  added for them is due by its date plus their own terms in force on the day it is added (the sheet's today then), else their grade's terms on that day, else the
+  *  sheet's. `ownTerms`: their own terms from the beginning of time (null: none); `datedTerms`: the own terms they were
+  *  given from a date (null terms: none), oldest from-date first. `contact`: the person's contact, trimmed
+  *  and lower-cased, null when they have none; no two people on a sheet share one. `tags`: the person's tags, trimmed,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 0c80aa08..267fd5b9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -46,7 +46,8 @@ public class AddPastedClaims {
+             ClaimLockRepository locks, ClaimLineRepository claimLines, WatchRepository watches,
+             VoidReasonRepository voidReasons, Rollup rollup, Audit audit, ClaimLog log, Out<PasteResponse> response)
+             throws BadRequestException {
+-        LocalDate today = settings.entryDate(sheet.id(), sheets.today(sheet.id()));
++        LocalDate sheetToday = sheets.today(sheet.id());
++        LocalDate today = settings.entryDate(sheet.id(), sheetToday);
+         List<Person> persons = new ArrayList<>();
+         List<Claim> matched = new ArrayList<>();
+         Set<Long> taken = new HashSet<>();
+@@ -80,7 +81,7 @@ public class AddPastedClaims {
+                         pending.merge(target, input.amount(), BigDecimal::add);
+                     }
+                     RefuseUsedRef.refuse(sheet.id(), input.ref(), -1, claims);
+-                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
++                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, sheetToday, settings, holidays), periods);
+                     RefuseRetiredDate.refuse(person, date);
+                 } else {
+                     if (!taken.add(match.getId())) {
+@@ -116,7 +117,7 @@ public class AddPastedClaims {
+                     if (claim == null) {
+                         LocalDate date = input.date() != null ? input.date() : today;
+                         claim = claims.insert(sheet.id(), person.getId(), input.amount(), date, input.note(),
+-                                input.corrects(), input.ref(), input.tags(), BuildClaim.terms(person, date, settings));
++                                input.corrects(), input.ref(), input.tags(), BuildClaim.terms(person, sheetToday, settings));
+                         if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
+                             claims.markLate(claim);
+                         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index ff6ae3ca..3ccc2645 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
+  * Splits an amount (above 0.00 and below the claim's) off an OPEN claim not deferred past the sheet's today: the claim
+  * keeps the rest and loses any figure a statement bound it to; a new OPEN claim with the amount, the same date and note,
+  * the next number, opened by the user, split from the claim's number and due by the terms-th business day after its date,
+- * with the terms in force on that date for its person (their own, else their grade's on that date, else the sheet's), is listed as the person's newest;
++ * with the terms in force for its person on the sheet's today, the day it is created (their own, else their grade's on that day, else the sheet's), is listed as the person's newest;
+  * a late entry when that due-by is in a soft-closed period.
+  */
+ public class ApplySplit {
+@@ -31,7 +31,7 @@ public class ApplySplit {
+             throw new BadRequestException("The amount split off is more than 0.00 and less than the claim's amount");
+         }
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+-        Claim into = repository.split(claim, amount.value(), by.name(), BuildClaim.terms(person, claim.getDate(), settings));
++        Claim into = repository.split(claim, amount.value(), by.name(), BuildClaim.terms(person, sheets.today(claim.getSheetId()), settings));
+         if (into == null) {
+             throw new BadRequestException("The claim was changed by someone else; reload the sheet");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index efe3a857..8a7f7cf0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -9,30 +9,34 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Adds the claim (date blank: the sheet's entry date, else its today), due by the terms-th business day after its date (skipping Saturdays, Sundays and the sheet's holidays), with the terms in force on that date for its person (their own, else their grade's on that date, else the sheet's) fixed from now on; a late entry when that due-by is in a soft-closed period. */
++/** Adds the claim (date blank: the sheet's entry date, else its today), due by the terms-th business day after its date (skipping Saturdays, Sundays and the sheet's holidays), with the terms in force for its person on the day it is created, the sheet's today (their own, else their grade's on that day, else the sheet's) fixed from now on; a late entry when that due-by is in a soft-closed period. */
+ public class BuildClaim {
+     public void build(@Val Person person, @Val ClaimInput input, ClaimRepository repository,
+             SheetRepository sheets, SettingRepository settings, PeriodRepository periods, HolidayRepository holidays, Out<Claim> claim) {
+-        LocalDate date = input.date() != null ? input.date()
+-                : settings.entryDate(person.getSheetId(), sheets.today(person.getSheetId()));
++        LocalDate today = sheets.today(person.getSheetId());
++        LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.getSheetId(), today);
+         Claim added = repository.insert(person.getSheetId(), person.getId(), input.amount(), date, input.note(),
+-                input.corrects(), input.ref(), input.tags(), terms(person, date, settings));
++                input.corrects(), input.ref(), input.tags(), terms(person, today, settings));
+         if (periods.softClosedOn(person.getSheetId(), added.getDueBy())) {
+             repository.markLate(added);
+         }
+         claim.set(added);
+     }
+ 
+-    /** The terms a claim of the person dated {@code date} is fixed with: those in force then for them. */
+-    static int terms(Person person, LocalDate date, SettingRepository settings) {
+-        return settings.dated(person.getSheetId()).terms(person, date);
++    /**
++     * The terms a claim of the person created on {@code today} (the sheet's today then) is fixed with: those in force
++     * for them on that day, whatever the claim's date.
++     */
++    static int terms(Person person, LocalDate today, SettingRepository settings) {
++        return settings.dated(person.getSheetId()).terms(person, today);
+     }
+ 
+     /**
+-     * The due-by a claim of the person dated {@code date} would have: the terms-th business day after its date, by the
+-     * sheet's holidays as they stand now.
++     * The due-by a claim of the person dated {@code date}, created on {@code today}, would have: the terms-th business
++     * day after its date, with the terms in force on {@code today}, by the sheet's holidays as they stand now.
+      */
+-    static LocalDate dueBy(Person person, LocalDate date, SettingRepository settings, HolidayRepository holidays) {
+-        return holidays.dueBy(person.getSheetId(), date, terms(person, date, settings));
++    static LocalDate dueBy(Person person, LocalDate date, LocalDate today, SettingRepository settings,
++            HolidayRepository holidays) {
++        return holidays.dueBy(person.getSheetId(), date, terms(person, today, settings));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
+index 88e01bce..49c60b6c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/GeneratePlanClaims.java
+@@ -50,13 +50,13 @@ public class GeneratePlanClaims {
+                 // Re-read each time: an earlier claim may have changed what the rules see.
+                 Person person = people.find(sheet.id(), plan.personId());
+                 try {
+-                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, settings, holidays), periods);
++                    RefuseClosedDate.refuse(sheet.id(), BuildClaim.dueBy(person, date, today, settings, holidays), periods);
+                     RefuseRetiredDate.refuse(person, date);
+                 } catch (BadRequestException e) {
+                     continue;
+                 }
+                 Claim claim = claims.insert(sheet.id(), person.getId(), plan.amount(), date, "", null, null, null,
+-                        BuildClaim.terms(person, date, settings));
++                        BuildClaim.terms(person, today, settings));
+                 if (periods.softClosedOn(sheet.id(), claim.getDueBy())) {
+                     claims.markLate(claim);
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RefuseClosedNewDate.java b/src/main/java/net/officefloor/hq/app/claim/RefuseClosedNewDate.java
+index f4645690..281eaafd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RefuseClosedNewDate.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RefuseClosedNewDate.java
+@@ -11,14 +11,14 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Refuses a new claim (date blank: the sheet's entry date, else its today) whose due-by, its date plus the terms it would
+- * get, falls inside a closed period.
++ * get (those in force on the sheet's today), falls inside a closed period.
+  */
+ public class RefuseClosedNewDate {
+ 
+     public void check(@Val Person person, @Val ClaimInput input, SheetRepository sheets,
+             SettingRepository settings, PeriodRepository periods, HolidayRepository holidays) throws BadRequestException {
+-        LocalDate date = input.date() != null ? input.date()
+-                : settings.entryDate(person.getSheetId(), sheets.today(person.getSheetId()));
+-        RefuseClosedDate.refuse(person.getSheetId(), BuildClaim.dueBy(person, date, settings, holidays), periods);
++        LocalDate today = sheets.today(person.getSheetId());
++        LocalDate date = input.date() != null ? input.date() : settings.entryDate(person.getSheetId(), today);
++        RefuseClosedDate.refuse(person.getSheetId(), BuildClaim.dueBy(person, date, today, settings, holidays), periods);
+     }
+ }
