@@ -5,7 +5,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /**
  * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening (null for a draft or a voided claim);
- * `settledDue` is the due fixed on settling (null when not settled, or settled while the grade had no rate).
+ * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date).
  */
 export type Claim = {
   id: number;

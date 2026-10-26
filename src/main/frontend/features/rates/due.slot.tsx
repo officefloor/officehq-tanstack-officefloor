@@ -5,14 +5,15 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery, counts, sumAmounts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
+import { useSheetToday } from '../sheet/useSheetToday';
 import type { Person } from '../people/peopleQuery';
 import { due, rateFor, ratesQuery, sumDue } from './ratesQuery';
 import type { Rate } from './ratesQuery';
 
-/** A person's due-total: their claimed times their grade's rate, or n/a when the grade has none. */
-function personDue(person: Person | undefined, claims: Claim[], rates: Rate[]): string {
+/** A person's due-total: their claimed times their grade's rate in force on the sheet's today, or n/a when none is. */
+function personDue(person: Person | undefined, claims: Claim[], rates: Rate[], today: string): string {
   if (!person) return 'n/a';
-  return due(sumAmounts(claims.filter((c) => c.personId === person.id && counts(c))), rateFor(rates, person.grade));
+  return due(sumAmounts(claims.filter((c) => c.personId === person.id && counts(c))), rateFor(rates, person.grade, today));
 }
 
 function useSheetData(sheetId: string) {
@@ -20,26 +21,27 @@ function useSheetData(sheetId: string) {
     people: useQuery(peopleQuery(sheetId)).data ?? [],
     claims: useQuery(claimsQuery(sheetId)).data ?? [],
     rates: useQuery(ratesQuery(sheetId)).data ?? [],
+    today: useSheetToday(sheetId),
   };
 }
 
 function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const { people, rates } = useSheetData(sheetId);
   const person = people.find((p) => p.id === claim.personId);
-  // A settled claim shows the due it was fixed at; otherwise its due follows the current rate.
-  return <td data-testid="claim-due">{claim.settledDue ?? due(claim.amount, rateFor(rates, person?.grade))}</td>;
+  // A settled claim shows the due it was fixed at; otherwise its due follows the rate on the claim's date.
+  return <td data-testid="claim-due">{claim.settledDue ?? due(claim.amount, rateFor(rates, person?.grade, claim.date))}</td>;
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const { people, claims, rates } = useSheetData(sheetId);
-  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), claims, rates)}</td>;
+  const { people, claims, rates, today } = useSheetData(sheetId);
+  return <td data-testid="person-due-total">{personDue(people.find((p) => p.id === personId), claims, rates, today)}</td>;
 }
 
 function DueTotal({ sheetId }: { sheetId: string }) {
-  const { people, claims, rates } = useSheetData(sheetId);
+  const { people, claims, rates, today } = useSheetData(sheetId);
   return (
     <p data-testid="rollup-due">
-      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, claims, rates)))}</strong>
+      Due total <strong data-testid="rollup-due-total">{sumDue(people.map((p) => personDue(p, claims, rates, today)))}</strong>
     </p>
   );
 }

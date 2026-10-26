@@ -27,14 +27,13 @@ public class ApplyClaimStatus {
         responseOut.set(ClaimResponse.from(changed));
     }
 
-    /** The claim's due now: its amount times its person's grade's rate, half up; null when the grade has no rate. */
+    /** The claim's due now: its amount times its person's grade's rate on the claim's date, half up; null when none applies. */
     private static BigDecimal due(Claim claim, People people, Rates rates) {
         Person person = people.find(claim.sheetId(), claim.personId());
         if (person == null) {
             return null;
         }
-        return rates.list(claim.sheetId()).stream().filter(r -> r.grade().equals(person.grade())).findFirst()
-                .map(r -> claim.amount().multiply(r.rate()).movePointLeft(2).setScale(2, RoundingMode.HALF_UP))
-                .orElse(null);
+        BigDecimal rate = rates.on(claim.sheetId(), person.grade(), claim.date());
+        return rate == null ? null : claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
     }
 }

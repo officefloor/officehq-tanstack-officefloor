@@ -4,28 +4,38 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useUser } from '../session/useUser';
+import { useSheetToday } from '../sheet/useSheetToday';
 import { GRADES } from '../people/peopleQuery';
 import type { Grade } from '../people/peopleQuery';
 import { rateFor, ratesKey, ratesQuery } from './ratesQuery';
 import type { Rate } from './ratesQuery';
 
 const PERCENT = /^\d{1,7}(\.\d{1,2})?$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** The sheet's rate for each grade, and the form a grade's rate is set through. */
+/** The sheet's rates — per grade, the one in force on the sheet's today, and every rate with its
+ *  from-date — and the form a grade's rate is set through. */
 function Rates({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const rates = useQuery(ratesQuery(sheetId));
   const [grade, setGrade] = useState<Grade>('A');
   const [pct, setPct] = useState('');
+  const [from, setFrom] = useState('');
+  const today = useSheetToday(sheetId);
   const [error, setError] = useState('');
 
   const [user] = useUser();
   const save = useMutation({
-    mutationFn: (body: { grade: Grade; rate: string }) =>
-      putJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/${body.grade}`, { rate: body.rate }, user),
+    mutationFn: (body: { grade: Grade; rate: string; from: string }) =>
+      putJson<Rate>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/rates/${body.grade}`,
+        { rate: body.rate, from: body.from },
+        user,
+      ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
       setPct('');
+      setFrom('');
     },
     onError: () => setError('The rate could not be set.'),
   });
@@ -38,7 +48,12 @@ function Rates({ sheetId }: { sheetId: string }) {
       setError('The rate must be a percent of 0.00 or more, with up to two decimals.');
       return;
     }
-    save.mutate({ grade, rate: p });
+    const f = from.trim();
+    if (f !== '' && !DATE.test(f)) {
+      setError('The from-date must be a date (yyyy-mm-dd).');
+      return;
+    }
+    save.mutate({ grade, rate: p, from: f });
   };
 
   const list = rates.data ?? [];
@@ -75,25 +90,50 @@ function Rates({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            data-testid="rate-form-from"
+            type="date"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
         {error && <p data-testid="rate-form-error">{error}</p>}
       </form>
       {rates.isError && <p data-testid="rates-load-error">Could not load the rates.</p>}
-      <table>
+      <table data-testid="rates-current">
         <tbody>
-          {GRADES.map((g) => {
-            const rate = rateFor(list, g);
-            return (
-              <tr key={g} data-testid={rate === undefined ? undefined : `rate-row-${g}-start`}>
-                <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>
-                  <span data-testid="rate-pct">{rate ?? 'n/a'}</span>
-                </td>
-              </tr>
-            );
-          })}
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              <td data-testid={`rate-current-${g}`}>{rateFor(list, g, today) ?? 'n/a'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table data-testid="rates-list">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>Rate %</th>
+            <th>From</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-pct">{r.rate}</td>
+              <td data-testid="rate-from">{r.from ?? 'start'}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>
