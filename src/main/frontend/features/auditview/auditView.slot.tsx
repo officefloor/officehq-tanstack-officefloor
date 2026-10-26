@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 
 // The audit viewer: reads the sheet's lines from the audit file as it holds them, newest first. A name in the
-// filter keeps only the lines about that person (name=/person=, compared as names are), then, for a person
+// filter keeps only the lines about that person (name=/person=, compared as names are), then those on each of the sheet's descendants (sheets by id), then, for a person
 // transferred in, the lines about them from the sheet they came from. It records nothing.
 function AuditViewPanel({ sheetId }: { sheetId: string; user: string }) {
   const [filter, setFilter] = useState('');
