@@ -1,0 +1,119 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index aab4377a..dbbf66f7 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -200,7 +200,7 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
+ // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
+ // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
+ // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
+-// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the parent and the permissions is dated: saving it records
++// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent and the permissions is dated: saving it records
+ // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
+ // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
+ type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
+@@ -242,6 +242,8 @@ const SETTINGS: readonly SettingField[] = [
+     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
+   { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
++  { key: 'alert-threshold', label: 'Alert threshold', placeholder: 'off', blank: true, valid: AMOUNT, inputMode: 'decimal',
++    invalid: 'An alert threshold is an amount with up to two decimals, or blank for off', dated: false },
+   { key: 'parent', label: 'Parent sheet', placeholder: 'none', blank: true, valid: SHEET_ID, inputMode: 'text',
+     invalid: 'A parent is a sheet id, or blank for none', dated: false },
+   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index 957ad422..dc506614 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
+ /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
+ public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
+ 
+-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the fiscal start month, the pot, the parent and the permissions). */
++    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the fiscal start month, the pot, the alert threshold, the parent and the permissions). */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
++        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
+     }
+ 
+     /** Whether the key is one of the permission matrix's (perm-<action>). */
+@@ -35,6 +35,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The due above which a claim needs a note before it is opened; blank means none. */
+     public static final String NOTE_THRESHOLD = "note-threshold";
+ 
++    /** The due-total above which a person crossing it writes an ALERT line; an amount with two decimals, blank for off. Not dated. */
++    public static final String ALERT_THRESHOLD = "alert-threshold";
++
+     /** The most a person's due-total may be; an amount with two decimals, blank for none. */
+     public static final String CAP = "cap";
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index b61641e1..69bc851c 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -175,6 +175,18 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.ALERT_THRESHOLD.equals(key)) {
++            String value = null;
++            if (!text.isEmpty()) {
++                if (!AMOUNT.matcher(text).matches()) {
++                    throw new BadRequestException("An alert threshold is an amount with up to two decimals, or blank for off");
++                }
++                value = new BigDecimal(text).setScale(2).toPlainString();
++            }
++            setting.set(new SettingInput(key, value, from));
++            changedBy.set(by);
++            return;
++        }
+         if (Setting.POT.equals(key)) {
+             String value = null;
+             if (!text.isEmpty()) {
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 4020cf5d..3a7e44bc 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
+  * none without a rate) with its late charge added on top while it is overdue, and then — unless it is settled or a correction — at least the sheet's floor in force on its date, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
+  * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
+  * those of their claims that are OPEN or PENDING and past their due-by plus their grade's grace on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
+- * then a TOTALS line when any of the sheet's three totals moved. The sheet's due-total and overdue-total leave out the
++ * then a TOTALS line when any of the sheet's three totals moved, then — while the sheet's alert threshold is set — an ALERT line, in list order, per person whose due-total went from at or below it (or none) to above it. The sheet's due-total and overdue-total leave out the
+  * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
+  * binds them; their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
+  * after it), do none of a retired person's OPEN and PENDING claims, unless a statement binds them.
+@@ -186,9 +186,25 @@ public class Rollup {
+             lines.add("TOTALS" + who + " claimed-total=" + after.claimedTotal().toPlainString() + " due-total="
+                     + after.dueTotal().toPlainString() + " overdue-total=" + after.overdueTotal().toPlainString());
+         }
++        String threshold = settings.find(sheetId, net.officefloor.hq.app.access.Setting.ALERT_THRESHOLD);
++        if (threshold != null) {
++            BigDecimal limit = new BigDecimal(threshold);
++            for (Map.Entry<Long, Figures> e : after.people().entrySet()) {
++                Figures now = e.getValue();
++                Figures was = before.people().get(e.getKey());
++                if (above(now, limit) && !above(was, limit)) {
++                    lines.add("ALERT" + who + " name=" + now.name() + " due-total=" + now.dueTotal().toPlainString());
++                }
++            }
++        }
+         lines.forEach(audit::record);
+     }
+ 
++    /** Whether the person's due-total is above the alert threshold (none, or n/a, is not). */
++    private static boolean above(Figures figures, BigDecimal limit) {
++        return figures != null && figures.dueTotal() != null && figures.dueTotal().compareTo(limit) > 0;
++    }
++
+     /** Whether the claim counts in the live totals: its person's OPEN and PENDING claims dated within a hold do not,
+      *  unless a statement binds them, nor does a claim deferred past the sheet's today; their other ones do. */
+     private static boolean counts(Claim claim, Person person, LocalDate today) {
