@@ -1,0 +1,193 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 3fcf85a6..317d3776 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -21,6 +21,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
+   { action: 'settle', change: { status: 'SETTLED' }, label: 'Settle' },
+   { action: 'void', change: { status: 'VOID' }, label: 'Void' },
+   { action: 'approve', change: { status: 'SETTLED', review: true }, label: 'Approve' },
++  { action: 'delete', change: { status: 'DELETED' }, label: 'Delete' },
++  { action: 'restore', change: { status: 'DRAFT' }, label: 'Restore' },
+ ];
+ 
+ // A claim's number and status, the buttons that open, settle, void, approve or reject it, and a steward's move of a DRAFT,
+@@ -39,6 +41,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
+ // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
+ // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
+ // A claim in any status can be commented; an empty comment is refused.
++// A DRAFT claim (not in a closed period) can be deleted: DELETED, it counts nowhere and takes no edit, open or void; on
++// the sheet-today it was deleted it can be restored to a DRAFT, and on a later day the restore is refused.
+ // A DRAFT's amount can be changed in the row, beside its edit button, under the claim form's rules (refused as its edit is).
+ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; personId: number; claim: Claim }) {
+   const [user] = useUser();
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index d7d55e0e..abaebce2 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
+ import { asNumber, useSearchParam } from '../../url/useSearchParam';
+ import type { Holds } from '../people/people.slot';
+ 
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+ export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+   /** Given when the claim is opened: the sheet's next (1, 2, ...), or within its period (<period>-<n>, X-<n> in none); none for a draft. */
+diff --git a/src/main/frontend/slots/defs/claimRow.ts b/src/main/frontend/slots/defs/claimRow.ts
+index cf7a4e85..ece83cc1 100644
+--- a/src/main/frontend/slots/defs/claimRow.ts
++++ b/src/main/frontend/slots/defs/claimRow.ts
+@@ -8,7 +8,7 @@ export const ClaimCells = defineSlot<{
+   sheetId: string;
+   user: string;
+   personId: number;
+-  claim: { id: number; personId: number; amount: string; date: string; note: string; status: 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++  claim: { id: number; personId: number; amount: string; date: string; note: string; status: 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+     settledDue: string | null; openedBy: string | null; stated: boolean; statedDue: string | null; dueBy: string; log: string[];
+     deferred?: boolean; deferredUntil?: string | null; proofs?: number; splitFrom?: string | null; lateEntry?: boolean;
+     reminded?: string | null; corrects?: string | null; ref?: string | null; tags?: string[];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 2459b38f..4f20df66 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -31,6 +31,7 @@ import net.officefloor.plugin.variable.Val;
+  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
+  */
+ public class ApplyClaimStatus {
++    // A DRAFT claim may be deleted, and a DELETED one restored to DRAFT only on the sheet-today it was deleted.
+     public void apply(@Val ClaimStatus status, @Val Claim claim, ClaimRepository repository,
+             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+             PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, @Val VoidChoice voidChoice, VoidReasonRepository voidReasons,
+@@ -53,7 +54,23 @@ public class ApplyClaimStatus {
+             }
+         } else {
+             if (!from.canBecome(status)) {
+-                throw new BadRequestException("A " + from + " claim cannot become " + status);
++                throw new BadRequestException(status == ClaimStatus.DELETED ? "Only a DRAFT claim can be deleted"
++                        : status == ClaimStatus.DRAFT ? "Only a DELETED claim can be restored"
++                        : "A " + from + " claim cannot become " + status);
++            }
++            if (status == ClaimStatus.DRAFT) {
++                java.time.LocalDate deletedOn = log.lastOn(claim.getSheetId(), claim.getId(), ClaimStatus.DELETED);
++                if (deletedOn == null || !deletedOn.equals(sheets.today(claim.getSheetId()))) {
++                    throw new BadRequestException("A deleted claim can be restored only on the day it was deleted");
++                }
++            }
++            if (status == ClaimStatus.DELETED || status == ClaimStatus.DRAFT) {
++                claim.setStatus(status);
++                if (!repository.updateStatus(claim, from)) {
++                    throw new BadRequestException("The claim was changed by someone else; reload the sheet");
++                }
++                audited.set(new ClaimNumber(claim.getNumber()));
++                return;
+             }
+             String action = status == ClaimStatus.OPEN ? "open" : status == ClaimStatus.VOID ? "void" : "settle";
+             if (!settings.allows(claim.getSheetId(), action, role)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+index beddd6e1..4abb55ee 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyProof.java
+@@ -3,10 +3,11 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Raises the claim's proofs count by one; a SETTLED or VOID claim is refused. */
++/** Raises the claim's proofs count by one; a SETTLED, VOID or DELETED claim is refused. */
+ public class ApplyProof {
+     public void apply(@Val Claim claim, ClaimRepository repository) throws BadRequestException {
+-        if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID) {
++        if (claim.getStatus() == ClaimStatus.SETTLED || claim.getStatus() == ClaimStatus.VOID
++                || claim.getStatus() == ClaimStatus.DELETED) {
+             throw new BadRequestException("A " + claim.getStatus() + " claim takes no more proofs");
+         }
+         if (!repository.addProof(claim)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 896db134..859f70eb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -3,22 +3,24 @@ package net.officefloor.hq.app.claim;
+ /**
+  * A claim's status: DRAFT → OPEN → SETTLED, and a DRAFT, OPEN or PENDING claim may become VOID. A clerk's settle above
+  * the clerk limit leaves an OPEN claim PENDING; a steward's review then approves it (SETTLED) or rejects it (OPEN).
+- * A steward may also void a SETTLED claim within {@link #VOID_SETTLED_DAYS} days of its settlement.
++ * A steward may also void a SETTLED claim within {@link #VOID_SETTLED_DAYS} days of its settlement. A DRAFT claim may be
++ * DELETED (it counts nowhere and takes no other change), and made a DRAFT again on the same sheet-today it was deleted.
+  */
+ public enum ClaimStatus {
+-    DRAFT, OPEN, PENDING, SETTLED, VOID;
++    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+ 
+     /** How many days after its settlement (by the sheet's today) a steward may still void a SETTLED claim. */
+     public static final int VOID_SETTLED_DAYS = 7;
+ 
+-    /** Whether a claim in this status may move to {@code next} by an open, settle or void (not a review); a
++    /** Whether a claim in this status may move to {@code next} by an open, settle, void, delete or restore (not a review); a
+      * SETTLED claim's void is further bound to a steward and its settlement window. */
+     public boolean canBecome(ClaimStatus next) {
+         return switch (next) {
+             case OPEN -> this == DRAFT;
+             case SETTLED, PENDING -> this == OPEN;
+             case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
+-            case DRAFT -> false;
++            case DELETED -> this == DRAFT;
++            case DRAFT -> this == DELETED;
+         };
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+index 349b7d2d..6b555048 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+@@ -1,7 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /**
+- * The status a claim is to move to (OPEN, SETTLED or VOID), and the signed-in user (`by`) making the change. With
++ * The status a claim is to move to (OPEN, SETTLED or VOID; DELETED deletes a DRAFT, DRAFT restores a DELETED one), and the signed-in user (`by`) making the change. With
+  * `review`, a steward's review of a PENDING claim: SETTLED approves it, OPEN rejects it with the `reason`. A void
+  * carries the `voidReason` chosen from the sheet's list (blank: none).
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
+index a4f276d4..cdb24378 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RecordClaimStatus.java
+@@ -15,7 +15,8 @@ public class RecordClaimStatus {
+             case PENDING -> "CLAIM_PENDING";
+             case SETTLED -> review.asked() ? "CLAIM_APPROVED" : "CLAIM_SETTLED";
+             case VOID -> "CLAIM_VOIDED";
+-            case DRAFT -> throw new IllegalStateException("A claim never returns to DRAFT");
++            case DELETED -> "CLAIM_DELETED";
++            case DRAFT -> "CLAIM_RESTORED";
+         };
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         String line = ClaimAudit.line(event, claim, by, person == null ? "" : person.getName(), number.value());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+index a25418b1..1a7036ca 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaimStatus.java
+@@ -5,7 +5,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** The status asked for: OPEN, SETTLED or VOID. Publishes it with the user making the change and whether it is a review. */
++/** The status asked for: OPEN, SETTLED, VOID, DELETED (a delete) or DRAFT (a restore). Publishes it with the user making the change and whether it is a review. */
+ public class ValidateClaimStatus {
+     public void validate(@RequestBody ClaimStatusRequest request, Out<ClaimStatus> status,
+             Out<ChangedBy> changedBy, Out<ClaimReview> review, Out<VoidChoice> voidChoice) throws BadRequestException {
+@@ -17,14 +17,14 @@ public class ValidateClaimStatus {
+         } catch (IllegalArgumentException e) {
+             throw new BadRequestException("A status is OPEN, SETTLED or VOID");
+         }
+-        if (parsed == ClaimStatus.DRAFT || parsed == ClaimStatus.PENDING) {
++        if (parsed == ClaimStatus.PENDING) {
+             throw new BadRequestException("A status is OPEN, SETTLED or VOID");
+         }
+         status.set(parsed);
+         changedBy.set(by);
+         boolean reviewing = request != null && Boolean.TRUE.equals(request.review());
+         String reason = request == null || request.reason() == null ? "" : request.reason().trim();
+-        if (reviewing && parsed == ClaimStatus.VOID) {
++        if (reviewing && (parsed == ClaimStatus.VOID || parsed == ClaimStatus.DELETED || parsed == ClaimStatus.DRAFT)) {
+             throw new BadRequestException("A review approves (SETTLED) or rejects (OPEN) a claim");
+         }
+         if (reviewing && parsed == ClaimStatus.OPEN && reason.isEmpty()) {
