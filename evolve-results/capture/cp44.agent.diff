@@ -1,0 +1,99 @@
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Figures.java b/src/main/java/net/officefloor/hq/app/rollup/Figures.java
+index b090e16e..e841cda5 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Figures.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Figures.java
+@@ -6,13 +6,14 @@ import java.util.Map;
+  * A sheet's figures at one moment, as the screen shows them: each person's (by id, in the order they were
+  * added) and the sheet's totals.
+  */
+-public record Figures(Map<Long, PersonFigures> people, String claimedTotal, String dueTotal) {
++public record Figures(Map<Long, PersonFigures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+ 
+-    /** A person's name, claimed and due-total ({@code "n/a"} when they have none). */
+-    public record PersonFigures(String name, String claimed, String dueTotal) {
++    /** A person's name, claimed, due-total ({@code "n/a"} when they have none) and overdue-total. */
++    public record PersonFigures(String name, String claimed, String dueTotal, String overdueTotal) {
+ 
+         public boolean sameAs(PersonFigures other) {
+-            return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal);
++            return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)
++                    && overdueTotal.equals(other.overdueTotal);
+         }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index f4a5b9f0..e80a4204 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -15,7 +15,7 @@ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.Sheets;
+ import org.springframework.stereotype.Service;
+ 
+-/** Works out a sheet's figures the way the screen shows them (claimed, due-total, and their totals). */
++/** Works out a sheet's figures the way the screen shows them (claimed, due-total, overdue-total, and their totals). */
+ @Service
+ public class Rollup {
+ 
+@@ -42,9 +42,11 @@ public class Rollup {
+         Map<Long, Figures.PersonFigures> figures = new LinkedHashMap<>();
+         BigDecimal claimedTotal = ZERO;
+         BigDecimal dueTotal = ZERO;
++        BigDecimal overdueTotal = ZERO;
+         for (Person person : people.list(sheetId)) {
+             BigDecimal claimed = ZERO;
+             BigDecimal due = ZERO;
++            BigDecimal overdue = ZERO;
+             boolean anyFigure = false;
+             for (Claim claim : counting) {
+                 if (claim.personId() != person.id() || !counts(claim, person)) {
+@@ -55,6 +57,9 @@ public class Rollup {
+                 if (figure != null) {
+                     due = due.add(figure);
+                     anyFigure = true;
++                    if (overdue(claim, today)) {
++                        overdue = overdue.add(figure);
++                    }
+                 }
+             }
+             // With no rate today and no figure, the due-total is n/a.
+@@ -65,10 +70,17 @@ public class Rollup {
+             if (!none) {
+                 dueTotal = dueTotal.add(due);
+             }
++            overdueTotal = overdueTotal.add(overdue);
+             figures.put(person.id(), new Figures.PersonFigures(person.name(), claimed.toPlainString(),
+-                    none ? "n/a" : due.toPlainString()));
++                    none ? "n/a" : due.toPlainString(), overdue.toPlainString()));
+         }
+-        return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString());
++        return new Figures(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(),
++                overdueTotal.toPlainString());
++    }
++
++    /** An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is before {@code today}. */
++    private static boolean overdue(Claim claim, LocalDate today) {
++        return claim.status().isOpen() && claim.dueBy() != null && today != null && claim.dueBy().isBefore(today);
+     }
+ 
+     /** The figures of the sheet's counting claims dated from {@code from} to {@code to} inclusive, those without one skipped. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupLines.java b/src/main/java/net/officefloor/hq/app/rollup/RollupLines.java
+index 358a4ac6..8ffdae8b 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupLines.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupLines.java
+@@ -14,12 +14,13 @@ public final class RollupLines {
+         after.people().forEach((id, now) -> {
+             if (!now.sameAs(before.people().get(id))) {
+                 audit.record(Audit.line("ROLLUP", sheet, user, "person=" + now.name(), "claimed=" + now.claimed(),
+-                        "due-total=" + now.dueTotal()));
++                        "due-total=" + now.dueTotal(), "overdue-total=" + now.overdueTotal()));
+             }
+         });
+-        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())) {
++        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())
++                || !after.overdueTotal().equals(before.overdueTotal())) {
+             audit.record(Audit.line("TOTALS", sheet, user, "claimed-total=" + after.claimedTotal(),
+-                    "due-total=" + after.dueTotal()));
++                    "due-total=" + after.dueTotal(), "overdue-total=" + after.overdueTotal()));
+         }
+         return after;
+     }
