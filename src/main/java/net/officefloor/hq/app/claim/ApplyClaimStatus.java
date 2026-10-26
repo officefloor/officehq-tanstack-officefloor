@@ -70,6 +70,12 @@ public class ApplyClaimStatus {
                     ? "The user who opened a claim cannot approve it."
                     : "The user who opened a claim cannot settle it.");
         }
+        // Nor can the user who last edited it.
+        if (next == ClaimStatus.SETTLED && user.equals(claims.editedBy(claim))) {
+            throw new ClaimStatusRefusedException(claim.status() == ClaimStatus.PENDING
+                    ? "The user who last edited a claim cannot approve it."
+                    : "The user who last edited a claim cannot settle it.");
+        }
         // A deferred claim cannot be settled until the sheet's today reaches its deferred-until date.
         if (next == ClaimStatus.SETTLED && claim.deferredOn(sheets.today(claim.sheetId()))) {
             throw new ClaimStatusRefusedException("The claim is deferred until " + claim.deferredUntil() + ": it cannot be settled yet.");

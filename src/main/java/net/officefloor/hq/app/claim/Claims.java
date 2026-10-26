@@ -123,10 +123,17 @@ public class Claims {
                 Boolean.class, sheetId, Date.valueOf(dueBy), Date.valueOf(dueBy)));
     }
 
-    public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ? WHERE id = ?",
+    /** Saves an edit of the claim, recording {@code user} as its last editor. */
+    public void save(Claim claim, String user) {
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, ref_key = ?, tags = ?, edited_by = ? WHERE id = ?",
                 claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.ref(), refKey(claim.ref()),
-                tagsColumn(claim.tags()), claim.id());
+                tagsColumn(claim.tags()), user, claim.id());
+    }
+
+    /** The user who last edited the claim, or null when it was never edited. */
+    public String editedBy(Claim claim) {
+        List<String> found = jdbc.queryForList("SELECT edited_by FROM claim WHERE id = ?", String.class, claim.id());
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /**
