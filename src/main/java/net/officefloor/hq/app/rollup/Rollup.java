@@ -114,6 +114,6 @@ public class Rollup {
             return claim.statedDue();
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
-        return rate == null ? null : settings.floored(claim.sheetId(), claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
+        return rate == null ? null : settings.floored(claim, claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
     }
 }

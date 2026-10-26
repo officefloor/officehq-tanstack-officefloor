@@ -21,6 +21,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
               <td data-testid="claim-amount">{c.amount}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
+              <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <ClaimCells.Slot sheetId={sheetId} claim={c} />
               <td>
                 {c.id === editing?.id ? (

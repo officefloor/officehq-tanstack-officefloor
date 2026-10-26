@@ -8,17 +8,23 @@ import java.time.LocalDate;
  * is given when the claim is opened (null for a draft or a voided claim). {@code settledDue} is the due fixed
  * when it was settled (null when not settled, or settled while no rate of its grade applied on its date).
  * {@code openedBy} is the user who opened it (null when never opened). {@code stated} is whether its person's
- * last statement bound it, at {@code statedDue} (null when it had no figure then).
+ * last statement bound it, at {@code statedDue} (null when it had no figure then). A claim with a negative amount is a
+ * correction: {@code corrects} is the number of the SETTLED claim of the same person it corrects (null for any other claim).
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, Long number, BigDecimal settledDue, String openedBy, boolean stated,
-        BigDecimal statedDue) {
+        BigDecimal statedDue, Long corrects) {
 
     public Claim with(ClaimInput input, LocalDate date) {
-        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue);
+        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects());
     }
 
     public Claim withStatus(ClaimStatus status, Long number, BigDecimal settledDue, String openedBy) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
+    }
+
+    /** A correction: its due is its amount times the rate, with no floor and no late charge. */
+    public boolean isCorrection() {
+        return amount.signum() < 0;
     }
 }

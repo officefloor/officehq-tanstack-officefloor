@@ -8,7 +8,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
  * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening and kept when voided (null for a draft);
  * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date);
  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
- * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then).
+ * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then);
+ * a negative `amount` is a correction, and `corrects` is the number of the settled claim it corrects (null for any other claim).
  */
 export type Claim = {
   id: number;
@@ -22,7 +23,11 @@ export type Claim = {
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
+  corrects: number | null;
 };
+
+/** A correction: its due is its amount times the rate, with no floor and no late charge. */
+export const isCorrection = (c: Claim) => Number(c.amount) < 0;
 
 /**
  * Only OPEN and SETTLED claims count toward claimed, due and every total; drafts and voided ones do not,

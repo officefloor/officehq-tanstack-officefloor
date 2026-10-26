@@ -17,7 +17,7 @@ public class ValidateQuick {
         if (typed.isEmpty()) {
             throw new InvalidPersonException("Type a name.");
         }
-        new ValidateClaim().validate(new ClaimRequest(body.amount(), "", ""), input);
+        new ValidateClaim().validate(new ClaimRequest(body.amount(), "", "", ""), input);
         name.set(new QuickName(typed));
     }
 }

@@ -70,9 +70,10 @@ public class Settings {
      * A claim's figure with its late charge added on top: an OPEN claim whose due-by (its date plus the terms) is
      * before {@code today} gains the late percent of the figure for every full 30 days it is overdue, half to even.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
+     * A correction has no late charge.
      */
     public BigDecimal withLate(Claim claim, BigDecimal figure, LocalDate today) {
-        if (figure == null || claim.status() != ClaimStatus.OPEN) {
+        if (figure == null || claim.status() != ClaimStatus.OPEN || claim.isCorrection()) {
             return figure;
         }
         LocalDate dueBy = claim.date().plusDays(terms(claim.sheetId()));
@@ -85,9 +86,9 @@ public class Settings {
         return figure.add(charge);
     }
 
-    /** A live due raised to the sheet's floor; null (no due) stays null. */
-    public BigDecimal floored(String sheetId, BigDecimal due) {
-        return due == null ? null : due.max(floor(sheetId));
+    /** The claim's live due raised to the sheet's floor; null (no due) stays null, and a correction's due has no floor. */
+    public BigDecimal floored(Claim claim, BigDecimal due) {
+        return due == null || claim.isCorrection() ? due : due.max(floor(claim.sheetId()));
     }
 
     /** The sheet's roles, by user name. */

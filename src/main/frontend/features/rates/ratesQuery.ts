@@ -1,5 +1,6 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
+import { isCorrection } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
 import { gradeOn } from '../people/peopleQuery';
 import type { Grade, Person } from '../people/peopleQuery';
@@ -25,22 +26,28 @@ export function rateFor(rates: Rate[], grade: Grade | undefined, date: string): 
   return applying.reduce<Rate | undefined>((best, r) => (!best || (r.from ?? '') > (best.from ?? '') ? r : best), undefined)?.rate;
 }
 
-/** A two-decimal string ("12.50") in whole hundredths, exactly. */
+/** A two-decimal string ("12.50", "-0.30") in whole hundredths, exactly. */
 function hundredths(value: string): bigint {
-  const [whole, frac = ''] = value.trim().split('.');
-  return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  const v = value.trim();
+  const negative = v.startsWith('-');
+  const [whole, frac = ''] = (negative ? v.slice(1) : v).split('.');
+  const cents = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -cents : cents;
 }
 
 function show(cents: bigint): string {
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
+  const abs = cents < 0n ? -cents : cents;
+  return `${cents < 0n ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
-/** Cents of `amount` times `rate` percent, rounded half to even (both are 0 or more). */
+/** Cents of `amount` times `rate` percent, rounded half to even (the rate is 0 or more; a correction's amount is negative). */
 export function dueCents(amount: string, rate: string): bigint {
-  const product = hundredths(amount) * hundredths(rate);
+  const signed = hundredths(amount) * hundredths(rate);
+  const product = signed < 0n ? -signed : signed;
   const cents = product / 10000n;
   const rest = product % 10000n;
-  return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  return signed < 0n ? -rounded : rounded;
 }
 
 /** `amount` times `rate` percent with two decimals, or n/a when there is no rate. */
@@ -79,12 +86,13 @@ function lateMonths(claim: Claim, { today, terms }: Late): bigint {
  * person's last statement bound it to, otherwise its amount times the rate, on the claim's date, of
  * the grade its person had on that date, raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
  * percent of that figure for every full 30 days overdue, half to even — is added on top: a statement
- * never binds it, so it follows the sheet's today.
+ * never binds it, so it follows the sheet's today. A correction has neither floor nor late charge.
  */
 export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: string, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
-  const bound = claim.stated ? (claim.statedDue ?? 'n/a') : floored(due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date)), floor);
-  const months = lateMonths(claim, late);
+  const live = due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date));
+  const bound = claim.stated ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, floor);
+  const months = isCorrection(claim) ? 0n : lateMonths(claim, late);
   if (bound === 'n/a' || months === 0n) return bound;
   return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct));
 }

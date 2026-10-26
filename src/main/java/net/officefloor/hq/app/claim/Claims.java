@@ -20,7 +20,8 @@ public class Claims {
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("claim_number", Long.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+            rs.getObject("corrects", Long.class));
 
     private final JdbcTemplate jdbc;
 
@@ -38,26 +39,34 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+    /** The person's claim with the number, or null when they have none. */
+    public Claim findByNumber(String sheetId, long personId, long number) {
+        List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? AND claim_number = ?",
+                ROW, sheetId, personId, number);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
+            ps.setObject(6, corrects);
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null);
+                false, null, corrects);
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ?", claim.amount(),
-                Date.valueOf(claim.date()), claim.note(), claim.id());
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?", claim.amount(),
+                Date.valueOf(claim.date()), claim.note(), claim.corrects(), claim.id());
     }
 
     /**
