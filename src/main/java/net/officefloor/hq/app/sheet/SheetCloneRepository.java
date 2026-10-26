@@ -83,7 +83,8 @@ public class SheetCloneRepository {
         for (Long id : ids("SELECT id FROM plan WHERE sheet_id = ? ORDER BY id", from)) {
             Long person = jdbc.queryForObject("SELECT person_id FROM plan WHERE id = ?", Long.class, id);
             long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO plan (sheet_id, person_id, amount,"
-                    + " start_date, every_days, end_date) SELECT ?, ?, amount, start_date, every_days, end_date FROM plan"
+                    + " start_date, every_days, month_day, end_date) SELECT ?, ?, amount, start_date, every_days, month_day,"
+                    + " end_date FROM plan"
                     + " WHERE id = ?)", Long.class, to, people.get(person), id);
             jdbc.update("INSERT INTO plan_claim (sheet_id, plan_id, plan_date) SELECT ?, ?, plan_date FROM plan_claim"
                     + " WHERE plan_id = ? ORDER BY id", to, copy, id);

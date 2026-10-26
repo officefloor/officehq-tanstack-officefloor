@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * A plan's fields: an amount by the claim form's rule (0.00 or more), a start date (blank: the sheet's today), every N
- * days (a whole number, at least 1) and an end date (required, not before the start). Publishes them parsed, with the
+ * days (a whole number, at least 1) or instead a day of the month (a whole number, 1 to 31) and an end date
+ * (required, not before the start). Publishes them parsed, with the
  * user making the change.
  */
 public class ValidatePlan {
@@ -25,8 +26,22 @@ public class ValidatePlan {
         String startText = request == null || request.start() == null ? "" : request.start().trim();
         LocalDate start = startText.isEmpty() ? null : date(startText);
         String everyText = request == null || request.every() == null ? "" : request.every().trim();
-        if (!everyText.matches("\\d{1,6}") || Integer.parseInt(everyText) < 1) {
-            throw new BadRequestException("Every is a whole number of days, at least 1");
+        String dayText = request == null || request.day() == null ? "" : request.day().trim();
+        Integer every = null;
+        Integer day = null;
+        if (!dayText.isEmpty()) {
+            if (!everyText.isEmpty()) {
+                throw new BadRequestException("Give a plan either every N days or a day of the month, not both");
+            }
+            if (!dayText.matches("\\d{1,2}") || Integer.parseInt(dayText) < 1 || Integer.parseInt(dayText) > 31) {
+                throw new BadRequestException("A day of the month is a whole number from 1 to 31");
+            }
+            day = Integer.parseInt(dayText);
+        } else {
+            if (!everyText.matches("\\d{1,6}") || Integer.parseInt(everyText) < 1) {
+                throw new BadRequestException("Every is a whole number of days, at least 1");
+            }
+            every = Integer.parseInt(everyText);
         }
         String endText = request == null || request.end() == null ? "" : request.end().trim();
         if (endText.isEmpty()) {
@@ -36,7 +51,7 @@ public class ValidatePlan {
         if (start != null && end.isBefore(start)) {
             throw new BadRequestException(END_BEFORE_START);
         }
-        plan.set(new PlanInput(amount, start, Integer.parseInt(everyText), end));
+        plan.set(new PlanInput(amount, start, every, day, end));
         changedBy.set(by);
     }
 

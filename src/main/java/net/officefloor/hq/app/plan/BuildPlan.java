@@ -16,6 +16,6 @@ public class BuildPlan {
             throw new BadRequestException(ValidatePlan.END_BEFORE_START);
         }
         plan.set(repository.insert(person.getSheetId(), person.getId(), input.amount(), start, input.every(),
-                input.end()));
+                input.day(), input.end()));
     }
 }

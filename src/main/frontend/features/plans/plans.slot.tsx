@@ -8,8 +8,18 @@ import { useUser } from '../session/useSession';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from '../people/people.slot';
 
-/** A person's plan: an amount, a start date, every N days, an end date and how many claims it has made so far. */
-export type Plan = { id: number; personId: number; amount: string; start: string; every: number; end: string; generated: number };
+/** A person's plan: an amount, a start date, every N days or a day of the month (the other null), an end date and how
+ *  many claims it has made so far. */
+export type Plan = {
+  id: number;
+  personId: number;
+  amount: string;
+  start: string;
+  every: number | null;
+  day: number | null;
+  end: string;
+  generated: number;
+};
 
 /** The key every feature reads the sheet's plans under. */
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
@@ -22,20 +32,21 @@ export function usePlans(sheetId: string) {
   });
 }
 
-type PlanBody = { amount: string; start: string; every: string; end: string };
+type PlanBody = { amount: string; start: string; every: string; day: string; end: string };
 
 function PlansHead() {
   return <th>Plans</th>;
 }
 
 // The person's plans, each with how many claims it has made so far, and the form that adds one: an amount (by the
-// claim form's rule), a start date (blank: the sheet's today), every N days (a whole number, at least 1) and an end
-// date not before the start. A refusal shows on the form until it is changed or submitted again.
+// claim form's rule), a start date (blank: the sheet's today), every N days (a whole number, at least 1) or instead a
+// day of the month (1 to 31, monthly from the start's month) and an end date not before the start. A refusal shows on the form until it is changed or submitted again.
 function PlansCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const plans = (usePlans(sheetId).data ?? []).filter((p) => p.personId === personId);
   const [amount, setAmount] = useState('');
   const [start, setStart] = useState('');
   const [every, setEvery] = useState('');
+  const [day, setDay] = useState('');
   const [end, setEnd] = useState('');
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -48,6 +59,7 @@ function PlansCell({ sheetId, personId }: { sheetId: string; user: string; perso
       setAmount('');
       setStart('');
       setEvery('');
+      setDay('');
       setEnd('');
     },
   });
@@ -62,7 +74,8 @@ function PlansCell({ sheetId, personId }: { sheetId: string; user: string; perso
       <ul>
         {plans.map((p) => (
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
-            {Number(p.amount).toFixed(2)} from {p.start} every {p.every} days to {p.end}, made{' '}
+            {Number(p.amount).toFixed(2)} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to{' '}
+            {p.end}, made{' '}
             <span data-testid="plan-generated">{p.generated}</span>
           </li>
         ))}
@@ -70,12 +83,13 @@ function PlansCell({ sheetId, personId }: { sheetId: string; user: string; perso
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ amount, start, every, end });
+          submit({ amount, start, every, day, end });
         }}
       >
         <input data-testid="plan-form-amount" placeholder="Amount" inputMode="decimal" value={amount} onChange={field(setAmount)} />{' '}
         <input type="date" data-testid="plan-form-start" value={start} onChange={field(setStart)} />{' '}
         <input data-testid="plan-form-every" placeholder="Every N days" inputMode="numeric" value={every} onChange={field(setEvery)} />{' '}
+        <input data-testid="plan-form-day" placeholder="Or day of month" inputMode="numeric" value={day} onChange={field(setDay)} />{' '}
         <input type="date" data-testid="plan-form-end" value={end} onChange={field(setEnd)} />{' '}
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
@@ -94,7 +108,7 @@ function PlansCell({ sheetId, personId }: { sheetId: string; user: string; perso
 type GenerateResult = { made: number };
 
 // Generate: for every plan on the sheet, in the order added, a DRAFT claim for each plan date (the start, then every
-// N days) up to its end and the sheet's today that has none yet, by the claim form's rules (a date they refuse is
+// N days; or the day in each month) up to its end and the sheet's today that has none yet, by the claim form's rules (a date they refuse is
 // skipped and tried again next time). Shows how many were made; the count is gone while it runs.
 function GeneratePlans({ sheetId }: { sheetId: string; user: string }) {
   const [made, setMade] = useState<number | null>(null);

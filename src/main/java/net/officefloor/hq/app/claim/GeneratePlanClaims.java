@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * For every plan on the sheet, in the order added, a DRAFT claim with the plan's amount and an empty note for each plan
- * date (the start, then every N days) up to its end and the sheet's today that has none yet, dated that day. Each is
+ * date (see Plan#datesThrough) up to its end and the sheet's today that has none yet, dated that day. Each is
  * checked as the claim form checks a new claim (closed period, retirement); a date it refuses is skipped, to be tried
  * again next time. Each added claim is recorded as CLAIM_ADDED, then the rollup lines for what the generate moved.
  */

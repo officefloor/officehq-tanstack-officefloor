@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 public class PlanRepository {
 
     private static final String SELECT = "SELECT p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days,"
-            + " p.end_date, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
+            + " p.month_day, p.end_date, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated FROM plan p";
 
     private final JdbcTemplate jdbc;
 
@@ -29,11 +29,12 @@ public class PlanRepository {
         return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", PlanRepository::map, sheetId);
     }
 
-    public Plan insert(String sheetId, long personId, BigDecimal amount, LocalDate start, int every, LocalDate end) {
+    public Plan insert(String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
+            Integer day, LocalDate end) {
         long id = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO plan (sheet_id, person_id, amount,"
-                + " start_date, every_days, end_date) VALUES (?, ?, ?, ?, ?, ?))", Long.class, sheetId, personId, amount,
-                Date.valueOf(start), every, Date.valueOf(end));
-        return new Plan(id, sheetId, personId, amount, start, every, end, 0);
+                + " start_date, every_days, month_day, end_date) VALUES (?, ?, ?, ?, ?, ?, ?))", Long.class, sheetId,
+                personId, amount, Date.valueOf(start), every, day, Date.valueOf(end));
+        return new Plan(id, sheetId, personId, amount, start, every, day, end, 0);
     }
 
     /** The plan dates the plan has made a claim for. */
@@ -51,6 +52,7 @@ public class PlanRepository {
     private static Plan map(ResultSet rs, int n) throws SQLException {
         return new Plan(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getObject("start_date", LocalDate.class),
-                rs.getInt("every_days"), rs.getObject("end_date", LocalDate.class), rs.getInt("generated"));
+                rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
+                rs.getObject("end_date", LocalDate.class), rs.getInt("generated"));
     }
 }
