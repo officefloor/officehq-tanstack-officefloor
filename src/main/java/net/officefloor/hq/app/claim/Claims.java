@@ -62,7 +62,8 @@ public class Claims {
 
     /**
      * Moves the claim to {@code next} if it still has its loaded status, and returns it as changed; null when
-     * it has since changed. Opening gives it the sheet's next number; voiding clears its number. Settling
+     * it has since changed. Opening gives it the sheet's next number, which it keeps
+     * (voided too: a number is never reused). Settling
      * stores {@code due} as its fixed due (null keeps it live). Opening records {@code user} as its opener.
      */
     public Claim changeStatus(Claim claim, ClaimStatus next, BigDecimal due, String user) {
@@ -72,7 +73,6 @@ public class Claims {
         }
         Long number = switch (next) {
             case OPEN -> nextNumber(claim.sheetId());
-            case VOID -> null;
             default -> claim.number();
         };
         BigDecimal settledDue = next == ClaimStatus.SETTLED ? due : claim.settledDue();

@@ -4,7 +4,7 @@ import { sheetKey } from '../sheet/sheetQuery';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /**
- * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening (null for a draft or a voided claim);
+ * `amount` has two decimals ("12.50"); `date` is yyyy-mm-dd; `number` is given on opening and kept when voided (null for a draft);
  * `settledDue` is the due fixed on settling (null when not settled, or settled while no rate applied on the claim's date);
  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
  * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then).
