@@ -1,0 +1,386 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index e036e913..96c5afae 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -18,10 +18,11 @@ const NO_HOLDS = new Map();
+ /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
+  *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
+  *  then, by person id (empty while open; a person added later has none); and whether it is soft-closed: its
+- *  figures fixed as a close fixes them, but claims dated inside it can still change. */
++ *  figures fixed as a close fixes them, but claims dated inside it can still change; and the cap on each person's
++ *  OPEN or PENDING claims in it (null: none). */
+ export type Period = {
+   id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
+-  personTotals: Record<string, string>; soft: boolean;
++  personTotals: Record<string, string>; soft: boolean; cap?: number | null;
+ };
+ 
+ /** The key every feature reads the sheet's periods under. */
+@@ -102,8 +103,8 @@ export function showPersonPeriodDueTotal(p: Period, personId: number, live: bigi
+   return p.closed || p.soft ? (p.personTotals?.[String(personId)] ?? '0.00') : showHundredths(live);
+ }
+ 
+-// The period form: adds a period with a name unique on the sheet and a from and to date, not
+-// overlapping another period. Every period is listed under it with its due-total: the due figures of
++// The period form: adds a period with a name unique on the sheet, a from and to date and an optional cap on each
++// person's OPEN or PENDING claims in it, not overlapping another period. Every period is listed under it with its due-total: the due figures of
+ // the counted claims whose date falls in it, added up.
+ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
+   const periods = usePeriods(sheetId);
+@@ -112,24 +113,29 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
+   const [name, setName] = useState('');
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
++  const [cap, setCap] = useState('');
+   const [user] = useUser();
+   const queryClient = useQueryClient();
+   const save = useMutation({
+-    mutationFn: async (body: { name: string; from: string; to: string }) => {
++    mutationFn: async (body: { name: string; from: string; to: string; cap: string }) => {
+       if (body.name.trim() === '') throw new Error('Enter a period name');
+       if (body.to.trim() === '') throw new Error('Enter a to-date');
+       if ((body.from.trim() !== '' && !DATE.test(body.from.trim())) || !DATE.test(body.to.trim())) {
+         throw new Error('Enter a date as YYYY-MM-DD');
+       }
++      if (body.cap.trim() !== '' && !/^[1-9]\d{0,8}$/.test(body.cap.trim())) {
++        throw new Error('A cap is a whole number of at least 1, or blank for none');
++      }
+       // `by` is the signed-in user the change is recorded against.
+       return postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, {
+-        name: body.name.trim(), from: body.from.trim(), to: body.to.trim(), by: user ?? '' });
++        name: body.name.trim(), from: body.from.trim(), to: body.to.trim(), cap: body.cap.trim(), by: user ?? '' });
+     },
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+       setName('');
+       setFrom('');
+       setTo('');
++      setCap('');
+     },
+   });
+   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+@@ -145,7 +151,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
+         data-testid="period-form"
+         onSubmit={(e) => {
+           e.preventDefault();
+-          submit({ name, from, to });
++          submit({ name, from, to, cap });
+         }}
+       >
+         <input data-testid="period-form-name" placeholder="Name" value={name} onChange={field(setName)} />{' '}
+@@ -155,6 +161,10 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
+         <label>
+           To <input type="date" data-testid="period-form-to" value={to} onChange={field(setTo)} />
+         </label>{' '}
++        <label>
++          Cap <input data-testid="period-form-cap" inputMode="numeric" placeholder="open claims per person"
++            value={cap} onChange={field(setCap)} />
++        </label>{' '}
+         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
+           Add period
+         </button>
+@@ -179,6 +189,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
+             <th>Due total</th>
+             <th>Closed</th>
+             <th>Fiscal year</th>
++            <th>Cap</th>
+             <th></th>
+           </tr>
+         </thead>
+@@ -326,6 +337,7 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
+       </td>
+       <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
+       <td data-testid="period-fy">{fy}</td>
++      <td data-testid="period-cap">{p.cap ?? ''}</td>
+       <td>
+         {!p.closed && (
+           <button
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 4f20df66..268ed294 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -6,6 +6,7 @@ import net.officefloor.hq.app.access.LateCharge;
+ import net.officefloor.hq.app.access.Role;
+ import net.officefloor.hq.app.access.RoleRepository;
+ import net.officefloor.hq.app.access.SettingRepository;
++import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -19,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Moves the claim to the asked status, refusing a change its current status does not allow, an open, settle or void
+  * the sheet's permission for it does not give the user's role, an open of a claim with an empty note whose due (as open) is above the
+- * sheet's note threshold in force on the claim's date, and
++ * sheet's note threshold in force on the claim's date, an open of a claim whose period (by its due-by) caps its person's OPEN or PENDING claims there and they already have that many, and
+  * refusing to let the user who opened it, or who last edited it, settle it; a clerk's settle whose due is above the sheet's
+  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
+  * above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's) is refused (a due of n/a is within any limit; a steward settles anything). A review of a
+@@ -115,6 +116,9 @@ public class ApplyClaimStatus {
+                 throw new BadRequestException("A claim whose due is above the note threshold needs a note before it is opened");
+             }
+         }
++        if (status == ClaimStatus.OPEN && !review.asked()) {
++            refuseOverCap(claim, repository, periods);
++        }
+         if (status == ClaimStatus.SETTLED && due != null && claim.getProofs() == 0) {
+             Person owner = people.find(claim.getSheetId(), claim.getPersonId());
+             BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
+@@ -153,6 +157,26 @@ public class ApplyClaimStatus {
+         audited.set(new ClaimNumber(claim.getNumber()));
+     }
+ 
++    /**
++     * Refuses opening a claim belonging to a period (by its due-by) with a cap when its person already has that many
++     * OPEN or PENDING claims in it.
++     */
++    static void refuseOverCap(Claim claim, ClaimRepository repository, PeriodRepository periods) throws BadRequestException {
++        Period period = periods.on(claim.getSheetId(), claim.getDueBy());
++        if (period == null || period.cap() == null) {
++            return;
++        }
++        long held = repository.listOf(claim.getSheetId(), claim.getPersonId()).stream()
++                .filter(c -> c.getId() != claim.getId()
++                        && (c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING)
++                        && c.getDueBy() != null && !c.getDueBy().isBefore(period.from()) && !c.getDueBy().isAfter(period.to()))
++                .count();
++        if (held >= period.cap()) {
++            throw new BadRequestException("This person already has " + period.cap() + " open claims in period "
++                    + period.name());
++        }
++    }
++
+     /**
+      * The number an opened claim takes: while the sheet numbers by period and its today is on or after that setting's
+      * date, the next within the claim's period (by its due-by) as {@code <period name>-<n>}, or {@code X-<n>} in no period;
+diff --git a/src/main/java/net/officefloor/hq/app/period/BuildPeriod.java b/src/main/java/net/officefloor/hq/app/period/BuildPeriod.java
+index daab3d08..e0738ba1 100644
+--- a/src/main/java/net/officefloor/hq/app/period/BuildPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/BuildPeriod.java
+@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
+ public class BuildPeriod {
+     public void build(@Val SheetResponse sheet, @Val PeriodInput input, @Val PeriodDates dates,
+             PeriodRepository repository, Out<Period> period) {
+-        period.set(repository.insert(sheet.id(), input.name(), dates.from(), dates.to()));
++        period.set(repository.insert(sheet.id(), input.name(), dates.from(), dates.to(), input.cap()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index b6292916..4f83440f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -36,7 +36,7 @@ public class ClosePeriod {
+             return null;
+         }
+         return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), false, total,
+-                personTotals, true);
++                personTotals, true, period.cap());
+     }
+ 
+     /** Closes the open (or soft-closed) period, fixing its due-total and each person's as they are now; null when someone else closed it first. */
+@@ -47,6 +47,6 @@ public class ClosePeriod {
+             return null;
+         }
+         return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), true, total,
+-                personTotals, false);
++                personTotals, false, period.cap());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 992216ee..59a5982c 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -8,8 +8,10 @@ import java.util.Map;
+  * A period of a sheet: its name and its from and to dates, both inclusive; whether it is closed, and the due-total
+  * fixed when it was closed (null while open), and
+  * each person's due-total for it fixed then, by person id (empty while open); and whether it is soft-closed: its
+- * figures fixed as a close fixes them, but not closed, so claims dated inside it can still change.
++ * figures fixed as a close fixes them, but not closed, so claims dated inside it can still change; and the cap on each person's OPEN or PENDING claims in it
++ * (null for none).
+  */
+ public record Period(long id, String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
+-        BigDecimal closedTotal, Map<Long, BigDecimal> personTotals, boolean soft) {
++        BigDecimal closedTotal, Map<Long, BigDecimal> personTotals, boolean soft,
++        Integer cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodInput.java b/src/main/java/net/officefloor/hq/app/period/PeriodInput.java
+index 4d1a403f..013663c1 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodInput.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodInput.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.period;
+ 
+ import java.time.LocalDate;
+ 
+-/** A validated period: the trimmed name, and its from-date (null: the sheet's today) and to-date. */
+-public record PeriodInput(String name, LocalDate from, LocalDate to) {
++/** A validated period: the trimmed name, and its from-date (null: the sheet's today) and to-date, and its cap (null: none). */
++public record PeriodInput(String name, LocalDate from, LocalDate to, Integer cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index d19373bd..76bfcdb9 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -21,9 +21,10 @@ public class PeriodRepository {
+ 
+     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getLong("id"), rs.getString("sheet_id"),
+             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
+-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), rs.getBoolean("soft_closed"));
++            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), rs.getBoolean("soft_closed"),
++            (Integer) rs.getObject("claim_cap"));
+ 
+-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
++    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -45,7 +46,7 @@ public class PeriodRepository {
+     }
+ 
+     private static Period withTotals(Period p, Map<Long, BigDecimal> personTotals) {
+-        return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals, p.soft());
++        return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals, p.soft(), p.cap());
+     }
+ 
+     /** Whether a period on the sheet has this name, ignoring case and surrounding spaces. */
+@@ -63,17 +64,22 @@ public class PeriodRepository {
+     }
+ 
+     public Period insert(String sheetId, String name, LocalDate from, LocalDate to) {
++        return insert(sheetId, name, from, to, null);
++    }
++
++    public Period insert(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)", new String[] { "id" });
++                    "INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+             ps.setDate(3, Date.valueOf(from));
+             ps.setDate(4, Date.valueOf(to));
++            ps.setObject(5, cap, java.sql.Types.INTEGER);
+             return ps;
+         }, keys);
+-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false);
++        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false, cap);
+     }
+ 
+     public Period find(String sheetId, long id) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java b/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java
+index 24f169b1..b9844c3e 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.period;
+ 
+-/** A period's name, its from and to dates, and the signed-in user (`by`) adding it. */
+-public record PeriodRequest(String name, String from, String to, String by) {
++/** A period's name, its from and to dates, its cap on each person's open claims (blank for none), and the signed-in user (`by`) adding it. */
++public record PeriodRequest(String name, String from, String to, String by, String cap) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index a5a019ca..1df6775d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -3,14 +3,14 @@ package net.officefloor.hq.app.period;
+ import java.util.LinkedHashMap;
+ import java.util.Map;
+ 
+-/** A period; once closed (or soft-closed: `soft`), `personTotals` holds each person's due-total fixed then, by person id. */
++/** A period; once closed (or soft-closed: `soft`), `personTotals` holds each person's due-total fixed then, by person id; `cap` caps each person's OPEN or PENDING claims in it (null: none). */
+ public record PeriodResponse(long id, String name, String from, String to, boolean closed, String closedTotal,
+-        Map<String, String> personTotals, boolean soft) {
++        Map<String, String> personTotals, boolean soft, Integer cap) {
+     public static PeriodResponse from(Period period) {
+         Map<String, String> personTotals = new LinkedHashMap<>();
+         period.personTotals().forEach((id, total) -> personTotals.put(String.valueOf(id), total.toPlainString()));
+         return new PeriodResponse(period.id(), period.name(), period.from().toString(), period.to().toString(),
+                 period.closed(), period.closedTotal() == null ? null : period.closedTotal().toPlainString(),
+-                personTotals, period.soft());
++                personTotals, period.soft(), period.cap());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RecordPeriodAdded.java b/src/main/java/net/officefloor/hq/app/period/RecordPeriodAdded.java
+index f368cfc9..ed1c368c 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RecordPeriodAdded.java
++++ b/src/main/java/net/officefloor/hq/app/period/RecordPeriodAdded.java
+@@ -7,6 +7,7 @@ import net.officefloor.plugin.variable.Val;
+ public class RecordPeriodAdded {
+     public void record(@Val Period period, @Val ChangedBy by, Audit audit) {
+         audit.record("PERIOD_ADDED sheet=" + period.sheetId() + " by=" + by.name() + " period=" + period.name()
+-                + " from=" + period.from() + " to=" + period.to());
++                + " from=" + period.from() + " to=" + period.to()
++                + (period.cap() == null ? "" : " cap=" + period.cap()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index c3344cb3..cb94af42 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -25,6 +25,6 @@ public class ReopenPeriod {
+             throw new BadRequestException("The period was reopened by someone else; reload the sheet");
+         }
+         reopened.set(new ReopenedPeriod(new Period(period.id(), period.sheetId(), period.name(), period.from(),
+-                period.to(), false, null, Map.of(), false)));
++                period.to(), false, null, Map.of(), false, period.cap())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+index c276a80a..c2011317 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+  * A period's fields: a name (required, at most 200 characters), a from-date (yyyy-mm-dd; blank for the
+- * sheet's today) and a to-date (yyyy-mm-dd, required).
++ * sheet's today) a to-date (yyyy-mm-dd, required) and a cap on each person's OPEN or PENDING claims in it (a whole number of
++ * at least 1; blank for none).
+  */
+ public class ValidatePeriod {
+ 
+@@ -28,10 +29,18 @@ public class ValidatePeriod {
+         if (to.isEmpty()) {
+             throw new BadRequestException("Enter a to-date");
+         }
+-        period.set(new PeriodInput(name, from.isEmpty() ? null : date(from), date(to)));
++        String cap = request.cap() == null ? "" : request.cap().trim();
++        period.set(new PeriodInput(name, from.isEmpty() ? null : date(from), date(to), cap.isEmpty() ? null : cap(cap)));
+         changedBy.set(by);
+     }
+ 
++    private static Integer cap(String text) throws BadRequestException {
++        if (!text.matches("[0-9]{1,9}") || Integer.parseInt(text) < 1) {
++            throw new BadRequestException("A cap is a whole number of at least 1, or blank for none");
++        }
++        return Integer.valueOf(text);
++    }
++
+     private static LocalDate date(String text) throws BadRequestException {
+         try {
+             return LocalDate.parse(text);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index f25a55ee..1f1563a2 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -41,7 +41,7 @@ public class SheetCloneRepository {
+         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) SELECT ?, name, amount, note"
+                 + " FROM claim_template WHERE sheet_id = ? ORDER BY id", to, from);
+         jdbc.update("INSERT INTO claim_tag (sheet_id, tag) SELECT ?, tag FROM claim_tag WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) SELECT ?, name, from_date, to_date"
++        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) SELECT ?, name, from_date, to_date, claim_cap"
+                 + " FROM period WHERE sheet_id = ? ORDER BY id", to, from);
+ 
+         Map<Long, Long> people = new HashMap<>();
+diff --git a/src/main/resources/db/migration/V68__period_cap.sql b/src/main/resources/db/migration/V68__period_cap.sql
+new file mode 100644
+index 00000000..726f1ef7
+--- /dev/null
++++ b/src/main/resources/db/migration/V68__period_cap.sql
+@@ -0,0 +1,5 @@
++-- A period may cap the number of OPEN or PENDING claims each person has in it (by their due-by): null for none.
++ALTER TABLE period ADD COLUMN claim_cap INT;
++-- The sheet's snapshots, and their layout as of a date, carry it too.
++ALTER TABLE hist.period ADD COLUMN claim_cap INT;
++ALTER TABLE asof.period ADD COLUMN claim_cap INT;
