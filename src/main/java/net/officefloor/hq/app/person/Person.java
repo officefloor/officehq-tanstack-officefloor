@@ -188,6 +188,17 @@ public class Person {
         return shares;
     }
 
+    private boolean clashing;
+
+    /** Whether the person's name or an alias of theirs is used, as a name or alias, on another sheet of their tree. */
+    public boolean isClashing() {
+        return clashing;
+    }
+
+    public void setClashing(boolean clashing) {
+        this.clashing = clashing;
+    }
+
     /** The person's aliases, sorted as names are compared. */
     public List<String> getAliases() {
         return aliases;

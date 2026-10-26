@@ -10,13 +10,15 @@ function AliasHeads() {
   return (
     <>
       <th>Aliases</th>
+      <th>Clashing</th>
       <th />
     </>
   );
 }
 
 // The person's aliases (sorted as names are compared: ignoring case) and the entry that adds one more. An alias
-// shares the names' uniqueness on the sheet; the quick-add bar and the paste box find the person by it. A refusal
+// shares the names' uniqueness on the sheet and across its tree; whether the person clashes (their name or an alias
+// used on another sheet of the tree — the person form refuses their edits until a rename ends it); the quick-add bar and the paste box find the person by it. A refusal
 // shows on the person until the entry is changed or the next action on their row.
 function AliasCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
   const person = usePeople(sheetId).data?.find((p) => p.id === personId);
@@ -42,6 +44,7 @@ function AliasCells({ sheetId, personId }: { sheetId: string; user: string; pers
   return (
     <>
       <td data-testid="person-aliases">{(person?.aliases ?? []).join(', ')}</td>
+      <td data-testid="person-clashing">{person?.clashing ? 'yes' : 'no'}</td>
       <td>
         <input
           data-testid="person-alias-input"

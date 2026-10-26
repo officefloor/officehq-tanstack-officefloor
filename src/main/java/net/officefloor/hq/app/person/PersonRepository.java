@@ -40,7 +40,7 @@ public class PersonRepository {
 
     static final String CHANGED = "Someone else has saved this person since you opened it; the form now shows their changes";
 
-    static final String NAME_TAKEN = "That name is already in use on this sheet";
+    public static final String NAME_TAKEN = "That name is already in use on this sheet or another sheet of its tree";
 
     static final String CONTACT_TAKEN = "That contact is already another person's on this sheet";
 
@@ -70,13 +70,72 @@ public class PersonRepository {
                 ROW, sheetId, name, sheetId, name)).stream().findFirst().orElse(null);
     }
 
-    /** Whether another person on the sheet has this name, or anyone on the sheet has it as an alias, ignoring case and
+    /** Whether another person on the sheet has this name, or anyone on the sheet has it as an alias, or anyone on
+     *  another sheet of its tree (see {@link #treeOf}) but that person has it as a name or alias, ignoring case and
      *  surrounding spaces. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(TRIM(?)) AND id <> ?",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
-        return (n != null && n > 0) || aliasTaken(sheetId, name);
+        return (n != null && n > 0) || aliasTaken(sheetId, name) || usedInTree(sheetId, name, exceptId);
+    }
+
+    /** Whether anyone (but that person) on another sheet of the sheet's tree has this name or alias, ignoring case and
+     *  surrounding spaces. */
+    public boolean usedInTree(String sheetId, String name, Long exceptId) {
+        java.util.Set<String> key = java.util.Set.of(name.trim().toLowerCase());
+        return !java.util.Collections.disjoint(namesInTree(sheetId, exceptId), key);
+    }
+
+    /** Whether the person's name or any of their aliases is used, as a name or alias, on another sheet of their tree. */
+    public boolean clashing(Person person) {
+        return clashing(person, namesInTree(person.getSheetId(), person.getId()));
+    }
+
+    static boolean clashing(Person person, java.util.Set<String> used) {
+        if (used.contains(person.getName().trim().toLowerCase())) {
+            return true;
+        }
+        return person.getAliases().stream().anyMatch(a -> used.contains(a.trim().toLowerCase()));
+    }
+
+    /** The names and aliases (lower case, trimmed) of everyone, but that person, on the other sheets of the sheet's tree. */
+    public java.util.Set<String> namesInTree(String sheetId, Long exceptId) {
+        java.util.Set<String> found = new java.util.HashSet<>();
+        long except = exceptId == null ? -1L : exceptId;
+        for (String other : treeOf(sheetId)) {
+            found.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet_id = ? AND id <> ?", String.class,
+                    other, except));
+            found.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet_id = ? AND person_id <> ?",
+                    String.class, other, except));
+        }
+        return found;
+    }
+
+    /** The other sheets of the sheet's tree, among the sheets that exist: its parent, theirs and so on up, and its
+     *  children, theirs and so on down (each once, the sheet itself never among them). */
+    public List<String> treeOf(String sheetId) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>(List.of(sheetId));
+        for (String at = parentOf(sheetId); at != null && seen.add(at); at = parentOf(at)) {
+        }
+        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting_key = 'parent'"
+                    + " AND setting_value = ? ORDER BY sheet_id", String.class, todo.poll())) {
+                if (seen.add(child)) {
+                    todo.add(child);
+                }
+            }
+        }
+        seen.remove(sheetId);
+        return seen.stream().filter(s -> jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, s) > 0)
+                .toList();
+    }
+
+    private String parentOf(String sheetId) {
+        return jdbc.query("SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = 'parent'",
+                (rs, n) -> rs.getString(1), sheetId).stream().filter(v -> v != null && !v.isBlank()).findFirst()
+                .orElse(null);
     }
 
     /** Whether anyone on the sheet has this alias, ignoring case and surrounding spaces. */

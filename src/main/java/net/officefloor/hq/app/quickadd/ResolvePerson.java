@@ -17,7 +17,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * The person on the sheet with the typed name (case and surrounding spaces ignored), else a new one. A new one is
+ * The person on the sheet with the typed name (case and surrounding spaces ignored), else a new one (refused when
+ * another sheet of its tree uses the name). A new one is
  * added only once its claim's date is known not to fall in a closed period, so a refusal leaves no person behind.
  */
 public class ResolvePerson {
@@ -27,6 +28,9 @@ public class ResolvePerson {
         Person found = repository.findByName(sheet.id(), request.name());
         boolean added = found == null;
         if (added) {
+            if (repository.usedInTree(sheet.id(), request.name(), null)) {
+                throw new BadRequestException(PersonRepository.NAME_TAKEN);
+            }
             Person proposed = new Person(0, sheet.id(), request.name(), request.grade(), 0);
             proposed.setGrades(List.of(new GradeFrom(request.grade(), null)));
             new RefuseClosedNewDate().check(proposed, input, sheets, settings, periods, holidays);

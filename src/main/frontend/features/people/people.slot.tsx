@@ -18,11 +18,14 @@ import { useSheetToday } from '../today/today.slot';
  *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
  *  is due by its date plus these, else their grade's terms, else the sheet's. `contact`: the person's contact, trimmed
  *  and lower-cased, null when they have none; no two people on a sheet share one. `aliases`: the other names they go by,
- *  sorted as names are compared (ignoring case). */
+ *  sorted as names are compared (ignoring case). `clashing`: whether their name or an alias is used, as a name or
+ *  alias, on another sheet of the sheet's tree (its ancestors and descendants); every edit of them is then refused
+ *  until it renames them out of the clash. */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
   holds: HoldSpan[];
-  patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; aliases: string[] };
+  patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; aliases: string[];
+  clashing: boolean };
 
 export type PatronShare = { name: string; share: string };
 

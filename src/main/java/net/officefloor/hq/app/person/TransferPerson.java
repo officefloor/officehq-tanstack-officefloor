@@ -47,11 +47,11 @@ public class TransferPerson {
         if (sheets.isArchived(to)) {
             throw new BadRequestException("That sheet is archived");
         }
-        if (repository.nameTaken(to, person.getName(), null)) {
+        if (repository.nameTaken(to, person.getName(), person.getId())) {
             throw new BadRequestException("That name is already in use on the other sheet");
         }
         for (String alias : person.getAliases()) {
-            if (repository.nameTaken(to, alias, null)) {
+            if (repository.nameTaken(to, alias, person.getId())) {
                 throw new BadRequestException("The alias " + alias + " is already in use on the other sheet");
             }
         }
