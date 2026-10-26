@@ -88,7 +88,7 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
       const then = statusAsOf(c.log, p.to);
       // Counted by its status then, but held (or deferred) as the live totals leave it out: by its status now.
       const live = c.status === 'OPEN' || c.status === 'PENDING';
-      if (then === undefined || !counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
+      if (then === undefined || !counts({ ...c, status: then, held: false }, NO_HOLDS) || (live && !counts(c, held))) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
     return sum;
@@ -117,7 +117,7 @@ export function usePeriodCarried(sheetId: string): (p: Period, personId: number)
       const then = statusAsOf(c.log, p.to);
       if (then !== 'OPEN' && then !== 'PENDING') continue;
       const live = c.status === 'OPEN' || c.status === 'PENDING';
-      if (!counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
+      if (!counts({ ...c, status: then, held: false }, NO_HOLDS) || (live && !counts(c, held))) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
     const opening = p.openings?.[String(personId)];

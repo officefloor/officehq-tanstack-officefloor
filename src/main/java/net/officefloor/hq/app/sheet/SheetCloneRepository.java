@@ -124,10 +124,10 @@ public class SheetCloneRepository {
             long id = id(claim.get("id"));
             long copy = jdbc.queryForObject("SELECT id FROM FINAL TABLE (INSERT INTO claim (sheet_id, person_id,"
                     + " amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due,"
-                    + " corrects, listed, deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, escalated, waived, due_from, terms,"
+                    + " corrects, listed, deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, escalated, waived, held, due_from, terms,"
                     + " ref, tags, void_reason, edited_by, due_by, settle_batch, added_seq)"
                     + " SELECT ?, ?, amount, claim_date, note, status, ?, settled_due, opened_by, FALSE, NULL,"
-                    + " ?, listed, deferred_until, proofs, proofs_photo, ?, late_entry, reminded_on, escalated, waived, due_from, terms,"
+                    + " ?, listed, deferred_until, proofs, proofs_photo, ?, late_entry, reminded_on, escalated, waived, held, due_from, terms,"
                     + " ref, tags, void_reason, edited_by, due_by, NULL, added_seq FROM claim WHERE id = ?)", Long.class,
                     to, people.get(id(claim.get("person_id"))), numbers.get(id), renumbered.get((String) claim.get("corrects")),
                     renumbered.get((String) claim.get("split_from")), id);

@@ -23,7 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ClaimRepository {
 
     // A correction rounds by the date of the claim it corrects (a claim of the same person, by number).
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, waived, ref, tags, void_reason, edited_by, settle_batch, added_seq,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_from, terms, due_by, deferred_until, proofs, proofs_photo, split_from, late_entry, reminded_on, waived, held, ref, tags, void_reason, edited_by, settle_batch, added_seq,"
             + " (SELECT o.claim_date FROM claim o WHERE o.sheet_id = claim.sheet_id AND o.person_id = claim.person_id"
             + " AND o.claim_number = claim.corrects) AS corrected_date";
 
@@ -44,6 +44,7 @@ public class ClaimRepository {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setWaived(rs.getBoolean("waived"));
+        claim.setHeld(rs.getBoolean("held"));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
@@ -275,6 +276,19 @@ public class ClaimRepository {
             claim.setWaived(true);
         }
         return waived;
+    }
+
+    /**
+     * Hold or release the claim. Whether it was still in its status and not already so: another user may have changed,
+     * held or released it.
+     */
+    public boolean hold(Claim claim, boolean held) {
+        boolean done = jdbc.update("UPDATE claim SET held = ? WHERE id = ? AND status = ? AND held = ?",
+                held, claim.getId(), claim.getStatus().name(), !held) == 1;
+        if (done) {
+            claim.setHeld(held);
+        }
+        return done;
     }
 
     /** Escalate the claim. Whether it was not yet escalated: a claim escalates once ever. */

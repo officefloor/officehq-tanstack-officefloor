@@ -254,15 +254,15 @@ public class Rollup {
     private static boolean countsAs(Claim claim, ClaimStatus then, Person person, LocalDate today) {
         // Held as the live totals hold it: by its status now, not the one it had then.
         boolean held = claim.getStatus().isOpen() && !claim.isStated()
-                && (person.heldOn(claim.getDate()) || person.retiredOn(today));
+                && (claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today));
         return then.counts() && !held && !claim.isDeferredOn(today);
     }
 
-    /** Whether a hold leaves the claim out: it is OPEN or PENDING, unbound, and dated within one of its person's holds
-     *  or its person's retirement date is reached on the sheet's today. */
+    /** Whether a hold leaves the claim out: it is OPEN or PENDING, unbound, and held itself, dated within one of its
+     *  person's holds, or its person's retirement date is reached on the sheet's today. */
     public static boolean held(Claim claim, Person person, LocalDate today) {
         return claim.getStatus().isOpen() && !claim.isBound()
-                && (person.heldOn(claim.getDate()) || person.retiredOn(today));
+                && (claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today));
     }
 
     private static String show(BigDecimal figure) {

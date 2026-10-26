@@ -45,6 +45,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
 // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
 // A steward can waive an OPEN or PENDING claim's late charge, once: waived, it bears none from then on.
+// An OPEN or PENDING claim can be held and released with a toggle: held, it counts in no live total unless a statement
+// binds it, as a held person's claims; it shows held yes/no.
 // A claim in any status can be commented; an empty comment is refused.
 // A DRAFT claim (not in a closed period) can be deleted: DELETED, it counts nowhere and takes no edit, open or void; on
 // the sheet-today it was deleted it can be restored to a DRAFT, and on a later day the restore is refused.
@@ -189,6 +191,12 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/waive`, { by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // Holding an OPEN or PENDING claim, or releasing it when held; any other status is refused.
+  const hold = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/hold`, { by: user ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // A comment kept on the claim with the user and the sheet's today; the server refuses an empty one too.
   const comment = useMutation({
     mutationFn: (text: string) => {
@@ -244,6 +252,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     lock.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     inline.reset();
     comment.reset();
     line.reset();
@@ -261,14 +270,15 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     lock.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     inline.reset();
     comment.reset();
     line.reset();
     setRefused(undefined);
   };
   const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
-    || redate.isPending || remind.isPending || waive.isPending || inline.isPending || comment.isPending || line.isPending;
-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? waive.error ?? inline.error ?? comment.error ?? line.error;
+    || redate.isPending || remind.isPending || waive.isPending || hold.isPending || inline.isPending || comment.isPending || line.isPending;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? waive.error ?? hold.error ?? inline.error ?? comment.error ?? line.error;
 
   return (
     <>
@@ -338,6 +348,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
     waive.reset();
           waive.reset();
+          hold.reset();
           inline.reset();
           comment.reset();
           line.reset();
@@ -362,6 +373,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
     waive.reset();
           waive.reset();
+          hold.reset();
           inline.reset();
           comment.reset();
           line.reset();
@@ -397,6 +409,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
     waive.reset();
           waive.reset();
+          hold.reset();
           inline.reset();
           comment.reset();
           line.reset();
@@ -435,6 +448,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
     waive.reset();
           waive.reset();
+          hold.reset();
           inline.reset();
           comment.reset();
           line.reset();
@@ -469,6 +483,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
     waive.reset();
           waive.reset();
+          hold.reset();
           inline.reset();
           comment.reset();
           line.reset();
@@ -502,6 +517,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           remind.reset();
     waive.reset();
           waive.reset();
+          hold.reset();
           inline.reset();
           comment.reset();
           line.reset();
@@ -534,6 +550,18 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         }}
       >
         Waive
+      </button>{' '}
+      Held <span data-testid="claim-held">{claim.held ? 'yes' : 'no'}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-hold"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          hold.mutate();
+        }}
+      >
+        {claim.held ? 'Release' : 'Hold'}
       </button>{' '}
       <button
         type="button"

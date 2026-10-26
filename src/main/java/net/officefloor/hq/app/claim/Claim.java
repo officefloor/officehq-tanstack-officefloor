@@ -34,6 +34,7 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private boolean waived;
+    private boolean held;
     private String ref;
     private String tags;
     private String voidReason;
@@ -122,6 +123,15 @@ public class Claim {
 
     public void setWaived(boolean waived) {
         this.waived = waived;
+    }
+
+    /** Whether the claim is held: OPEN or PENDING and unbound, it then counts in no live total. */
+    public boolean isHeld() {
+        return held;
+    }
+
+    public void setHeld(boolean held) {
+        this.held = held;
     }
 
     public LocalDate getRemindedOn() {

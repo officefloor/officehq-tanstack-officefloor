@@ -39,6 +39,8 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   reminded: string | null;
   /** Whether a steward waived its late charge: it bears none from then on. */
   waived: boolean;
+  /** Whether the claim is held: OPEN or PENDING, it then counts in no total unless a statement binds it. */
+  held: boolean;
   /** The claim's external reference, used at most once on the sheet (case aside); none when it has none. */
   ref: string | null;
   /** The claim's tags, sorted; empty when it has none. */
@@ -58,13 +60,13 @@ export type Claim = { id: number; personId: number; amount: string; date: string
   reviewDay?: string | null };
 
 /** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
- *  or PENDING one dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
+ *  or PENDING one held itself or dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
  *  nor does one deferred past the sheet's today. */
-export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean; deferred?: boolean }, held: Holds): boolean {
+export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean; deferred?: boolean; held?: boolean }, held: Holds): boolean {
   if (claim.deferred) return false;
   if (claim.status === 'OPEN' || claim.status === 'PENDING') {
-    return claim.stated || !(held.get(claim.personId) ?? []).some((h) =>
-      (h.from === null || h.from <= claim.date) && (h.to === null || claim.date <= h.to));
+    return claim.stated || (!claim.held && !(held.get(claim.personId) ?? []).some((h) =>
+      (h.from === null || h.from <= claim.date) && (h.to === null || claim.date <= h.to)));
   }
   return claim.status === 'SETTLED';
 }
