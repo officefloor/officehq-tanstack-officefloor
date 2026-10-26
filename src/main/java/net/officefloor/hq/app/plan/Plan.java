@@ -35,4 +35,9 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
         }
         return dates;
     }
+
+    /** Its first five dates after {@code today} and on or before the end, earliest first. */
+    public List<LocalDate> nextDates(LocalDate today) {
+        return datesThrough(end).stream().filter(d -> d.isAfter(today)).limit(5).toList();
+    }
 }

@@ -19,6 +19,8 @@ export type Plan = {
   day: number | null;
   end: string;
   generated: number;
+  /** The first five plan dates after the sheet's today and on or before the end, earliest first. */
+  nextDates: string[];
 };
 
 /** The key every feature reads the sheet's plans under. */
@@ -38,7 +40,7 @@ function PlansHead() {
   return <th>Plans</th>;
 }
 
-// The person's plans, each with how many claims it has made so far, and the form that adds one: an amount (by the
+// The person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form that adds one: an amount (by the
 // claim form's rule), a start date (blank: the sheet's today), every N days (a whole number, at least 1) or instead a
 // day of the month (1 to 31, monthly from the start's month) and an end date not before the start. A refusal shows on the form until it is changed or submitted again.
 function PlansCell({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
@@ -76,7 +78,8 @@ function PlansCell({ sheetId, personId }: { sheetId: string; user: string; perso
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
             {Number(p.amount).toFixed(2)} from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to{' '}
             {p.end}, made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>
+            <span data-testid="plan-generated">{p.generated}</span>, next{' '}
+            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
           </li>
         ))}
       </ul>
