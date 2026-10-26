@@ -1,0 +1,63 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index 2fe1e94d..f93af820 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -3,25 +3,29 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.access.RoleRepository;
+ import net.officefloor.hq.app.access.SettingRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Moves the claim to another person on the sheet: by a role the sheet's reassign permission gives (a steward's while blank), and only for a DRAFT, OPEN or PENDING claim, never to its
+- * own person nor to one retired before the claim's date. It keeps its number and date, loses any figure a statement
++ * own person nor to one retired before the claim's date. It keeps its date and, when numbered, takes the next number of
++ * the sequence it would be numbered in (its old number is never used again; a draft gets none), loses any figure a statement
+  * bound it to (live again until its new person's next statement) and is listed as its new person's newest claim.
+  */
+ public class ApplyReassign {
+     public void apply(@Val ReassignTo to, @Val Claim claim, @Val ChangedBy by, ClaimRepository repository,
+-            PersonRepository people, RoleRepository roles, SettingRepository settings) throws BadRequestException {
+-        move(to, claim, by, repository, people, roles, settings, false);
++            PersonRepository people, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
++            PeriodRepository periods) throws BadRequestException {
++        move(to, claim, by, repository, people, roles, settings, sheets, periods, false);
+     }
+ 
+     /** Moves the claim; in a bulk move ({@code bulk}) one already the person's is moved (relisted) all the same. */
+     void move(ReassignTo to, Claim claim, ChangedBy by, ClaimRepository repository, PersonRepository people,
+-            RoleRepository roles, SettingRepository settings, boolean bulk) throws BadRequestException {
++            RoleRepository roles, SettingRepository settings, SheetRepository sheets, PeriodRepository periods, boolean bulk) throws BadRequestException {
+         String sheetId = claim.getSheetId();
+         String role = roles.roleOf(sheetId, by.name());
+         if (!settings.allows(sheetId, "reassign", role)) {
+@@ -43,6 +47,11 @@ public class ApplyReassign {
+         if (!repository.reassign(claim, target.getId())) {
+             throw new BadRequestException("The claim was changed by someone else; reload the sheet");
+         }
++        if (claim.getNumber() != null && !claim.getNumber().isEmpty()) {
++            // Numbered only once the claim is surely moving, so a refused move uses up no number.
++            claim.setNumber(ApplyClaimStatus.number(claim, repository, settings, sheets, periods));
++            repository.updateStatus(claim, claim.getStatus());
++        }
+         to.moved(from == null ? "" : from.getName(), target.getName());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+index 68e41c6f..7996de29 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+@@ -56,7 +56,7 @@ public class ReassignClaims {
+                 closed.check(claim, periods);
+                 RollupSnapshot before = rollup.snapshot(sheet.id());
+                 ReassignTo to = new ReassignTo(selected.personId());
+-                apply.move(to, claim, by, claims, people, roles, settings, true);
++                apply.move(to, claim, by, claims, people, roles, settings, sheets, periods, true);
+                 record.record(claim, to, by, audit);
+                 rollup.record(sheet.id(), before, by);
+                 moved++;
