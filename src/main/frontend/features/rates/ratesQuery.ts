@@ -1,7 +1,8 @@
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
 import type { Claim } from '../claims/claimsQuery';
-import type { Grade } from '../people/peopleQuery';
+import { gradeOn } from '../people/peopleQuery';
+import type { Grade, Person } from '../people/peopleQuery';
 
 /**
  * `rate` is a percent with two decimals ("12.50"), in force from `from` (yyyy-mm-dd; null: from the
@@ -75,14 +76,14 @@ function lateMonths(claim: Claim, { today, terms }: Late): bigint {
 
 /**
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
- * person's last statement bound it to, otherwise its amount times its person's grade's rate on the
- * claim's date, raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
+ * person's last statement bound it to, otherwise its amount times the rate, on the claim's date, of
+ * the grade its person had on that date, raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
  * percent of that figure for every full 30 days overdue, half to even — is added on top: a statement
  * never binds it, so it follows the sheet's today.
  */
-export function figure(claim: Claim, rates: Rate[], grade: Grade | undefined, floor: string, late: Late): string {
+export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: string, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
-  const bound = claim.stated ? (claim.statedDue ?? 'n/a') : floored(due(claim.amount, rateFor(rates, grade, claim.date)), floor);
+  const bound = claim.stated ? (claim.statedDue ?? 'n/a') : floored(due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date)), floor);
   const months = lateMonths(claim, late);
   if (bound === 'n/a' || months === 0n) return bound;
   return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct));

@@ -122,7 +122,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     sumDue(
       claims
         .filter((c) => counts(c, people) && period.from <= c.date && c.date <= period.to)
-        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade, floor, late)),
+        .map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late)),
     );
 
   const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {

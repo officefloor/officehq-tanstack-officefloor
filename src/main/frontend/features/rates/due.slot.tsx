@@ -4,7 +4,7 @@ import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { claimsQuery, counts } from '../claims/claimsQuery';
 import type { Claim } from '../claims/claimsQuery';
-import { peopleQuery } from '../people/peopleQuery';
+import { gradeOn, peopleQuery } from '../people/peopleQuery';
 import { patronIdsOf, patronsQuery } from '../patrons/patronsQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import { useFloor, useLate } from '../settings/settingsQuery';
@@ -17,10 +17,10 @@ import type { Late, Rate } from './ratesQuery';
  */
 function personDue(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: string, late: Late): string {
   if (!person) return 'n/a';
-  const rate = rateFor(rates, person.grade, today);
+  const rate = rateFor(rates, gradeOn(person, today), today);
   const figures = claims
     .filter((c) => c.personId === person.id && counts(c, people))
-    .map((c) => figure(c, rates, person.grade, floor, late))
+    .map((c) => figure(c, rates, person, floor, late))
     .filter((d) => d !== 'n/a');
   return rate === undefined && figures.length === 0 ? 'n/a' : sumDue(figures);
 }
@@ -39,7 +39,7 @@ function useSheetData(sheetId: string) {
 function ClaimDue({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const { people, rates, floor, late } = useSheetData(sheetId);
   const person = people.find((p) => p.id === claim.personId);
-  return <td data-testid="claim-due">{figure(claim, rates, person?.grade, floor, late)}</td>;
+  return <td data-testid="claim-due">{figure(claim, rates, person, floor, late)}</td>;
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {

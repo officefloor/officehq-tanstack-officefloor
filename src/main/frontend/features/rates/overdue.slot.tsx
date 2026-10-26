@@ -29,7 +29,7 @@ function overdue({ people, claims, rates, today, floor, terms, late }: OverdueDa
   const overdueClaims = claims.filter(
     (c) => (!person || c.personId === person.id) && counts(c, people) && isOverdue(c, terms, today),
   );
-  const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId)?.grade, floor, late));
+  const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late));
   return { count: overdueClaims.length, total: sumDue(figures) };
 }
 

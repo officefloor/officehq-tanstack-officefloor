@@ -38,7 +38,7 @@ public class TakeStatement {
             }
         }
         // With no rate today and no figure, the due-total is n/a.
-        boolean none = rates.on(person.sheetId(), person.grade(), today) == null
+        boolean none = rates.on(person.sheetId(), person.gradeOn(today), today) == null
                 && figures.values().stream().allMatch(Objects::isNull);
         claims.bind(person.sheetId(), person.id(), figures);
         Statement statement = new Statement(person.sheetId(), person.id(), none ? "n/a" : total.toPlainString(),
@@ -58,7 +58,7 @@ public class TakeStatement {
         if (claim.stated()) {
             return claim.statedDue();
         }
-        BigDecimal rate = rates.on(claim.sheetId(), person.grade(), claim.date());
+        BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
         return rate == null ? null : settings.floored(claim.sheetId(), claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
     }
 }

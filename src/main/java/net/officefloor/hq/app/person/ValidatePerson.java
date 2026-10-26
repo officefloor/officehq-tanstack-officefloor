@@ -1,10 +1,17 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.Set;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePerson {
+
+    private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("uuuu-MM-dd")
+            .withResolverStyle(ResolverStyle.STRICT);
 
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
@@ -18,6 +25,15 @@ public class ValidatePerson {
         if (!GRADES.contains(grade)) {
             throw new InvalidPersonException("The grade must be A, B or C.");
         }
-        request.set(new PersonRequest(name, grade, body.version()));
+        // A blank from-date is kept null: the sheet's today, filled in when stored.
+        String from = body.gradeFrom() == null ? "" : body.gradeFrom().trim();
+        if (!from.isEmpty()) {
+            try {
+                LocalDate.parse(from, ISO);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("Not a date (yyyy-mm-dd): " + from);
+            }
+        }
+        request.set(new PersonRequest(name, grade, body.version(), from.isEmpty() ? null : from));
     }
 }
