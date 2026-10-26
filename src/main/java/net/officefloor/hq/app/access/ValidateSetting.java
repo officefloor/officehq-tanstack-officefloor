@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The review threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
 public class ValidateSetting {
 
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
@@ -164,6 +164,18 @@ public class ValidateSetting {
             if (!text.isEmpty()) {
                 if (!AMOUNT.matcher(text).matches()) {
                     throw new BadRequestException("A grade's proof threshold is an amount with up to two decimals, or blank for the sheet's");
+                }
+                value = new BigDecimal(text).setScale(2).toPlainString();
+            }
+            setting.set(new SettingInput(key, value, from));
+            changedBy.set(by);
+            return;
+        }
+        if (Setting.REVIEW_THRESHOLD.equals(key)) {
+            String value = null;
+            if (!text.isEmpty()) {
+                if (!AMOUNT.matcher(text).matches()) {
+                    throw new BadRequestException("A review threshold is an amount with up to two decimals, or blank for none");
                 }
                 value = new BigDecimal(text).setScale(2).toPlainString();
             }

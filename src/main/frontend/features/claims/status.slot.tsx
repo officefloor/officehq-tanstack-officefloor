@@ -14,13 +14,15 @@ import { claimLockKey, claimSaveKey, claimsKey, useEditingClaim, type Claim, typ
 // `review`: a steward's approve (to SETTLED) or reject (back to OPEN, with a reason) of a PENDING claim.
 const AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
-type Change = { status: ClaimStatus; review?: boolean; reason?: string; voidReason?: string };
+// `release`: a steward's review of a REVIEW claim, opening it (it takes its number then).
+type Change = { status: ClaimStatus; review?: boolean; release?: boolean; reason?: string; voidReason?: string };
 
 const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
   { action: 'open', change: { status: 'OPEN' }, label: 'Open' },
   { action: 'settle', change: { status: 'SETTLED' }, label: 'Settle' },
   { action: 'void', change: { status: 'VOID' }, label: 'Void' },
   { action: 'approve', change: { status: 'SETTLED', review: true }, label: 'Approve' },
+  { action: 'review', change: { status: 'OPEN', release: true }, label: 'Review' },
   { action: 'delete', change: { status: 'DELETED' }, label: 'Delete' },
   { action: 'restore', change: { status: 'DRAFT' }, label: 'Restore' },
 ];

@@ -17,8 +17,13 @@ public class RecordClaimStatus {
             case VOID -> "CLAIM_VOIDED";
             case DELETED -> "CLAIM_DELETED";
             case DRAFT -> "CLAIM_RESTORED";
+            case REVIEW -> "CLAIM_REVIEW";
         };
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        if (review.release()) {
+            // A steward's review: reviewed (as yet unnumbered), then opened with its number.
+            audit.record(ClaimAudit.line("CLAIM_REVIEWED", claim, by, person == null ? "" : person.getName(), null));
+        }
         String line = ClaimAudit.line(event, claim, by, person == null ? "" : person.getName(), number.value());
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());

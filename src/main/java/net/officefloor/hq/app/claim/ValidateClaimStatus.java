@@ -17,7 +17,7 @@ public class ValidateClaimStatus {
         } catch (IllegalArgumentException e) {
             throw new BadRequestException("A status is OPEN, SETTLED or VOID");
         }
-        if (parsed == ClaimStatus.PENDING) {
+        if (parsed == ClaimStatus.PENDING || parsed == ClaimStatus.REVIEW) {
             throw new BadRequestException("A status is OPEN, SETTLED or VOID");
         }
         status.set(parsed);
@@ -32,6 +32,11 @@ public class ValidateClaimStatus {
         }
         String voidReason = request == null || request.voidReason() == null ? "" : request.voidReason().trim();
         voidChoice.set(new VoidChoice(parsed == ClaimStatus.VOID && !voidReason.isEmpty() ? voidReason : null));
-        review.set(reviewing ? new ClaimReview(true, parsed == ClaimStatus.OPEN ? reason : null) : ClaimReview.NONE);
+        boolean releasing = request != null && Boolean.TRUE.equals(request.release());
+        if (releasing && (reviewing || parsed != ClaimStatus.OPEN)) {
+            throw new BadRequestException("A review of a REVIEW claim opens it");
+        }
+        review.set(reviewing ? new ClaimReview(true, parsed == ClaimStatus.OPEN ? reason : null, false)
+                : releasing ? ClaimReview.RELEASE : ClaimReview.NONE);
     }
 }

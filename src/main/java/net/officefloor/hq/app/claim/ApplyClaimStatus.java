@@ -30,6 +30,8 @@ import net.officefloor.plugin.variable.Val;
  * a void needs one of them, kept on the claim. Opening records who opened it; a voided claim keeps its number. Settling
  * fixes the claim's due at the rate in force on the claim's date of its person's grade on that date — or, while a statement binds it, at
  * the figure it was bound to — with its late charge as of the sheet's today on top and then at least the sheet's floor in force on the claim's date, frozen in; without a figure its due stays live.
+ * An open whose due (as open) is above the review threshold in force on the claim's date leaves it in REVIEW instead,
+ * recording who opened it but giving no number; a steward's review then opens it with its number (anyone else is refused).
  */
 public class ApplyClaimStatus {
     // A DRAFT claim may be deleted, and a DELETED one restored to DRAFT only on the sheet-today it was deleted.
@@ -40,6 +42,22 @@ public class ApplyClaimStatus {
         ClaimStatus from = claim.getStatus();
         String role = roles.roleOf(claim.getSheetId(), by.name());
         boolean steward = Role.STEWARD.equals(role);
+        if (review.release()) {
+            if (from != ClaimStatus.REVIEW) {
+                throw new BadRequestException("Only a REVIEW claim is reviewed; this one is " + from);
+            }
+            if (!steward) {
+                throw new BadRequestException("Only a steward reviews a claim");
+            }
+            claim.setStatus(ClaimStatus.OPEN);
+            if (!repository.updateStatus(claim, from)) {
+                throw new BadRequestException("The claim was changed by someone else; reload the sheet");
+            }
+            claim.setNumber(number(claim, repository, settings, sheets, periods));
+            repository.updateStatus(claim, ClaimStatus.OPEN);
+            audited.set(new ClaimNumber(claim.getNumber()));
+            return;
+        }
         if (review.asked()) {
             if (from != ClaimStatus.PENDING) {
                 throw new BadRequestException("Only a PENDING claim is approved or rejected; this one is " + from);
@@ -134,12 +152,19 @@ public class ApplyClaimStatus {
                 to = ClaimStatus.PENDING; // awaits a steward's approval
             }
         }
+        if (status == ClaimStatus.OPEN && !review.asked()) {
+            BigDecimal threshold = late.settings().reviewThreshold(claim.getDate());
+            BigDecimal opened = threshold == null ? null : late.dueAsOpen(claim, dueNow(claim, people, rates, settings, late));
+            if (opened != null && opened.compareTo(threshold) > 0) {
+                to = ClaimStatus.REVIEW; // awaits a steward's review, numbered only then
+            }
+        }
         claim.setStatus(to);
         if (to == ClaimStatus.VOID) {
             claim.setVoidReason(voidChoice.reason());
         }
         boolean opening = to == ClaimStatus.OPEN && !review.asked();
-        if (opening) {
+        if (opening || to == ClaimStatus.REVIEW) {
             claim.setOpenedBy(by.name());
         }
         if (to == ClaimStatus.SETTLED) {

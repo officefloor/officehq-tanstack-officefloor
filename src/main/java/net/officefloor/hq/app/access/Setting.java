@@ -35,6 +35,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** The due above which a claim needs a note before it is opened; blank means none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
 
+    /** The due above which an opened claim goes to REVIEW (a steward's review opens it) instead of OPEN; blank means none. */
+    public static final String REVIEW_THRESHOLD = "review-threshold";
+
     /** The due-total above which a person crossing it writes an ALERT line; an amount with two decimals, blank for off. Not dated. */
     public static final String ALERT_THRESHOLD = "alert-threshold";
 

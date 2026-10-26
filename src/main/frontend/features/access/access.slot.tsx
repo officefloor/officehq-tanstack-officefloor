@@ -244,6 +244,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A grade\'s proof threshold is an amount with up to two decimals, or blank for the sheet\'s' })),
   { key: 'note-threshold', label: 'Note threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
+  { key: 'review-threshold', label: 'Review threshold', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'A review threshold is an amount with up to two decimals, or blank for none' },
   { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
   { key: 'alert-threshold', label: 'Alert threshold', placeholder: 'off', blank: true, valid: AMOUNT, inputMode: 'decimal',
