@@ -200,7 +200,7 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // a person's due-total may be, and the proof threshold (blank: none), the due above which a claim needs a proof before
 // it is settled or approved, and each grade's proof threshold (blank: the sheet's), the one a claim of that grade on its
 // date takes in its place, and the permission matrix: for each of open, settle, void, reassign, close and reopen, the
-// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the parent and the permissions is dated: saving it records
+// roles that may take it (blank: the standing rule, shown as the placeholder), and the parent sheet (blank: none), whose rates (then its parent's, up to three levels up) stand in for a grade without one in force on a date. Every setting but the policy date, period numbering from, the entry date, the grace days, the pot, the alert threshold (blank: off; a person whose due-total crosses above it writes an ALERT line), the parent and the permissions is dated: saving it records
 // its value from its from-date (blank: the sheet's today), keeping the values recorded from other dates. The value in
 // force on the sheet's today shows beside each. Saving sends only the settings whose fields were touched since the last save.
 type SettingField = { key: string; label: string; placeholder: string; blank: boolean; valid: RegExp;
@@ -242,6 +242,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A note threshold is an amount with up to two decimals, or blank for none' },
   { key: 'pot', label: 'Pot', placeholder: 'none', blank: true, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A pot is an amount with up to two decimals, or blank for none', dated: false },
+  { key: 'alert-threshold', label: 'Alert threshold', placeholder: 'off', blank: true, valid: AMOUNT, inputMode: 'decimal',
+    invalid: 'An alert threshold is an amount with up to two decimals, or blank for off', dated: false },
   { key: 'parent', label: 'Parent sheet', placeholder: 'none', blank: true, valid: SHEET_ID, inputMode: 'text',
     invalid: 'A parent is a sheet id, or blank for none', dated: false },
   ...([['open', 'clerk,steward'], ['settle', 'clerk,steward'], ['void', 'clerk,steward'], ['reassign', 'steward'],

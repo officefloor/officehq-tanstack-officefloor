@@ -3,9 +3,9 @@ package net.officefloor.hq.app.access;
 /** A setting on a sheet: its key and value (null: blank), and the from-date it was saved from when one was given (null otherwise). */
 public record Setting(String sheetId, String key, String value, java.time.LocalDate from) {
 
-    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the fiscal start month, the pot, the parent and the permissions). */
+    /** Whether the key's setting is dated: one that carries a figure (every key but the policy date, period numbering from, the entry date, the grace days, the fiscal start month, the pot, the alert threshold, the parent and the permissions). */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
+        return !POLICY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !ENTRY_DATE.equals(key) && !GRACE_DAYS.equals(key) && !FISCAL_START_MONTH.equals(key) && !isPermission(key);
     }
 
     /** Whether the key is one of the permission matrix's (perm-<action>). */
@@ -34,6 +34,9 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
 
     /** The due above which a claim needs a note before it is opened; blank means none. */
     public static final String NOTE_THRESHOLD = "note-threshold";
+
+    /** The due-total above which a person crossing it writes an ALERT line; an amount with two decimals, blank for off. Not dated. */
+    public static final String ALERT_THRESHOLD = "alert-threshold";
 
     /** The most a person's due-total may be; an amount with two decimals, blank for none. */
     public static final String CAP = "cap";
