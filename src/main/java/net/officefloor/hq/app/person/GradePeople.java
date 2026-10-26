@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Gives each selected person the grade in list order — the people in the order they were added — exactly as saving
+ * Gives each selected person the grade in list order — the people in their list positions — exactly as saving
  * it on the person form would: the grade from the from-date (the sheet's today when blank), their name and terms kept,
  * a PERSON_EDITED line and the rollup lines it moved. A selected id not on this sheet is skipped. A viewer changes no one.
  */

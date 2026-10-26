@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves each selected claim to the chosen person in list order — the people in the order they were added, each one's
+ * Moves each selected claim to the chosen person in list order — the people in their list positions, each one's
  * claims newest first, taken before any moves so a moved claim is not met again. Each is moved exactly as moving it
  * alone would (the same refusals, the same audit and rollup lines); one that cannot be moved is left as it is and
  * counted as refused.

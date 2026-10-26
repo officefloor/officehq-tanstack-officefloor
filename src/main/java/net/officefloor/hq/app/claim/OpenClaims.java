@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Opens each selected claim in list order — the people in the order they were added, each one's claims newest
+ * Opens each selected claim in list order — the people in their list positions, each one's claims newest
  * first — so they are numbered in that order. Each is opened exactly as opening it alone would (the same refusals,
  * the same audit and rollup lines); one that cannot be opened is left as it is and counted as refused.
  */

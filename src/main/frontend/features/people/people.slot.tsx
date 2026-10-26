@@ -339,7 +339,7 @@ export function useShowRetired() {
   return useSearchParam('showRetired', asFlag);
 }
 
-// The people on the sheet, in the order they were added, and the form that adds or edits them. Retired people
+// The people on the sheet, in list order (each row moves up or down), and the form that adds or edits them. Retired people
 // have no row unless "show retired" is on.
 function PeoplePanel({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);

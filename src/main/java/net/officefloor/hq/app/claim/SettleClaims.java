@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Settles the selected claims all or nothing. When every one can be settled, each is settled in list order — the
- * people in the order they were added, each one's claims newest first — exactly as settling it alone would (the same
+ * people in their list positions, each one's claims newest first — exactly as settling it alone would (the same
  * audit and rollup lines; one a clerk's settle leaves PENDING counts as settled), the press is the sheet's next batch
  * and each claim carries its number, and a BATCH_SETTLED line follows with the count and the frozen figures of those
  * SETTLED added up. If any one would be refused (or is not on the sheet), none is settled, all count as refused and

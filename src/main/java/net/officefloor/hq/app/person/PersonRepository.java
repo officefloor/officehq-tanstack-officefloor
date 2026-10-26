@@ -11,7 +11,8 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The people on each sheet; ids are assigned in the order people are added. */
+/** The people on each sheet; ids are assigned in the order people are added, and each has a place in the sheet's
+ *  list (new people at the end, moved by swapping with a neighbour). */
 @Repository
 public class PersonRepository {
 
@@ -50,10 +51,31 @@ public class PersonRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's people, in the order they were added. */
+    /** The sheet's people, in list order. */
     public List<Person> list(String sheetId) {
-        return withPatrons(sheetId,
-                jdbc.query("SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId));
+        return withPatrons(sheetId, jdbc.query(
+                "SELECT " + COLUMNS + " FROM person p WHERE p.sheet_id = ? ORDER BY p.list_position, p.id", ROW, sheetId));
+    }
+
+    /**
+     * Swap the person with the one above (up) or below them in the sheet's list; answers the person's new place in
+     * the list, counting from 1, or null (nothing written) when there is no one there to swap with.
+     */
+    public Integer move(Person person, boolean up) {
+        String sheetId = person.getSheetId();
+        List<Long> order = jdbc.queryForList(
+                "SELECT id FROM person WHERE sheet_id = ? ORDER BY list_position, id", Long.class, sheetId);
+        int at = order.indexOf(person.getId());
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= order.size()) {
+            return null;
+        }
+        java.util.Collections.swap(order, at, to);
+        // Renumber the whole list, so the swap holds even where positions were equal.
+        for (int i = 0; i < order.size(); i++) {
+            jdbc.update("UPDATE person SET list_position = ? WHERE id = ?", i + 1, order.get(i));
+        }
+        return to + 1;
     }
 
     public Person find(String sheetId, long id) {
@@ -177,11 +199,14 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, terms, contact) VALUES (?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, terms, contact, list_position) VALUES (?, ?, ?, ?,"
+                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?))",
+                    new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
             ps.setString(4, contact);
+            ps.setString(5, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
