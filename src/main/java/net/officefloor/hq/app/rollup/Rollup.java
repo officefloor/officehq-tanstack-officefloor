@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.stereotype.Service;
 
@@ -25,12 +26,14 @@ public class Rollup {
     private final Claims claims;
     private final Rates rates;
     private final Sheets sheets;
+    private final Settings settings;
 
-    public Rollup(People people, Claims claims, Rates rates, Sheets sheets) {
+    public Rollup(People people, Claims claims, Rates rates, Sheets sheets, Settings settings) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
+        this.settings = settings;
     }
 
     public Figures figures(String sheetId) {
@@ -94,7 +97,7 @@ public class Rollup {
 
     /**
      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the figure its person's
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even.
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even, raised to the floor.
      */
     private BigDecimal figure(Claim claim, Person person) {
         if (claim.settledDue() != null) {
@@ -104,6 +107,6 @@ public class Rollup {
             return claim.statedDue();
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.grade(), claim.date());
-        return rate == null ? null : claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        return rate == null ? null : settings.floored(claim.sheetId(), claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
     }
 }

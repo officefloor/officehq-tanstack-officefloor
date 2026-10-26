@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository;
 public class Settings {
 
     public static final String CLERK_LIMIT = "clerk-limit";
+    public static final String FLOOR = "floor";
+    public static final String FLOOR_DEFAULT = "1.00";
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
@@ -35,6 +37,17 @@ public class Settings {
     public BigDecimal clerkLimit(String sheetId) {
         String value = get(sheetId, CLERK_LIMIT);
         return value.isEmpty() ? null : new BigDecimal(value);
+    }
+
+    /** The floor, with two decimals: what a claim's live due is at least; 1.00 when never set. */
+    public BigDecimal floor(String sheetId) {
+        String value = get(sheetId, FLOOR);
+        return new BigDecimal(value.isEmpty() ? FLOOR_DEFAULT : value);
+    }
+
+    /** A live due raised to the sheet's floor; null (no due) stays null. */
+    public BigDecimal floored(String sheetId, BigDecimal due) {
+        return due == null ? null : due.max(floor(sheetId));
     }
 
     /** The sheet's roles, by user name. */

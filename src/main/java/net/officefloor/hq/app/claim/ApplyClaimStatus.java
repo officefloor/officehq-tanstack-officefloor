@@ -31,7 +31,7 @@ public class ApplyClaimStatus {
         if (!claim.status().allows(next)) {
             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
         }
-        BigDecimal due = due(claim, people, rates);
+        BigDecimal due = due(claim, people, rates, settings);
         // A clerk settles only a claim whose due is at or below the clerk limit; a due of n/a is within
         // any limit, and a steward settles anything.
         if (next == ClaimStatus.SETTLED && due != null) {
@@ -52,9 +52,9 @@ public class ApplyClaimStatus {
 
     /**
      * The claim's due now: the figure its person's last statement bound it to, otherwise its amount times its
-     * person's grade's rate on the claim's date, half to even; null when none applies.
+     * person's grade's rate on the claim's date, half to even, raised to the floor; null when none applies.
      */
-    private static BigDecimal due(Claim claim, People people, Rates rates) {
+    private static BigDecimal due(Claim claim, People people, Rates rates, Settings settings) {
         if (claim.stated()) {
             return claim.statedDue();
         }
@@ -63,6 +63,6 @@ public class ApplyClaimStatus {
             return null;
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.grade(), claim.date());
-        return rate == null ? null : claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        return rate == null ? null : settings.floored(claim.sheetId(), claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
     }
 }

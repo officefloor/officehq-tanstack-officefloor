@@ -11,6 +11,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.Rates;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.Sheets;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
 public class TakeStatement {
     // Records the person's due-total now and binds each of their counting claims to its figure now;
     // the rest of their claims are left unbound.
-    public void take(@Val Person person, Claims claims, Rates rates, Sheets sheets, Statements statements,
+    public void take(@Val Person person, Claims claims, Rates rates, Settings settings, Sheets sheets, Statements statements,
             Out<Statement> statementOut) {
         statements.lock(person.id());
         LocalDate today = sheets.today(person.sheetId());
@@ -26,7 +27,7 @@ public class TakeStatement {
         for (Claim claim : claims.list(person.sheetId())) {
             if (claim.personId() == person.id()
                     && (claim.status() == ClaimStatus.OPEN || claim.status() == ClaimStatus.SETTLED)) {
-                figures.put(claim.id(), figure(claim, person, rates));
+                figures.put(claim.id(), figure(claim, person, rates, settings));
             }
         }
         BigDecimal total = figures.values().stream().filter(Objects::nonNull)
@@ -43,9 +44,9 @@ public class TakeStatement {
 
     /**
      * The claim's figure now (null when it has none): a settled claim's frozen due, otherwise the figure the
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even.
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even, raised to the floor.
      */
-    private static BigDecimal figure(Claim claim, Person person, Rates rates) {
+    private static BigDecimal figure(Claim claim, Person person, Rates rates, Settings settings) {
         if (claim.settledDue() != null) {
             return claim.settledDue();
         }
@@ -53,6 +54,6 @@ public class TakeStatement {
             return claim.statedDue();
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.grade(), claim.date());
-        return rate == null ? null : claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+        return rate == null ? null : settings.floored(claim.sheetId(), claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
     }
 }

@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class RespondWithSettings {
     public void respond(@PathVariable("sheetId") String sheetId, Settings settings,
             ObjectResponse<SettingsResponse> response) {
-        response.send(new SettingsResponse(settings.get(sheetId.trim(), Settings.CLERK_LIMIT)));
+        String sheet = sheetId.trim();
+        response.send(new SettingsResponse(settings.get(sheet, Settings.CLERK_LIMIT),
+                settings.floor(sheet).setScale(2).toPlainString()));
     }
 }

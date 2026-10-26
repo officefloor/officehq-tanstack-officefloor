@@ -6,26 +6,29 @@ import { SheetPanel } from '../../slots/defs/sheetPanel';
 import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
-import type { Role, RoleName, Settings as SheetSettings } from './settingsQuery';
+import type { Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 
-/** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) — and the
- *  form they are saved through. */
+/** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
+ *  claim's live due is at least — and the form they are saved through. A blank floor is left as it
+ *  is, and so is a blank clerk limit saved with a floor. */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
   const [limit, setLimit] = useState('');
+  const [floor, setFloor] = useState('');
   const [error, setError] = useState('');
 
   const [user] = useUser();
   const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: SheetSettings) =>
+    mutationFn: (body: SettingsChange) =>
       putJson<SheetSettings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
       setLimit('');
+      setFloor('');
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -38,7 +41,12 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The clerk limit must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
-    once(() => save.mutateAsync({ clerkLimit: l }));
+    const f = floor.trim();
+    if (f !== '' && !AMOUNT.test(f)) {
+      setError('The floor must be an amount of 0.00 or more, with up to two decimals.');
+      return;
+    }
+    once(() => save.mutateAsync(f === '' ? { clerkLimit: l } : l === '' ? { floor: f } : { clerkLimit: l, floor: f }));
   };
 
   return (
@@ -57,6 +65,18 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Floor{' '}
+          <input
+            data-testid="setting-floor"
+            placeholder="unchanged"
+            value={floor}
+            onChange={(e) => {
+              setFloor(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -65,6 +85,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       {settings.isError && <p data-testid="settings-load-error">Could not load the settings.</p>}
       <p>
         Clerk limit in force: <span data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</span>
+      </p>
+      <p>
+        Floor in force: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
       </p>
     </section>
   );
