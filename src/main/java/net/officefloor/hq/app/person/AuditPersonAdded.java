@@ -6,7 +6,13 @@ import net.officefloor.server.http.ServerHttpConnection;
 
 public class AuditPersonAdded {
     public void audit(@Val Person person, ServerHttpConnection connection, Audit audit) {
-        audit.record(Audit.line("PERSON_ADDED", person.sheetId(), Audit.user(connection), "name=" + person.name(),
-                "grade=" + person.grade()));
+        // terms= only when the form gave the person terms of their own.
+        if (person.terms() == null) {
+            audit.record(Audit.line("PERSON_ADDED", person.sheetId(), Audit.user(connection), "name=" + person.name(),
+                    "grade=" + person.grade()));
+        } else {
+            audit.record(Audit.line("PERSON_ADDED", person.sheetId(), Audit.user(connection), "name=" + person.name(),
+                    "grade=" + person.grade(), "terms=" + person.terms()));
+        }
     }
 }

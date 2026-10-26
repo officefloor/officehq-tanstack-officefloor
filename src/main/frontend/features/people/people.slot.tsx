@@ -32,6 +32,7 @@ function People({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Terms</th>
             <PersonHeaders.Slot sheetId={sheetId} />
             <th />
           </tr>
@@ -41,6 +42,7 @@ function People({ sheetId }: { sheetId: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-terms">{p.terms ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditingId(p.id)}>

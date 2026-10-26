@@ -13,7 +13,7 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
  * `openedBy` is the user who opened it (null when never opened), who cannot settle it;
  * `stated` is whether its person's last statement bound it, at `statedDue` (null when it had no figure then) — a PENDING claim is not bound while PENDING;
  * a negative `amount` is a correction, and `corrects` is the number of the settled claim it corrects (null for any other claim);
- * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from the terms of its person's grade on its date, and kept when they or its date change;
+ * `dueBy` (yyyy-mm-dd) is fixed when the claim is made, from its person's own terms, else the terms of their grade on its date, and kept when they or its date change;
  * `log` is its status log, oldest first, one line per status it has had: "<STATUS> by <user> on <date> due=<due>";
  * `deferredUntil` (yyyy-mm-dd) is the date an OPEN claim was deferred to (null when never deferred), see `isDeferred`;
  * `proofs` is how many proofs it has been given: one above the sheet's proof threshold is settled or approved only with one;

@@ -48,9 +48,8 @@ public class ApplySplit {
                     + claim.amount().toPlainString() + ".");
         }
         Person person = people.find(claim.sheetId(), claim.personId());
-        String grade = person == null ? null : person.gradeOn(claim.date());
-        LocalDate dueBy = claim.date().plusDays(grade == null ? settings.terms(claim.sheetId(), claim.date())
-                : settings.terms(claim.sheetId(), grade, claim.date()));
+        LocalDate dueBy = claim.date().plusDays(person == null ? settings.terms(claim.sheetId(), claim.date())
+                : person.termsOn(claim.date(), settings));
         String scope = null;
         LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
         if (numberingFrom != null && !today.isBefore(numberingFrom)) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ConflictError, postJson, putJson } from '../../api/http';
@@ -19,6 +19,8 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
   const [grade, setGrade] = useState<Grade>('A');
   // The date an edit's grade is given from (yyyy-mm-dd); blank for the sheet's today.
   const [gradeFrom, setGradeFrom] = useState('');
+  // The person's own terms in days; blank for none.
+  const [terms, setTerms] = useState('');
   const today = useSheetToday(sheetId);
   const [error, setError] = useState('');
   // The version of the person the editor loaded; a save is refused once someone else has saved since.
@@ -28,19 +30,24 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
     setName(p?.name ?? '');
     setGrade(p?.grade ?? 'A');
     setGradeFrom('');
+    setTerms(p?.terms == null ? '' : String(p.terms));
     setVersion(p?.version);
   };
+
+  // Set when a refused save closes the editor, so its error stays showing.
+  const keepError = useRef(false);
 
   // Opening an editor (or closing it) refills the form.
   useEffect(() => {
     fill(editing);
-    setError('');
+    if (!keepError.current) setError('');
+    keepError.current = false;
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [user] = useUser();
   const once = useSubmitOnce();
   const save = useMutation({
-    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string }) =>
+    mutationFn: (body: { name: string; grade: Grade; version?: number; gradeFrom?: string; terms: string }) =>
       editing
         ? putJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${editing.id}`, body, user)
         : postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people`, body, user),
@@ -51,6 +58,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
         setName('');
         setGrade('A');
         setGradeFrom('');
+        setTerms('');
       }
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
@@ -62,6 +70,11 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
         fill(fresh.find((p) => p.id === editing.id));
       } else {
         setError('The person could not be saved.');
+        if (editing) {
+          // A refused edit closes the editor, storing nothing, so the form is back to adding a person.
+          keepError.current = true;
+          setEditingId(undefined);
+        }
       }
     },
   });
@@ -79,7 +92,7 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
       setError('That name is already in use.');
       return;
     }
-    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim() } : { name: trimmed, grade }));
+    once(() => save.mutateAsync(editing ? { name: trimmed, grade, version, gradeFrom: gradeFrom.trim(), terms: terms.trim() } : { name: trimmed, grade, terms: terms.trim() }));
   };
 
   return (
@@ -121,6 +134,18 @@ export function PersonForm({ sheetId }: { sheetId: string }) {
           placeholder={today}
           onChange={(e) => {
             setGradeFrom(e.target.value);
+            setError('');
+          }}
+        />
+      </label>{' '}
+      <label>
+        Terms (days){' '}
+        <input
+          data-testid="person-form-terms"
+          value={terms}
+          inputMode="numeric"
+          onChange={(e) => {
+            setTerms(e.target.value);
             setError('');
           }}
         />
