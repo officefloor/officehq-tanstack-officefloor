@@ -381,6 +381,12 @@ public class PersonRepository {
         jdbc.update("DELETE FROM period_person_total m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM period_person_total o"
                 + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
+        jdbc.update("UPDATE period_opening m SET amount = amount + (SELECT o.amount FROM period_opening o"
+                + " WHERE o.period_id = m.period_id AND o.person_id = ?) WHERE m.person_id = ? AND EXISTS"
+                + " (SELECT 1 FROM period_opening o WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t, f);
+        jdbc.update("DELETE FROM period_opening m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM period_opening o"
+                + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
+        jdbc.update("UPDATE period_opening SET person_id = ? WHERE person_id = ?", t, f);
         carryStatements(f, sheetId, t);
         jdbc.update("DELETE FROM person_snapshot m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM person_snapshot o"
                 + " WHERE o.person_id = ? AND o.left_on = m.left_on)", f, t);
@@ -515,6 +521,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", f);
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM period_opening WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_terms WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE id = ?", f);

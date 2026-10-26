@@ -26,7 +26,7 @@ public class SheetHistory {
     private static final List<String> TABLES = List.of("sheet", "person", "person_grade", "person_terms", "person_hold", "person_retirement",
             "person_patron", "person_alias", "person_snapshot", "person_watch", "statement", "claim", "claim_log", "claim_lock", "rate", "rate_version", "sheet_setting",
             "sheet_setting_from", "period", "period_person_total", "sheet_role", "sheet_delegation", "holiday", "claim_tag", "void_reason", "claim_comment", "claim_line", "claim_template",
-            "pool", "pool_member", "plan", "plan_claim", "crew", "crew_member");
+            "pool", "pool_member", "plan", "plan_claim", "crew", "crew_member", "period_opening");
 
     private final JdbcTemplate jdbc;
 

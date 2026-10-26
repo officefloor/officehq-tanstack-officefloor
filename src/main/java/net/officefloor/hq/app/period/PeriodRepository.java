@@ -57,6 +57,32 @@ public class PeriodRepository {
                 personCarried);
     }
 
+    /** Each period's opening balances on the sheet, by period id, then person id. */
+    public Map<Long, Map<Long, BigDecimal>> openings(String sheetId) {
+        Map<Long, Map<Long, BigDecimal>> openings = new HashMap<>();
+        jdbc.query("SELECT period_id, person_id, amount FROM period_opening WHERE sheet_id = ?",
+                rs -> {
+                    openings.computeIfAbsent(rs.getLong("period_id"), k -> new LinkedHashMap<>())
+                            .put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+                }, sheetId);
+        return openings;
+    }
+
+    /** Add the amount to the person's opening balance for the period. */
+    public void addOpening(String sheetId, long periodId, long personId, BigDecimal amount) {
+        if (jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE period_id = ? AND person_id = ?", amount,
+                periodId, personId) == 0) {
+            jdbc.update("INSERT INTO period_opening (sheet_id, period_id, person_id, amount) VALUES (?, ?, ?, ?)",
+                    sheetId, periodId, personId, amount);
+        }
+    }
+
+    /** The period on the sheet with this name, ignoring case and surrounding spaces; null when none. */
+    public Period findByName(String sheetId, String name) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND name_key = LOWER(TRIM(?))", ROW,
+                sheetId, name).stream().findFirst().orElse(null);
+    }
+
     /** The last day of the sheet's period whose dates contain the date; null when none does. */
     public LocalDate endOn(String sheetId, LocalDate date) {
         Period p = on(sheetId, date);

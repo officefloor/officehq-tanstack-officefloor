@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims, type ClaimStatus } from '../claims/useClaims';
 import { gradeOn, useHeld, usePeople } from '../people/people.slot';
 import { useUser } from '../session/useSession';
-import { claimDueCents, showHundredths, useRates } from '../rates/useRates';
+import { claimDueCents, showHundredths, toHundredths, useRates } from '../rates/useRates';
 import { useSubmitOnce } from '../../mutation/useSubmitOnce';
 import { useFloorCents, useLate, useSettings } from '../access/useAccess';
 
@@ -20,10 +20,12 @@ const NO_HOLDS = new Map();
  *  then, by person id (empty while open; a person added later has none); and whether it is soft-closed: its
  *  figures fixed as a close fixes them, but claims dated inside it can still change; and the cap on each person's
  *  OPEN or PENDING claims in it (null: none); and each person's carried figure for it fixed when it was closed or
- *  soft-closed, by person id (empty while open). */
+ *  soft-closed, by person id (empty while open); and each person's opening balance for it, which the live carried
+ *  figure adds on top. */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
   personTotals: Record<string, string>; soft: boolean; cap?: number | null; personCarried?: Record<string, string>;
+  openings?: Record<string, string>;
 };
 
 /** The key every feature reads the sheet's periods under. */
@@ -95,7 +97,8 @@ export function usePeriodDueTotal(sheetId: string): (p: Period, personId?: numbe
 
 /** A person's carried figure for a period in cents: the due figures (as shown now) of their claims that belong to a
  *  period (by due-by) ending before this one starts and were still OPEN or PENDING at the end of its last day by
- *  the status log, counted (held or deferred left out) as the period due-totals count them. */
+ *  the status log, counted (held or deferred left out) as the period due-totals count them; their opening balance for
+ *  it on top. */
 export function usePeriodCarried(sheetId: string): (p: Period, personId: number) => bigint {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
@@ -117,7 +120,8 @@ export function usePeriodCarried(sheetId: string): (p: Period, personId: number)
       if (!counts({ ...c, status: then }, NO_HOLDS) || (live && !counts(c, held))) continue;
       sum += claimDueCents(rates.data ?? [], gradeOn(personOf.get(c.personId), c.date), c, floor, late) ?? 0n;
     }
-    return sum;
+    const opening = p.openings?.[String(personId)];
+    return opening === undefined ? sum : sum + toHundredths(opening);
   };
 }
 

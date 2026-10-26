@@ -52,9 +52,12 @@ public class ClosePeriod {
                 personTotals, false, period.cap(), personCarried);
     }
 
-    /** Each person's carried figure for the period as it is now, by person id. */
+    /** Each person's carried figure for the period as it is now, their opening balance for it on top, by person id. */
     private static Map<Long, BigDecimal> carried(Period period, PeriodRepository repository, Rollup rollup) {
-        return rollup.carriedByPerson(period.sheetId(), period.from(), period.to(),
+        Map<Long, BigDecimal> carried = rollup.carriedByPerson(period.sheetId(), period.from(), period.to(),
                 date -> repository.endOn(period.sheetId(), date));
+        repository.openings(period.sheetId()).getOrDefault(period.id(), Map.of())
+                .forEach((personId, amount) -> carried.computeIfPresent(personId, (k, v) -> v.add(amount)));
+        return carried;
     }
 }
