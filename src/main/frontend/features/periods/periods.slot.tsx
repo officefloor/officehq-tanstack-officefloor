@@ -248,11 +248,13 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
 // to-date's, first to last day, named yyyy-mm. A month whose name is in use or whose days overlap a period is left
 // out. Shows how many were made; the count is gone while it runs. A to-date before the from-date is refused.
 // The fiscal year entry generates that fiscal year's twelve months (by the sheet's fiscal start month) the same way,
-// sharing the count and the error.
+// sharing the count and the error. The year entry generates that calendar year's four quarters, named yyyy-Q1 to
+// yyyy-Q4, the same way, sharing them too.
 function GeneratePeriods({ sheetId }: { sheetId: string }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [fyYear, setFyYear] = useState('');
+  const [qYear, setQYear] = useState('');
   const [made, setMade] = useState<number | null>(null);
   const [user] = useUser();
   const queryClient = useQueryClient();
@@ -285,20 +287,36 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
       return result;
     },
   });
+  const generateQuarters = useMutation({
+    mutationFn: async (body: { year: string }) => {
+      setMade(null);
+      if (!YEAR.test(body.year.trim())) throw new Error('Enter a year as YYYY');
+      // `by` is the signed-in user the change is recorded against.
+      const result = await postJson<{ made: number }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-quarters`,
+        { year: body.year.trim(), by: user ?? '' });
+      setMade(result.made);
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      return result;
+    },
+  });
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     generate.reset();
     generateFy.reset();
+    generateQuarters.reset();
   };
   const submit = useSubmitOnce(generate);
   const submitFy = useSubmitOnce(generateFy);
-  const error = generate.error ?? generateFy.error;
+  const submitQuarters = useSubmitOnce(generateQuarters);
+  const error = generate.error ?? generateFy.error ?? generateQuarters.error;
   return (
     <form
       data-testid="period-generate-form"
       onSubmit={(e) => {
         e.preventDefault();
         generateFy.reset();
+        generateQuarters.reset();
         submit({ from, to });
       }}
     >
@@ -321,10 +339,27 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
         disabled={generateFy.isPending}
         onClick={() => {
           generate.reset();
+          generateQuarters.reset();
           submitFy({ year: fyYear });
         }}
       >
         Generate fiscal year
+      </button>{' '}
+      <label>
+        Year <input data-testid="period-generate-quarters-year" inputMode="numeric" placeholder="yyyy" value={qYear}
+          onChange={field(setQYear)} />
+      </label>{' '}
+      <button
+        type="button"
+        data-testid="period-generate-quarters"
+        disabled={generateQuarters.isPending}
+        onClick={() => {
+          generate.reset();
+          generateFy.reset();
+          submitQuarters({ year: qYear });
+        }}
+      >
+        Generate quarters
       </button>{' '}
       {made !== null && !error && (
         <span>
