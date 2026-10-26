@@ -1,0 +1,300 @@
+diff --git a/src/main/frontend/features/claims/redate.slot.tsx b/src/main/frontend/features/claims/redate.slot.tsx
+new file mode 100644
+index 00000000..c476eab5
+--- /dev/null
++++ b/src/main/frontend/features/claims/redate.slot.tsx
+@@ -0,0 +1,55 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson, RefusedError } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { ClaimCells } from '../../slots/defs/claimColumns';
++import { useUser } from '../session/useUser';
++import { claimsKey } from './claimsQuery';
++import type { Claim } from './claimsQuery';
++import { useClaimError } from './useClaimError';
++
++/**
++ * The entry and button with which a steward re-dates an OPEN or PENDING claim. The server refuses anyone else, any
++ * other status, a date after the person's retirement, and a claim in a closed period or a new date inside one; the
++ * refusal shows on the claim until its next action.
++ */
++function ClaimRedate({ sheetId, claim }: { sheetId: string; claim: Claim }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const [error, setError] = useClaimError(claim.id);
++  const [date, setDate] = useState('');
++  const once = useSubmitOnce();
++  const redate = useMutation({
++    mutationFn: (next: string) =>
++      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/date`, { date: next }, user),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++    onError: (e) => setError(e instanceof RefusedError ? e.message : 'The claim could not be re-dated.'),
++  });
++
++  return (
++    <td>
++      <input
++        data-testid="claim-date-new"
++        placeholder="yyyy-mm-dd"
++        value={date}
++        onChange={(e) => {
++          setDate(e.target.value);
++          setError('');
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-redate"
++        disabled={redate.isPending}
++        onClick={() => {
++          setError('');
++          once(() => redate.mutateAsync(date.trim()));
++        }}
++      >
++        Re-date
++      </button>
++    </td>
++  );
++}
++
++export const contribution = ClaimCells.fill({ order: 26, Component: ClaimRedate });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java b/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
+new file mode 100644
+index 00000000..d3dfe4ae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyRedate.java
+@@ -0,0 +1,59 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.Objects;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.Periods;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ApplyRedate {
++    // Only a steward re-dates, and only an OPEN or PENDING claim, to a real date not after its person's retirement and
++    // not inside a closed period. Its due-by and statement figure stay. While the sheet numbers by period, a claim whose
++    // new date falls in another period is numbered next in that period's sequence (the old number is never reused).
++    public void apply(@RequestBody(required = false) RedateRequest body, @Val Claim claim, Claims claims, People people,
++            Periods periods, Settings settings, Sheets sheets, ServerHttpConnection connection,
++            Out<ClaimResponse> responseOut) throws ClaimRedateRefusedException, ClaimAfterRetirementException {
++        String user = Audit.user(connection).trim();
++        if (!Settings.STEWARD.equals(settings.role(claim.sheetId(), user))) {
++            throw new ClaimRedateRefusedException("Only a steward can re-date a claim.");
++        }
++        if (!claim.status().isOpen()) {
++            throw new ClaimRedateRefusedException("Only an OPEN or PENDING claim can be re-dated.");
++        }
++        LocalDate date;
++        try {
++            date = LocalDate.parse(body == null || body.date() == null ? "" : body.date().trim());
++        } catch (DateTimeParseException e) {
++            throw new ClaimRedateRefusedException("Re-date to a date (yyyy-mm-dd).");
++        }
++        RefuseRetiredInput.check(people.find(claim.sheetId(), claim.personId()), date);
++        Period closed = periods.closedOn(claim.sheetId(), date);
++        if (closed != null) {
++            throw new ClaimRedateRefusedException("The period " + closed.name() + " is closed: no claim can be re-dated into it.");
++        }
++        String scope = null;
++        LocalDate numberingFrom = settings.periodNumberingFrom(claim.sheetId());
++        if (numberingFrom != null && !sheets.today(claim.sheetId()).isBefore(numberingFrom)) {
++            Period was = periods.on(claim.sheetId(), claim.date());
++            Period now = periods.on(claim.sheetId(), date);
++            String wasName = was == null ? "" : was.name();
++            String nowName = now == null ? "" : now.name();
++            if (!Objects.equals(wasName, nowName)) {
++                scope = nowName;
++            }
++        }
++        Claim redated = claims.redate(claim, date, scope);
++        if (redated == null) {
++            throw new ClaimRedateRefusedException("The claim has changed since it was loaded.");
++        }
++        responseOut.set(ClaimResponse.from(redated));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimRedated.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimRedated.java
+new file mode 100644
+index 00000000..6e3d1298
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimRedated.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditClaimRedated {
++    public void audit(@Val Claim loaded, @Val ClaimResponse redated, People people, ServerHttpConnection connection,
++            Audit audit) {
++        Person person = people.find(loaded.sheetId(), loaded.personId());
++        List<String> fields = new ArrayList<>(List.of("person=" + (person == null ? "" : person.name()),
++                "amount=" + redated.amount(), "date=" + redated.date()));
++        if (redated.number() != null) {
++            fields.add("number=" + redated.number());
++        }
++        fields.add("old=" + loaded.date());
++        fields.add("new=" + redated.date());
++        audit.record(Audit.line("CLAIM_REDATED", loaded.sheetId(), Audit.user(connection),
++                fields.toArray(String[]::new)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 3b05d2ef..1988fdea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -33,6 +33,11 @@ public record Claim(long id, String sheetId, long personId, BigDecimal amount, L
+         return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy, deferredUntil, proofs, splitFrom);
+     }
+ 
++    /** The claim re-dated to {@code date}, numbered {@code number}. */
++    public Claim withDate(LocalDate date, String number) {
++        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom);
++    }
++
+     /** The claim deferred to {@code until}. */
+     public Claim withDeferredUntil(LocalDate until) {
+         return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy, until, proofs, splitFrom);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRedateRefusedException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRedateRefusedException.java
+new file mode 100644
+index 00000000..ae941362
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRedateRefusedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++/** A claim was re-dated by anyone but a steward, while not OPEN or PENDING, or to a date not real or in a closed period. */
++public class ClaimRedateRefusedException extends Exception {
++
++    public ClaimRedateRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 85dbf9cf..0e8b7f15 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -155,6 +155,24 @@ public class Claims {
+                 ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number());
+     }
+ 
++    /**
++     * Re-dates the claim to {@code date} if it still has its loaded status and date, and returns it as re-dated; null
++     * when it has since changed. Its due-by and statement figure stay. A {@code scope} (a period's name, or "" for no
++     * period) gives it the next number of that sequence, as {@link #changeStatus}; null keeps its number.
++     */
++    public Claim redate(Claim claim, LocalDate date, String scope) {
++        if (jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND status = ? AND claim_date = ?", Date.valueOf(date),
++                claim.id(), claim.status().name(), Date.valueOf(claim.date())) != 1) {
++            return null;
++        }
++        String number = scope == null ? claim.number()
++                : (scope.isEmpty() ? "X" : scope) + "-" + nextNumber(claim.sheetId(), scope);
++        if (scope != null) {
++            jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ?", number, claim.id());
++        }
++        return claim.withDate(date, number);
++    }
++
+     /** Defers the claim to {@code until} if it is still OPEN, and returns it as deferred; null when it has since changed. */
+     public Claim defer(Claim claim, LocalDate until) {
+         if (jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND status = ?", Date.valueOf(until), claim.id(),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimRedateRefused.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimRedateRefused.java
+new file mode 100644
+index 00000000..732b932a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimRedateRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimRedateRefused {
++    public void handle(@Parameter ClaimRedateRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RedateRequest.java b/src/main/java/net/officefloor/hq/app/claim/RedateRequest.java
+new file mode 100644
+index 00000000..5a87a2cb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RedateRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** The body of a re-date: {@code date} is the claim's new date (yyyy-MM-dd). */
++public record RedateRequest(String date) {
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimRedateRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimRedateRefusedException.yml
+new file mode 100644
+index 00000000..3ed0279c
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimRedateRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimRedateRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
+new file mode 100644
+index 00000000..8798966d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/date.PUT.yml
+@@ -0,0 +1,40 @@
++# PUT /api/sheets/{sheetId}/claims/{claimId}/date — a steward re-dates an OPEN or PENDING claim. Body
++# {"date":"yyyy-mm-dd"}. Its due-by and any statement figure stay; its period follows the new date, and while the sheet
++# numbers by period a change of period gives it the next number of its new period (the old one is never reused).
++# Refused with 422 for anyone but a steward, any other status, a date after its person's retirement, or a claim dated
++# in a closed period or a new date inside one; nothing is stored. 404 for a claim not on the sheet.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: snapshot
++  govern: [ transaction ]
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  next: load
++  govern: [ transaction ]
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  next: closed
++  govern: [ transaction ]
++closed:
++  class: net.officefloor.hq.app.claim.RefuseClosedClaim
++  next: apply
++  govern: [ transaction ]
++apply:
++  class: net.officefloor.hq.app.claim.ApplyRedate
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimRedated
++  next: rollup
++  govern: [ transaction ]
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithEditedClaim
++  govern: [ transaction ]
