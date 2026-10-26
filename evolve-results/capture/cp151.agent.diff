@@ -1,0 +1,192 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index dbbf66f7..e3c8f9ff 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -191,7 +191,9 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
+ // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
+ // due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and each grade's grace (blank: none),
+ // the days past its due-by a claim of that grade (on its date) goes overdue and counts its late charge from, and the late percent, what an overdue claim's due gains of its figure for every
+-// full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
++// full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the rounding
++// mode (half-up or half-even; blank: none), by which a claim dated while it is in force rounds its live figures in place
++// of the policy date, and the policy date (blank: the sheet's today), before which a
+ // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
+ // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
+ // the entry date (blank: off), the default date of a new claim in place of the sheet's today, the fiscal start month
+@@ -221,6 +223,8 @@ const SETTINGS: readonly SettingField[] = [
+     invalid: 'A grade\'s grace is a whole number of days, or blank for none' })),
+   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
+     invalid: 'A late percent is a number with up to two decimals' },
++  { key: 'rounding', label: 'Rounding mode', placeholder: 'none', blank: true, valid: /^(half-up|half-even)$/, inputMode: 'text',
++    invalid: 'A rounding mode is half-up or half-even, or blank for none' },
+   { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
+     invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today', dated: false },
+   { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',
+diff --git a/src/main/frontend/features/access/useAccess.ts b/src/main/frontend/features/access/useAccess.ts
+index 3dccd400..f856cda8 100644
+--- a/src/main/frontend/features/access/useAccess.ts
++++ b/src/main/frontend/features/access/useAccess.ts
+@@ -80,12 +80,14 @@ export const LATE_PCT_DEFAULT = '0.00';
+ 
+ /** The sheet's late charge as of its today: its late percent in force on each date (0.00 before any is), and each
+  *  grade's grace in force on a date (0 while blank); with its
++ *  rounding mode in force on each date (none while blank), the
+  *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
+  *  until the sheet's today is known. */
+ export function useLate(sheetId: string): Late | undefined {
+   const settings = useSettings(sheetId).data;
+   const pct = settings?.find((s) => s.key === 'late-pct');
+   const policy = settings?.find((s) => s.key === 'policy-date')?.value ?? '';
++  const rounding = settings?.find((s) => s.key === 'rounding');
+   const today = useSheetToday(sheetId).data?.today;
+   const claims = useClaims(sheetId).data;
+   const dateOfNumber = new Map<string, string>();
+@@ -96,5 +98,5 @@ export function useLate(sheetId: string): Late | undefined {
+   };
+   return today === undefined ? undefined
+     : { today, pctOn: (date) => toHundredths(settingOn(pct, date, LATE_PCT_DEFAULT)), graceOn,
+-      policyDate: policy === '' ? today : policy, dateOfNumber };
++      policyDate: policy === '' ? today : policy, roundingOn: (date) => settingOn(rounding, date, ''), dateOfNumber };
+ }
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index b050efe7..abbeb6a7 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -73,13 +73,16 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = f
+  *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
+  *  live figures round. */
+ export type Late = { today: string; pctOn: (date: string) => bigint; graceOn: (grade: string | undefined, date: string) => number; policyDate: string;
+-  dateOfNumber: ReadonlyMap<string, string> };
++  roundingOn: (date: string) => string; dateOfNumber: ReadonlyMap<string, string> };
+ 
+-/** Whether the claim's live figures round half up: it (or, for a correction, the claim it corrects) is dated before
+- *  the sheet's policy date; on or after it they round half to even. Half to even until the sheet's today is known. */
++/** Whether the claim's live figures round half up: by the rounding mode in force on its date (or, for a correction,
++ *  the date of the claim it corrects) when there is one; else when it is dated before the sheet's policy date; on or
++ *  after it they round half to even. Half to even until the sheet's today is known. */
+ export function roundsHalfUp(late: Late | undefined, claim: { date: string; corrects?: string | null }): boolean {
+   if (late === undefined) return false;
+   const on = (claim.corrects != null ? late.dateOfNumber.get(claim.corrects) : undefined) ?? claim.date;
++  const mode = late.roundingOn(on);
++  if (mode === 'half-up' || mode === 'half-even') return mode === 'half-up';
+   return on < late.policyDate;
+ }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/DatedSettings.java b/src/main/java/net/officefloor/hq/app/access/DatedSettings.java
+index 578f7922..8cdf602c 100644
+--- a/src/main/java/net/officefloor/hq/app/access/DatedSettings.java
++++ b/src/main/java/net/officefloor/hq/app/access/DatedSettings.java
+@@ -27,6 +27,15 @@ public record DatedSettings(List<DatedValue> values) {
+         return new BigDecimal(orStarting(Setting.FLOOR, date)).setScale(2);
+     }
+ 
++    /** The rounding mode in force on the date; null when there is none (the policy date decides). */
++    public java.math.RoundingMode rounding(LocalDate date) {
++        String value = on(Setting.ROUNDING, date);
++        if (Setting.ROUNDING_HALF_UP.equals(value)) {
++            return java.math.RoundingMode.HALF_UP;
++        }
++        return Setting.ROUNDING_HALF_EVEN.equals(value) ? java.math.RoundingMode.HALF_EVEN : null;
++    }
++
+     /** The late percent in force on the date. */
+     public BigDecimal latePct(LocalDate date) {
+         return new BigDecimal(orStarting(Setting.LATE_PCT, date)).setScale(2);
+diff --git a/src/main/java/net/officefloor/hq/app/access/LateCharge.java b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+index 5eebcdda..1348d8fa 100644
+--- a/src/main/java/net/officefloor/hq/app/access/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/access/LateCharge.java
+@@ -40,10 +40,15 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
+     }
+ 
+     /**
+-     * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after
+-     * it. A correction rounds by the date of the claim it corrects.
++     * How the claim's live figures round: by the rounding mode in force on its date when there is one; else half up
++     * when it is dated before the policy date, half to even on or after it. A correction rounds by the date of the
++     * claim it corrects.
+      */
+     public RoundingMode rounding(Claim claim) {
++        RoundingMode mode = settings.rounding(claim.getRoundOn());
++        if (mode != null) {
++            return mode;
++        }
+         return claim.getRoundOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/Setting.java b/src/main/java/net/officefloor/hq/app/access/Setting.java
+index dc506614..2f8f713c 100644
+--- a/src/main/java/net/officefloor/hq/app/access/Setting.java
++++ b/src/main/java/net/officefloor/hq/app/access/Setting.java
+@@ -77,6 +77,15 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
+     /** The date before which a claim's live figures round half up, and from which half to even; blank means the sheet's today. */
+     public static final String POLICY_DATE = "policy-date";
+ 
++    /** How a claim's live figures round on its date (half-up or half-even); blank means none, the policy date decides. */
++    public static final String ROUNDING = "rounding";
++
++    /** The rounding mode that rounds half up. */
++    public static final String ROUNDING_HALF_UP = "half-up";
++
++    /** The rounding mode that rounds half to even. */
++    public static final String ROUNDING_HALF_EVEN = "half-even";
++
+     /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
+     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+index 69bc851c..6e65c660 100644
+--- a/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/access/ValidateSetting.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.session.ChangedBy;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
++/** A setting's fields: a known key, its value, and for a dated setting an optional from-date (yyyy-mm-dd). The terms are a whole number of days. A grade's terms (terms-<grade>) are a whole number of days, or blank for the sheet's terms. A grade's grace (grace-<grade>) is a whole number of days, or blank for none. The floor is an amount with up to two decimals. The clerk limit is an amount with up to two decimals, or blank for no limit. The late percent is a number with up to two decimals. The rounding mode is half-up or half-even, or blank for none. The policy date is a date (yyyy-mm-dd), or blank for the sheet's today. Period numbering from is a date, or blank for off. The entry date is a date, or blank for off. The grace days are a whole number of days, or blank for off. The cap is an amount with up to two decimals, or blank for none. The proof threshold is an amount with up to two decimals, or blank for none. A grade's proof threshold (proof-threshold-<grade>) is an amount with up to two decimals, or blank for the sheet's. The note threshold is an amount with up to two decimals, or blank for none. The pot is an amount with up to two decimals, or blank for none. The alert threshold is an amount with up to two decimals, or blank for off. The parent is a sheet id, or blank for none. A permission (perm-<action>) is a comma separated list of roles, or blank for the standing rule. */
+ public class ValidateSetting {
+ 
+     private static final Pattern AMOUNT = Pattern.compile("\\d{1,10}(\\.\\d{1,2})?");
+@@ -71,6 +71,14 @@ public class ValidateSetting {
+             changedBy.set(by);
+             return;
+         }
++        if (Setting.ROUNDING.equals(key)) {
++            if (!text.isEmpty() && !Setting.ROUNDING_HALF_UP.equals(text) && !Setting.ROUNDING_HALF_EVEN.equals(text)) {
++                throw new BadRequestException("A rounding mode is half-up or half-even, or blank for none");
++            }
++            setting.set(new SettingInput(key, text.isEmpty() ? null : text, from));
++            changedBy.set(by);
++            return;
++        }
+         if (Setting.POLICY_DATE.equals(key)) {
+             String date = null;
+             if (!text.isEmpty()) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index a3c0eab0..99b4617e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -11,18 +11,19 @@ viewer:
+ ensure:
+   class: net.officefloor.hq.app.sheet.EnsureSheet
+   govern: [ transaction ]
+-  next: history
+-history:
+-  class: net.officefloor.hq.app.history.SnapshotSheet
+-  govern: [ transaction ]
+   next: rollup-before
+ rollup-before:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   govern: [ transaction ]
+   next: snapshots
++# The day being left's snapshot lines are recorded before the sheet is snapshotted, so the sheet as of that day shows them.
+ snapshots:
+   class: net.officefloor.hq.app.rollup.RecordSnapshots
+   govern: [ transaction ]
++  next: history
++history:
++  class: net.officefloor.hq.app.history.SnapshotSheet
++  govern: [ transaction ]
+   next: unlock
+ unlock:
+   class: net.officefloor.hq.app.claim.ReleaseSheetClaimLocks
