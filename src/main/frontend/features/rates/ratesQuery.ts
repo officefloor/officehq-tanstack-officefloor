@@ -189,3 +189,19 @@ export function recentSettled(personId: number, claims: Claim[], today: string):
     .filter((c) => c.personId === personId && c.status === 'SETTLED' && c.settledDue !== null && from <= c.date && c.date <= today)
     .map((c) => c.settledDue as string));
 }
+
+/**
+ * A person's figures that count (see `personSum`), split by status: their SETTLED claims' frozen figures, and their
+ * OPEN and PENDING claims' figures, each added up (n/a skipped; not capped). The two add up to `personSum`.
+ */
+export function settledAndOpen(person: Person | undefined, people: Person[], claims: Claim[], rates: Rate[], today: string, floor: DatedValue[], late: Late): [string, string] {
+  const settled: string[] = [];
+  const open: string[] = [];
+  if (person) {
+    for (const c of claims) {
+      if (c.personId !== person.id || !counts(c, people, today)) continue;
+      (c.status === 'SETTLED' ? settled : open).push(figure(c, rates, person, floor, late));
+    }
+  }
+  return [sumDue(settled), sumDue(open)];
+}
