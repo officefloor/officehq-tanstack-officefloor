@@ -72,7 +72,7 @@ export function useCap(sheetId: string): string {
   return useCurrent(sheetId, 'cap');
 }
 
-/** The sheet's late percents by from-date: what an overdue claim gains of its figure for every full 30 days it is overdue, as in force on the claim's date. */
+/** The sheet's late percents by from-date: what an overdue claim gains of its figure for every full 30 days it is overdue, as in force on each 30-day boundary date (the due-by plus 30, 60, 90 ... days). */
 export function useLatePct(sheetId: string): DatedValue[] {
   return useQuery(settingsQuery(sheetId)).data?.dated?.['late-pct'] ?? [];
 }

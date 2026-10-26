@@ -188,7 +188,8 @@ public class Settings {
 
     /**
      * A claim's figure with its late charge added on top: an open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
-     * before {@code today} gains the late percent in force on the claim's date of the figure for every full 30 days it is overdue, rounded by {@link #rounding}.
+     * before {@code today} gains, for every full 30 days it is overdue, the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days)
+     * of the figure, each charge rounded by {@link #rounding}, the charges added up; a boundary whose percent is 0.00 adds nothing.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge, nor has a deferred claim (it is not overdue until the sheet's today reaches its date).
      */
@@ -201,9 +202,15 @@ public class Settings {
             return figure;
         }
         long periods = ChronoUnit.DAYS.between(dueBy, today) / 30;
-        BigDecimal charge = figure.multiply(latePct(claim.sheetId(), claim.date())).multiply(BigDecimal.valueOf(periods))
-                .movePointLeft(2).setScale(2, rounding(claim));
-        return figure.add(charge);
+        RoundingMode rounding = rounding(claim);
+        BigDecimal total = figure;
+        for (long n = 1; n <= periods; n++) {
+            BigDecimal pct = latePct(claim.sheetId(), dueBy.plusDays(30 * n));
+            if (pct.signum() != 0) {
+                total = total.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
+            }
+        }
+        return total;
     }
 
     /** The claim's live due raised to the floor in force on the claim's date; null (no due) stays null, and a correction's due has no floor. */

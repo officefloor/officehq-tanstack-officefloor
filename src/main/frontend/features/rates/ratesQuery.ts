@@ -69,7 +69,7 @@ export function sumDue(dues: string[]): string {
 
 /**
  * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percents
- * by from-date (two decimals; a claim takes the one in force on its date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
+ * by from-date (two decimals; each 30-day boundary of an overdue claim takes the one in force on that boundary date), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
  */
 export type Late = { today: string; pct: DatedValue[]; policy: string; claims: Claim[] };
 
@@ -95,11 +95,16 @@ function lateMonths(claim: Claim, { today }: Late): bigint {
   return BigInt(Math.floor(days / 30));
 }
 
+/** The date (yyyy-mm-dd) `days` after `date`. */
+function addDays(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 /**
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
  * person's last statement bound it to (a PENDING claim is not bound: it shows its live figure), otherwise its amount times the rate, on the claim's date, of
- * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` in force on the claim's date (two decimals). An overdue claim's late charge — the late
- * percent in force on the claim's date of that figure for every full 30 days overdue — is added on top: a statement
+ * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` in force on the claim's date (two decimals). An overdue claim's late charge — for every full 30 days overdue, the late
+ * percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of that figure, each rounded like the claim, added up — is added on top: a statement
  * never binds it, so it follows the sheet's today. A correction has neither floor nor late charge.
  */
 export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: DatedValue[], late: Late): string {
@@ -109,7 +114,11 @@ export function figure(claim: Claim, rates: Rate[], person: Person | undefined, 
   const bound = claim.stated && claim.status !== 'PENDING' ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, valueOn(floor, claim.date) ?? DEFAULT_FLOOR);
   const months = isCorrection(claim) ? 0n : lateMonths(claim, late);
   if (bound === 'n/a' || months === 0n) return bound;
-  return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), valueOn(late.pct, claim.date) ?? DEFAULT_LATE_PCT, halfUp));
+  let total = hundredths(bound);
+  for (let n = 1n; n <= months; n++) {
+    total += dueCents(bound, valueOn(late.pct, addDays(claim.dueBy, Number(n) * 30)) ?? DEFAULT_LATE_PCT, halfUp);
+  }
+  return show(total);
 }
 
 function floored(live: string, floor: string): string {
