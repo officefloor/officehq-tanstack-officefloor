@@ -1,0 +1,672 @@
+diff --git a/src/main/frontend/features/claims/status.slot.tsx b/src/main/frontend/features/claims/status.slot.tsx
+index 74ce8887..9cc28044 100644
+--- a/src/main/frontend/features/claims/status.slot.tsx
++++ b/src/main/frontend/features/claims/status.slot.tsx
+@@ -1,9 +1,10 @@
+ import { useState } from 'react';
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { putJson, RefusedError } from '../../api/http';
+ import { ClaimCells } from '../../slots/defs/claimColumns';
+ import { useSubmitOnce } from '../../api/useSubmitOnce';
+ import { useUser } from '../session/useUser';
++import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
+ import { claimsKey } from './claimsQuery';
+ import { useClaimError } from './useClaimError';
+ import type { Claim, ClaimStatus } from './claimsQuery';
+@@ -25,18 +26,21 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
+  * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN). A steward can
+  * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.
+  * A steward can also void a SETTLED claim within 7 days of its settlement; the server refuses anyone else or a later day.
++ * While the sheet has void reasons, a void needs one chosen from them; the server refuses a void without one.
+  */
+ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
+   const queryClient = useQueryClient();
+   const [user] = useUser();
+   const [error, setError] = useClaimError(claim.id);
+   const [reason, setReason] = useState('');
++  const [voidReason, setVoidReason] = useState('');
++  const voidReasons = useQuery(voidReasonsQuery(sheetId)).data ?? [];
+   const once = useSubmitOnce();
+   const change = useMutation({
+-    mutationFn: ({ to, decision, reason }: { to: ClaimStatus; decision?: Decision; reason?: string }) =>
++    mutationFn: ({ to, decision, reason, voidReason }: { to: ClaimStatus; decision?: Decision; reason?: string; voidReason?: string }) =>
+       putJson<Claim>(
+         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/status/${to}`,
+-        { action: decision, reason },
++        { action: decision, reason, voidReason },
+         user,
+       ),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+@@ -77,12 +81,33 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim })
+           disabled={change.isPending}
+           onClick={() => {
+             setError('');
+-            once(() => change.mutateAsync({ to, decision }));
++            once(() =>
++              to === 'VOID'
++                ? change.mutateAsync({ to, voidReason }).then(() => setVoidReason(''))
++                : change.mutateAsync({ to, decision }),
++            );
+           }}
+         >
+           {label}
+         </button>
+       ))}
++      {voidReasons.length > 0 && (
++        <select
++          data-testid="claim-void-reason"
++          value={voidReason}
++          onChange={(e) => {
++            setVoidReason(e.target.value);
++            setError('');
++          }}
++        >
++          <option value="">Void reason…</option>
++          {voidReasons.map((r) => (
++            <option key={r.reason} value={r.reason}>
++              {r.reason}
++            </option>
++          ))}
++        </select>
++      )}{' '}
+       <button
+         type="button"
+         data-testid="claim-resettle"
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 97a5a2d5..30fc8ab3 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -7,6 +7,7 @@ import { periodDue, periodsQuery } from '../periods/periodsQuery';
+ import { personDue, ratesQuery, sumDue } from '../rates/ratesQuery';
+ import { useCap, useFloor, useLate } from '../settings/settingsQuery';
+ import { useSheetToday } from '../sheet/useSheetToday';
++import { voidReasonsQuery } from '../voidReasons/voidReasonsQuery';
+ 
+ export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+ 
+@@ -16,13 +17,14 @@ export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filt
+ /**
+  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
+  * today (retired people excluded), their due-totals added up, skipping n/a, and how many of them are active. Per period: its
+- * due-total. Per status: how many claims have it.
++ * due-total. Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
+  */
+ function Summary({ sheetId }: { sheetId: string }) {
+   const people = useQuery(peopleQuery(sheetId)).data ?? [];
+   const claims = useQuery(claimsQuery(sheetId)).data ?? [];
+   const rates = useQuery(ratesQuery(sheetId)).data ?? [];
+   const periods = useQuery(periodsQuery(sheetId)).data ?? [];
++  const voidReasons = useQuery(voidReasonsQuery(sheetId)).data ?? [];
+   const today = useSheetToday(sheetId);
+   const floor = useFloor(sheetId);
+   const late = useLate(sheetId);
+@@ -92,6 +94,22 @@ function Summary({ sheetId }: { sheetId: string }) {
+           ))}
+         </tbody>
+       </table>
++      <table data-testid="summary-void-reasons">
++        <thead>
++          <tr>
++            <th>Void reason</th>
++            <th>Claims</th>
++          </tr>
++        </thead>
++        <tbody>
++          {voidReasons.map((r) => (
++            <tr key={r.reason} data-testid={`summary-void-${r.reason}`}>
++              <td>{r.reason}</td>
++              <td data-testid={`summary-void-${r.reason}-count`}>{r.voided}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/features/voidReasons/voidReasons.slot.tsx b/src/main/frontend/features/voidReasons/voidReasons.slot.tsx
+new file mode 100644
+index 00000000..6af6c34c
+--- /dev/null
++++ b/src/main/frontend/features/voidReasons/voidReasons.slot.tsx
+@@ -0,0 +1,73 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../api/useSubmitOnce';
++import { SheetPanel } from '../../slots/defs/sheetPanel';
++import { useUser } from '../session/useUser';
++import { voidReasonsKey, voidReasonsQuery } from './voidReasonsQuery';
++import type { VoidReason } from './voidReasonsQuery';
++
++/** The sheet's void reasons, and the entry a reason is added through. While the list is not empty, a claim is voided
++ *  only with a reason chosen from it. A blank reason, or one already on the list, is refused. */
++function VoidReasons({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const reasons = useQuery(voidReasonsQuery(sheetId));
++  const [text, setText] = useState('');
++  const [error, setError] = useState('');
++
++  const [user] = useUser();
++  const once = useSubmitOnce();
++  const save = useMutation({
++    mutationFn: (body: { reason: string }) =>
++      postJson<VoidReason>(`/api/sheets/${encodeURIComponent(sheetId)}/void-reasons`, body, user),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: voidReasonsKey(sheetId) });
++      setText('');
++    },
++    onError: (e: Error) => setError(e.message || 'The void reason could not be added.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    once(() => save.mutateAsync({ reason: text.trim() }));
++  };
++
++  return (
++    <section data-testid="void-reasons">
++      <h3>Void reasons</h3>
++      <form onSubmit={submit}>
++        <label>
++          Reason{' '}
++          <input
++            data-testid="void-reason-text"
++            value={text}
++            onChange={(e) => {
++              setText(e.target.value);
++              setError('');
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="void-reason-add" disabled={save.isPending}>
++          Add void reason
++        </button>
++        {error && <p data-testid="void-reason-error">{error}</p>}
++      </form>
++      {reasons.isError && <p data-testid="void-reasons-load-error">Could not load the void reasons.</p>}
++      <ul data-testid="void-reasons-list">
++        {(reasons.data ?? []).map((r) => (
++          <li key={r.reason} data-testid={`void-reason-row-${r.reason}`}>
++            {r.reason}
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++// Keyed by sheet, so a typed value or an error never carries over to another sheet.
++export const contribution = SheetPanel.fill({
++  order: 6.6,
++  Component: ({ sheetId }) => <VoidReasons key={`void-reasons-${sheetId}`} sheetId={sheetId} />,
++});
+diff --git a/src/main/frontend/features/voidReasons/voidReasonsQuery.ts b/src/main/frontend/features/voidReasons/voidReasonsQuery.ts
+new file mode 100644
+index 00000000..ec6c1b6b
+--- /dev/null
++++ b/src/main/frontend/features/voidReasons/voidReasonsQuery.ts
+@@ -0,0 +1,13 @@
++import { getJson } from '../../api/http';
++import { claimsKey } from '../claims/claimsQuery';
++
++/** A void reason on the sheet, and how many VOID claims were voided with it. */
++export type VoidReason = { reason: string; voided: number };
++
++/** Under the claims' key, so a claim's change (a void) re-reads the counts, and re-loading the sheet re-reads the list. */
++export const voidReasonsKey = (sheetId: string) => [...claimsKey(sheetId), 'void-reasons'] as const;
++
++export const voidReasonsQuery = (sheetId: string) => ({
++  queryKey: voidReasonsKey(sheetId),
++  queryFn: () => getJson<VoidReason[]>(`/api/sheets/${encodeURIComponent(sheetId)}/void-reasons`),
++});
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 2a6d5bd1..642ad932 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.period.Period;
+@@ -11,6 +12,7 @@ import net.officefloor.hq.app.rate.Rates;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.Sheets;
++import net.officefloor.hq.app.voidreason.VoidReasons;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -23,8 +25,9 @@ public class ApplyClaimStatus {
+     // a decision is refused for any claim not PENDING. A PENDING claim can also be voided, like an OPEN one.
+     public void apply(@PathVariable("status") String status, @RequestBody(required = false) ClaimStatusRequest body,
+             @Val Claim claim, Claims claims, People people, Rates rates, Settings settings, Sheets sheets,
+-            Periods periods, Rollup rollup, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
+-            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException {
++            Periods periods, Rollup rollup, VoidReasons voidReasons, ServerHttpConnection connection, Out<ClaimResponse> responseOut,
++            Out<ClaimStatusRequest> requestOut) throws ClaimStatusRefusedException, ClaimProofNeededException, ClaimNoteNeededException,
++            ClaimVoidReasonNeededException {
+         ClaimStatus next;
+         try {
+             next = ClaimStatus.valueOf(status.trim().toUpperCase());
+@@ -34,6 +37,7 @@ public class ApplyClaimStatus {
+         String user = Audit.user(connection).trim();
+         String action = body == null || body.action() == null ? "" : body.action().trim();
+         String reason = body == null || body.reason() == null ? "" : body.reason().trim();
++        String voidReason = body == null || body.voidReason() == null ? "" : body.voidReason().trim();
+         boolean decision = !action.isEmpty();
+         if (decision && !(action.equals("approve") && next == ClaimStatus.SETTLED)
+                 && !(action.equals("reject") && next == ClaimStatus.OPEN)) {
+@@ -93,6 +97,17 @@ public class ApplyClaimStatus {
+         if (claim.status() == ClaimStatus.PENDING && next == ClaimStatus.OPEN && reason.isEmpty()) {
+             throw new ClaimStatusRefusedException("Give a reason to reject the claim.");
+         }
++        // While the sheet has void reasons, a claim is voided only with one of them; with none, no reason is kept.
++        if (next == ClaimStatus.VOID) {
++            List<String> reasons = voidReasons.list(claim.sheetId());
++            if (reasons.isEmpty()) {
++                voidReason = "";
++            } else if (!reasons.contains(voidReason)) {
++                throw new ClaimVoidReasonNeededException(voidReason.isEmpty()
++                        ? "Choose a void reason to void the claim."
++                        : "\"" + voidReason + "\" is not one of the sheet's void reasons.");
++            }
++        }
+         // Settling (or approving) freezes the late charge on the sheet's today into the due.
+         BigDecimal due = settings.withLate(claim, due(claim, people, rates, settings), sheets.today(claim.sheetId()));
+         // A claim whose due is above the proof threshold in force on its date is settled or approved only once it has a
+@@ -134,9 +149,12 @@ public class ApplyClaimStatus {
+         if (changed == null) {
+             throw new ClaimStatusRefusedException("A " + claim.status() + " claim cannot become " + next + ".");
+         }
++        if (next == ClaimStatus.VOID && !voidReason.isEmpty()) {
++            voidReasons.voided(changed.id(), voidReason);
++        }
+         claims.log(changed, user, sheets.today(claim.sheetId()), rollup.figure(changed));
+         responseOut.set(ClaimResponse.from(changed));
+-        requestOut.set(new ClaimStatusRequest(action, reason));
++        requestOut.set(new ClaimStatusRequest(action, reason, voidReason));
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index ff671931..58b13358 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -32,6 +32,10 @@ public class AuditClaimStatus {
+         if (loaded.status() == ClaimStatus.PENDING && status == ClaimStatus.OPEN) {
+             fields.add("reason=" + request.reason());
+         }
++        // A claim voided with a reason from the sheet's list carries it.
++        if (status == ClaimStatus.VOID && request.voidReason() != null && !request.voidReason().isEmpty()) {
++            fields.add("reason=" + request.voidReason());
++        }
+         audit.record(Audit.line(status.event(loaded.status()), loaded.sheetId(),
+                 Audit.user(connection), fields.toArray(String[]::new)));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+index 70bb6ae9..049b562f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+@@ -2,7 +2,8 @@ package net.officefloor.hq.app.claim;
+ 
+ /**
+  * The body of a status change: {@code action} is "approve" or "reject" for a steward's decision on a PENDING claim
+- * (null for any other change), and {@code reason} is why a rejected claim was rejected.
++ * (null for any other change), {@code reason} is why a rejected claim was rejected, and {@code voidReason} is the
++ * reason from the sheet's list a claim is voided with (null or blank for none).
+  */
+-public record ClaimStatusRequest(String action, String reason) {
++public record ClaimStatusRequest(String action, String reason, String voidReason) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimVoidReasonNeededException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimVoidReasonNeededException.java
+new file mode 100644
+index 00000000..3f4c2d09
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimVoidReasonNeededException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.claim;
++
++/** A claim was voided without a reason from the sheet's list, while the list is not empty. */
++public class ClaimVoidReasonNeededException extends Exception {
++
++    public ClaimVoidReasonNeededException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleClaimVoidReasonNeeded.java b/src/main/java/net/officefloor/hq/app/claim/HandleClaimVoidReasonNeeded.java
+new file mode 100644
+index 00000000..92558918
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleClaimVoidReasonNeeded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleClaimVoidReasonNeeded {
++    public void handle(@Parameter ClaimVoidReasonNeededException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOf.java b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+index f1309c81..c78549d9 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOf.java
+@@ -31,7 +31,8 @@ public final class AsOf {
+             Map.entry("person_watch", List.of("id")),
+             Map.entry("delegation", List.of("id")),
+             Map.entry("sheet_role", List.of("sheet_id", "user_name")),
+-            Map.entry("holiday", List.of("sheet_id", "holiday_date")));
++            Map.entry("holiday", List.of("sheet_id", "holiday_date")),
++            Map.entry("void_reason", List.of("sheet_id", "reason")));
+ 
+     private static final ThreadLocal<LocalDate> DATE = new ThreadLocal<>();
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/AddVoidReason.java b/src/main/java/net/officefloor/hq/app/voidreason/AddVoidReason.java
+new file mode 100644
+index 00000000..b755017c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/AddVoidReason.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.voidreason;
++
++import net.officefloor.plugin.variable.Val;
++
++public class AddVoidReason {
++    public void add(@Val VoidReason reason, VoidReasons reasons) {
++        reasons.add(reason.sheetId(), reason.reason());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/AuditVoidReasonAdded.java b/src/main/java/net/officefloor/hq/app/voidreason/AuditVoidReasonAdded.java
+new file mode 100644
+index 00000000..ec4b6c00
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/AuditVoidReasonAdded.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.voidreason;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++public class AuditVoidReasonAdded {
++    public void audit(@Val VoidReason reason, ServerHttpConnection connection, Audit audit) {
++        audit.record(Audit.line("VOID_REASON_ADDED", reason.sheetId(), Audit.user(connection), "reason=" + reason.reason()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/HandleVoidReasonRefused.java b/src/main/java/net/officefloor/hq/app/voidreason/HandleVoidReasonRefused.java
+new file mode 100644
+index 00000000..886d98b4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/HandleVoidReasonRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.voidreason;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleVoidReasonRefused {
++    public void handle(@Parameter VoidReasonRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReason.java b/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReason.java
+new file mode 100644
+index 00000000..6217d544
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReason.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.voidreason;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithVoidReason {
++    public void respond(@Val VoidReason reason, ObjectResponse<VoidReasonResponse> response) {
++        response.send(new VoidReasonResponse(reason.reason(), 0));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java b/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java
+new file mode 100644
+index 00000000..beb08a2c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/RespondWithVoidReasons.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.voidreason;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithVoidReasons {
++    public void respond(@PathVariable("sheetId") String sheetId, VoidReasons reasons,
++            ObjectResponse<List<VoidReasonResponse>> response) {
++        response.send(reasons.counts(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/ValidateVoidReason.java b/src/main/java/net/officefloor/hq/app/voidreason/ValidateVoidReason.java
+new file mode 100644
+index 00000000..e95a7970
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/ValidateVoidReason.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.voidreason;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateVoidReason {
++
++    // The reason, trimmed, must not be blank, nor already on the sheet's list (without regard to case).
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody VoidReasonRequest body,
++            VoidReasons reasons, Out<VoidReason> reason) throws VoidReasonRefusedException {
++        String sheet = sheetId.trim();
++        String text = body == null || body.reason() == null ? "" : body.reason().trim();
++        if (text.isEmpty()) {
++            throw new VoidReasonRefusedException("Give the void reason.");
++        }
++        if (reasons.has(sheet, text)) {
++            throw new VoidReasonRefusedException("\"" + text + "\" is already a void reason.");
++        }
++        reason.set(new VoidReason(sheet, text));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/VoidReason.java b/src/main/java/net/officefloor/hq/app/voidreason/VoidReason.java
+new file mode 100644
+index 00000000..57516007
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/VoidReason.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.voidreason;
++
++/** A void reason to add to the sheet. */
++public record VoidReason(String sheetId, String reason) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonRefusedException.java b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonRefusedException.java
+new file mode 100644
+index 00000000..efd768bd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonRefusedException.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.voidreason;
++
++/** A void reason that may not be added: blank, or already on the sheet's list. */
++public class VoidReasonRefusedException extends Exception {
++
++    public VoidReasonRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonRequest.java b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonRequest.java
+new file mode 100644
+index 00000000..2de6dd6c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.voidreason;
++
++/** The body of adding a void reason: its text. */
++public record VoidReasonRequest(String reason) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonResponse.java b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonResponse.java
+new file mode 100644
+index 00000000..16049072
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasonResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.voidreason;
++
++/** A void reason as the screen sees it: its text, and how many VOID claims were voided with it. */
++public record VoidReasonResponse(String reason, int voided) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/voidreason/VoidReasons.java b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasons.java
+new file mode 100644
+index 00000000..bf290baf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/voidreason/VoidReasons.java
+@@ -0,0 +1,49 @@
++package net.officefloor.hq.app.voidreason;
++
++import java.util.List;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.history.AsOf;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The store of the sheet's void reasons, each at most once per sheet without regard to case, and of the reason each claim was voided with. */
++@Repository
++public class VoidReasons {
++
++    private final JdbcTemplate jdbc;
++
++    public VoidReasons(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's void reasons, in the order they were added. */
++    public List<String> list(String sheetId) {
++        return jdbc.queryForList("SELECT reason FROM " + AsOf.table("void_reason") + " WHERE sheet_id = ? ORDER BY listed",
++                String.class, sheetId);
++    }
++
++    /** The sheet's void reasons, in the order they were added, each with how many VOID claims were voided with it. */
++    public List<VoidReasonResponse> counts(String sheetId) {
++        return jdbc.query("SELECT r.reason, (SELECT COUNT(*) FROM " + AsOf.table("claim", "c")
++                + " WHERE c.sheet_id = r.sheet_id AND c.status = ? AND c.void_reason = r.reason) AS voided FROM "
++                + AsOf.table("void_reason", "r") + " WHERE r.sheet_id = ? ORDER BY r.listed",
++                (rs, n) -> new VoidReasonResponse(rs.getString("reason"), rs.getInt("voided")), ClaimStatus.VOID.name(),
++                sheetId);
++    }
++
++    public boolean has(String sheetId, String reason) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + AsOf.table("void_reason")
++                + " WHERE sheet_id = ? AND LOWER(reason) = LOWER(?)", Integer.class, sheetId, reason);
++        return n != null && n > 0;
++    }
++
++    public void add(String sheetId, String reason) {
++        jdbc.update("INSERT INTO void_reason (sheet_id, reason, listed) VALUES (?, ?, "
++                + "(SELECT COALESCE(MAX(listed), 0) + 1 FROM void_reason WHERE sheet_id = ?))", sheetId, reason, sheetId);
++    }
++
++    /** Keeps the reason the claim was voided with. */
++    public void voided(long claimId, String reason) {
++        jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ?", reason, claimId);
++    }
++}
+diff --git a/src/main/resources/db/migration/V46__void_reason.sql b/src/main/resources/db/migration/V46__void_reason.sql
+new file mode 100644
+index 00000000..2eaad161
+--- /dev/null
++++ b/src/main/resources/db/migration/V46__void_reason.sql
+@@ -0,0 +1,20 @@
++-- The sheet's void reasons, listed in the order they were added; each reason at most once per sheet, without regard to
++-- case. While a sheet has any, a claim is voided only with one of them, kept on the claim (null: voided without one, or
++-- not voided). Kept in history too (see V39 and V40); the claim's journal trigger is made again around the change, as
++-- in V41.
++CREATE TABLE void_reason (
++    sheet_id VARCHAR(255) NOT NULL,
++    reason VARCHAR(255) NOT NULL,
++    listed BIGINT NOT NULL,
++    PRIMARY KEY (sheet_id, reason)
++);
++CREATE TABLE void_reason_history AS SELECT * FROM void_reason;
++ALTER TABLE void_reason_history ADD COLUMN history_on DATE DEFAULT DATE '0001-01-01' NOT NULL;
++ALTER TABLE void_reason_history ADD COLUMN history_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE void_reason_history ADD COLUMN history_seq BIGINT GENERATED BY DEFAULT AS IDENTITY;
++CREATE INDEX void_reason_history_key ON void_reason_history (sheet_id, reason);
++CREATE TRIGGER void_reason_journal AFTER INSERT, UPDATE, DELETE ON void_reason FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
++DROP TRIGGER claim_journal;
++ALTER TABLE claim ADD COLUMN void_reason VARCHAR(255);
++ALTER TABLE claim_history ADD COLUMN void_reason VARCHAR(255);
++CREATE TRIGGER claim_journal AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW CALL 'net.officefloor.hq.app.history.Journal';
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimVoidReasonNeededException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimVoidReasonNeededException.yml
+new file mode 100644
+index 00000000..2a89945d
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ClaimVoidReasonNeededException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleClaimVoidReasonNeeded
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.voidreason.VoidReasonRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.voidreason.VoidReasonRefusedException.yml
+new file mode 100644
+index 00000000..0945e83e
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.voidreason.VoidReasonRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.voidreason.HandleVoidReasonRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml
+new file mode 100644
+index 00000000..25971208
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/void-reasons — the sheet's void reasons, in the order they were added, each with how many
++# VOID claims were voided with it ({reason, voided}).
++respond:
++  class: net.officefloor.hq.app.voidreason.RespondWithVoidReasons
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.POST.yml
+new file mode 100644
+index 00000000..67bb6ec6
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.POST.yml
+@@ -0,0 +1,25 @@
++# POST /api/sheets/{sheetId}/void-reasons — adds a void reason to the sheet. Body {"reason":"..."}, trimmed. A blank
++# reason, or one already on the list (without regard to case), is refused with 422 and nothing is stored or recorded.
++viewer:
++  class: net.officefloor.hq.app.setting.RefuseViewer
++  next: archived
++  govern: [ transaction ]
++archived:
++  class: net.officefloor.hq.app.sheet.RefuseArchived
++  next: validate
++  govern: [ transaction ]
++validate:
++  class: net.officefloor.hq.app.voidreason.ValidateVoidReason
++  next: add
++  govern: [ transaction ]
++add:
++  class: net.officefloor.hq.app.voidreason.AddVoidReason
++  next: audit
++  govern: [ transaction ]
++audit:
++  class: net.officefloor.hq.app.voidreason.AuditVoidReasonAdded
++  next: respond
++  govern: [ transaction ]
++respond:
++  class: net.officefloor.hq.app.voidreason.RespondWithVoidReason
++  govern: [ transaction ]
