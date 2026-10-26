@@ -80,12 +80,14 @@ export const LATE_PCT_DEFAULT = '0.00';
 
 /** The sheet's late charge as of its today: its late percent in force on each date (0.00 before any is), and each
  *  grade's grace in force on a date (0 while blank); with its
+ *  rounding mode in force on each date (none while blank), the
  *  policy date (its today while blank) and the numbered claims' dates, which decide how each claim rounds. Undefined
  *  until the sheet's today is known. */
 export function useLate(sheetId: string): Late | undefined {
   const settings = useSettings(sheetId).data;
   const pct = settings?.find((s) => s.key === 'late-pct');
   const policy = settings?.find((s) => s.key === 'policy-date')?.value ?? '';
+  const rounding = settings?.find((s) => s.key === 'rounding');
   const today = useSheetToday(sheetId).data?.today;
   const claims = useClaims(sheetId).data;
   const dateOfNumber = new Map<string, string>();
@@ -96,5 +98,5 @@ export function useLate(sheetId: string): Late | undefined {
   };
   return today === undefined ? undefined
     : { today, pctOn: (date) => toHundredths(settingOn(pct, date, LATE_PCT_DEFAULT)), graceOn,
-      policyDate: policy === '' ? today : policy, dateOfNumber };
+      policyDate: policy === '' ? today : policy, roundingOn: (date) => settingOn(rounding, date, ''), dateOfNumber };
 }

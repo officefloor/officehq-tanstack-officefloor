@@ -191,7 +191,9 @@ function DelegatePanel({ sheetId }: { sheetId: string; user: string }) {
 // floor, the least a claim's live due may be (1.00 until it is set), and the terms, the days after its date a claim is
 // due by (14 until they are set), and each grade's own terms (blank: the sheet's terms), fixed into a claim's due-by when it is added, and each grade's grace (blank: none),
 // the days past its due-by a claim of that grade (on its date) goes overdue and counts its late charge from, and the late percent, what an overdue claim's due gains of its figure for every
-// full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the policy date (blank: the sheet's today), before which a
+// full 30 days it is overdue (the percent in force on each 30-day boundary date) (0.00 until it is set), and the rounding
+// mode (half-up or half-even; blank: none), by which a claim dated while it is in force rounds its live figures in place
+// of the policy date, and the policy date (blank: the sheet's today), before which a
 // claim's live figures round half up and from which they round half to even, and period numbering from (blank: off),
 // the date from which, on the sheet's today, an opened claim is numbered within its period, and the grace days (blank: off),
 // the entry date (blank: off), the default date of a new claim in place of the sheet's today, the fiscal start month
@@ -221,6 +223,8 @@ const SETTINGS: readonly SettingField[] = [
     invalid: 'A grade\'s grace is a whole number of days, or blank for none' })),
   { key: 'late-pct', label: 'Late percent', placeholder: LATE_PCT_DEFAULT, blank: false, valid: AMOUNT, inputMode: 'decimal',
     invalid: 'A late percent is a number with up to two decimals' },
+  { key: 'rounding', label: 'Rounding mode', placeholder: 'none', blank: true, valid: /^(half-up|half-even)$/, inputMode: 'text',
+    invalid: 'A rounding mode is half-up or half-even, or blank for none' },
   { key: 'policy-date', label: 'Policy date', placeholder: 'today', blank: true, valid: DATE, inputMode: 'text',
     invalid: 'A policy date is a date (yyyy-mm-dd), or blank for the sheet\'s today', dated: false },
   { key: 'period-numbering-from', label: 'Period numbering from', placeholder: 'off', blank: true, valid: DATE, inputMode: 'text',

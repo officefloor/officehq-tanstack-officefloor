@@ -27,6 +27,15 @@ public record DatedSettings(List<DatedValue> values) {
         return new BigDecimal(orStarting(Setting.FLOOR, date)).setScale(2);
     }
 
+    /** The rounding mode in force on the date; null when there is none (the policy date decides). */
+    public java.math.RoundingMode rounding(LocalDate date) {
+        String value = on(Setting.ROUNDING, date);
+        if (Setting.ROUNDING_HALF_UP.equals(value)) {
+            return java.math.RoundingMode.HALF_UP;
+        }
+        return Setting.ROUNDING_HALF_EVEN.equals(value) ? java.math.RoundingMode.HALF_EVEN : null;
+    }
+
     /** The late percent in force on the date. */
     public BigDecimal latePct(LocalDate date) {
         return new BigDecimal(orStarting(Setting.LATE_PCT, date)).setScale(2);

@@ -73,13 +73,16 @@ export function dueCents(amountCents: bigint, rateHundredths: bigint, halfUp = f
  *  the sheet's policy date (its today when blank) with the date of each numbered claim, which decide how a claim's
  *  live figures round. */
 export type Late = { today: string; pctOn: (date: string) => bigint; graceOn: (grade: string | undefined, date: string) => number; policyDate: string;
-  dateOfNumber: ReadonlyMap<string, string> };
+  roundingOn: (date: string) => string; dateOfNumber: ReadonlyMap<string, string> };
 
-/** Whether the claim's live figures round half up: it (or, for a correction, the claim it corrects) is dated before
- *  the sheet's policy date; on or after it they round half to even. Half to even until the sheet's today is known. */
+/** Whether the claim's live figures round half up: by the rounding mode in force on its date (or, for a correction,
+ *  the date of the claim it corrects) when there is one; else when it is dated before the sheet's policy date; on or
+ *  after it they round half to even. Half to even until the sheet's today is known. */
 export function roundsHalfUp(late: Late | undefined, claim: { date: string; corrects?: string | null }): boolean {
   if (late === undefined) return false;
   const on = (claim.corrects != null ? late.dateOfNumber.get(claim.corrects) : undefined) ?? claim.date;
+  const mode = late.roundingOn(on);
+  if (mode === 'half-up' || mode === 'half-even') return mode === 'half-up';
   return on < late.policyDate;
 }
 

@@ -77,6 +77,15 @@ public record Setting(String sheetId, String key, String value, java.time.LocalD
     /** The date before which a claim's live figures round half up, and from which half to even; blank means the sheet's today. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** How a claim's live figures round on its date (half-up or half-even); blank means none, the policy date decides. */
+    public static final String ROUNDING = "rounding";
+
+    /** The rounding mode that rounds half up. */
+    public static final String ROUNDING_HALF_UP = "half-up";
+
+    /** The rounding mode that rounds half to even. */
+    public static final String ROUNDING_HALF_EVEN = "half-even";
+
     /** The date from which (on the sheet's today) an opened claim is numbered within its period; blank means off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 

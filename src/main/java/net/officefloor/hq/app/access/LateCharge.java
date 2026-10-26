@@ -40,10 +40,15 @@ public record LateCharge(LocalDate today, DatedSettings settings, LocalDate poli
     }
 
     /**
-     * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after
-     * it. A correction rounds by the date of the claim it corrects.
+     * How the claim's live figures round: by the rounding mode in force on its date when there is one; else half up
+     * when it is dated before the policy date, half to even on or after it. A correction rounds by the date of the
+     * claim it corrects.
      */
     public RoundingMode rounding(Claim claim) {
+        RoundingMode mode = settings.rounding(claim.getRoundOn());
+        if (mode != null) {
+            return mode;
+        }
         return claim.getRoundOn().isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
