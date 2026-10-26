@@ -4,7 +4,7 @@ import { usePeople } from '../people/people.slot';
 import { showPeriodDueTotal, usePeriodDueTotal, usePeriods } from '../periods/periods.slot';
 import { useIsActive } from '../active/active.slot';
 import { useDueTotals } from '../rates/rates.slot';
-import { showHundredths } from '../rates/useRates';
+import { showHundredths, toHundredths } from '../rates/useRates';
 import { useVoidReasons } from '../voidreasons/voidReasons.slot';
 
 const GRADES = ['A', 'B', 'C'] as const;
@@ -12,7 +12,7 @@ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const
 
 // The summary panel, built from the same figures as the lists so it always agrees with them. Per grade: the people
 // on it today, retired people left out, and their due-totals added up (skipping those that are n/a). Per period:
-// its due-total as its row shows it. Per grade too: how many of its people are active. Per status: the claims on the sheet with that status.
+// its due-total as its row shows it, and its change from the period before it by start date (none for the earliest). Per grade too: how many of its people are active. Per status: the claims on the sheet with that status.
 // Per void reason on the list: the VOID claims voided with it.
 function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
@@ -24,6 +24,15 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
   const voidReasons = useVoidReasons(sheetId);
 
   const current = (people.data ?? []).filter((p) => p.retiredFrom === null);
+  const periodShown = new Map((periods.data ?? []).map((p) => [p.id, showPeriodDueTotal(p, periodDueTotal(p))]));
+  const periodChange = new Map<number, string>();
+  const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
+  byStart.forEach((p, i) => {
+    const prev = byStart[i - 1];
+    periodChange.set(p.id, prev
+      ? showHundredths(toHundredths(periodShown.get(p.id)!) - toHundredths(periodShown.get(prev.id)!))
+      : '');
+  });
   return (
     <section data-testid="summary-panel">
       <h2>Summary</h2>
@@ -57,13 +66,15 @@ function SummaryPanel({ sheetId }: { sheetId: string; user: string }) {
           <tr>
             <th>Period</th>
             <th>Due total</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody>
           {(periods.data ?? []).map((p) => (
             <tr key={p.id}>
               <td>{p.name}</td>
-              <td data-testid={`summary-period-${p.name}-due-total`}>{showPeriodDueTotal(p, periodDueTotal(p))}</td>
+              <td data-testid={`summary-period-${p.name}-due-total`}>{periodShown.get(p.id)}</td>
+              <td data-testid={`summary-period-${p.name}-change`}>{periodChange.get(p.id)}</td>
             </tr>
           ))}
         </tbody>
