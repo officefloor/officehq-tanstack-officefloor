@@ -63,7 +63,7 @@ public class TakeStatement {
             boolean counted = figures.bound().containsKey(c.getId());
             claims.bind(c.getId(), counted, counted ? figures.bound().get(c.getId()) : null);
         }
-        statements.insert(sheetId, person.getId(), figures.dueTotal(), on);
+        statements.insert(sheetId, person.getId(), figures.dueTotal(), on, today);
         person.setStatements(new Statements(person.getStatements().count() + 1, figures.dueTotal(), on));
         taken.set(new Statement(figures.dueTotal(), figures.bound().size(), asOf.on()));
     }

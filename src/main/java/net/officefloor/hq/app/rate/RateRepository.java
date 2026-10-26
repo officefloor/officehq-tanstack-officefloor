@@ -45,6 +45,18 @@ public class RateRepository {
                 .toList();
     }
 
+    /** A sheet's parent's rates as they stood when a child of it was snapshotted (see SheetHistory#snapshot), as
+     *  {@link #list} lists them. */
+    public List<Rate> listParentSnapshotted(long snapshotId, String sheetId) {
+        List<Rate> versions = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM hist.parent_rate_version"
+                + " WHERE snapshot_id = ? AND sheet_id = ? ORDER BY version DESC, id DESC", ROW, snapshotId, sheetId);
+        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, after_seq FROM hist.parent_rate"
+                + " WHERE snapshot_id = ? AND sheet_id = ? ORDER BY grade, from_date NULLS FIRST", ROW, snapshotId, sheetId).stream()
+                .map(r -> r.withEarlier(versions.stream().filter(v -> v.grade().equals(r.grade())
+                        && java.util.Objects.equals(v.from(), r.from())).toList()))
+                .toList();
+    }
+
     /** The sheet, then its parent, its parent's parent, and so on up to {@link #PARENT_LEVELS} levels up. */
     public List<String> ancestry(String sheetId) {
         List<String> found = new java.util.ArrayList<>(List.of(sheetId));

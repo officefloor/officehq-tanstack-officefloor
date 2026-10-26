@@ -504,8 +504,8 @@ public class PersonRepository {
         List<Long> own = jdbc.queryForList("SELECT id FROM statement WHERE person_id = ? ORDER BY id", Long.class, t);
         jdbc.update("UPDATE statement SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
         for (Long id : own) {
-            jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, taken_on)"
-                    + " SELECT sheet_id, person_id, due_total, taken_on FROM statement WHERE id = ?", id);
+            jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, taken_on, recorded_on)"
+                    + " SELECT sheet_id, person_id, due_total, taken_on, recorded_on FROM statement WHERE id = ?", id);
             jdbc.update("DELETE FROM statement WHERE id = ?", id);
         }
     }
@@ -599,9 +599,10 @@ public class PersonRepository {
         for (Person person : people) {
             person.setSnapshots(snapshots.getOrDefault(person.getId(), List.of()));
         }
-        // Oldest first by date, so statements a merge or transfer brought over show among the person's own.
+        // Oldest first by the date each was taken on (the sheet's today then), so statements a merge or transfer brought
+        // over show among the person's own.
         Map<Long, List<StatementLine>> statementLines = jdbc.query(
-                "SELECT s.person_id, s.taken_on, s.due_total FROM statement s WHERE s.sheet_id = ? ORDER BY s.taken_on, s.id",
+                "SELECT s.person_id, s.taken_on, s.due_total FROM statement s WHERE s.sheet_id = ? ORDER BY COALESCE(s.recorded_on, s.taken_on), s.id",
                 (rs, n) -> Map.entry(rs.getLong("person_id"), new StatementLine(rs.getObject("taken_on", LocalDate.class),
                         rs.getBigDecimal("due_total"))), sheetId).stream()
                 .collect(Collectors.groupingBy(Map.Entry::getKey,

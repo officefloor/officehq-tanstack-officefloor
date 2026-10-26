@@ -16,9 +16,10 @@ public class StatementRepository {
         this.jdbc = jdbc;
     }
 
-    public void insert(String sheetId, long personId, BigDecimal dueTotal, LocalDate takenOn) {
-        jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, taken_on) VALUES (?, ?, ?, ?)", sheetId,
-                personId, dueTotal, Date.valueOf(takenOn));
+    /** Record a statement taken as of {@code takenOn}, while the sheet's today was {@code recordedOn}. */
+    public void insert(String sheetId, long personId, BigDecimal dueTotal, LocalDate takenOn, LocalDate recordedOn) {
+        jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, taken_on, recorded_on) VALUES (?, ?, ?, ?, ?)", sheetId,
+                personId, dueTotal, Date.valueOf(takenOn), Date.valueOf(recordedOn));
     }
 
     /** A statement taken: its id, due-total (null: n/a) and date. */

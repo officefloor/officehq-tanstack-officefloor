@@ -5,9 +5,13 @@ import java.sql.Date;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.RateRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
@@ -46,7 +50,42 @@ public class SheetHistory {
             jdbc.update("INSERT INTO hist." + table + " (" + columns + ", snapshot_id) SELECT " + columns + ", ? FROM "
                     + "public." + table + " WHERE " + ofSheet(table, "public"), id, sheetId);
         }
+        // Its parents' rates as they stand now, for the sheet viewed as of a date this snapshot holds.
+        List<String> ancestry = new RateRepository(jdbc).ancestry(sheetId);
+        for (int level = 1; level < ancestry.size(); level++) {
+            String parent = ancestry.get(level);
+            jdbc.update("INSERT INTO hist.snapshot_parent (snapshot_id, level, sheet_id) VALUES (?, ?, ?)", id, level, parent);
+            for (String table : List.of("rate", "rate_version")) {
+                String columns = columns(jdbc, table);
+                jdbc.update("INSERT INTO hist.parent_" + table + " (" + columns + ", snapshot_id) SELECT " + columns + ", ? FROM "
+                        + "public." + table + " WHERE sheet_id = ?", id, parent);
+            }
+        }
         return id;
+    }
+
+    /** The snapshot the sheet viewed as of {@code on} is read from (see {@link #view}); null when it is read live or
+     *  before its earliest snapshot. */
+    public Long viewedSnapshot(String sheetId, LocalDate on) {
+        if (on == null) {
+            return null;
+        }
+        LocalDate today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                rs -> rs.next() ? rs.getObject(1, LocalDate.class) : null, sheetId);
+        return today == null || !on.isBefore(today) ? null : snapshotAsOf(sheetId, on);
+    }
+
+    /** The sheet's parents' rates as they stood when the snapshot was taken, each at its level up, parent first. */
+    public List<Rate> parentRates(long snapshotId) {
+        List<Rate> found = new ArrayList<>();
+        List<Map<String, Object>> parents = jdbc.queryForList("SELECT level, sheet_id FROM hist.snapshot_parent"
+                + " WHERE snapshot_id = ? ORDER BY level", snapshotId);
+        for (Map<String, Object> p : parents) {
+            int level = ((Number) p.get("LEVEL")).intValue();
+            String parent = (String) p.get("SHEET_ID");
+            new RateRepository(jdbc).listParentSnapshotted(snapshotId, parent).forEach(r -> found.add(r.at(level)));
+        }
+        return found;
     }
 
     /** Lay the period, as it now stands live (closed, its totals), over the snapshot: a period closed as the today
