@@ -3,13 +3,15 @@ import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheetQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
 import type { Late } from '../rates/ratesQuery';
+import { claimsQuery } from '../claims/claimsQuery';
 
 /** `clerkLimit` has two decimals ("1.50"), or is "" when there is no limit; `floor` has two decimals;
- *  `terms` is a whole number of days ("14"); `latePct` is a percent with two decimals ("0.00"). */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string };
+ *  `terms` is a whole number of days ("14"); `latePct` is a percent with two decimals ("0.00");
+ *  `policyDate` is yyyy-mm-dd, or "" when there is none (the sheet's today is the policy date). */
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
 
-/** What the request carries: a setting left out (or blank, for the floor, terms and late percent) is left as it is. */
-export type SettingsChange = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string };
+/** What the request carries: a setting left out (or blank, for the floor, terms and late percent) is left as it is; a blank policy date is none. */
+export type SettingsChange = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string };
 
 /** The floor a sheet starts with. */
 export const DEFAULT_FLOOR = '1.00';
@@ -51,9 +53,21 @@ export function useLatePct(sheetId: string): string {
   return useQuery(settingsQuery(sheetId)).data?.latePct ?? DEFAULT_LATE_PCT;
 }
 
-/** What a claim's late charge depends on, as the sheet has it now. */
+/** The sheet's policy date (yyyy-mm-dd): the one set, or the sheet's today when there is none. */
+export function usePolicyDate(sheetId: string): string {
+  const today = useSheetToday(sheetId);
+  return useQuery(settingsQuery(sheetId)).data?.policyDate || today;
+}
+
+/** What a claim's late charge and its rounding depend on, as the sheet has it now. */
 export function useLate(sheetId: string): Late {
-  return { today: useSheetToday(sheetId), terms: useTerms(sheetId), pct: useLatePct(sheetId) };
+  return {
+    today: useSheetToday(sheetId),
+    terms: useTerms(sheetId),
+    pct: useLatePct(sheetId),
+    policy: usePolicyDate(sheetId),
+    claims: useQuery(claimsQuery(sheetId)).data ?? [],
+  };
 }
 
 export const rolesQuery = (sheetId: string) => ({

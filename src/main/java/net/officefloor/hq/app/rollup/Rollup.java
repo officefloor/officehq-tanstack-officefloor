@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -98,7 +97,7 @@ public class Rollup {
 
     /**
      * The claim's figure (null when it has none): a settled claim's frozen due, otherwise the figure its person's
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even, raised to the floor;
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date, raised to the floor;
      * an overdue claim's late charge on {@code today} added on top of the last two.
      */
     private BigDecimal figure(Claim claim, Person person, LocalDate today) {
@@ -114,6 +113,6 @@ public class Rollup {
             return claim.statedDue();
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
-        return rate == null ? null : settings.floored(claim, claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
+        return settings.live(claim, rate);
     }
 }

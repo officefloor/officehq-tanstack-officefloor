@@ -40,19 +40,19 @@ function show(cents: bigint): string {
   return `${cents < 0n ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
-/** Cents of `amount` times `rate` percent, rounded half to even (the rate is 0 or more; a correction's amount is negative). */
-export function dueCents(amount: string, rate: string): bigint {
+/** Cents of `amount` times `rate` percent, rounded half to even, or half up (away from zero) when `halfUp` (the rate is 0 or more; a correction's amount is negative). */
+export function dueCents(amount: string, rate: string, halfUp = false): bigint {
   const signed = hundredths(amount) * hundredths(rate);
   const product = signed < 0n ? -signed : signed;
   const cents = product / 10000n;
   const rest = product % 10000n;
-  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  const rounded = rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n)) ? cents + 1n : cents;
   return signed < 0n ? -rounded : rounded;
 }
 
 /** `amount` times `rate` percent with two decimals, or n/a when there is no rate. */
-export function due(amount: string, rate: string | undefined): string {
-  return rate === undefined ? 'n/a' : show(dueCents(amount, rate));
+export function due(amount: string, rate: string | undefined, halfUp = false): string {
+  return rate === undefined ? 'n/a' : show(dueCents(amount, rate, halfUp));
 }
 
 /** Due figures added up, skipping n/a. */
@@ -60,8 +60,22 @@ export function sumDue(dues: string[]): string {
   return show(dues.filter((d) => d !== 'n/a').reduce((total, d) => total + hundredths(d), 0n));
 }
 
-/** What a claim's late charge depends on: the sheet's today (yyyy-mm-dd), its terms in days and its late percent (two decimals). */
-export type Late = { today: string; terms: number; pct: string };
+/**
+ * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its terms in days, its late percent
+ * (two decimals), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
+ */
+export type Late = { today: string; terms: number; pct: string; policy: string; claims: Claim[] };
+
+/**
+ * Whether the claim's live figures round half up: it is dated before the policy date (on or after it, they round half
+ * to even). A correction rounds by the date of the claim it corrects.
+ */
+export function roundsHalfUp(claim: Claim, { policy, claims }: Late): boolean {
+  const corrected = isCorrection(claim) && claim.corrects !== null
+    ? claims.find((c) => c.personId === claim.personId && c.number === claim.corrects)
+    : undefined;
+  return (corrected ?? claim).date < policy;
+}
 
 /** The claim's due-by (yyyy-mm-dd): its date plus the sheet's terms in days. */
 export function dueBy(claim: Claim, terms: number): string {
@@ -84,17 +98,18 @@ function lateMonths(claim: Claim, { today, terms }: Late): bigint {
 /**
  * A claim's figure: a settled claim's frozen due (its late charge frozen in), otherwise the figure its
  * person's last statement bound it to, otherwise its amount times the rate, on the claim's date, of
- * the grade its person had on that date, raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
- * percent of that figure for every full 30 days overdue, half to even — is added on top: a statement
+ * the grade its person had on that date (rounded by the policy date, see `roundsHalfUp`), raised to the sheet's `floor` (two decimals). An overdue claim's late charge — the late
+ * percent of that figure for every full 30 days overdue — is added on top: a statement
  * never binds it, so it follows the sheet's today. A correction has neither floor nor late charge.
  */
 export function figure(claim: Claim, rates: Rate[], person: Person | undefined, floor: string, late: Late): string {
   if (claim.settledDue !== null) return claim.settledDue;
-  const live = due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date));
+  const halfUp = roundsHalfUp(claim, late);
+  const live = due(claim.amount, rateFor(rates, gradeOn(person, claim.date), claim.date), halfUp);
   const bound = claim.stated ? (claim.statedDue ?? 'n/a') : isCorrection(claim) ? live : floored(live, floor);
   const months = isCorrection(claim) ? 0n : lateMonths(claim, late);
   if (bound === 'n/a' || months === 0n) return bound;
-  return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct));
+  return show(hundredths(bound) + dueCents(show(hundredths(bound) * months), late.pct, halfUp));
 }
 
 function floored(live: string, floor: string): string {

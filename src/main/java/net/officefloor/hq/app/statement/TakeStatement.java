@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.statement;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -49,7 +48,7 @@ public class TakeStatement {
 
     /**
      * The claim's figure now (null when it has none): a settled claim's frozen due, otherwise the figure the
-     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, half to even, raised to the floor.
+     * last statement bound it to, otherwise its amount times its person's grade's rate on its date, rounded by the policy date, raised to the floor.
      */
     private static BigDecimal figure(Claim claim, Person person, Rates rates, Settings settings) {
         if (claim.settledDue() != null) {
@@ -59,6 +58,6 @@ public class TakeStatement {
             return claim.statedDue();
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
-        return rate == null ? null : settings.floored(claim, claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
+        return settings.live(claim, rate);
     }
 }

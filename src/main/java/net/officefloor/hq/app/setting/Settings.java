@@ -7,6 +7,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.claim.Claims;
+import net.officefloor.hq.app.sheet.Sheets;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -21,13 +23,18 @@ public class Settings {
     public static final String TERMS_DEFAULT = "14";
     public static final String LATE_PCT = "late-pct";
     public static final String LATE_PCT_DEFAULT = "0.00";
+    public static final String POLICY_DATE = "policy-date";
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
     private final JdbcTemplate jdbc;
+    private final Sheets sheets;
+    private final Claims claims;
 
-    public Settings(JdbcTemplate jdbc) {
+    public Settings(JdbcTemplate jdbc, Sheets sheets, Claims claims) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
+        this.claims = claims;
     }
 
     /** The setting's value; "" when it was never set. */
@@ -66,9 +73,36 @@ public class Settings {
         return new BigDecimal(value.isEmpty() ? LATE_PCT_DEFAULT : value);
     }
 
+    /** The policy date: the one set, or the sheet's today when it is blank. */
+    public LocalDate policyDate(String sheetId) {
+        String value = get(sheetId, POLICY_DATE);
+        return value.isEmpty() ? sheets.today(sheetId) : LocalDate.parse(value);
+    }
+
+    /**
+     * How the claim's live figures round: half up when it is dated before the policy date, half to even on or after it.
+     * A correction rounds by the date of the claim it corrects.
+     */
+    public RoundingMode rounding(Claim claim) {
+        LocalDate date = claim.date();
+        if (claim.isCorrection() && claim.corrects() != null) {
+            Claim corrected = claims.findByNumber(claim.sheetId(), claim.personId(), claim.corrects());
+            if (corrected != null) {
+                date = corrected.date();
+            }
+        }
+        return date.isBefore(policyDate(claim.sheetId())) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+    }
+
+    /** The claim's live due at the rate (a percent): its amount times the rate, rounded by {@link #rounding}, raised to the floor; null (no rate) stays null. */
+    public BigDecimal live(Claim claim, BigDecimal rate) {
+        return rate == null ? null
+                : floored(claim, claim.amount().multiply(rate).movePointLeft(2).setScale(2, rounding(claim)));
+    }
+
     /**
      * A claim's figure with its late charge added on top: an OPEN claim whose due-by (its date plus the terms) is
-     * before {@code today} gains the late percent of the figure for every full 30 days it is overdue, half to even.
+     * before {@code today} gains the late percent of the figure for every full 30 days it is overdue, rounded by {@link #rounding}.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge.
      */
@@ -82,7 +116,7 @@ public class Settings {
         }
         long periods = ChronoUnit.DAYS.between(dueBy, today) / 30;
         BigDecimal charge = figure.multiply(latePct(claim.sheetId())).multiply(BigDecimal.valueOf(periods))
-                .movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+                .movePointLeft(2).setScale(2, rounding(claim));
         return figure.add(charge);
     }
 

@@ -10,11 +10,16 @@ import type { Role, RoleName, Settings as SheetSettings, SettingsChange } from '
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
 /** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
  *  claim's live due is at least, and the terms (days after its date a claim is due by) and the late percent (what an overdue claim gains per full 30 days) — and the form
  *  they are saved through. A blank floor, terms or late percent is left as it is, and so is a blank clerk
- *  limit saved with any of them. */
+ *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
+ *  today). A save with every field blank clears whichever of the clerk limit and the policy date was last
+ *  worked in (the clerk limit unless it was the policy date). */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
@@ -22,6 +27,8 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
+  const [policyDate, setPolicyDate] = useState('');
+  const [blank, setBlank] = useState<'clerkLimit' | 'policyDate'>('clerkLimit');
   const [error, setError] = useState('');
 
   const [user] = useUser();
@@ -35,6 +42,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setFloor('');
       setTerms('');
       setLatePct('');
+      setPolicyDate('');
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -62,8 +70,15 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The late percent must be a percent of 0.00 or more, with up to two decimals.');
       return;
     }
+    const d = policyDate.trim();
+    if (d !== '' && !isDate(d)) {
+      setError('The policy date must be a date (yyyy-mm-dd).');
+      return;
+    }
     const body: SettingsChange = {};
-    if (l !== '' || (f === '' && t === '' && p === '')) body.clerkLimit = l;
+    const none = l === '' && f === '' && t === '' && p === '' && d === '';
+    if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
+    if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
     if (p !== '') body.latePct = p;
@@ -80,6 +95,7 @@ function Settings({ sheetId }: { sheetId: string }) {
             data-testid="setting-clerk-limit"
             placeholder="no limit"
             value={limit}
+            onFocus={() => setBlank('clerkLimit')}
             onChange={(e) => {
               setLimit(e.target.value);
               setError('');
@@ -122,6 +138,19 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Policy date{' '}
+          <input
+            data-testid="setting-policy-date"
+            placeholder="sheet's today"
+            value={policyDate}
+            onFocus={() => setBlank('policyDate')}
+            onChange={(e) => {
+              setPolicyDate(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -139,6 +168,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Late percent in force: <span data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</span>
+      </p>
+      <p>
+        Policy date in force: <span data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</span>
       </p>
     </section>
   );

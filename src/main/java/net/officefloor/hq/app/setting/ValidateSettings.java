@@ -2,6 +2,8 @@ package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,10 +15,11 @@ public class ValidateSettings {
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?");
 
     // The amounts are kept with two decimals. A blank floor leaves the floor as it is; a blank clerk limit is
-    // no limit, unless a floor, terms or late percent are saved with it, when the clerk limit is left as it is (and null
+    // no limit, unless a floor, terms, late percent or policy date are saved with it, when the clerk limit is left as it is (and null
     // leaves it as it is too). Anything else that is not an amount of 0.00 or more with up to two decimals is
     // refused. Blank terms are left as they are; otherwise they must be a whole number of days, 0 or more.
     // A blank late percent is left as it is; otherwise it must be a percent of 0.00 or more, with up to two decimals.
+    // A missing policy date is left as it is; a blank one is none (the sheet's today is); otherwise it must be a yyyy-MM-dd date.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
             Out<SheetSettings> settingsOut) throws InvalidSettingException {
         String floor = body == null || body.floor() == null ? "" : body.floor().trim();
@@ -35,7 +38,15 @@ public class ValidateSettings {
         if (!latePct.isEmpty() && !AMOUNT.matcher(latePct).matches()) {
             throw new InvalidSettingException("The late percent must be a percent of 0.00 or more, with up to two decimals.");
         }
-        boolean others = !floor.isEmpty() || !terms.isEmpty() || !latePct.isEmpty();
+        String policyDate = body == null || body.policyDate() == null ? null : body.policyDate().trim();
+        if (policyDate != null && !policyDate.isEmpty()) {
+            try {
+                policyDate = LocalDate.parse(policyDate).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("The policy date must be a date (yyyy-mm-dd).");
+            }
+        }
+        boolean others = !floor.isEmpty() || !terms.isEmpty() || !latePct.isEmpty() || policyDate != null;
         if (typed == null && !others) {
             typed = "";
         }
@@ -43,7 +54,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct)));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate));
     }
 
     private static String twoDecimals(String amount) {

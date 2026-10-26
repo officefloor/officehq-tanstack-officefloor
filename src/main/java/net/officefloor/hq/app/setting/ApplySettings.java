@@ -16,5 +16,8 @@ public class ApplySettings {
         if (settings.latePct() != null) {
             store.set(settings.sheetId(), Settings.LATE_PCT, settings.latePct());
         }
+        if (settings.policyDate() != null) {
+            store.set(settings.sheetId(), Settings.POLICY_DATE, settings.policyDate());
+        }
     }
 }

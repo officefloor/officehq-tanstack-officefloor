@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
@@ -54,7 +53,7 @@ public class ApplyClaimStatus {
 
     /**
      * The claim's due now, before its late charge: the figure its person's last statement bound it to, otherwise its amount times its
-     * person's grade's rate on the claim's date, half to even, raised to the floor; null when none applies.
+     * person's grade's rate on the claim's date, rounded by the policy date, raised to the floor; null when none applies.
      */
     private static BigDecimal due(Claim claim, People people, Rates rates, Settings settings) {
         if (claim.stated()) {
@@ -65,6 +64,6 @@ public class ApplyClaimStatus {
             return null;
         }
         BigDecimal rate = rates.on(claim.sheetId(), person.gradeOn(claim.date()), claim.date());
-        return rate == null ? null : settings.floored(claim, claim.amount().multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN));
+        return settings.live(claim, rate);
     }
 }
