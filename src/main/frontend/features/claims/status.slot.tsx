@@ -22,7 +22,8 @@ const ACTIONS: Array<{ action: string; to: ClaimStatus; label: string; decision?
  * change the status does not allow, a settle by the user who opened the claim, a clerk's settle of a claim
  * whose due is above the sheet's clerk limit, or any change to a claim dated in a closed period, and the refusal
  * shows on the claim until its next action. A clerk's settle above the clerk limit makes the claim PENDING: a
- * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN).
+ * steward other than its opener approves it (SETTLED) or rejects it with a reason (back to OPEN). A steward can
+ * re-settle a SETTLED claim, freezing it again at today's figure; the server refuses anyone else or any other status.
  */
 function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) {
   const queryClient = useQueryClient();
@@ -56,6 +57,14 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
       ),
   });
 
+  const resettle = useMutation({
+    mutationFn: () =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/resettle`, {}, user),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (e) =>
+      setError(e instanceof RefusedError ? e.message : 'The claim could not be re-settled.'),
+  });
+
   return (
     <td>
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -73,6 +82,17 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; claim: Claim }) 
           {label}
         </button>
       ))}
+      <button
+        type="button"
+        data-testid="claim-resettle"
+        disabled={resettle.isPending}
+        onClick={() => {
+          setError('');
+          once(() => resettle.mutateAsync());
+        }}
+      >
+        Re-settle
+      </button>
       <input
         data-testid="claim-reject-reason"
         placeholder="Reason"

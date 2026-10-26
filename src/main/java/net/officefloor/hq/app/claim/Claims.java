@@ -115,6 +115,18 @@ public class Claims {
         return claim.withStatus(next, number, settledDue, openedBy);
     }
 
+    /**
+     * Freezes the SETTLED claim again at {@code due} (null: n/a) if it is still SETTLED at the due it was loaded with,
+     * and returns it as re-settled; null when it has since changed.
+     */
+    public Claim resettle(Claim claim, BigDecimal due) {
+        if (jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND status = ? AND settled_due IS NOT DISTINCT FROM ?",
+                due, claim.id(), ClaimStatus.SETTLED.name(), claim.settledDue()) != 1) {
+            return null;
+        }
+        return claim.withStatus(ClaimStatus.SETTLED, claim.number(), due, claim.openedBy());
+    }
+
     /** Appends a line to the claim's status log: its status now, by {@code user} on {@code on}, at {@code due} (null: n/a). */
     public void log(Claim claim, String user, LocalDate on, BigDecimal due) {
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, logged_on, due) VALUES (?, ?, ?, ?, ?, ?)",
