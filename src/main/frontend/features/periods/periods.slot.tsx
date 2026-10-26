@@ -12,6 +12,7 @@ import { peopleQuery } from '../people/peopleQuery';
 import { ratesQuery } from '../rates/ratesQuery';
 import { useFloor, useLate } from '../settings/settingsQuery';
 import { useUser } from '../session/useUser';
+import { useSheetToday } from '../sheet/useSheetToday';
 import { periodDue, periodOf, periodsKey, periodsQuery, personPeriodDue } from './periodsQuery';
 import type { Period } from './periodsQuery';
 
@@ -199,6 +200,7 @@ function Periods({ sheetId }: { sheetId: string }) {
         </button>
         {error && <p data-testid="period-form-error">{error}</p>}
       </form>
+      <GeneratePeriods sheetId={sheetId} />
       {periods.isError && <p data-testid="periods-load-error">Could not load the periods.</p>}
       <table data-testid="periods-list">
         <thead>
@@ -223,6 +225,72 @@ function Periods({ sheetId }: { sheetId: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** Makes a period per calendar month from the from-date's month to the to-date's month (a blank date is the
+ *  sheet's today), leaving out a month whose name is taken or whose days overlap a period, and shows how many
+ *  were made. A to-date before the from-date is refused. */
+function GeneratePeriods({ sheetId }: { sheetId: string }) {
+  const queryClient = useQueryClient();
+  const [user] = useUser();
+  const today = useSheetToday(sheetId);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [error, setError] = useState('');
+  const [made, setMade] = useState<number | undefined>();
+  const once = useSubmitOnce();
+  const generate = useMutation({
+    mutationFn: (body: { from: string; to: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate`, body, user),
+    onSuccess: async (r) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+      setMade(r.made);
+    },
+    onError: () => setError('The periods could not be generated: the dates must be dates and the to-date on or after the from-date.'),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setMade(undefined);
+    const f = from.trim() || today;
+    const t = to.trim() || today;
+    if (!DATE.test(f) || !DATE.test(t)) {
+      setError('The from and to dates must be dates (yyyy-mm-dd).');
+      return;
+    }
+    if (t < f) {
+      setError('The to-date must be on or after the from-date.');
+      return;
+    }
+    once(() => generate.mutateAsync({ from: f, to: t }));
+  };
+
+  const edit = (set: (v: string) => void) => (e: { target: { value: string } }) => {
+    set(e.target.value);
+    setError('');
+  };
+
+  return (
+    <form data-testid="period-generate-form" onSubmit={submit}>
+      <label>
+        From <input data-testid="period-generate-from" type="date" value={from} onChange={edit(setFrom)} />
+      </label>{' '}
+      <label>
+        To <input data-testid="period-generate-to" type="date" value={to} onChange={edit(setTo)} />
+      </label>{' '}
+      <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+        Generate monthly periods
+      </button>
+      {made !== undefined && (
+        <>
+          {' '}
+          Made <span data-testid="period-generated">{made}</span>
+        </>
+      )}
+      {error && <p data-testid="period-generate-error">{error}</p>}
+    </form>
   );
 }
 
