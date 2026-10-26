@@ -1,0 +1,52 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index ce5ecccb..6626eaff 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -176,7 +176,7 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
+   );
+ }
+ 
+-// The sheet's claimed-total: everyone's counted claims added up.
++// The sheet's claimed-total: everyone's counted claims, corrections left out, added up.
+ function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
+   const claims = useClaims(sheetId);
+   const held = useHeld(sheetId);
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 5407a36e..683a5bbb 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -97,8 +97,8 @@ export function useEditingClaim() {
+   return useSearchParam('editClaim', asNumber);
+ }
+ 
+-/** The counted claims' amounts added up exactly, in cents, shown with two decimals. */
++/** The counted claims' amounts, corrections left out, added up exactly, in cents, shown with two decimals. */
+ export function sumAmounts(claims: Claim[], held: Holds): string {
+-  const cents = claims.filter((c) => counts(c, held)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => counts(c, held) && c.corrects == null).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 3a7e44bc..9e175a07 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -22,7 +22,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ import org.springframework.stereotype.Service;
+ 
+ /**
+- * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up;
++ * The sheet's figures, as the screen shows them: a person's claimed is their counting claims' amounts added up, leaving out corrections;
+  * their due-total is those claims' figures added up (a claim's figure: its settled due, else the figure a statement
+  * bound it to, else its amount times the rate in force on its date of the grade in force on its date (the sheet's own, else its parent's, up to three levels up), rounded half up when the claim rounds by a date before the sheet's policy date, else half to even;
+  * none without a rate) with its late charge added on top while it is overdue, and then — unless it is settled or a correction — at least the sheet's floor in force on its date, n/a when their grade on the sheet's today has no rate then and no counting claim keeps a settled or bound
+@@ -76,7 +76,9 @@ public class Rollup {
+                 if (c.getPersonId() != p.getId() || !counts(c, p, today)) {
+                     continue;
+                 }
+-                claimed = claimed.add(c.getAmount().setScale(2));
++                if (c.getCorrects() == null) {
++                    claimed = claimed.add(c.getAmount().setScale(2));
++                }
+                 kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
+                 String grade = p.gradeOn(c.getDate());
+                 BigDecimal figure = late.due(c, figure(c, grade, sheetRates, late));
