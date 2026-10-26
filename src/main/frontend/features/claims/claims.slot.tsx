@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ClaimCells } from '../../slots/defs/claimColumns';
 import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
 import { claimsQuery } from './claimsQuery';
 import { ClaimForm } from './ClaimForm';
@@ -19,6 +20,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
               <td data-testid="claim-amount">{c.amount}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
+              <ClaimCells.Slot sheetId={sheetId} claim={c} />
               <td>
                 {c.id === editing?.id ? (
                   <button type="button" data-testid="claim-cancel" onClick={() => setEditingId(undefined)}>
