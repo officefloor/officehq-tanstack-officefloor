@@ -8,11 +8,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** The claims on each sheet; ids are assigned in the order claims are added, and claims are listed newest first (a moved claim as its new person's newest). */
 @Repository
@@ -297,6 +301,22 @@ public class ClaimRepository {
     public int nextSettleBatch(String sheetId) {
         return jdbc.queryForObject("SELECT last_settle_batch FROM FINAL TABLE "
                 + "(UPDATE sheet SET last_settle_batch = last_settle_batch + 1 WHERE id = ?)", Integer.class, sheetId);
+    }
+
+    /**
+     * Run the work in a transaction of its own (nested, to a savepoint, inside one already open), undoing every change
+     * it made to the store when it answers false. Answers what the work answered.
+     */
+    public boolean keepOnly(BooleanSupplier work) {
+        TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+        return Boolean.TRUE.equals(tx.execute(status -> {
+            boolean keep = work.getAsBoolean();
+            if (!keep) {
+                status.setRollbackOnly();
+            }
+            return keep;
+        }));
     }
 
     /** The number of the sheet's last bulk settle batch; null when there has been none. */

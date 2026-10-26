@@ -96,8 +96,8 @@ function BulkOpen({ sheetId }: { sheetId: string; user: string }) {
 type BulkSettleResult = { settled: number; refused: number };
 
 // Settles the selected claims together; the server settles them in list order exactly as settling each alone
-// (a clerk's settle above the limit leaves one PENDING, counted as settled) and leaves any it cannot settle as they
-// are. Shows how many were settled and how many refused; the counts are gone while it runs.
+// (a clerk's settle above the limit leaves one PENDING, counted as settled) — all or nothing: if any one cannot be
+// settled, none is and all count as refused. Shows how many were settled and how many refused; the counts are gone while it runs.
 function BulkSettle({ sheetId }: { sheetId: string; user: string }) {
   const chosen = useSelected(sheetId);
   const [user] = useUser();

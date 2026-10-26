@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -34,6 +36,9 @@ public class Audit {
 
     private final DelegationRepository delegations;
 
+    /** The records held back on this thread while a change may yet be undone; null when records are written at once. */
+    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
+
     public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationRepository delegations) {
         this.file = Path.of(path);
         this.delegations = delegations;
@@ -48,6 +53,29 @@ public class Audit {
         if (head.find() && !REPORTS.contains(head.group(1))) {
             entry += delegations.actingFor(head.group(2), head.group(3)).map(steward -> " for=" + steward).orElse("");
         }
+        List<String> holding = held.get();
+        if (holding != null) {
+            holding.add(entry);
+            return;
+        }
+        write(entry);
+    }
+
+    /** Hold back the records this thread makes from now on, until {@link #release(boolean)}. */
+    public void hold() {
+        held.set(new ArrayList<>());
+    }
+
+    /** Stop holding back this thread's records: write the held ones in order, or drop them all. */
+    public synchronized void release(boolean write) {
+        List<String> holding = held.get();
+        held.remove();
+        if (write && holding != null) {
+            holding.forEach(this::write);
+        }
+    }
+
+    private void write(String entry) {
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {
