@@ -18,10 +18,11 @@ const NO_HOLDS = new Map();
 /** A period of the sheet: its name and its from and to dates (yyyy-mm-dd), both inclusive; whether it is
  *  closed, the due-total fixed when it was closed (null while open), and each person's due-total for it fixed
  *  then, by person id (empty while open; a person added later has none); and whether it is soft-closed: its
- *  figures fixed as a close fixes them, but claims dated inside it can still change. */
+ *  figures fixed as a close fixes them, but claims dated inside it can still change; and the cap on each person's
+ *  OPEN or PENDING claims in it (null: none). */
 export type Period = {
   id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null;
-  personTotals: Record<string, string>; soft: boolean;
+  personTotals: Record<string, string>; soft: boolean; cap?: number | null;
 };
 
 /** The key every feature reads the sheet's periods under. */
@@ -102,8 +103,8 @@ export function showPersonPeriodDueTotal(p: Period, personId: number, live: bigi
   return p.closed || p.soft ? (p.personTotals?.[String(personId)] ?? '0.00') : showHundredths(live);
 }
 
-// The period form: adds a period with a name unique on the sheet and a from and to date, not
-// overlapping another period. Every period is listed under it with its due-total: the due figures of
+// The period form: adds a period with a name unique on the sheet, a from and to date and an optional cap on each
+// person's OPEN or PENDING claims in it, not overlapping another period. Every period is listed under it with its due-total: the due figures of
 // the counted claims whose date falls in it, added up.
 function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
   const periods = usePeriods(sheetId);
@@ -112,24 +113,29 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
   const [user] = useUser();
   const queryClient = useQueryClient();
   const save = useMutation({
-    mutationFn: async (body: { name: string; from: string; to: string }) => {
+    mutationFn: async (body: { name: string; from: string; to: string; cap: string }) => {
       if (body.name.trim() === '') throw new Error('Enter a period name');
       if (body.to.trim() === '') throw new Error('Enter a to-date');
       if ((body.from.trim() !== '' && !DATE.test(body.from.trim())) || !DATE.test(body.to.trim())) {
         throw new Error('Enter a date as YYYY-MM-DD');
       }
+      if (body.cap.trim() !== '' && !/^[1-9]\d{0,8}$/.test(body.cap.trim())) {
+        throw new Error('A cap is a whole number of at least 1, or blank for none');
+      }
       // `by` is the signed-in user the change is recorded against.
       return postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, {
-        name: body.name.trim(), from: body.from.trim(), to: body.to.trim(), by: user ?? '' });
+        name: body.name.trim(), from: body.from.trim(), to: body.to.trim(), cap: body.cap.trim(), by: user ?? '' });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
     },
   });
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -145,7 +151,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
         data-testid="period-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ name, from, to });
+          submit({ name, from, to, cap });
         }}
       >
         <input data-testid="period-form-name" placeholder="Name" value={name} onChange={field(setName)} />{' '}
@@ -154,6 +160,10 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
         </label>{' '}
         <label>
           To <input type="date" data-testid="period-form-to" value={to} onChange={field(setTo)} />
+        </label>{' '}
+        <label>
+          Cap <input data-testid="period-form-cap" inputMode="numeric" placeholder="open claims per person"
+            value={cap} onChange={field(setCap)} />
         </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
@@ -179,6 +189,7 @@ function PeriodsPanel({ sheetId }: { sheetId: string; user: string }) {
             <th>Due total</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th></th>
           </tr>
         </thead>
@@ -326,6 +337,7 @@ function PeriodRow({ sheetId, period: p, dueTotal, fy }: { sheetId: string; peri
       </td>
       <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fy}</td>
+      <td data-testid="period-cap">{p.cap ?? ''}</td>
       <td>
         {!p.closed && (
           <button

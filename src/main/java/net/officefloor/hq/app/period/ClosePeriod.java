@@ -36,7 +36,7 @@ public class ClosePeriod {
             return null;
         }
         return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), false, total,
-                personTotals, true);
+                personTotals, true, period.cap());
     }
 
     /** Closes the open (or soft-closed) period, fixing its due-total and each person's as they are now; null when someone else closed it first. */
@@ -47,6 +47,6 @@ public class ClosePeriod {
             return null;
         }
         return new Period(period.id(), period.sheetId(), period.name(), period.from(), period.to(), true, total,
-                personTotals, false);
+                personTotals, false, period.cap());
     }
 }

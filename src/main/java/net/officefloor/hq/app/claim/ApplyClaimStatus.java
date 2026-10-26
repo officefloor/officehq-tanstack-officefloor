@@ -6,6 +6,7 @@ import net.officefloor.hq.app.access.LateCharge;
 import net.officefloor.hq.app.access.Role;
 import net.officefloor.hq.app.access.RoleRepository;
 import net.officefloor.hq.app.access.SettingRepository;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -19,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves the claim to the asked status, refusing a change its current status does not allow, an open, settle or void
  * the sheet's permission for it does not give the user's role, an open of a claim with an empty note whose due (as open) is above the
- * sheet's note threshold in force on the claim's date, and
+ * sheet's note threshold in force on the claim's date, an open of a claim whose period (by its due-by) caps its person's OPEN or PENDING claims there and they already have that many, and
  * refusing to let the user who opened it, or who last edited it, settle it; a clerk's settle whose due is above the sheet's
  * clerk limit in force on its today leaves it PENDING instead — but first, a settle or approve of a claim without a proof whose due is
  * above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's) is refused (a due of n/a is within any limit; a steward settles anything). A review of a
@@ -115,6 +116,9 @@ public class ApplyClaimStatus {
                 throw new BadRequestException("A claim whose due is above the note threshold needs a note before it is opened");
             }
         }
+        if (status == ClaimStatus.OPEN && !review.asked()) {
+            refuseOverCap(claim, repository, periods);
+        }
         if (status == ClaimStatus.SETTLED && due != null && claim.getProofs() == 0) {
             Person owner = people.find(claim.getSheetId(), claim.getPersonId());
             BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
@@ -151,6 +155,26 @@ public class ApplyClaimStatus {
             repository.updateStatus(claim, to);
         }
         audited.set(new ClaimNumber(claim.getNumber()));
+    }
+
+    /**
+     * Refuses opening a claim belonging to a period (by its due-by) with a cap when its person already has that many
+     * OPEN or PENDING claims in it.
+     */
+    static void refuseOverCap(Claim claim, ClaimRepository repository, PeriodRepository periods) throws BadRequestException {
+        Period period = periods.on(claim.getSheetId(), claim.getDueBy());
+        if (period == null || period.cap() == null) {
+            return;
+        }
+        long held = repository.listOf(claim.getSheetId(), claim.getPersonId()).stream()
+                .filter(c -> c.getId() != claim.getId()
+                        && (c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING)
+                        && c.getDueBy() != null && !c.getDueBy().isBefore(period.from()) && !c.getDueBy().isAfter(period.to()))
+                .count();
+        if (held >= period.cap()) {
+            throw new BadRequestException("This person already has " + period.cap() + " open claims in period "
+                    + period.name());
+        }
     }
 
     /**

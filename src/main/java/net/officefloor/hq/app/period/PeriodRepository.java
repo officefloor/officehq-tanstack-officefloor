@@ -21,9 +21,10 @@ public class PeriodRepository {
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getString("name"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), rs.getBoolean("soft_closed"));
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(), rs.getBoolean("soft_closed"),
+            (Integer) rs.getObject("claim_cap"));
 
-    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
+    private static final String COLUMNS = "id, sheet_id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
 
     private final JdbcTemplate jdbc;
 
@@ -45,7 +46,7 @@ public class PeriodRepository {
     }
 
     private static Period withTotals(Period p, Map<Long, BigDecimal> personTotals) {
-        return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals, p.soft());
+        return new Period(p.id(), p.sheetId(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(), personTotals, p.soft(), p.cap());
     }
 
     /** Whether a period on the sheet has this name, ignoring case and surrounding spaces. */
@@ -63,17 +64,22 @@ public class PeriodRepository {
     }
 
     public Period insert(String sheetId, String name, LocalDate from, LocalDate to) {
+        return insert(sheetId, name, from, to, null);
+    }
+
+    public Period insert(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setDate(3, Date.valueOf(from));
             ps.setDate(4, Date.valueOf(to));
+            ps.setObject(5, cap, java.sql.Types.INTEGER);
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false);
+        return new Period(keys.getKey().longValue(), sheetId, name, from, to, false, null, Map.of(), false, cap);
     }
 
     public Period find(String sheetId, long id) {

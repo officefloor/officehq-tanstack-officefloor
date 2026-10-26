@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * A period's fields: a name (required, at most 200 characters), a from-date (yyyy-mm-dd; blank for the
- * sheet's today) and a to-date (yyyy-mm-dd, required).
+ * sheet's today) a to-date (yyyy-mm-dd, required) and a cap on each person's OPEN or PENDING claims in it (a whole number of
+ * at least 1; blank for none).
  */
 public class ValidatePeriod {
 
@@ -28,8 +29,16 @@ public class ValidatePeriod {
         if (to.isEmpty()) {
             throw new BadRequestException("Enter a to-date");
         }
-        period.set(new PeriodInput(name, from.isEmpty() ? null : date(from), date(to)));
+        String cap = request.cap() == null ? "" : request.cap().trim();
+        period.set(new PeriodInput(name, from.isEmpty() ? null : date(from), date(to), cap.isEmpty() ? null : cap(cap)));
         changedBy.set(by);
+    }
+
+    private static Integer cap(String text) throws BadRequestException {
+        if (!text.matches("[0-9]{1,9}") || Integer.parseInt(text) < 1) {
+            throw new BadRequestException("A cap is a whole number of at least 1, or blank for none");
+        }
+        return Integer.valueOf(text);
     }
 
     private static LocalDate date(String text) throws BadRequestException {

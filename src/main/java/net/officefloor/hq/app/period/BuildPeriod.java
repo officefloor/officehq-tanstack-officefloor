@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
 public class BuildPeriod {
     public void build(@Val SheetResponse sheet, @Val PeriodInput input, @Val PeriodDates dates,
             PeriodRepository repository, Out<Period> period) {
-        period.set(repository.insert(sheet.id(), input.name(), dates.from(), dates.to()));
+        period.set(repository.insert(sheet.id(), input.name(), dates.from(), dates.to(), input.cap()));
     }
 }
