@@ -357,6 +357,7 @@ public class PersonRepository {
                 + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
         carryStatements(f, sheetId, t);
+        jdbc.update("UPDATE person_snapshot SET person_id = ? WHERE person_id = ?", t, f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
@@ -480,6 +481,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
+        jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", f);
         jdbc.update("DELETE FROM period_person_total WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person WHERE id = ?", f);
@@ -535,6 +537,15 @@ public class PersonRepository {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
         for (Person person : people) {
             person.setAliases(PersonName.sorted(aliases.getOrDefault(person.getId(), List.of())));
+        }
+        Map<Long, List<SnapshotLine>> snapshots = jdbc.query(
+                "SELECT s.person_id, s.left_on, s.due_total FROM person_snapshot s WHERE s.sheet_id = ? ORDER BY s.id",
+                (rs, n) -> Map.entry(rs.getLong("person_id"), new SnapshotLine(rs.getObject("left_on", LocalDate.class),
+                        rs.getBigDecimal("due_total"))), sheetId).stream()
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        for (Person person : people) {
+            person.setSnapshots(snapshots.getOrDefault(person.getId(), List.of()));
         }
         return people;
     }

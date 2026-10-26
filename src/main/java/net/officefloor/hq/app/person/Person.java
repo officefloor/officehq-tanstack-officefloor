@@ -22,6 +22,7 @@ public class Person {
     private List<RetirementSpan> retirements = List.of();
     private List<String> patrons = List.of();
     private List<String> aliases = List.of();
+    private List<SnapshotLine> snapshots = List.of();
     private Integer terms;
     private String contact;
     private String tags;
@@ -244,5 +245,14 @@ public class Person {
 
     public void setAliases(List<String> aliases) {
         this.aliases = aliases;
+    }
+
+    /** The person's snapshot lines, oldest first. */
+    public List<SnapshotLine> getSnapshots() {
+        return snapshots;
+    }
+
+    public void setSnapshots(List<SnapshotLine> snapshots) {
+        this.snapshots = snapshots;
     }
 }

@@ -24,13 +24,15 @@ import { SORT_KEYS, useSortBy, useSortedPeople } from '../sort/useSortedPeople';
  *  the tag. `aliases`: the other names they go by,
  *  sorted as names are compared (ignoring case). `clashing`: whether their name or an alias is used, as a name or
  *  alias, on another sheet of the sheet's tree (its ancestors and descendants); every edit of them is then refused
- *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else. */
+ *  until it renames them out of the clash. `origin`: the sheet they were transferred from, null for anyone else.
+ *  `snapshots`: their snapshot lines, oldest first, one per SNAPSHOT written for them as the sheet's today moved on:
+ *  the day being left and their due-total then ("n/a" when none). */
 export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null;
   retirements: Retirement[]; held: boolean;
   holds: HoldSpan[];
   patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; tags: string[]; aliases: string[];
-  clashing: boolean; origin: string | null };
+  clashing: boolean; origin: string | null; snapshots: string[] };
 
 export type PatronShare = { name: string; share: string };
 
