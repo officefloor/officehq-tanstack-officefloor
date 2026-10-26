@@ -228,6 +228,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
           })}
         </tbody>
       </table>
+      <RateCalendar sheetId={sheetId} />
       <table data-testid="rate-list">
         <thead>
           <tr>
@@ -252,6 +253,43 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
       </table>
       <RatePreview sheetId={sheetId} />
     </section>
+  );
+}
+
+// The rate calendar: for each grade and each month of the sheet's today's calendar year, the rate in force on the first day of
+// that month (n/a when none).
+function RateCalendar({ sheetId }: { sheetId: string }) {
+  const rates = useRates(sheetId);
+  const today = useSheetToday(sheetId).data?.today;
+  if (today === undefined) return null;
+  const year = today.slice(0, 4);
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  return (
+    <table data-testid="rate-calendar">
+      <thead>
+        <tr>
+          <th>Grade</th>
+          {months.map((m) => (
+            <th key={m}>{m}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {GRADES.map((g) => (
+          <tr key={g}>
+            <td>{g}</td>
+            {months.map((m) => {
+              const r = rateOn(rates.data ?? [], g, `${m}-01`);
+              return (
+                <td key={m} data-testid={`rate-month-${g}-${m}`}>
+                  {r ? showHundredths(toHundredths(r.rate)) : NA}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

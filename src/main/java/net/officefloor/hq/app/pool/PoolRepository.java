@@ -171,17 +171,20 @@ public class PoolRepository {
     /**
      * Adds the sheet's crews as pools, after the pools and in the order added (keyed by the crew's id negated): each
      * has its lead and then its members in the order added, at equal shares of 100.00 split as patrons' shares are
-     * (each rounded half to even to two decimals, the remainder on the lead).
+     * (each rounded half to even to two decimals, the remainder on the lead, or on the first member when it has no lead).
      */
     private void crews(String sheetId, Set<Long> held, Map<Long, String> names,
             Map<Long, List<PoolResponse.Member>> members, Map<Long, List<Long>> memberPools) {
         Map<Long, List<Object[]>> people = new LinkedHashMap<>();
         jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
-                + " JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+                + " LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
             long key = -rs.getLong("id");
             names.put(key, rs.getString("name"));
             List<Object[]> of = new ArrayList<>();
-            of.add(new Object[] { rs.getLong("lead_id"), rs.getString("person_name"), rs.getDate("retired_from") != null });
+            long lead = rs.getLong("lead_id");
+            if (!rs.wasNull()) {
+                of.add(new Object[] { lead, rs.getString("person_name"), rs.getDate("retired_from") != null });
+            }
             people.put(key, of);
         }, sheetId);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"
@@ -193,7 +196,8 @@ public class PoolRepository {
             }
         }, sheetId);
         people.forEach((key, of) -> {
-            BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(of.size()), 2, RoundingMode.HALF_EVEN);
+            BigDecimal each = of.isEmpty() ? HUNDRED
+                    : HUNDRED.divide(BigDecimal.valueOf(of.size()), 2, RoundingMode.HALF_EVEN);
             BigDecimal lead = HUNDRED.subtract(each.multiply(BigDecimal.valueOf(of.size() - 1)));
             List<PoolResponse.Member> crew = new ArrayList<>();
             List<Long> none = new ArrayList<>();

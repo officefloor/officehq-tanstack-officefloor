@@ -24,9 +24,9 @@ function SheetHeader({ sheetId, user }: { sheetId: string; user: string }) {
   const myDue = me == null ? '' : (() => { const t = dueTotals.get(me.id); return t == null ? NA : showHundredths(t); })();
   const myOverdue = me == null ? '' : showHundredths(overdueAll.byPerson.get(me.id)?.cents ?? 0n);
   const crews = useCrews(sheetId);
-  const myCrews = me == null ? [] : (crews.data ?? []).filter((c) => c.lead.personId === me.id);
+  const myCrews = me == null ? [] : (crews.data ?? []).filter((c) => c.lead?.personId === me.id);
   let myCrewTotal = 0n;
-  for (const c of myCrews) for (const p of [c.lead, ...c.members]) myCrewTotal += dueTotals.get(p.personId) ?? 0n;
+  for (const c of myCrews) for (const p of [...(c.lead ? [c.lead] : []), ...c.members]) myCrewTotal += dueTotals.get(p.personId) ?? 0n;
   const myCrewDue = myCrews.length === 0 ? '' : showHundredths(myCrewTotal);
   return (
     <header data-testid="sheet-header">

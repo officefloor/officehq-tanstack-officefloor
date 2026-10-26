@@ -19,7 +19,7 @@ public class AddCrewMember {
         if (person == null) {
             throw new BadRequestException("No such person on this sheet");
         }
-        if (crews.leadOf(crewId) == person.getId()) {
+        if (Long.valueOf(person.getId()).equals(crews.leadOf(crewId))) {
             throw new BadRequestException(person.getName() + " leads this crew");
         }
         if (!crews.addMember(sheet.id(), crewId, person.getId())) {

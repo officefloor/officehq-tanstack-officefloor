@@ -12,8 +12,8 @@ import { useUser } from '../session/useSession';
 /** A person of a crew: their id and name. */
 export type CrewPerson = { personId: number; name: string };
 
-/** A crew of the sheet: its name, its lead and its members in the order added. */
-export type Crew = { name: string; lead: CrewPerson; members: CrewPerson[] };
+/** A crew of the sheet: its name, its lead (null when its lead was transferred away) and its members in the order added. */
+export type Crew = { name: string; lead: CrewPerson | null; members: CrewPerson[] };
 
 /** The key the sheet's crews are read under: below the people's key, so whatever changes the people (a merge, a
  *  rename) re-reads the crews too. */
@@ -56,12 +56,12 @@ function CrewRow({ sheetId, crew }: { sheetId: string; crew: Crew }) {
   const submit = useSubmitOnce(add);
 
   let total = 0n;
-  for (const p of [crew.lead, ...crew.members]) total += dueTotals.get(p.personId) ?? 0n;
+  for (const p of [...(crew.lead ? [crew.lead] : []), ...crew.members]) total += dueTotals.get(p.personId) ?? 0n;
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
       <span data-testid="crew-name">{crew.name}</span>{' '}
-      lead <span data-testid="crew-lead">{crew.lead.name}</span>{' '}
+      lead <span data-testid="crew-lead">{crew.lead?.name ?? ''}</span>{' '}
       due total <span data-testid="crew-due-total">{showHundredths(total)}</span>
       <ul>
         {crew.members.map((m) => (

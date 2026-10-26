@@ -411,7 +411,7 @@ public class PersonRepository {
      * any figure a statement bound it to, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
      * as used there; their statements move with them. Everything else of theirs here — patron links either way, pool
-     * memberships, crews they lead and crew memberships, plans, watches, holds and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
+     * memberships, crew memberships (a crew they lead is kept, with no lead), plans, watches, holds and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
      */
     public long transfer(Person from, String toSheet, Map<Long, String> numbers) {
         long f = from.getId();
@@ -505,8 +505,8 @@ public class PersonRepository {
     private void dropRest(long f) {
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", f);
-        jdbc.update("DELETE FROM crew_member WHERE person_id = ? OR crew_id IN (SELECT id FROM crew WHERE lead_id = ?)", f, f);
-        jdbc.update("DELETE FROM crew WHERE lead_id = ?", f);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ?", f);
+        jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", f);
         jdbc.update("DELETE FROM plan_claim WHERE plan_id IN (SELECT id FROM plan WHERE person_id = ?)", f);
         jdbc.update("DELETE FROM plan WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);

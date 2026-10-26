@@ -27,8 +27,8 @@ public class CrewRepository {
         jdbc.update("INSERT INTO crew (sheet_id, name, lead_id) VALUES (?, ?, ?)", sheetId, name, leadId);
     }
 
-    /** The id of the crew's lead. */
-    public long leadOf(long crewId) {
+    /** The id of the crew's lead; null when it has none (its lead was transferred away). */
+    public Long leadOf(long crewId) {
         return jdbc.queryForObject("SELECT lead_id FROM crew WHERE id = ?", Long.class, crewId);
     }
 
@@ -44,11 +44,12 @@ public class CrewRepository {
         Map<Long, String> names = new LinkedHashMap<>();
         Map<Long, CrewResponse.Person> leads = new LinkedHashMap<>();
         Map<Long, List<CrewResponse.Person>> members = new LinkedHashMap<>();
-        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead_name FROM crew c JOIN person p ON p.id = c.lead_id"
+        jdbc.query("SELECT c.id, c.name, c.lead_id, p.name AS lead_name FROM crew c LEFT JOIN person p ON p.id = c.lead_id"
                 + " WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
             long id = rs.getLong("id");
             names.put(id, rs.getString("name"));
-            leads.put(id, new CrewResponse.Person(rs.getLong("lead_id"), rs.getString("lead_name")));
+            long lead = rs.getLong("lead_id");
+            leads.put(id, rs.wasNull() ? null : new CrewResponse.Person(lead, rs.getString("lead_name")));
             members.put(id, new ArrayList<>());
         }, sheetId);
         jdbc.query("SELECT m.crew_id, m.person_id, p.name FROM crew_member m JOIN person p ON p.id = m.person_id"
