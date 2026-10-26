@@ -1,0 +1,271 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 41c59c4f..6190c13e 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -9,6 +9,18 @@ import { useClaims } from '../claims/useClaims';
+ import { useSheetToday } from '../today/today.slot';
+ import { useUser } from '../session/useSession';
+ 
++/** n divided by d (d > 0), rounded half to even. */
++function roundHalfEven(n: bigint, d: bigint): bigint {
++  let q = n / d;
++  let r = n % d;
++  if (r < 0n) {
++    q -= 1n;
++    r += d;
++  }
++  if (r * 2n > d || (r * 2n === d && q % 2n !== 0n)) q += 1n;
++  return q;
++}
++
+ function PatronHeads() {
+   return (
+     <>
+@@ -19,8 +31,9 @@ function PatronHeads() {
+   );
+ }
+ 
+-// The person's patrons (names, sorted), their backing — the patrons' SETTLED claims dated within the 90 days up to and
+-// including the sheet's today, each at its frozen figure, added up (0.00 with none) — and the picker that names one more. Only other people not yet their patrons are offered. A refusal shows on
++// The person's patrons (each as name and share, sorted by name), their backing — over the patrons, each patron's figure
++// (their SETTLED claims dated within the 90 days up to and including the sheet's today, each at its frozen figure,
++// added up) times their share divided by 100, added up and rounded half to even (0.00 with none) — and the picker that names one more. Only other people not yet their patrons are offered. A refusal shows on
+ // the person until the picker is changed or the next action on their row.
+ function PatronCells({ sheetId, personId }: { sheetId: string; user: string; personId: number }) {
+   const people = usePeople(sheetId).data ?? [];
+@@ -47,20 +60,30 @@ function PatronCells({ sheetId, personId }: { sheetId: string; user: string; per
+   const last = useLastPersonAction(sheetId, personId, add.submittedAt);
+   const patrons = person?.patrons ?? [];
+   const offered = people.filter((p) => p.id !== personId && !patrons.includes(p.name));
++  const shares = person?.patronShares ?? [];
+   let backing = 0n;
+   if (today !== undefined) {
+     const since = addDays(today, -89);
+-    const patronIds = new Set(people.filter((p) => patrons.includes(p.name)).map((p) => p.id));
++    // Each patron's share in hundredths of a percent, by their id.
++    const shareOf = new Map<number, bigint>();
++    for (const s of shares) {
++      const patron = people.find((p) => p.name === s.name);
++      if (patron) shareOf.set(patron.id, toHundredths(s.share));
++    }
++    // Cents times hundredths of a percent: ten-thousandths of a cent.
++    let weighted = 0n;
+     for (const c of claims) {
+-      if (!patronIds.has(c.personId) || c.status !== 'SETTLED' || c.settledDue == null) continue;
++      const share = shareOf.get(c.personId);
++      if (share === undefined || c.status !== 'SETTLED' || c.settledDue == null) continue;
+       if (c.date < since || c.date > today) continue;
+-      backing += toHundredths(c.settledDue);
++      weighted += toHundredths(c.settledDue) * share;
+     }
++    backing = roundHalfEven(weighted, 10_000n);
+   }
+ 
+   return (
+     <>
+-      <td data-testid="person-patrons">{patrons.join(', ')}</td>
++      <td data-testid="person-patrons">{shares.map((s) => `${s.name} ${s.share}`).join(', ')}</td>
+       <td data-testid="person-backing">{showHundredths(backing)}</td>
+       <td>
+         <select
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 1097640a..4452d14c 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -12,7 +12,8 @@ import { useSheetToday } from '../today/today.slot';
+ /** `version` counts the person's saves; an edit sends the one its form loaded. `statedTotal` ("n/a" when it had
+  *  none) and `statementDate` are the last statement's, none before the first. `retiredFrom` is the date the person
+  *  is retired from; set at all, they count as retired. `held`: whether they have any hold; `holds`: their holds, in the order
+- *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted. `grade` is the
++ *  added — their OPEN and PENDING claims dated within one count in no live total unless a statement binds them. `patrons`: the names of the people they have named as patrons, sorted; `patronShares`: each patron with their share of
++ *  100.00 (two decimals; split equally in the order named, the remainder to the first named), sorted by name. `grade` is the
+  *  grade in force on the sheet's today; `grades` every grade they were given, each from its from-date (null: from
+  *  the beginning of time). `terms`: the person's own terms in days, null when they have none; a claim added for them
+  *  is due by its date plus these, else their grade's terms, else the sheet's. `contact`: the person's contact, trimmed
+@@ -21,7 +22,9 @@ import { useSheetToday } from '../today/today.slot';
+ export type Person = { id: number; name: string; grade: string; grades: GradeFrom[]; version: number;
+   statementCount: number; statedTotal: string | null; statementDate: string | null; retiredFrom: string | null; held: boolean;
+   holds: HoldSpan[];
+-  patrons: string[]; terms: number | null; contact: string | null; aliases: string[] };
++  patrons: string[]; patronShares: PatronShare[]; terms: number | null; contact: string | null; aliases: string[] };
++
++export type PatronShare = { name: string; share: string };
+ 
+ export type GradeFrom = { grade: string; from: string | null };
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPatron.java b/src/main/java/net/officefloor/hq/app/person/AddPatron.java
+index c195f189..a3fbe13a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPatron.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPatron.java
+@@ -19,7 +19,7 @@ public class AddPatron {
+         if (!repository.addPatron(person.getId(), patron.getId())) {
+             throw new BadRequestException(patron.getName() + " is already a patron; reload the sheet");
+         }
+-        person.setPatrons(Stream.concat(person.getPatrons().stream(), Stream.of(patron.getName())).sorted().toList());
++        person.setPatrons(Stream.concat(person.getPatronsNamed().stream(), Stream.of(patron.getName())).toList());
+         added.set(new PatronAdded(patron));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronShare.java b/src/main/java/net/officefloor/hq/app/person/PatronShare.java
+new file mode 100644
+index 00000000..22dd4279
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PatronShare.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import java.math.BigDecimal;
++
++/** One of a person's patrons: their name and their share of 100.00 (two decimals). */
++public record PatronShare(String name, BigDecimal share) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronShareResponse.java b/src/main/java/net/officefloor/hq/app/person/PatronShareResponse.java
+new file mode 100644
+index 00000000..fe40dd7c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PatronShareResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++/** One of a person's patrons: their name and their share of 100.00, with two decimals. */
++public record PatronShareResponse(String name, String share) {
++    public static PatronShareResponse from(PatronShare share) {
++        return new PatronShareResponse(share.name(), share.share().toPlainString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 02bc4426..81a97c86 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -1,6 +1,10 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.Comparator;
+ import java.util.List;
+ 
+ /** A person on a sheet. Mutable so an Apply step can change it in place. */
+@@ -152,13 +156,38 @@ public class Person {
+ 
+     /** The names of the person's patrons, sorted. */
+     public List<String> getPatrons() {
++        return patrons.stream().sorted().toList();
++    }
++
++    /** The names of the person's patrons, in the order they were named. */
++    public List<String> getPatronsNamed() {
+         return patrons;
+     }
+ 
++    /** Sets the names of the person's patrons, in the order they were named. */
+     public void setPatrons(List<String> patrons) {
+         this.patrons = patrons;
+     }
+ 
++    /**
++     * The person's patrons with their shares, sorted by name: 100.00 split equally in the order they were named, each
++     * share rounded half to even to two decimals, the remainder (100.00 less the shares added up) to the first named.
++     */
++    public List<PatronShare> getPatronShares() {
++        if (patrons.isEmpty()) {
++            return List.of();
++        }
++        BigDecimal hundred = new BigDecimal("100.00");
++        BigDecimal each = hundred.divide(BigDecimal.valueOf(patrons.size()), 2, RoundingMode.HALF_EVEN);
++        BigDecimal first = hundred.subtract(each.multiply(BigDecimal.valueOf(patrons.size() - 1)));
++        List<PatronShare> shares = new ArrayList<>();
++        for (int i = 0; i < patrons.size(); i++) {
++            shares.add(new PatronShare(patrons.get(i), i == 0 ? first : each));
++        }
++        shares.sort(Comparator.comparing(PatronShare::name));
++        return shares;
++    }
++
+     /** The person's aliases, sorted as names are compared. */
+     public List<String> getAliases() {
+         return aliases;
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index e3892972..074acae4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -210,10 +210,11 @@ public class PersonRepository {
+         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
+         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, t,
+                 from.getName());
+-        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT DISTINCT ?, pp.patron_id FROM person_patron pp"
++        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT ?, pp.patron_id FROM person_patron pp"
+                 + " WHERE pp.person_id = ? AND pp.patron_id <> ? AND NOT EXISTS"
+-                + " (SELECT 1 FROM person_patron o WHERE o.person_id = ? AND o.patron_id = pp.patron_id)", t, f, t, t);
+-        jdbc.update("INSERT INTO person_patron (person_id, patron_id) SELECT DISTINCT pp.person_id, ? FROM person_patron pp"
++                + " (SELECT 1 FROM person_patron o WHERE o.person_id = ? AND o.patron_id = pp.patron_id)"
++                + " ORDER BY pp.named", t, f, t, t);
++        jdbc.update("INSERT INTO person_patron (person_id, patron_id, named) SELECT pp.person_id, ?, pp.named FROM person_patron pp"
+                 + " WHERE pp.patron_id = ? AND pp.person_id <> ? AND NOT EXISTS"
+                 + " (SELECT 1 FROM person_patron o WHERE o.person_id = pp.person_id AND o.patron_id = ?)", t, f, t, t);
+         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", f, f);
+@@ -237,7 +238,7 @@ public class PersonRepository {
+         return true;
+     }
+ 
+-    /** Sets each person's patrons' names, sorted, their grades and their holds. */
++    /** Sets each person's patrons' names, in the order named, their grades and their holds. */
+     private List<Person> withPatrons(String sheetId, List<Person> people) {
+         if (people.isEmpty()) {
+             return people;
+@@ -263,12 +264,12 @@ public class PersonRepository {
+         }
+         Map<Long, List<String>> patrons = jdbc.query(
+                 "SELECT pp.person_id, q.name FROM person_patron pp JOIN person q ON q.id = pp.patron_id"
+-                        + " WHERE q.sheet_id = ?",
++                        + " WHERE q.sheet_id = ? ORDER BY pp.named",
+                 (rs, n) -> Map.entry(rs.getLong("person_id"), rs.getString("name")), sheetId).stream()
+                 .collect(Collectors.groupingBy(Map.Entry::getKey,
+                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+         for (Person person : people) {
+-            person.setPatrons(patrons.getOrDefault(person.getId(), List.of()).stream().sorted().toList());
++            person.setPatrons(patrons.getOrDefault(person.getId(), List.of()));
+         }
+         Map<Long, List<String>> aliases = jdbc.query(
+                 "SELECT a.person_id, a.alias FROM person_alias a WHERE a.sheet_id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index dee4ea87..b4e6343a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -3,10 +3,10 @@ package net.officefloor.hq.app.person;
+ import java.util.List;
+ 
+ /** A person, with the grade in force on the sheet's today and every grade they were given (each from its from-date), their statement count and their last statement's due-total ("n/a" when it had none) and date
+- *  (both null before their first statement), the date they are retired from (null: not retired), whether they have any hold and their holds (in the order added), their patrons' names, sorted, their own terms (null: none), their contact (null: none) and their aliases, sorted as names are compared. */
++ *  (both null before their first statement), the date they are retired from (null: not retired), whether they have any hold and their holds (in the order added), their patrons' names, sorted, their patrons with their shares of 100.00, sorted by name, their own terms (null: none), their contact (null: none) and their aliases, sorted as names are compared. */
+ public record PersonResponse(long id, String name, String grade, List<GradeResponse> grades, long version, int statementCount, String statedTotal,
+         String statementDate, String retiredFrom, boolean held, List<HoldResponse> holds,
+-        List<String> patrons, Integer terms, String contact, List<String> aliases) {
++        List<String> patrons, List<PatronShareResponse> patronShares, Integer terms, String contact, List<String> aliases) {
+     public static PersonResponse from(Person person) {
+         Statements s = person.getStatements();
+         return new PersonResponse(person.getId(), person.getName(), person.getGrade(),
+@@ -15,6 +15,7 @@ public record PersonResponse(long id, String name, String grade, List<GradeRespo
+                 s.lastDate() == null ? null : s.lastDate().toString(),
+                 person.getRetiredFrom() == null ? null : person.getRetiredFrom().toString(), person.isHeld(),
+                 person.getHolds().stream().map(HoldResponse::from).toList(),
+-                person.getPatrons(), person.getTerms(), person.getContact(), person.getAliases());
++                person.getPatrons(), person.getPatronShares().stream().map(PatronShareResponse::from).toList(),
++                person.getTerms(), person.getContact(), person.getAliases());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V56__person_patron_named.sql b/src/main/resources/db/migration/V56__person_patron_named.sql
+new file mode 100644
+index 00000000..ea395514
+--- /dev/null
++++ b/src/main/resources/db/migration/V56__person_patron_named.sql
+@@ -0,0 +1,7 @@
++-- The order a person's patrons were named in: each row's place in one sheet-wide sequence (existing rows take it in
++-- the order they are read). A person's patrons share 100.00 by it (see Person.getPatronShares).
++CREATE SEQUENCE person_patron_named;
++ALTER TABLE person_patron ADD COLUMN named BIGINT DEFAULT NEXT VALUE FOR person_patron_named NOT NULL;
++-- The sheet's snapshots, and their layout as of a date, carry it too.
++ALTER TABLE hist.person_patron ADD COLUMN named BIGINT;
++ALTER TABLE asof.person_patron ADD COLUMN named BIGINT;
