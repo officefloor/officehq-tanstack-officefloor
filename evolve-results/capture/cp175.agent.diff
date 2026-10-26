@@ -1,0 +1,265 @@
+diff --git a/src/main/frontend/features/transfer/transfer.slot.tsx b/src/main/frontend/features/transfer/transfer.slot.tsx
+index 62687e89..ddb59411 100644
+--- a/src/main/frontend/features/transfer/transfer.slot.tsx
++++ b/src/main/frontend/features/transfer/transfer.slot.tsx
+@@ -31,7 +31,20 @@ function TransferCells({ sheetId, personId }: { sheetId: string; user: string; p
+       await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+     },
+   });
++  // Undo the transfer that brought this person here: back to the sheet they came from, by a steward on the sheet's
++  // today they arrived. The person leaves this sheet, so the whole sheet is re-read.
++  const undo = useMutation({
++    mutationKey: personActionKey(sheetId, personId),
++    mutationFn: () =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/transfer-undo`, {
++        by: user ?? '',
++      }),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
++    },
++  });
+   const last = useLastPersonAction(sheetId, personId, transfer.submittedAt);
++  const lastUndo = useLastPersonAction(sheetId, personId, undo.submittedAt);
+ 
+   return (
+     <td>
+@@ -47,11 +60,19 @@ function TransferCells({ sheetId, personId }: { sheetId: string; user: string; p
+       <button type="button" data-testid="person-transfer" disabled={transfer.isPending} onClick={() => transfer.mutate(to)}>
+         Transfer
+       </button>
++      <button type="button" data-testid="person-transfer-undo" disabled={undo.isPending} onClick={() => undo.mutate()}>
++        Undo transfer
++      </button>
+       {transfer.isError && last && (
+         <span data-testid="person-error" role="alert">
+           {transfer.error.message}
+         </span>
+       )}
++      {undo.isError && lastUndo && (
++        <span data-testid="person-error" role="alert">
++          {undo.error.message}
++        </span>
++      )}
+     </td>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckTransferUndo.java b/src/main/java/net/officefloor/hq/app/person/CheckTransferUndo.java
+new file mode 100644
+index 00000000..1182d2b0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CheckTransferUndo.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.access.Role;
++import net.officefloor.hq.app.access.RoleRepository;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Undoing a transfer: only a steward of this sheet may, only for a person a transfer brought here, and only on the
++ * sheet's today they arrived. Publishes the transfer back to the sheet they came from, which {@link TransferPerson}
++ * then makes by exactly the transfer rules.
++ */
++public class CheckTransferUndo {
++    public void check(@Val Person person, @Val ChangedBy by, RoleRepository roles, Out<TransferInput> transfer)
++            throws BadRequestException {
++        if (!Role.STEWARD.equals(roles.roleOf(person.getSheetId(), by.name()))) {
++            throw new BadRequestException("Only a steward may undo a transfer");
++        }
++        if (person.getOrigin() == null || person.getArrivedOn() == null) {
++            throw new BadRequestException("This person did not arrive by transfer");
++        }
++        if (!person.getArrivedOn().equals(person.getToday())) {
++            throw new BadRequestException("A transfer can only be undone on the day the person arrived");
++        }
++        transfer.set(new TransferInput(person.getOrigin()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 08452eea..74d08309 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -31,6 +31,7 @@ public class Person {
+     private String tags;
+ 
+     private String origin;
++    private LocalDate arrivedOn;
+ 
+     public Person(long id, String sheetId, String name, String grade, long version) {
+         this.id = id;
+@@ -159,6 +160,15 @@ public class Person {
+         this.origin = origin;
+     }
+ 
++    /** The sheet's today on which the person arrived by transfer; null when they were not transferred in. */
++    public LocalDate getArrivedOn() {
++        return arrivedOn;
++    }
++
++    public void setArrivedOn(LocalDate arrivedOn) {
++        this.arrivedOn = arrivedOn;
++    }
++
+     public long getVersion() {
+         return version;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index a5848327..2d73d087 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
+ public class PersonRepository {
+ 
+     /** A person's columns, with the grade in force on the sheet's today, their statement count and their last statement's due-total and date. */
+-    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin,"
++    private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.version, p.retired_from, p.terms, p.contact, p.tags, p.origin, p.arrived_on,"
+             + " (SELECT g.grade FROM person_grade g WHERE g.person_id = p.id AND (g.from_date IS NULL"
+             + " OR g.from_date <= (SELECT t.today FROM sheet t WHERE t.id = p.sheet_id))"
+             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade,"
+@@ -38,6 +38,7 @@ public class PersonRepository {
+         person.setContact(rs.getString("contact"));
+         person.setTags(rs.getString("tags"));
+         person.setOrigin(rs.getString("origin"));
++        person.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
+         return person;
+     };
+ 
+@@ -412,7 +413,8 @@ public class PersonRepository {
+ 
+     /**
+      * Transfer the person to the other sheet (stored already): they are added there with their name, terms, contact,
+-     * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from; their claims move with them (status, dates,
++     * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from
++     * and the other sheet's today as the day they arrived there; their claims move with them (status, dates,
+      * notes, settled figures, logs, comments and lines kept), listed there in the order they were listed here, each keeping
+      * any figure a statement bound it to, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
+      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
+@@ -423,7 +425,8 @@ public class PersonRepository {
+         long f = from.getId();
+         String grade = from.getGrade() != null ? from.getGrade() : from.getGrades().get(0).grade();
+         long t = insert(toSheet, from.getName(), grade, from.getTerms(), from.getContact(), from.getTags()).getId();
+-        jdbc.update("UPDATE person SET origin = ? WHERE id = ?", from.getSheetId(), t);
++        jdbc.update("UPDATE person SET origin = ?, arrived_on = COALESCE((SELECT today FROM sheet WHERE id = ?), CURRENT_DATE) WHERE id = ?",
++                from.getSheetId(), toSheet, t);
+         jdbc.update("DELETE FROM person_grade WHERE person_id = ?", t);
+         jdbc.update("INSERT INTO person_grade (person_id, grade, from_date) SELECT ?, grade, from_date FROM person_grade"
+                 + " WHERE person_id = ?", t, f);
+diff --git a/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferUndone.java b/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferUndone.java
+new file mode 100644
+index 00000000..227a811a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RecordPersonTransferUndone.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Val;
++
++/** This sheet's record that the transfer which brought the person here was undone; its rollup lines follow. */
++public class RecordPersonTransferUndone {
++    public void record(@Val Person person, @Val PersonTransferred transferred, @Val ChangedBy by, Audit audit) {
++        audit.record("PERSON_TRANSFER_UNDONE sheet=" + person.getSheetId() + " by=" + by.name() + " name="
++                + transferred.name() + " to=" + transferred.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferUndoRequest.java b/src/main/java/net/officefloor/hq/app/person/TransferUndoRequest.java
+new file mode 100644
+index 00000000..b29f0003
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferUndoRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The signed-in user (`by`) undoing the transfer that brought a person here. */
++public record TransferUndoRequest(String by) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java b/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java
+new file mode 100644
+index 00000000..9b42ab3a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.session.ChangedBy;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** An undo of a transfer: publishes the user making the change. */
++public class ValidateTransferUndo {
++    public void validate(@RequestBody TransferUndoRequest request, Out<ChangedBy> changedBy) throws BadRequestException {
++        changedBy.set(ChangedBy.of(request == null ? null : request.by()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V81__person_arrived_on.sql b/src/main/resources/db/migration/V81__person_arrived_on.sql
+new file mode 100644
+index 00000000..0793740c
+--- /dev/null
++++ b/src/main/resources/db/migration/V81__person_arrived_on.sql
+@@ -0,0 +1,5 @@
++-- The sheet's today on which a transferred person arrived on it; null for anyone not transferred in.
++ALTER TABLE person ADD COLUMN arrived_on DATE;
++-- The sheet's snapshots, and their layout as of a date, carry it too.
++ALTER TABLE hist.person ADD COLUMN arrived_on DATE;
++ALTER TABLE asof.person ADD COLUMN arrived_on DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml
+new file mode 100644
+index 00000000..20662620
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml
+@@ -0,0 +1,50 @@
++# Undo the transfer that brought a person here: they are transferred back to the sheet they came from, by exactly the
++# transfer's rules and lines, then this sheet records the undo. Every check runs before anything is written.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetId
++  next: undo
++undo:
++  class: net.officefloor.hq.app.person.ValidateTransferUndo
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.access.RefuseViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckTransferUndo
++  govern: [ transaction ]
++  next: rollup-before
++rollup-before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.TransferPerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.RecordPersonTransferred
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: audit-to
++audit-to:
++  class: net.officefloor.hq.app.person.RecordPersonArrived
++  govern: [ transaction ]
++  next: undone
++undone:
++  class: net.officefloor.hq.app.person.RecordPersonTransferUndone
++  govern: [ transaction ]
++  next: rollup-undone
++rollup-undone:
++  class: net.officefloor.hq.app.rollup.RecordRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
