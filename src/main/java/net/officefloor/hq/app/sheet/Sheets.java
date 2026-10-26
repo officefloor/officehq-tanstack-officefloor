@@ -16,9 +16,9 @@ public class Sheets {
     }
 
     public Sheet find(String id) {
-        List<LocalDate> today = jdbc.query("SELECT today_date FROM sheet WHERE id = ?",
-                (rs, n) -> rs.getObject(1, LocalDate.class), id);
-        return new Sheet(id, today.isEmpty() ? LocalDate.now() : today.get(0));
+        List<Sheet> found = jdbc.query("SELECT today_date, archived FROM sheet WHERE id = ?",
+                (rs, n) -> new Sheet(id, rs.getObject(1, LocalDate.class), rs.getBoolean(2)), id);
+        return found.isEmpty() ? new Sheet(id, LocalDate.now(), false) : found.get(0);
     }
 
     /** The sheet's today: use this, never the real clock, for anything that depends on the date. */
@@ -26,7 +26,13 @@ public class Sheets {
         return find(id).today();
     }
 
+    /** Whether the sheet is archived, and so refuses every change. */
+    public boolean isArchived(String id) {
+        return find(id).archived();
+    }
+
     public void save(Sheet sheet) {
-        jdbc.update("MERGE INTO sheet (id, today_date) KEY (id) VALUES (?, ?)", sheet.id(), sheet.today());
+        jdbc.update("MERGE INTO sheet (id, today_date, archived) KEY (id) VALUES (?, ?, ?)", sheet.id(), sheet.today(),
+                sheet.archived());
     }
 }
