@@ -5,16 +5,21 @@ import java.time.LocalDate;
 
 /** A grade's rate on a sheet: a percent with two decimals, in force from a date (null: from the beginning of time)
  * through a to-date (null: with no end). Its level is how far up the sheet's parents it was found: 0 on the sheet itself,
- * 1 on its parent, and so on. */
-public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int level) {
+ * 1 on its parent, and so on. Its version counts how many times it has been set for its grade and from-date; it
+ * is always the newest version, the one in force. */
+public record Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int level, int version) {
 
     public Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
-        this(sheetId, grade, rate, from, to, 0);
+        this(sheetId, grade, rate, from, to, 0, 1);
+    }
+
+    public Rate(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to, int version) {
+        this(sheetId, grade, rate, from, to, 0, version);
     }
 
     /** The rate as found the given number of levels up. */
     public Rate at(int level) {
-        return new Rate(sheetId, grade, rate, from, to, level);
+        return new Rate(sheetId, grade, rate, from, to, level, version);
     }
 
     /**

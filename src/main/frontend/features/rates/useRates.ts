@@ -3,8 +3,9 @@ import { getJson } from '../../api/http';
 
 /** A grade's rate, in force from its from-date (yyyy-mm-dd; null applies from the beginning of time) through its
  *  to-date (null: with no end). Its level is how far up the sheet's parents it is from: 0 (or none) the sheet's own,
- *  1 its parent's, and so on, up to three. */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number };
+ *  1 its parent's, and so on, up to three. Its version is how many versions it has had for its grade and from-date; it is
+ *  always the newest, the one in force. */
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; level?: number; version?: number };
 
 /** The key every feature reads the sheet's rates under. */
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;

@@ -21,7 +21,7 @@ public class RateRepository {
         Date from = rs.getDate("from_date");
         Date to = rs.getDate("to_date");
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate"),
-                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate());
+                from == null ? null : from.toLocalDate(), to == null ? null : to.toLocalDate(), rs.getInt("version"));
     };
 
     /** How many levels of parents a sheet takes rates from. */
@@ -35,7 +35,7 @@ public class RateRepository {
 
     /** The sheet's rates, by grade, then by from-date (none first). */
     public List<Rate> list(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date FROM rate WHERE sheet_id = ?"
+        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
                 + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
@@ -112,22 +112,31 @@ public class RateRepository {
      * without a from-date counting as the earliest. Null when none applies, or the date is after that one's to-date.
      */
     public BigDecimal findOwn(String sheetId, String grade, LocalDate on) {
-        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date FROM rate WHERE sheet_id = ? AND grade = ?"
+        return jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ? AND grade = ?"
                 + " AND (from_date IS NULL OR from_date <= ?) ORDER BY from_date DESC NULLS LAST LIMIT 1", ROW,
                 sheetId, grade, Date.valueOf(on)).stream().findFirst()
                 .filter(r -> r.to() == null || !r.to().isBefore(on)).map(Rate::rate).orElse(null);
     }
 
     /**
-     * Set a grade's rate from a date (null: from the beginning of time) through a to-date (null: with no end),
-     * replacing one already there for that from-date.
+     * Set a grade's rate from a date (null: from the beginning of time) through a to-date (null: with no end). One
+     * already there for that from-date is kept as an older version, and the new one becomes the next version.
      */
     public Rate set(String sheetId, String grade, BigDecimal rate, LocalDate from, LocalDate to) {
         Date fromDate = from == null ? null : Date.valueOf(from);
+        Rate old = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version FROM rate WHERE sheet_id = ?"
+                + " AND grade = ? AND from_date IS NOT DISTINCT FROM ?", ROW, sheetId, grade, fromDate)
+                .stream().findFirst().orElse(null);
+        int version = 1;
+        if (old != null) {
+            jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    sheetId, grade, fromDate, old.version(), old.rate(), old.to() == null ? null : Date.valueOf(old.to()));
+            version = old.version() + 1;
+        }
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 sheetId, grade, fromDate);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) VALUES (?, ?, ?, ?, ?)", sheetId,
-                grade, rate, fromDate, to == null ? null : Date.valueOf(to));
-        return new Rate(sheetId, grade, rate, from, to);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)", sheetId,
+                grade, rate, fromDate, to == null ? null : Date.valueOf(to), version);
+        return new Rate(sheetId, grade, rate, from, to, version);
     }
 }

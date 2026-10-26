@@ -100,8 +100,8 @@ function useDueParts(sheetId: string): Map<number, Split & { total: bigint | nul
 }
 
 // The rate form: sets a grade's rate from a date (blank: from the beginning of time) through a to-date
-// (blank: with no end; never before the from-date), replacing one
-// already set for that grade and date. Every rate is listed under it, with each grade's rate in
+// (blank: with no end; never before the from-date); one already set for that grade and date is
+// kept as an older version and the new one is in force, the row showing its version count. Every rate is listed under it, with each grade's rate in
 // force on the sheet's today.
 function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
   const rates = useRates(sheetId);
@@ -234,6 +234,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -243,6 +244,7 @@ function RatesPanel({ sheetId }: { sheetId: string; user: string }) {
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{showHundredths(toHundredths(r.rate))}</td>
+              <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>
           ))}
         </tbody>

@@ -32,8 +32,10 @@ public class SheetCloneRepository {
                 + " setting_key, from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
                 + " WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date) SELECT ?, grade, rate, from_date,"
-                + " to_date FROM rate WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO rate (sheet_id, grade, rate, from_date, to_date, version) SELECT ?, grade, rate, from_date,"
+                + " to_date, version FROM rate WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, rate, to_date) SELECT ?, grade, from_date,"
+                + " version, rate, to_date FROM rate_version WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM holiday"
                 + " WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, reason) SELECT ?, reason FROM void_reason"
