@@ -41,6 +41,8 @@ const ACTIONS: Array<{ action: string; change: Change; label: string }> = [
 // in force on its date cannot be settled or approved while it has none (refused before the clerk limit is considered).
 // An OPEN claim (not deferred, not in a closed period) can be split: an amount above 0.00 and below its own goes to a new
 // OPEN claim with the next number, listed as the person's newest and showing the claim's number as split-from.
+// An OPEN claim can be part-settled: the amount is split off as a split does and the new claim settled at once as a settle
+// does (PENDING under the clerk limit), with the four-eyes and proof rules judged on the original; either refusal refuses all.
 // A steward can re-date an OPEN or PENDING claim (not to a date after its person's retirement, nor one in a closed
 // period): its due-by and any statement figure stay, and so its period (that of its due-by) and its number stay too.
 // An OPEN or PENDING claim can be reminded once per sheet-today: it shows the last day it was reminded.
@@ -64,6 +66,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
   const [moveTo, setMoveTo] = useState('');
   const [deferUntil, setDeferUntil] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [settlePartAmount, setSettlePartAmount] = useState('');
   const [proofKind, setProofKind] = useState('');
   const [newDate, setNewDate] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
@@ -170,6 +173,13 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
         { amount: amount.trim(), by: user ?? '' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
   });
+  // A part-settle: the amount split off as a split does, the new claim settled at once as a settle does; all or nothing.
+  const settlePart = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${claim.id}/settle-part`,
+        { amount: amount.trim(), by: user ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
   // A steward's re-date of an OPEN or PENDING claim: its due-by and any statement figure stay, and with them its period.
   const redate = useMutation({
     mutationFn: (date: string) => {
@@ -248,6 +258,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     defer.reset();
     proof.reset();
     split.reset();
+          settlePart.reset();
     redate.reset();
     lock.reset();
     remind.reset();
@@ -266,6 +277,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     defer.reset();
     proof.reset();
     split.reset();
+          settlePart.reset();
     redate.reset();
     lock.reset();
     remind.reset();
@@ -276,9 +288,9 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
     line.reset();
     setRefused(undefined);
   };
-  const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending
+  const busy = lock.isPending || change.isPending || reassign.isPending || resettle.isPending || defer.isPending || proof.isPending || split.isPending || settlePart.isPending
     || redate.isPending || remind.isPending || waive.isPending || hold.isPending || inline.isPending || comment.isPending || line.isPending;
-  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? redate.error ?? remind.error ?? waive.error ?? hold.error ?? inline.error ?? comment.error ?? line.error;
+  const error = (refused === undefined ? null : new Error(refused)) ?? lock.error ?? change.error ?? reassign.error ?? resettle.error ?? defer.error ?? proof.error ?? split.error ?? settlePart.error ?? redate.error ?? remind.error ?? waive.error ?? hold.error ?? inline.error ?? comment.error ?? line.error;
 
   return (
     <>
@@ -343,6 +355,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           redate.reset();
           lock.reset();
           remind.reset();
@@ -368,6 +381,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           redate.reset();
           lock.reset();
           remind.reset();
@@ -404,6 +418,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resettle.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           redate.reset();
           lock.reset();
           remind.reset();
@@ -443,6 +458,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           resettle.reset();
           defer.reset();
           split.reset();
+          settlePart.reset();
           redate.reset();
           lock.reset();
           remind.reset();
@@ -487,11 +503,32 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           inline.reset();
           comment.reset();
           line.reset();
+          settlePart.reset();
           setRefused(undefined);
           split.mutate(splitAmount);
         }}
       >
         Split
+      </button>{' '}
+      <input
+        data-testid="claim-settle-part-amount"
+        placeholder="Settle part amount"
+        value={settlePartAmount}
+        onChange={(e) => {
+          setSettlePartAmount(e.target.value);
+          settlePart.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-settle-part"
+        disabled={busy}
+        onClick={() => {
+          resetAll();
+          settlePart.mutate(settlePartAmount);
+        }}
+      >
+        Settle part
       </button>{' '}
       <input
         type="date"
@@ -513,6 +550,7 @@ function ClaimStatusCell({ sheetId, claim }: { sheetId: string; user: string; pe
           defer.reset();
           proof.reset();
           split.reset();
+          settlePart.reset();
           lock.reset();
           remind.reset();
     waive.reset();

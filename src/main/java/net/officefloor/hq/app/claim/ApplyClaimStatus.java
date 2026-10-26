@@ -40,6 +40,18 @@ public class ApplyClaimStatus {
             PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
             PeriodRepository periods, ClaimLogRepository log, @Val ChangedBy by, @Val ClaimReview review, @Val VoidChoice voidChoice, VoidReasonRepository voidReasons,
             Out<ClaimNumber> audited) throws BadRequestException {
+        change(status, claim, repository, people, rates, roles, settings, sheets, periods, log, by, review, voidChoice,
+                voidReasons, audited, false);
+    }
+
+    /**
+     * The change itself; with {@code judged}, a settle whose four-eyes rules and proof rule were already judged on another
+     * claim (a part-settle's original) and are not judged again on this one.
+     */
+    void change(ClaimStatus status, Claim claim, ClaimRepository repository,
+            PersonRepository people, RateRepository rates, RoleRepository roles, SettingRepository settings, SheetRepository sheets,
+            PeriodRepository periods, ClaimLogRepository log, ChangedBy by, ClaimReview review, VoidChoice voidChoice, VoidReasonRepository voidReasons,
+            Out<ClaimNumber> audited, boolean judged) throws BadRequestException {
         ClaimStatus from = claim.getStatus();
         String role = roles.roleOf(claim.getSheetId(), by.name());
         boolean steward = Role.STEWARD.equals(role);
@@ -123,11 +135,8 @@ public class ApplyClaimStatus {
                     throw new BadRequestException("That void reason is not on the sheet's list");
                 }
             }
-            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getOpenedBy())) {
-                throw new BadRequestException("The user who opened a claim cannot settle it");
-            }
-            if (status == ClaimStatus.SETTLED && by.name().equals(claim.getEditedBy())) {
-                throw new BadRequestException("The user who last edited a claim cannot settle it");
+            if (status == ClaimStatus.SETTLED && !judged) {
+                refuseFourEyes(claim, by);
             }
             if (status == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
                 throw new BadRequestException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
@@ -145,19 +154,8 @@ public class ApplyClaimStatus {
         if (status == ClaimStatus.OPEN && !review.asked()) {
             refuseOverCap(claim, repository, periods);
         }
-        if (status == ClaimStatus.SETTLED && due != null) {
-            java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
-            String missing = kinds.stream().filter(k -> claim.proofsOf(k) == 0).findFirst().orElse(null);
-            if (claim.getProofs() == 0 || missing != null) {
-                Person owner = people.find(claim.getSheetId(), claim.getPersonId());
-                BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
-                        claim.getDate());
-                if (threshold != null && due.compareTo(threshold) > 0) {
-                    throw new BadRequestException(claim.getProofs() == 0
-                            ? "A claim whose due is above the proof threshold needs a proof before it is settled"
-                            : "A claim whose due is above the proof threshold needs a " + missing + " proof before it is settled");
-                }
-            }
+        if (status == ClaimStatus.SETTLED && due != null && !judged) {
+            refuseWithoutProof(claim, due, people, settings, late);
         }
         ClaimStatus to = status;
         if (!review.asked() && status == ClaimStatus.SETTLED && due != null && !steward) {
@@ -194,6 +192,42 @@ public class ApplyClaimStatus {
             repository.updateStatus(claim, to);
         }
         audited.set(new ClaimNumber(claim.getNumber()));
+    }
+
+    /** Refuses the settle of a claim by the user who opened it or who last edited it. */
+    static void refuseFourEyes(Claim claim, ChangedBy by) throws BadRequestException {
+        if (by.name().equals(claim.getOpenedBy())) {
+            throw new BadRequestException("The user who opened a claim cannot settle it");
+        }
+        if (by.name().equals(claim.getEditedBy())) {
+            throw new BadRequestException("The user who last edited a claim cannot settle it");
+        }
+    }
+
+    /**
+     * Refuses the settle at {@code due} of a claim without a proof (or missing one of the sheet's proof kinds) when the due
+     * is above the proof threshold in force on the claim's date (its person's grade's on that date when set, else the sheet's).
+     */
+    static void refuseWithoutProof(Claim claim, BigDecimal due, PersonRepository people, SettingRepository settings,
+            LateCharge late) throws BadRequestException {
+        java.util.List<String> kinds = settings.proofKinds(claim.getSheetId());
+        String missing = kinds.stream().filter(k -> claim.proofsOf(k) == 0).findFirst().orElse(null);
+        if (claim.getProofs() == 0 || missing != null) {
+            Person owner = people.find(claim.getSheetId(), claim.getPersonId());
+            BigDecimal threshold = late.settings().proofThreshold(owner == null ? null : owner.gradeOn(claim.getDate()),
+                    claim.getDate());
+            if (threshold != null && due.compareTo(threshold) > 0) {
+                throw new BadRequestException(claim.getProofs() == 0
+                        ? "A claim whose due is above the proof threshold needs a proof before it is settled"
+                        : "A claim whose due is above the proof threshold needs a " + missing + " proof before it is settled");
+            }
+        }
+    }
+
+    /** The due the claim would be settled at now (null: n/a). */
+    static BigDecimal settleDue(Claim claim, PersonRepository people, RateRepository rates, SettingRepository settings,
+            LateCharge late) {
+        return late.due(claim, dueNow(claim, people, rates, settings, late));
     }
 
     /**
