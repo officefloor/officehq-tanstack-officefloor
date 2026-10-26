@@ -1,0 +1,104 @@
+diff --git a/src/main/frontend/features/claims/claimsQuery.ts b/src/main/frontend/features/claims/claimsQuery.ts
+index ce8d04b1..29fe2c8c 100644
+--- a/src/main/frontend/features/claims/claimsQuery.ts
++++ b/src/main/frontend/features/claims/claimsQuery.ts
+@@ -60,6 +60,21 @@ export const counts = (c: Claim, people: Person[], today: string) =>
+   (isOpen(c) &&
+     ((c.stated && c.status !== 'PENDING') || !heldOn(people.find((p) => p.id === c.personId), c.date))));
+ 
++/** The first day (yyyy-mm-dd) of the 30 days up to and including the sheet's `today`. */
++const activeFrom = (today: string) => new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
++
++/**
++ * Whether the person is active: they have an open (OPEN or PENDING) claim that counts, dated within the 30 days up to
++ * and including the sheet's `today` (never while `today` is not loaded).
++ */
++export function isActive(personId: number, claims: Claim[], people: Person[], today: string): boolean {
++  if (today === '') return false;
++  const from = activeFrom(today);
++  return claims.some(
++    (c) => c.personId === personId && isOpen(c) && counts(c, people, today) && from <= c.date && c.date <= today,
++  );
++}
++
+ /** Under the sheet's key, so re-loading the sheet re-reads its claims. */
+ export const claimsKey = (sheetId: string) => [...sheetKey(sheetId), 'claims'] as const;
+ 
+diff --git a/src/main/frontend/features/people/active.slot.tsx b/src/main/frontend/features/people/active.slot.tsx
+new file mode 100644
+index 00000000..1dc86ffb
+--- /dev/null
++++ b/src/main/frontend/features/people/active.slot.tsx
+@@ -0,0 +1,18 @@
++import { useQuery } from '@tanstack/react-query';
++import { PersonCells, PersonHeaders } from '../../slots/defs/personColumns';
++import { claimsQuery, isActive } from '../claims/claimsQuery';
++import { useSheetToday } from '../sheet/useSheetToday';
++import { peopleQuery } from './peopleQuery';
++
++/** Whether the person is active (see `isActive`): yes or no. */
++function PersonActive({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const people = useQuery(peopleQuery(sheetId)).data ?? [];
++  const claims = useQuery(claimsQuery(sheetId)).data ?? [];
++  const today = useSheetToday(sheetId);
++  return <td data-testid="person-active">{isActive(personId, claims, people, today) ? 'yes' : 'no'}</td>;
++}
++
++export const contributions = [
++  PersonHeaders.fill({ order: 11, Component: () => <th>Active</th> }),
++  PersonCells.fill({ order: 11, Component: PersonActive }),
++];
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 2bbf1691..97a5a2d5 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { SheetPanel } from '../../slots/defs/sheetPanel';
+-import { claimsQuery } from '../claims/claimsQuery';
++import { claimsQuery, isActive } from '../claims/claimsQuery';
+ import type { Claim, ClaimStatus } from '../claims/claimsQuery';
+ import { GRADES, gradeOn, peopleQuery } from '../people/peopleQuery';
+ import { periodDue, periodsQuery } from '../periods/periodsQuery';
+@@ -15,7 +15,7 @@ export const statusCount = (claims: Claim[], status: ClaimStatus) => claims.filt
+ 
+ /**
+  * The sheet at a glance, worked out from the same figures the lists show. Per grade: the people on it
+- * today (retired people excluded) and their due-totals added up, skipping n/a. Per period: its
++ * today (retired people excluded), their due-totals added up, skipping n/a, and how many of them are active. Per period: its
+  * due-total. Per status: how many claims have it.
+  */
+ function Summary({ sheetId }: { sheetId: string }) {
+@@ -28,7 +28,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
+ 
+-  const active = people.filter((p) => p.retiredFrom === null);
++  const unretired = people.filter((p) => p.retiredFrom === null);
+ 
+   return (
+     <section data-testid="summary">
+@@ -39,11 +39,12 @@ function Summary({ sheetId }: { sheetId: string }) {
+             <th>Grade</th>
+             <th>People</th>
+             <th>Due</th>
++            <th>Active</th>
+           </tr>
+         </thead>
+         <tbody>
+           {GRADES.map((g) => {
+-            const onGrade = active.filter((p) => gradeOn(p, today) === g);
++            const onGrade = unretired.filter((p) => gradeOn(p, today) === g);
+             return (
+               <tr key={g} data-testid={`summary-grade-${g}`}>
+                 <td>{g}</td>
+@@ -51,6 +52,9 @@ function Summary({ sheetId }: { sheetId: string }) {
+                 <td data-testid={`summary-grade-${g}-due-total`}>
+                   {sumDue(onGrade.map((p) => personDue(p, people, claims, rates, today, floor, late, cap)))}
+                 </td>
++                <td data-testid={`summary-grade-${g}-active`}>
++                  {onGrade.filter((p) => isActive(p.id, claims, people, today)).length}
++                </td>
+               </tr>
+             );
+           })}
