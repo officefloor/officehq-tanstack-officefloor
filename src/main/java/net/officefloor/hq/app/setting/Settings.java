@@ -12,6 +12,8 @@ public class Settings {
     public static final String CLERK_LIMIT = "clerk-limit";
     public static final String FLOOR = "floor";
     public static final String FLOOR_DEFAULT = "1.00";
+    public static final String TERMS = "terms";
+    public static final String TERMS_DEFAULT = "14";
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
 
@@ -43,6 +45,12 @@ public class Settings {
     public BigDecimal floor(String sheetId) {
         String value = get(sheetId, FLOOR);
         return new BigDecimal(value.isEmpty() ? FLOOR_DEFAULT : value);
+    }
+
+    /** The terms: the number of days after its date a claim is due by; 14 when never set. */
+    public int terms(String sheetId) {
+        String value = get(sheetId, TERMS);
+        return Integer.parseInt(value.isEmpty() ? TERMS_DEFAULT : value);
     }
 
     /** A live due raised to the sheet's floor; null (no due) stays null. */

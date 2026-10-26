@@ -10,5 +10,8 @@ public class ApplySettings {
         if (settings.floor() != null) {
             store.set(settings.sheetId(), Settings.FLOOR, settings.floor());
         }
+        if (settings.terms() != null) {
+            store.set(settings.sheetId(), Settings.TERMS, settings.terms());
+        }
     }
 }

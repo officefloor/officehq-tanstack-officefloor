@@ -8,6 +8,6 @@ public class RespondWithSettings {
             ObjectResponse<SettingsResponse> response) {
         String sheet = sheetId.trim();
         response.send(new SettingsResponse(settings.get(sheet, Settings.CLERK_LIMIT),
-                settings.floor(sheet).setScale(2).toPlainString()));
+                settings.floor(sheet).setScale(2).toPlainString(), Integer.toString(settings.terms(sheet))));
     }
 }

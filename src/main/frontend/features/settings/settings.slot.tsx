@@ -9,15 +9,18 @@ import { ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './setti
 import type { Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
+const DAYS = /^\d{1,4}$/;
 
 /** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
- *  claim's live due is at least — and the form they are saved through. A blank floor is left as it
- *  is, and so is a blank clerk limit saved with a floor. */
+ *  claim's live due is at least, and the terms (days after its date a claim is due by) — and the form
+ *  they are saved through. A blank floor or terms is left as it is, and so is a blank clerk limit saved
+ *  with either. */
 function Settings({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery(settingsQuery(sheetId));
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
+  const [terms, setTerms] = useState('');
   const [error, setError] = useState('');
 
   const [user] = useUser();
@@ -29,6 +32,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) });
       setLimit('');
       setFloor('');
+      setTerms('');
     },
     onError: () => setError('The settings could not be saved.'),
   });
@@ -46,7 +50,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The floor must be an amount of 0.00 or more, with up to two decimals.');
       return;
     }
-    once(() => save.mutateAsync(f === '' ? { clerkLimit: l } : l === '' ? { floor: f } : { clerkLimit: l, floor: f }));
+    const t = terms.trim();
+    if (t !== '' && !DAYS.test(t)) {
+      setError('The terms must be a whole number of days, 0 or more.');
+      return;
+    }
+    const body: SettingsChange = {};
+    if (l !== '' || (f === '' && t === '')) body.clerkLimit = l;
+    if (f !== '') body.floor = f;
+    if (t !== '') body.terms = t;
+    once(() => save.mutateAsync(body));
   };
 
   return (
@@ -77,6 +90,18 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Terms (days){' '}
+          <input
+            data-testid="setting-terms"
+            placeholder="unchanged"
+            value={terms}
+            onChange={(e) => {
+              setTerms(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>
@@ -88,6 +113,9 @@ function Settings({ sheetId }: { sheetId: string }) {
       </p>
       <p>
         Floor in force: <span data-testid="setting-floor-current">{settings.data?.floor ?? ''}</span>
+      </p>
+      <p>
+        Terms in force: <span data-testid="setting-terms-current">{settings.data?.terms ?? ''}</span>
       </p>
     </section>
   );
