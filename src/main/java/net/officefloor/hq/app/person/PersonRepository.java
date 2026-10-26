@@ -309,10 +309,11 @@ public class PersonRepository {
     /**
      * Merge the person into the other, both still at the versions they were loaded at: the merged person's claims move
      * to the other (numbers and dates kept, listed after the other's claims in the order they were added, each
-     * unbound from any statement figure); their name and aliases become the other's aliases; their patrons are added
+     * keeping any figure a statement bound it to); their statements become the other's, taken before the other's own
+     * (see {@link #carryStatements}); their name and aliases become the other's aliases; their patrons are added
      * to the other's and anyone naming them as patron names the other instead (never the other themselves, no
      * repeats); their plans and pool memberships move to the other (shares added where the other is a member already) and their
-     * closed periods' totals add to the other's. Their statements, holds, watchers, grades and contact are dropped
+     * closed periods' totals add to the other's. Their holds, watchers, grades and contact are dropped
      * with them. False (nothing written) when either was saved by someone else in the meantime.
      */
     public boolean merge(Person from, Person into) {
@@ -328,7 +329,7 @@ public class PersonRepository {
                 Long.class, sheetId, f)) {
             Long listed = jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE "
                     + "(UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)", Long.class, sheetId);
-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, listed = ? WHERE id = ?", t,
+            jdbc.update("UPDATE claim SET person_id = ?, listed = ? WHERE id = ?", t,
                     listed, claimId);
         }
         jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", t, sheetId, f);
@@ -355,7 +356,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM period_person_total m WHERE m.person_id = ? AND EXISTS (SELECT 1 FROM period_person_total o"
                 + " WHERE o.period_id = m.period_id AND o.person_id = ?)", f, t);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE person_id = ?", t, f);
-        jdbc.update("DELETE FROM statement WHERE person_id = ?", f);
+        carryStatements(f, sheetId, t);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", f);
@@ -377,11 +378,11 @@ public class PersonRepository {
     /**
      * Transfer the person to the other sheet (stored already): they are added there with their name, terms, contact,
      * every grade they were given (with its from-date) and their aliases, noting this sheet as the one they came from; their claims move with them (status, dates,
-     * notes, settled figures, logs and comments kept), listed there in the order they were listed here, each unbound
-     * from any statement figure, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
+     * notes, settled figures, logs and comments kept), listed there in the order they were listed here, each keeping
+     * any figure a statement bound it to, without its reference or settle batch, and numbered by {@code numbers} (by claim id;
      * a claim absent keeps no number), a correction or split naming its claim by the new number; their tags are noted
-     * as used there. Everything else of theirs here — patron links either way, pool memberships, plans, watches, holds,
-     * statements and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
+     * as used there; their statements move with them. Everything else of theirs here — patron links either way, pool
+     * memberships, plans, watches, holds and closed periods' totals — is dropped with them. Answers the person's id on the other sheet.
      */
     public long transfer(Person from, String toSheet, Map<Long, String> numbers) {
         long f = from.getId();
@@ -393,6 +394,7 @@ public class PersonRepository {
                 + " WHERE person_id = ?", t, f);
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
         moveClaims(from, toSheet, t, numbers);
+        carryStatements(f, toSheet, t);
         dropRest(f);
         return t;
     }
@@ -400,9 +402,9 @@ public class PersonRepository {
     /**
      * Transfer the person to the other sheet merging them into a person there ({@code into}, still at the version they
      * were loaded at), as {@link #merge} does: their claims move to the other as {@link #transfer} moves them, listed
-     * after the other's claims; their name and aliases become the other's aliases; everything else of theirs is
-     * dropped with them (grades, terms and contact too). False (nothing written) when the other was saved by someone
-     * else in the meantime.
+     * after the other's claims, and their statements become the other's as {@link #merge} carries them; their name and
+     * aliases become the other's aliases; everything else of theirs is dropped with them (grades, terms and contact
+     * too). False (nothing written) when the other was saved by someone else in the meantime.
      */
     public boolean transferInto(Person from, Person into, Map<Long, String> numbers) {
         long f = from.getId();
@@ -416,6 +418,7 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", toSheet, t,
                 from.getName());
         moveClaims(from, toSheet, t, numbers);
+        carryStatements(f, toSheet, t);
         dropRest(f);
         return true;
     }
@@ -436,7 +439,7 @@ public class PersonRepository {
             Long listed = jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE "
                     + "(UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)", Long.class, toSheet);
             jdbc.update("UPDATE claim SET sheet_id = ?, person_id = ?, listed = ?, claim_number = ?, corrects = ?,"
-                    + " split_from = ?, stated = FALSE, stated_due = NULL, ref = NULL, settle_batch = NULL WHERE id = ?",
+                    + " split_from = ?, ref = NULL, settle_batch = NULL WHERE id = ?",
                     toSheet, t, listed, numbers.get(id), renumbered.get((String) claim.get("corrects")),
                     renumbered.get((String) claim.get("split_from")), id);
             jdbc.update("UPDATE claim_log SET sheet_id = ? WHERE claim_id = ?", toSheet, id);
@@ -448,6 +451,21 @@ public class PersonRepository {
                     jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", toSheet, tag);
                 }
             }
+        }
+    }
+
+    /**
+     * Carry person {@code f}'s statements to person {@code t} on {@code toSheet}: {@code t}'s count becomes their own
+     * plus {@code f}'s, and {@code t}'s last statement stays theirs (or, having none, becomes {@code f}'s). The last
+     * statement is the one with the highest id, so {@code t}'s own are taken again after {@code f}'s, in their order.
+     */
+    private void carryStatements(long f, String toSheet, long t) {
+        List<Long> own = jdbc.queryForList("SELECT id FROM statement WHERE person_id = ? ORDER BY id", Long.class, t);
+        jdbc.update("UPDATE statement SET sheet_id = ?, person_id = ? WHERE person_id = ?", toSheet, t, f);
+        for (Long id : own) {
+            jdbc.update("INSERT INTO statement (sheet_id, person_id, due_total, taken_on)"
+                    + " SELECT sheet_id, person_id, due_total, taken_on FROM statement WHERE id = ?", id);
+            jdbc.update("DELETE FROM statement WHERE id = ?", id);
         }
     }
 
