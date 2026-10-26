@@ -23,6 +23,12 @@ public class ValidateRate {
     public void validate(@RequestBody RateRequest request, Out<RateInput> rate, Out<ChangedBy> changedBy)
             throws BadRequestException {
         ChangedBy by = ChangedBy.of(request == null ? null : request.by());
+        rate.set(parse(request));
+        changedBy.set(by);
+    }
+
+    /** Checks a rate's fields with the rate form's rules, giving the validated rate. */
+    static RateInput parse(RateRequest request) throws BadRequestException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String text = request == null || request.rate() == null ? "" : request.rate().trim();
         if (!GRADES.contains(grade)) {
@@ -59,7 +65,6 @@ public class ValidateRate {
                 throw new BadRequestException("A rate's to-date cannot be before its from-date");
             }
         }
-        rate.set(new RateInput(grade, value, from, to));
-        changedBy.set(by);
+        return new RateInput(grade, value, from, to);
     }
 }

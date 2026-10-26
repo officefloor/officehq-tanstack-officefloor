@@ -118,7 +118,7 @@ public class SheetHistory {
                     }
                 }
                 if (snapshot == null && today != null && on.isBefore(today)) {
-                    asOf.update("UPDATE asof.sheet SET archived = FALSE WHERE id = ?", sheetId);
+                    asOf.update("UPDATE asof.sheet SET archived = FALSE, last_settle_batch = 0 WHERE id = ?", sheetId);
                 }
                 asOf.update("UPDATE asof.sheet SET today = ? WHERE id = ?", Date.valueOf(on), sheetId);
                 con.setSchema("ASOF");
