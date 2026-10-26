@@ -1,0 +1,138 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index e518ac92..608ccf3f 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -5,7 +5,7 @@ import { ClaimCells } from '../../slots/defs/claimRow';
+ import { PersonCells, PersonHeads } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/useSession';
+-import { useHeld } from '../people/people.slot';
++import { useRetiredHolds } from '../people/people.slot';
+ import { claimLockKey, claimSaveKey, claimsKey, sumAmounts, useClaims, useEditingClaim, type Claim } from './useClaims';
+ import { useSubmitOnce } from '../../mutation/useSubmitOnce';
+ import { useTemplates } from '../templates/templates.slot';
+@@ -153,14 +153,14 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
+   const shown = useColumnShown(sheetId);
+   const claims = useClaims(sheetId);
+   const [editingId] = useEditingClaim();
+-  const held = useHeld(sheetId);
++  const retired = useRetiredHolds(sheetId);
+   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
+   // Only a DRAFT can be edited: once the claim being edited is no longer one (another user opened it), its form adds.
+   const editing = mine.find((c) => c.id === editingId && c.status === 'DRAFT');
+ 
+   return (
+     <>
+-      {shown('claimed') && <td data-testid="person-claimed">{sumAmounts(mine, held)}</td>}
++      {shown('claimed') && <td data-testid="person-claimed">{sumAmounts(mine, retired)}</td>}
+       <td>
+         <ClaimForm key={editing ? `edit-${editing.id}` : 'add'} sheetId={sheetId} personId={personId} editing={editing} />
+         <ul data-testid="claim-list">
+@@ -184,11 +184,11 @@ function ClaimsCells({ sheetId, user, personId }: { sheetId: string; user: strin
+ // The sheet's claimed-total: everyone's counted claims, corrections left out, added up.
+ function ClaimedTotal({ sheetId }: { sheetId: string; user: string }) {
+   const claims = useClaims(sheetId);
+-  const held = useHeld(sheetId);
++  const retired = useRetiredHolds(sheetId);
+   return (
+     <section data-testid="claims-rollup">
+       <p>
+-        Claimed total: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], held)}</strong>
++        Claimed total: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], retired)}</strong>
+       </p>
+       {claims.isError && (
+         <p data-testid="claims-error" role="alert">
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 152033b4..8fd69c36 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -59,7 +59,7 @@ export type Claim = { id: number; personId: number; amount: string; date: string
+   /** The sheet's today when the REVIEW claim went to REVIEW; none for a claim in any other status. */
+   reviewDay?: string | null };
+ 
+-/** Whether a claim counts toward claimed, due and every total: only OPEN, PENDING and SETTLED claims do, and an OPEN
++/** Whether a claim counts toward due and every due total (claimed: see sumAmounts): only OPEN, PENDING and SETTLED claims do, and an OPEN
+  *  or PENDING one held itself or dated within one of its person's holds (`held`: each person's holds) does not unless a statement binds it;
+  *  nor does one deferred past the sheet's today. */
+ export function counts(claim: { status: ClaimStatus; personId: number; date: string; stated: boolean; deferred?: boolean; held?: boolean }, held: Holds): boolean {
+@@ -110,8 +110,9 @@ export function useEditingClaim() {
+   return useSearchParam('editClaim', asNumber);
+ }
+ 
+-/** The counted claims' amounts, corrections left out, added up exactly, in cents, shown with two decimals. */
+-export function sumAmounts(claims: Claim[], held: Holds): string {
+-  const cents = claims.filter((c) => counts(c, held) && c.corrects == null).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
++/** The claimed claims' amounts, corrections left out, added up exactly, in cents, shown with two decimals. A hold does
++ *  not take a claim out of claimed: only the retirements (`retired`, see useRetiredHolds) and the rest of `counts` do. */
++export function sumAmounts(claims: Claim[], retired: Holds): string {
++  const cents = claims.filter((c) => counts({ ...c, held: false }, retired) && c.corrects == null).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 423fd559..2460cf74 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -91,6 +91,16 @@ export function useHeld(sheetId: string): Holds {
+       ? [...(p.holds ?? []), { from: null, to: null }] : p.holds ?? []])), [people.data, today]);
+ }
+ 
++/** Each person's retirement as a hold over all their dates, once its date is reached: unlike a hold, it takes their
++ *  OPEN and PENDING claims (unless a statement binds them) out of claimed too. */
++export function useRetiredHolds(sheetId: string): Holds {
++  const people = usePeople(sheetId);
++  const today = useSheetToday(sheetId).data?.today;
++  return useMemo(() => new Map((people.data ?? []).map((p) => [p.id,
++    p.retiredFrom !== null && today !== undefined && p.retiredFrom <= today ? [{ from: null, to: null }] : []])),
++    [people.data, today]);
++}
++
+ /** Which person's editor is open (search param `editPerson`); none means the form adds. */
+ export function useEditingPerson() {
+   return useSearchParam('editPerson', asNumber);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index c7cd32ff..3d0c708b 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -29,8 +29,8 @@ import org.springframework.stereotype.Service;
+  * figure or one at another grade, and at most the sheet's cap in force on its today (an n/a one is not capped); their overdue-total is the figures (late charge included) of
+  * those of their claims that are OPEN or PENDING and past their due-by plus their grade's grace on the sheet's today, added up (uncapped). After a change, records one ROLLUP line per person whose figures (overdue-total included) it moved,
+  * then a TOTALS line when any of the sheet's three totals moved, then — while the sheet's alert threshold is set — an ALERT line, in list order, per person whose due-total went from at or below it (or none) to above it. The sheet's due-total and overdue-total leave out the
+- * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims dated within one of their holds count in none of these, unless a statement
+- * binds them; their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
++ * single highest and the single lowest person's figure when three or more people have one (an n/a due-total is none). A claim deferred past the sheet's today counts in none of these. A person's OPEN and PENDING claims held themselves or dated within one of their holds count, unless a statement
++ * binds them, in none of these but claimed (and so the claimed-total); their other claims still do. So too, from the day their retirement date is reached (the sheet's today on or
+  * after it), do none of a retired person's OPEN and PENDING claims, unless a statement binds them.
+  */
+ @Service
+@@ -73,12 +73,16 @@ public class Rollup {
+             BigDecimal overdue = ZERO;
+             boolean kept = false;
+             for (Claim c : sheetClaims) {
+-                if (c.getPersonId() != p.getId() || !counts(c, p, today)) {
++                if (c.getPersonId() != p.getId() || !claims(c, p, today)) {
+                     continue;
+                 }
+                 if (c.getCorrects() == null) {
+                     claimed = claimed.add(c.getAmount().setScale(2));
+                 }
++                // A held claim still counts in claimed; only its due leaves the totals.
++                if (!counts(c, p, today)) {
++                    continue;
++                }
+                 kept |= c.getSettledDue() != null || (c.isBound() && c.getStatedDue() != null);
+                 String grade = p.gradeOn(c.getDate());
+                 BigDecimal figure = late.due(c, figure(c, grade, sheetRates, late));
+@@ -250,6 +254,13 @@ public class Rollup {
+         return claim.getStatus().counts() && !held(claim, person, today) && !claim.isDeferredOn(today);
+     }
+ 
++    /** Whether the claim counts in claimed: as in the live totals, except that a hold (the person's or the claim's)
++     *  does not take it out; a retirement still does. */
++    private static boolean claims(Claim claim, Person person, LocalDate today) {
++        boolean retired = claim.getStatus().isOpen() && !claim.isBound() && person.retiredOn(today);
++        return claim.getStatus().counts() && !retired && !claim.isDeferredOn(today);
++    }
++
+     /** Whether the claim counts as it would in the live totals were its status {@code then}. */
+     private static boolean countsAs(Claim claim, ClaimStatus then, Person person, LocalDate today) {
+         // Held as the live totals hold it: by its status now, not the one it had then.
