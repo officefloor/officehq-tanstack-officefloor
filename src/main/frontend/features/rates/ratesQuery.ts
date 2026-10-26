@@ -61,10 +61,10 @@ export function sumDue(dues: string[]): string {
 }
 
 /**
- * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its terms in days, its late percent
+ * What a claim's late charge and rounding depend on: the sheet's today (yyyy-mm-dd), its late percent
  * (two decimals), its policy date (yyyy-mm-dd; the sheet's today when none is set) and its claims (to find what a correction corrects).
  */
-export type Late = { today: string; terms: number; pct: string; policy: string; claims: Claim[] };
+export type Late = { today: string; pct: string; policy: string; claims: Claim[] };
 
 /**
  * Whether the claim's live figures round half up: it is dated before the policy date (on or after it, they round half
@@ -77,21 +77,13 @@ export function roundsHalfUp(claim: Claim, { policy, claims }: Late): boolean {
   return (corrected ?? claim).date < policy;
 }
 
-/** The claim's due-by (yyyy-mm-dd): its date plus the sheet's terms in days. */
-export function dueBy(claim: Claim, terms: number): string {
-  const d = new Date(`${claim.date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + terms);
-  return d.toISOString().slice(0, 10);
-}
-
-/** An open (OPEN or PENDING) claim whose due-by is before the sheet's today. */
-export const isOverdue = (claim: Claim, terms: number, today: string) =>
-  isOpen(claim) && today !== '' && dueBy(claim, terms) < today;
+/** An open (OPEN or PENDING) claim whose due-by (fixed when it was made) is before the sheet's today. */
+export const isOverdue = (claim: Claim, today: string) => isOpen(claim) && today !== '' && claim.dueBy < today;
 
 /** The full 30 days the claim has been overdue on the sheet's today (0 when it is not overdue). */
-function lateMonths(claim: Claim, { today, terms }: Late): bigint {
-  if (!isOverdue(claim, terms, today)) return 0n;
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueBy(claim, terms)}T00:00:00Z`)) / 86_400_000;
+function lateMonths(claim: Claim, { today }: Late): bigint {
+  if (!isOverdue(claim, today)) return 0n;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${claim.dueBy}T00:00:00Z`)) / 86_400_000;
   return BigInt(Math.floor(days / 30));
 }
 

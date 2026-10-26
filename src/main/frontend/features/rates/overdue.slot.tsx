@@ -7,8 +7,8 @@ import type { Claim } from '../claims/claimsQuery';
 import { peopleQuery } from '../people/peopleQuery';
 import type { Person } from '../people/peopleQuery';
 import { useSheetToday } from '../sheet/useSheetToday';
-import { useFloor, useLate, useTerms } from '../settings/settingsQuery';
-import { dueBy, figure, isOverdue, ratesQuery, sumDue } from './ratesQuery';
+import { useFloor, useLate } from '../settings/settingsQuery';
+import { figure, isOverdue, ratesQuery, sumDue } from './ratesQuery';
 
 function useOverdueData(sheetId: string) {
   return {
@@ -17,7 +17,6 @@ function useOverdueData(sheetId: string) {
     rates: useQuery(ratesQuery(sheetId)).data ?? [],
     today: useSheetToday(sheetId),
     floor: useFloor(sheetId),
-    terms: useTerms(sheetId),
     late: useLate(sheetId),
   };
 }
@@ -25,20 +24,20 @@ function useOverdueData(sheetId: string) {
 type OverdueData = ReturnType<typeof useOverdueData>;
 
 /** The overdue claims that count (a held person's OPEN claims do not), of one person or of the sheet, with their figures, late charges included. */
-function overdue({ people, claims, rates, today, floor, terms, late }: OverdueData, person?: Person) {
+function overdue({ people, claims, rates, today, floor, late }: OverdueData, person?: Person) {
   const overdueClaims = claims.filter(
-    (c) => (!person || c.personId === person.id) && counts(c, people) && isOverdue(c, terms, today),
+    (c) => (!person || c.personId === person.id) && counts(c, people) && isOverdue(c, today),
   );
   const figures = overdueClaims.map((c) => figure(c, rates, people.find((p) => p.id === c.personId), floor, late));
   return { count: overdueClaims.length, total: sumDue(figures) };
 }
 
 function ClaimDueBy({ sheetId, claim }: { sheetId: string; claim: Claim }) {
-  const { today, terms } = useOverdueData(sheetId);
+  const today = useSheetToday(sheetId);
   return (
     <>
-      <td data-testid="claim-due-by">{dueBy(claim, terms)}</td>
-      <td data-testid="claim-overdue">{isOverdue(claim, terms, today) ? 'yes' : 'no'}</td>
+      <td data-testid="claim-due-by">{claim.dueBy}</td>
+      <td data-testid="claim-overdue">{isOverdue(claim, today) ? 'yes' : 'no'}</td>
     </>
   );
 }

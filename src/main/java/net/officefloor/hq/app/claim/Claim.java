@@ -10,22 +10,23 @@ import java.time.LocalDate;
  * {@code openedBy} is the user who opened it (null when never opened). {@code stated} is whether its person's
  * last statement bound it, at {@code statedDue} (null when it had no figure then). A claim with a negative amount is a
  * correction: {@code corrects} is the number of the SETTLED claim of the same person it corrects (null for any other claim).
+ * {@code dueBy} is fixed when the claim is made, and kept when its terms or its date change later.
  */
 public record Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
-        BigDecimal statedDue, String corrects) {
+        BigDecimal statedDue, String corrects, LocalDate dueBy) {
 
     public Claim with(ClaimInput input, LocalDate date) {
-        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects());
+        return new Claim(id, sheetId, personId, input.amount(), date, input.note(), status, number, settledDue, openedBy, stated, statedDue, input.corrects(), dueBy);
     }
 
     public Claim withStatus(ClaimStatus status, String number, BigDecimal settledDue, String openedBy) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, dueBy);
     }
 
     /** The claim moved to another person: unbound from any statement, so live until their next one. */
     public Claim withPerson(long personId) {
-        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects);
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null, corrects, dueBy);
     }
 
     /** A correction: its due is its amount times the rate, with no floor and no late charge. */

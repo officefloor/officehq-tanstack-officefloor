@@ -21,6 +21,8 @@ public class Settings {
     public static final String FLOOR_DEFAULT = "1.00";
     public static final String TERMS = "terms";
     public static final String TERMS_DEFAULT = "14";
+    /** The grades a sheet may give terms of their own, each kept under {@link #gradeTermsKey}. */
+    public static final List<String> GRADES = List.of("A", "B", "C");
     public static final String LATE_PCT = "late-pct";
     public static final String LATE_PCT_DEFAULT = "0.00";
     public static final String POLICY_DATE = "policy-date";
@@ -68,6 +70,17 @@ public class Settings {
         return Integer.parseInt(value.isEmpty() ? TERMS_DEFAULT : value);
     }
 
+    /** The key a grade's own terms are kept under: terms-<grade>. */
+    public static String gradeTermsKey(String grade) {
+        return TERMS + "-" + grade;
+    }
+
+    /** The terms of the grade: its own terms, or the sheet's terms when it has none of its own. */
+    public int terms(String sheetId, String grade) {
+        String value = get(sheetId, gradeTermsKey(grade));
+        return value.isEmpty() ? terms(sheetId) : Integer.parseInt(value);
+    }
+
     /** The late percent, with two decimals: what an overdue claim gains per full 30 days; 0.00 when never set. */
     public BigDecimal latePct(String sheetId) {
         String value = get(sheetId, LATE_PCT);
@@ -108,7 +121,7 @@ public class Settings {
     }
 
     /**
-     * A claim's figure with its late charge added on top: an open (OPEN or PENDING) claim whose due-by (its date plus the terms) is
+     * A claim's figure with its late charge added on top: an open (OPEN or PENDING) claim whose due-by (fixed when it was made) is
      * before {@code today} gains the late percent of the figure for every full 30 days it is overdue, rounded by {@link #rounding}.
      * The charge is never bound by a statement, so it follows the sheet's today; null (no figure) stays null.
      * A correction has no late charge.
@@ -117,7 +130,7 @@ public class Settings {
         if (figure == null || !claim.status().isOpen() || claim.isCorrection()) {
             return figure;
         }
-        LocalDate dueBy = claim.date().plusDays(terms(claim.sheetId()));
+        LocalDate dueBy = claim.dueBy();
         if (!dueBy.isBefore(today)) {
             return figure;
         }

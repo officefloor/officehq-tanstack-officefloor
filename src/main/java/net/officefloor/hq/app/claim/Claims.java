@@ -21,7 +21,7 @@ public class Claims {
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getString("corrects"));
+            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
 
     /** The next place in a sheet's newest-first list (the sheet's id its one parameter). */
     private static final String NEXT_LISTED = "(SELECT COALESCE(MAX(listed), 0) + 1 FROM claim WHERE sheet_id = ?)";
@@ -49,11 +49,13 @@ public class Claims {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+    /** Adds a draft claim, due by {@code dueBy} for good. */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, "
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, listed) VALUES (?, ?, ?, ?, ?, ?, ?, "
                             + NEXT_LISTED + ")",
                     new String[] { "id" });
             ps.setString(1, sheetId);
@@ -62,11 +64,12 @@ public class Claims {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setObject(6, corrects);
-            ps.setString(7, sheetId);
+            ps.setDate(7, Date.valueOf(dueBy));
+            ps.setString(8, sheetId);
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
-                false, null, corrects);
+                false, null, corrects, dueBy);
     }
 
     public void save(Claim claim) {

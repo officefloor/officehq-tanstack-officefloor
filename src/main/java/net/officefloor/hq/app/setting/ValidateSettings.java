@@ -4,6 +4,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +23,8 @@ public class ValidateSettings {
     // refused. Blank terms are left as they are; otherwise they must be a whole number of days, 0 or more.
     // A blank late percent is left as it is; otherwise it must be a percent of 0.00 or more, with up to two decimals.
     // A missing policy date is left as it is; a blank one is none (the sheet's today is); otherwise it must be a yyyy-MM-dd date.
+    // A grade's own terms are like the terms: blank is left as it is, otherwise a whole number of days, 0 or more,
+    // and only a grade (A, B or C) may have them.
     // The period numbering from-date is the same: missing is left as it is, blank is off, otherwise a yyyy-MM-dd date.
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingsRequest body,
             Out<SheetSettings> settingsOut) throws InvalidSettingException {
@@ -34,6 +39,23 @@ public class ValidateSettings {
         String terms = body == null || body.terms() == null ? "" : body.terms().trim();
         if (!terms.isEmpty() && !DAYS.matcher(terms).matches()) {
             throw new InvalidSettingException("The terms must be a whole number of days, 0 or more.");
+        }
+        SortedMap<String, String> gradeTerms = new TreeMap<>();
+        if (body != null && body.gradeTerms() != null) {
+            for (Map.Entry<String, String> entry : body.gradeTerms().entrySet()) {
+                String grade = entry.getKey() == null ? "" : entry.getKey().trim();
+                String days = entry.getValue() == null ? "" : entry.getValue().trim();
+                if (days.isEmpty()) {
+                    continue;
+                }
+                if (!Settings.GRADES.contains(grade)) {
+                    throw new InvalidSettingException("Terms can be set only for grade A, B or C.");
+                }
+                if (!DAYS.matcher(days).matches()) {
+                    throw new InvalidSettingException("The terms of grade " + grade + " must be a whole number of days, 0 or more.");
+                }
+                gradeTerms.put(grade, Integer.toString(Integer.parseInt(days)));
+            }
         }
         String latePct = body == null || body.latePct() == null ? "" : body.latePct().trim();
         if (!latePct.isEmpty() && !AMOUNT.matcher(latePct).matches()) {
@@ -55,7 +77,7 @@ public class ValidateSettings {
                 throw new InvalidSettingException("The period numbering from-date must be a date (yyyy-mm-dd).");
             }
         }
-        boolean others = !floor.isEmpty() || !terms.isEmpty() || !latePct.isEmpty() || policyDate != null
+        boolean others = !floor.isEmpty() || !terms.isEmpty() || !gradeTerms.isEmpty() || !latePct.isEmpty() || policyDate != null
                 || numberingFrom != null;
         if (typed == null && !others) {
             typed = "";
@@ -64,7 +86,7 @@ public class ValidateSettings {
                 : typed.isEmpty() ? "" : twoDecimals(typed);
         settingsOut.set(new SheetSettings(sheetId.trim(), limit, floor.isEmpty() ? null : twoDecimals(floor),
                 terms.isEmpty() ? null : Integer.toString(Integer.parseInt(terms)),
-                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom));
+                latePct.isEmpty() ? null : twoDecimals(latePct), policyDate, numberingFrom, gradeTerms));
     }
 
     private static String twoDecimals(String amount) {

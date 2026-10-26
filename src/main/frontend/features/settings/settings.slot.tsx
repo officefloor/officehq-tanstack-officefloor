@@ -7,6 +7,8 @@ import { useSubmitOnce } from '../../api/useSubmitOnce';
 import { useUser } from '../session/useUser';
 import { ROLES, rolesKey, rolesQuery, settingsKey, settingsQuery } from './settingsQuery';
 import type { Role, RoleName, Settings as SheetSettings, SettingsChange } from './settingsQuery';
+import { GRADES } from '../people/peopleQuery';
+import type { Grade } from '../people/peopleQuery';
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 const DAYS = /^\d{1,4}$/;
@@ -16,7 +18,8 @@ const isDate = (d: string) => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOSt
 
 /** The sheet's settings — the clerk limit a clerk may settle up to (blank: no limit) and the floor a
  *  claim's live due is at least, and the terms (days after its date a claim is due by) and the late percent (what an overdue claim gains per full 30 days) — and the form
- *  they are saved through. A blank floor, terms or late percent is left as it is, and so is a blank clerk
+ *  they are saved through. Each grade may have terms of its own (a grade without uses the sheet's terms); a claim's
+ *  due-by is fixed from them when it is made. A blank floor, terms, grade's terms or late percent is left as it is, and so is a blank clerk
  *  limit saved with any of them. The policy date decides how a claim's figures round (blank: the sheet's
  *  today). From the period numbering date on, an opened claim is numbered within its period (blank: off).
  *  A save with every field blank clears whichever of the clerk limit, the policy date and the period numbering
@@ -27,6 +30,7 @@ function Settings({ sheetId }: { sheetId: string }) {
   const [limit, setLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [gradeTerms, setGradeTerms] = useState<Partial<Record<Grade, string>>>({});
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [numberingFrom, setNumberingFrom] = useState('');
@@ -43,6 +47,7 @@ function Settings({ sheetId }: { sheetId: string }) {
       setLimit('');
       setFloor('');
       setTerms('');
+      setGradeTerms({});
       setLatePct('');
       setPolicyDate('');
       setNumberingFrom('');
@@ -68,6 +73,16 @@ function Settings({ sheetId }: { sheetId: string }) {
       setError('The terms must be a whole number of days, 0 or more.');
       return;
     }
+    const g: Partial<Record<Grade, string>> = {};
+    for (const grade of GRADES) {
+      const days = (gradeTerms[grade] ?? '').trim();
+      if (days === '') continue;
+      if (!DAYS.test(days)) {
+        setError(`The terms of grade ${grade} must be a whole number of days, 0 or more.`);
+        return;
+      }
+      g[grade] = days;
+    }
     const p = latePct.trim();
     if (p !== '' && !AMOUNT.test(p)) {
       setError('The late percent must be a percent of 0.00 or more, with up to two decimals.');
@@ -84,12 +99,13 @@ function Settings({ sheetId }: { sheetId: string }) {
       return;
     }
     const body: SettingsChange = {};
-    const none = l === '' && f === '' && t === '' && p === '' && d === '' && n === '';
+    const none = l === '' && f === '' && t === '' && Object.keys(g).length === 0 && p === '' && d === '' && n === '';
     if (l !== '' || (none && blank === 'clerkLimit')) body.clerkLimit = l;
     if (d !== '' || (none && blank === 'policyDate')) body.policyDate = d;
     if (n !== '' || (none && blank === 'periodNumberingFrom')) body.periodNumberingFrom = n;
     if (f !== '') body.floor = f;
     if (t !== '') body.terms = t;
+    if (Object.keys(g).length > 0) body.gradeTerms = g;
     if (p !== '') body.latePct = p;
     once(() => save.mutateAsync(body));
   };
@@ -135,6 +151,22 @@ function Settings({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Terms {grade} (days){' '}
+              <input
+                data-testid={`setting-terms-${grade}`}
+                placeholder="unchanged"
+                value={gradeTerms[grade] ?? ''}
+                onChange={(e) => {
+                  setGradeTerms({ ...gradeTerms, [grade]: e.target.value });
+                  setError('');
+                }}
+              />
+            </label>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input
@@ -188,6 +220,12 @@ function Settings({ sheetId }: { sheetId: string }) {
       <p>
         Terms in force: <span data-testid="setting-terms-current">{settings.data?.terms ?? ''}</span>
       </p>
+      {GRADES.map((grade) => (
+        <p key={grade}>
+          Terms of grade {grade} in force:{' '}
+          <span data-testid={`setting-terms-${grade}-current`}>{settings.data?.gradeTerms?.[grade] ?? ''}</span>
+        </p>
+      ))}
       <p>
         Late percent in force: <span data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</span>
       </p>

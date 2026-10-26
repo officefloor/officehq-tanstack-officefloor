@@ -13,6 +13,7 @@ public class ApplySettings {
         if (settings.terms() != null) {
             store.set(settings.sheetId(), Settings.TERMS, settings.terms());
         }
+        settings.gradeTerms().forEach((grade, days) -> store.set(settings.sheetId(), Settings.gradeTermsKey(grade), days));
         if (settings.latePct() != null) {
             store.set(settings.sheetId(), Settings.LATE_PCT, settings.latePct());
         }
